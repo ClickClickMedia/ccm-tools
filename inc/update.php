@@ -65,8 +65,9 @@ class CCM_GitHub_Updater {
         
         add_action('admin_head-update-core.php', array($this, 'force_plugin_icons_css'));
         
-        // Force update check on plugins page load
+        // Force update check on plugins page and update-core page
         add_action('load-plugins.php', array($this, 'force_update_check_on_plugins_page'));
+        add_action('load-update-core.php', array($this, 'force_update_check_on_plugins_page'));
         
         // Cleanup maintenance file if update fails
         add_action('activated_plugin', array($this, 'check_maintenance_file'));
@@ -190,9 +191,9 @@ class CCM_GitHub_Updater {
             return false;
         }
         
-        // Cache response with reasonable duration
+        // Cache response with short duration to catch updates faster
         $this->github_response = $response;
-        set_transient($transient_key, $response, 30 * MINUTE_IN_SECONDS); // 30 minutes cache
+        set_transient($transient_key, $response, 6 * HOUR_IN_SECONDS); // 6 hour cache (respects GitHub rate limits)
         
         return true;
     }
@@ -630,17 +631,19 @@ class CCM_GitHub_Updater {
             return;
         }
 
-        // Respect the native "Check for updates" button (?force-check=1)
+        // Force check requested via URL parameter OR visiting update-core.php
         $force_requested = isset($_GET['force-check']) && '1' === sanitize_text_field(wp_unslash($_GET['force-check']));
-        if (!$force_requested) {
+        $on_update_page = (strpos($_SERVER['REQUEST_URI'] ?? '', 'update-core.php') !== false);
+        
+        if (!$force_requested && !$on_update_page) {
             return;
         }
 
-        // Only force refresh if we haven't checked recently (within last 30 minutes)
+        // Only force refresh if we haven't checked recently (within last 5 minutes)
         $last_force_check = get_transient('ccm_last_force_check');
         
-        if ($last_force_check) {
-            return;
+        if ($last_force_check && !$force_requested) {
+            return; // Allow force-check=1 to bypass
         }
 
         // Clear the GitHub cache to force fresh data
@@ -650,8 +653,8 @@ class CCM_GitHub_Updater {
         // Clear the plugin updates transient to force WordPress to re-check
         delete_site_transient('update_plugins');
         
-        // Set a transient to prevent excessive API calls
-        set_transient('ccm_last_force_check', true, 30 * MINUTE_IN_SECONDS);
+        // Set a transient to prevent excessive API calls (5 minutes)
+        set_transient('ccm_last_force_check', true, 5 * MINUTE_IN_SECONDS);
     }
 }
 
