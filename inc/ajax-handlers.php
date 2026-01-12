@@ -86,6 +86,73 @@ function ccm_tools_ajax_optimize_initial_setup(): void {
     wp_send_json_success($result);
 }
 
+// Get optimization options and stats (AJAX)
+add_action('wp_ajax_ccm_tools_get_optimization_options', 'ccm_tools_ajax_get_optimization_options');
+function ccm_tools_ajax_get_optimization_options(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    $options = ccm_tools_get_optimization_options();
+    $stats = ccm_tools_get_optimization_stats();
+    
+    wp_send_json_success(array(
+        'options' => $options,
+        'stats' => $stats
+    ));
+}
+
+// Run selected optimizations (AJAX)
+add_action('wp_ajax_ccm_tools_run_optimizations', 'ccm_tools_ajax_run_optimizations');
+function ccm_tools_ajax_run_optimizations(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    $selected = isset($_POST['selected']) ? array_map('sanitize_text_field', (array) $_POST['selected']) : array();
+    
+    if (empty($selected)) {
+        wp_send_json_error(__('No optimization options selected.', 'ccm-tools'));
+    }
+    
+    // Validate all selected options exist
+    $available = ccm_tools_get_optimization_options();
+    foreach ($selected as $option) {
+        if (!isset($available[$option])) {
+            wp_send_json_error(sprintf(__('Invalid optimization option: %s', 'ccm-tools'), $option));
+        }
+    }
+    
+    $results = ccm_tools_run_selected_optimizations($selected);
+    
+    // Calculate totals
+    $total_count = 0;
+    $success_count = 0;
+    $messages = array();
+    
+    foreach ($results as $key => $result) {
+        if (isset($result['count'])) {
+            $total_count += $result['count'];
+        }
+        if (!empty($result['success'])) {
+            $success_count++;
+        }
+        if (!empty($result['message'])) {
+            $messages[] = $result['message'];
+        }
+    }
+    
+    wp_send_json_success(array(
+        'results' => $results,
+        'total_count' => $total_count,
+        'success_count' => $success_count,
+        'total_tasks' => count($selected),
+        'summary' => implode("\n", $messages)
+    ));
+}
+
 // Optimize single table (AJAX)
 add_action('wp_ajax_ccm_tools_optimize_single_table', 'ccm_tools_ajax_optimize_single_table');
 function ccm_tools_ajax_optimize_single_table(): void {

@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.0.7
+ * Version: 7.1.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.0.7');
+    define('CCM_HELPER_VERSION', '7.1.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -1200,10 +1200,29 @@ class CCMSettings {
                     <p><?php _e('Use these tools to optimize your WordPress database.', 'ccm-tools'); ?></p>
                     <div class="ccm-buttons">
                         <button id="ct" class="ccm-button"><?php _e('Convert Tables to InnoDB', 'ccm-tools'); ?></button>
-                        <button id="od" class="ccm-button"><?php _e('Optimize Database', 'ccm-tools'); ?></button>
                     </div>
                     <div id="infoBox" class="ccm-info-box"></div>
                     <div id="resultBox" class="ccm-result-box"></div>
+                </div>
+                
+                <div class="ccm-card">
+                    <h2><?php _e('Database Optimization', 'ccm-tools'); ?></h2>
+                    <p><?php _e('Select the optimization tasks you want to run. Safe options are checked by default.', 'ccm-tools'); ?></p>
+                    
+                    <div id="optimization-options" class="ccm-optimization-options">
+                        <div class="ccm-loading">
+                            <div class="ccm-spinner"></div>
+                            <span><?php _e('Loading optimization options...', 'ccm-tools'); ?></span>
+                        </div>
+                    </div>
+                    
+                    <div class="ccm-buttons" style="margin-top: 1rem;">
+                        <button id="run-optimizations" class="ccm-button ccm-button-primary" disabled><?php _e('Run Selected Optimizations', 'ccm-tools'); ?></button>
+                        <button id="select-all-safe" class="ccm-button ccm-button-secondary"><?php _e('Select Safe Options', 'ccm-tools'); ?></button>
+                        <button id="deselect-all" class="ccm-button ccm-button-secondary"><?php _e('Deselect All', 'ccm-tools'); ?></button>
+                    </div>
+                    
+                    <div id="optimization-results" class="ccm-result-box" style="display: none;"></div>
                 </div>
             </div>
         </div>

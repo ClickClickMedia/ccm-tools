@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.0.7
+ * Version: 7.1.0
  */
 
 (function() {
@@ -547,6 +547,240 @@
         }
     }
 
+    /**
+     * Initialize optimization options on database page
+     */
+    async function initOptimizationOptions() {
+        const optionsContainer = $('#optimization-options');
+        const runButton = $('#run-optimizations');
+        const selectSafeButton = $('#select-all-safe');
+        const deselectAllButton = $('#deselect-all');
+        const resultsBox = $('#optimization-results');
+        
+        if (!optionsContainer) return;
+        
+        try {
+            // Load options and stats
+            const response = await ajax('ccm_tools_get_optimization_options');
+            
+            if (!response?.data?.options) {
+                optionsContainer.innerHTML = '<p class="ccm-error">Failed to load optimization options</p>';
+                return;
+            }
+            
+            const { options, stats } = response.data;
+            
+            // Group options by risk level
+            const groups = {
+                safe: { label: '✓ Safe Operations', items: [] },
+                moderate: { label: '⚡ Moderate Risk', items: [] },
+                high: { label: '⚠️ High Risk - Use With Caution', items: [] }
+            };
+            
+            // Populate groups
+            for (const [key, opt] of Object.entries(options)) {
+                const risk = opt.risk || 'moderate';
+                if (groups[risk]) {
+                    groups[risk].items.push({ key, ...opt });
+                }
+            }
+            
+            // Build HTML
+            let html = '';
+            
+            for (const [riskLevel, group] of Object.entries(groups)) {
+                if (group.items.length === 0) continue;
+                
+                html += `<div class="ccm-opt-group ${riskLevel}">`;
+                html += `<div class="ccm-opt-group-header">${group.label}</div>`;
+                html += '<div class="ccm-opt-group-items">';
+                
+                for (const item of group.items) {
+                    const stat = getStatForOption(item.key, stats);
+                    const statClass = stat > 0 ? (riskLevel === 'high' ? 'warning' : 'has-items') : '';
+                    const checked = item.default ? 'checked' : '';
+                    
+                    html += `
+                        <div class="ccm-opt-item">
+                            <input type="checkbox" id="opt-${item.key}" name="optimization[]" value="${item.key}" ${checked}>
+                            <div class="ccm-opt-item-content">
+                                <label class="ccm-opt-item-label" for="opt-${item.key}">${escapeHtml(item.label)}</label>
+                                <span class="ccm-opt-item-desc">${escapeHtml(item.description)}</span>
+                            </div>
+                            ${stat !== null ? `<span class="ccm-opt-item-stat ${statClass}">${stat}</span>` : ''}
+                        </div>
+                    `;
+                }
+                
+                html += '</div></div>';
+            }
+            
+            optionsContainer.innerHTML = html;
+            
+            // Enable run button
+            if (runButton) {
+                runButton.disabled = false;
+            }
+            
+            // Event handlers
+            if (runButton) {
+                runButton.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    await runSelectedOptimizations();
+                });
+            }
+            
+            if (selectSafeButton) {
+                selectSafeButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    // Check safe options, uncheck others
+                    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                        const optKey = cb.value;
+                        const opt = options[optKey];
+                        cb.checked = opt && opt.risk === 'safe';
+                    });
+                });
+            }
+            
+            if (deselectAllButton) {
+                deselectAllButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                        cb.checked = false;
+                    });
+                });
+            }
+            
+        } catch (error) {
+            optionsContainer.innerHTML = `<p class="ccm-error">Error loading options: ${escapeHtml(error.message)}</p>`;
+        }
+    }
+    
+    /**
+     * Get the statistic value for an optimization option
+     */
+    function getStatForOption(optKey, stats) {
+        const mapping = {
+            'clear_transients': stats.transients,
+            'optimize_tables': stats.table_count,
+            'update_collation': stats.table_count,
+            'clean_spam_comments': stats.spam_comments,
+            'clean_trashed_comments': stats.trashed_comments,
+            'clean_trashed_posts': stats.trashed_posts,
+            'clean_auto_drafts': stats.auto_drafts,
+            'clean_orphaned_postmeta': stats.orphaned_postmeta,
+            'clean_orphaned_commentmeta': stats.orphaned_commentmeta,
+            'clean_oembed_cache': stats.oembed_cache,
+            'limit_revisions': stats.excess_revisions,
+            'delete_all_revisions': stats.revisions,
+            'clean_orphaned_termmeta': stats.orphaned_termmeta,
+            'clean_orphaned_relationships': stats.orphaned_relationships,
+            'add_postmeta_index': null,
+            'add_usermeta_index': null,
+            'add_commentmeta_index': null,
+            'add_termmeta_index': null,
+        };
+        return mapping.hasOwnProperty(optKey) ? mapping[optKey] : null;
+    }
+    
+    /**
+     * Run selected optimization tasks
+     */
+    async function runSelectedOptimizations() {
+        const optionsContainer = $('#optimization-options');
+        const resultsBox = $('#optimization-results');
+        const runButton = $('#run-optimizations');
+        
+        if (!optionsContainer || !resultsBox) return;
+        
+        // Get selected options
+        const selected = [];
+        optionsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+            selected.push(cb.value);
+        });
+        
+        if (selected.length === 0) {
+            showNotification('Please select at least one optimization option', 'warning');
+            return;
+        }
+        
+        // Check for high-risk options and confirm
+        const highRiskSelected = selected.filter(opt => {
+            const checkbox = optionsContainer.querySelector(`#opt-${opt}`);
+            return checkbox && checkbox.closest('.ccm-opt-group.high');
+        });
+        
+        if (highRiskSelected.length > 0) {
+            if (!confirm('⚠️ You have selected high-risk operations that cannot be undone. Are you sure you want to continue?\n\nSelected high-risk options:\n• ' + highRiskSelected.join('\n• '))) {
+                return;
+            }
+        }
+        
+        // Disable UI during processing
+        if (runButton) runButton.disabled = true;
+        optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = true);
+        
+        // Show progress
+        resultsBox.style.display = 'block';
+        resultsBox.innerHTML = `
+            <div class="ccm-loading">
+                <div class="ccm-spinner"></div>
+                <span>Running ${selected.length} optimization task(s)...</span>
+            </div>
+        `;
+        
+        try {
+            const response = await ajax('ccm_tools_run_optimizations', { selected: selected });
+            
+            if (response?.data?.results) {
+                const { results, total_count, success_count, total_tasks, summary } = response.data;
+                
+                let html = `<p><span class="ccm-icon ccm-success">✓</span> <strong>Optimization Complete:</strong> ${success_count}/${total_tasks} tasks completed successfully</p>`;
+                
+                if (total_count > 0) {
+                    html += `<p><span class="ccm-icon ccm-info">ℹ</span> Total items processed: ${total_count}</p>`;
+                }
+                
+                html += '<table class="ccm-table"><thead><tr><th>Task</th><th>Result</th><th>Items</th></tr></thead><tbody>';
+                
+                for (const [key, result] of Object.entries(results)) {
+                    const statusIcon = result.success ? '✓' : '✗';
+                    const statusClass = result.success ? 'success' : 'error';
+                    const count = result.count !== undefined ? result.count : '-';
+                    
+                    html += `
+                        <tr>
+                            <td>${escapeHtml(key.replace(/_/g, ' '))}</td>
+                            <td>${escapeHtml(result.message || 'Completed')}</td>
+                            <td><span class="ccm-icon ccm-${statusClass}">${statusIcon}</span> ${count}</td>
+                        </tr>
+                    `;
+                }
+                
+                html += '</tbody></table>';
+                
+                resultsBox.innerHTML = html;
+                showNotification('Database optimization completed!', 'success');
+                
+                // Refresh stats
+                initOptimizationOptions();
+                
+            } else {
+                const errorMsg = response?.data?.message || response?.data || 'Unknown error';
+                resultsBox.innerHTML = `<p class="ccm-error"><span class="ccm-icon ccm-error">✗</span> Error: ${escapeHtml(errorMsg)}</p>`;
+                showNotification('Optimization failed', 'error');
+            }
+            
+        } catch (error) {
+            resultsBox.innerHTML = `<p class="ccm-error"><span class="ccm-icon ccm-error">✗</span> Error: ${escapeHtml(error.message)}</p>`;
+            showNotification('Optimization failed: ' + error.message, 'error');
+        } finally {
+            // Re-enable UI
+            if (runButton) runButton.disabled = false;
+            optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
+        }
+    }
+
     // ===================================
     // Event Handlers Setup
     // ===================================
@@ -557,7 +791,6 @@
     function initEventHandlers() {
         // Database Tools
         const ctButton = $('#ct');
-        const odButton = $('#od');
         
         if (ctButton) {
             ctButton.addEventListener('click', (e) => {
@@ -568,16 +801,8 @@
             });
         }
         
-        if (odButton) {
-            odButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                const resultBox = $('#resultBox');
-                if (resultBox) {
-                    resultBox.innerHTML = '<p><span class="ccm-icon ccm-info">ℹ</span>Starting database optimization process...</p>';
-                }
-                optimizeDatabaseProgressively();
-            });
-        }
+        // Initialize optimization options if on database page
+        initOptimizationOptions();
         
         // .htaccess Tools (using event delegation)
         document.addEventListener('click', async (e) => {
