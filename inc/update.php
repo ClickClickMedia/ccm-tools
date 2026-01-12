@@ -55,6 +55,9 @@ class CCM_GitHub_Updater {
         add_filter('upgrader_post_install', array($this, 'after_install'), 10, 3);
         add_filter('http_request_args', array($this, 'add_auth_to_request'), 10, 2);
         
+        // Also hook into site_transient_update_plugins to catch already-set transients
+        add_filter('site_transient_update_plugins', array($this, 'check_for_update'), 10, 1);
+        
         // Add filter to ensure icons are available in plugin update data
         add_filter('all_plugins', array($this, 'add_plugin_icons_to_data'), 10, 1);
         add_filter('get_plugin_data', array($this, 'add_plugin_icons_to_update_data'), 10, 2);
@@ -82,8 +85,19 @@ class CCM_GitHub_Updater {
      * @return object Modified transient
      */
     public function modify_transient($transient) {
-        if (empty($transient->checked)) {
-            return $transient;
+        // If checked is empty, we still need to populate it for our plugin
+        if (empty($transient)) {
+            $transient = new stdClass();
+        }
+        
+        if (!isset($transient->checked)) {
+            $transient->checked = array();
+        }
+        
+        // Ensure our plugin is in the checked list
+        if (empty($transient->checked[$this->plugin])) {
+            $plugin_data = get_plugin_data($this->file);
+            $transient->checked[$this->plugin] = $plugin_data['Version'];
         }
 
         // Get release information from GitHub
@@ -150,6 +164,61 @@ class CCM_GitHub_Updater {
         
         return $transient;
     }
+    
+    /**
+     * Check for updates when retrieving the transient (backup method)
+     * This ensures updates are detected even if pre_set_site_transient didn't run
+     * 
+     * @param object $transient Update transient
+     * @return object Modified transient
+     */
+    public function check_for_update($transient) {
+        // Don't check if we've already added our plugin to the response
+        if (isset($transient->response[$this->plugin])) {
+            return $transient;
+        }
+        
+        // Get release information from GitHub
+        $this->get_repository_info();
+        
+        if (empty($this->github_response) || !is_object($this->github_response)) {
+            return $transient;
+        }
+        
+        $github_version = $this->get_github_version();
+        $plugin_data = get_plugin_data($this->file);
+        $current_version = $plugin_data['Version'];
+        
+        // Compare versions
+        if (version_compare($github_version, $current_version, '>')) {
+            $plugin_url = plugin_dir_url($this->file);
+            
+            $obj = new stdClass();
+            $obj->slug = $this->basename;
+            $obj->plugin = $this->plugin;
+            $obj->new_version = $github_version;
+            $obj->url = $this->github_response->html_url;
+            $obj->package = $this->get_download_url();
+            $obj->tested = $this->get_current_wp_version();
+            $obj->icons = array(
+                'svg' => $plugin_url . 'assets/icon.svg',
+                '1x' => $plugin_url . 'assets/icon.png',
+                '2x' => $plugin_url . 'assets/icon.png',
+                'default' => $plugin_url . 'assets/icon.svg'
+            );
+            
+            if (!is_object($transient)) {
+                $transient = new stdClass();
+            }
+            if (!isset($transient->response)) {
+                $transient->response = array();
+            }
+            
+            $transient->response[$this->plugin] = $obj;
+        }
+        
+        return $transient;
+    }
 
     /**
      * Get the current WordPress version for compatibility reporting
@@ -191,9 +260,9 @@ class CCM_GitHub_Updater {
             return false;
         }
         
-        // Cache response with short duration to catch updates faster
+        // Cache response with shorter duration to catch updates faster
         $this->github_response = $response;
-        set_transient($transient_key, $response, 6 * HOUR_IN_SECONDS); // 6 hour cache (respects GitHub rate limits)
+        set_transient($transient_key, $response, HOUR_IN_SECONDS); // 1 hour cache
         
         return true;
     }
