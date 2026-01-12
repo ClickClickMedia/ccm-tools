@@ -12,55 +12,47 @@ if (!defined('ABSPATH')) {
 function ccm_tools_get_htaccess_options(): array {
     return array(
         'safe' => array(
-            'label' => '✓ Safe Options (Always Included)',
+            'label' => '✓ Safe Options (Recommended)',
             'options' => array(
                 'caching' => array(
                     'label' => 'Browser Caching',
                     'description' => 'Set optimal cache durations for images, CSS, JS, and fonts',
                     'default' => true,
-                    'locked' => true, // Always included
                 ),
                 'compression' => array(
                     'label' => 'Brotli + Gzip Compression',
                     'description' => 'Compress text, CSS, JS, JSON, XML, SVG, fonts, and WebAssembly',
                     'default' => true,
-                    'locked' => true,
                 ),
                 'security_headers' => array(
                     'label' => 'Basic Security Headers',
                     'description' => 'X-Content-Type-Options, Referrer-Policy, Permissions-Policy',
                     'default' => true,
-                    'locked' => true,
                 ),
                 'hsts_basic' => array(
                     'label' => 'HSTS (1 Year)',
                     'description' => 'Strict-Transport-Security header for HTTPS enforcement',
                     'default' => true,
-                    'locked' => true,
                 ),
                 'https_redirect' => array(
                     'label' => 'HTTPS Redirect',
                     'description' => 'Redirect HTTP to HTTPS (with proxy support)',
                     'default' => true,
-                    'locked' => true,
                 ),
                 'file_protection' => array(
                     'label' => 'Sensitive File Protection',
                     'description' => 'Block access to wp-config.php, .env, logs, backups, etc.',
                     'default' => true,
-                    'locked' => true,
                 ),
                 'disable_indexes' => array(
                     'label' => 'Disable Directory Browsing',
                     'description' => 'Prevent directory listing with Options -Indexes',
                     'default' => true,
-                    'locked' => true,
                 ),
                 'etag_removal' => array(
                     'label' => 'Remove ETags',
                     'description' => 'Disable ETags to reduce server overhead and improve caching',
                     'default' => true,
-                    'locked' => true,
                 ),
             ),
         ),
@@ -125,14 +117,28 @@ function ccm_tools_get_htaccess_options(): array {
  */
 function ccm_tools_htaccess_content($options = array()): string {
     // Default options if none provided (backward compatibility)
+    // Default all options if none provided (backward compatibility - all safe options enabled)
     if (empty($options) || !is_array($options)) {
         $options = array(
+            // Safe options - default to true
+            'caching' => true,
+            'compression' => true,
+            'security_headers' => true,
+            'hsts_basic' => true,
+            'https_redirect' => true,
+            'file_protection' => true,
+            'disable_indexes' => true,
+            'etag_removal' => true,
+            // Moderate options
             'x_frame_options' => false,
             'x_xss_protection' => false,
             'hsts_subdomains' => false,
             'coop' => false,
             'corp' => false,
             'block_author_scan' => true,
+            // High risk options
+            'block_xmlrpc' => false,
+            'block_rest_api' => false,
         );
     }
     
@@ -140,12 +146,22 @@ function ccm_tools_htaccess_content($options = array()): string {
     if (is_bool($options)) {
         $hardening = $options;
         $options = array(
+            'caching' => true,
+            'compression' => true,
+            'security_headers' => true,
+            'hsts_basic' => true,
+            'https_redirect' => true,
+            'file_protection' => true,
+            'disable_indexes' => true,
+            'etag_removal' => true,
             'x_frame_options' => $hardening,
             'x_xss_protection' => false,
             'hsts_subdomains' => false,
             'coop' => false,
             'corp' => false,
             'block_author_scan' => true,
+            'block_xmlrpc' => false,
+            'block_rest_api' => false,
         );
     }
     
@@ -154,177 +170,190 @@ function ccm_tools_htaccess_content($options = array()): string {
     $base .= "# CCM Tools .htaccess optimization (2026 baseline)\n\n";
     
     // ===== CACHING =====
-    $base .= "# Browser Caching\n";
-    $base .= "<IfModule mod_expires.c>\n";
-    $base .= "ExpiresActive On\n";
-    $base .= "# Images (1 year)\n";
-    $base .= "ExpiresByType image/jpg \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/jpeg \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/gif \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/png \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/webp \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/avif \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/heic \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/heif \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/svg+xml \"access plus 1 year\"\n";
-    $base .= "ExpiresByType image/x-icon \"access plus 1 year\"\n";
-    $base .= "# Fonts (1 year)\n";
-    $base .= "ExpiresByType font/woff2 \"access plus 1 year\"\n";
-    $base .= "ExpiresByType font/woff \"access plus 1 year\"\n";
-    $base .= "ExpiresByType font/ttf \"access plus 1 year\"\n";
-    $base .= "ExpiresByType font/otf \"access plus 1 year\"\n";
-    $base .= "ExpiresByType application/font-woff \"access plus 1 year\"\n";
-    $base .= "ExpiresByType application/font-woff2 \"access plus 1 year\"\n";
-    $base .= "# CSS/JS (1 month)\n";
-    $base .= "ExpiresByType text/css \"access plus 1 month\"\n";
-    $base .= "ExpiresByType application/javascript \"access plus 1 month\"\n";
-    $base .= "ExpiresByType text/javascript \"access plus 1 month\"\n";
-    $base .= "# Other\n";
-    $base .= "ExpiresByType application/pdf \"access plus 1 month\"\n";
-    $base .= "ExpiresByType application/wasm \"access plus 1 year\"\n";
-    $base .= "ExpiresByType application/xml \"access plus 1 hour\"\n";
-    $base .= "ExpiresByType text/xml \"access plus 1 hour\"\n";
-    $base .= "ExpiresByType application/rss+xml \"access plus 1 hour\"\n";
-    $base .= "ExpiresByType application/atom+xml \"access plus 1 hour\"\n";
-    $base .= "ExpiresByType text/html \"access plus 0 seconds\"\n";
-    $base .= "ExpiresDefault \"access plus 1 hour\"\n";
-    $base .= "</IfModule>\n\n";
+    if (!empty($options['caching'])) {
+        $base .= "# Browser Caching\n";
+        $base .= "<IfModule mod_expires.c>\n";
+        $base .= "ExpiresActive On\n";
+        $base .= "# Images (1 year)\n";
+        $base .= "ExpiresByType image/jpg \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/jpeg \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/gif \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/png \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/webp \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/avif \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/heic \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/heif \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/svg+xml \"access plus 1 year\"\n";
+        $base .= "ExpiresByType image/x-icon \"access plus 1 year\"\n";
+        $base .= "# Fonts (1 year)\n";
+        $base .= "ExpiresByType font/woff2 \"access plus 1 year\"\n";
+        $base .= "ExpiresByType font/woff \"access plus 1 year\"\n";
+        $base .= "ExpiresByType font/ttf \"access plus 1 year\"\n";
+        $base .= "ExpiresByType font/otf \"access plus 1 year\"\n";
+        $base .= "ExpiresByType application/font-woff \"access plus 1 year\"\n";
+        $base .= "ExpiresByType application/font-woff2 \"access plus 1 year\"\n";
+        $base .= "# CSS/JS (1 month)\n";
+        $base .= "ExpiresByType text/css \"access plus 1 month\"\n";
+        $base .= "ExpiresByType application/javascript \"access plus 1 month\"\n";
+        $base .= "ExpiresByType text/javascript \"access plus 1 month\"\n";
+        $base .= "# Other\n";
+        $base .= "ExpiresByType application/pdf \"access plus 1 month\"\n";
+        $base .= "ExpiresByType application/wasm \"access plus 1 year\"\n";
+        $base .= "ExpiresByType application/xml \"access plus 1 hour\"\n";
+        $base .= "ExpiresByType text/xml \"access plus 1 hour\"\n";
+        $base .= "ExpiresByType application/rss+xml \"access plus 1 hour\"\n";
+        $base .= "ExpiresByType application/atom+xml \"access plus 1 hour\"\n";
+        $base .= "ExpiresByType text/html \"access plus 0 seconds\"\n";
+        $base .= "ExpiresDefault \"access plus 1 hour\"\n";
+        $base .= "</IfModule>\n";
+        $base .= "# Cache-Control Headers\n";
+        $base .= "<IfModule mod_headers.c>\n";
+        $base .= "<FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|webp|avif|heic|heif|gif|svg|woff2|woff|ttf|otf|wasm)$\">\n";
+        $base .= "Header set Cache-Control \"public, max-age=31536000, immutable\"\n";
+        $base .= "</FilesMatch>\n";
+        $base .= "<FilesMatch \"\\.(css|js)$\">\n";
+        $base .= "Header set Cache-Control \"public, max-age=2592000\"\n";
+        $base .= "</FilesMatch>\n";
+        $base .= "</IfModule>\n\n";
+    }
     
     // ===== COMPRESSION =====
-    $base .= "# Compression (Brotli with gzip fallback)\n";
-    $base .= "<IfModule mod_brotli.c>\n";
-    $base .= "AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/css text/xml\n";
-    $base .= "AddOutputFilterByType BROTLI_COMPRESS application/javascript application/json application/xml\n";
-    $base .= "AddOutputFilterByType BROTLI_COMPRESS image/svg+xml image/x-icon\n";
-    $base .= "AddOutputFilterByType BROTLI_COMPRESS font/ttf font/otf font/woff font/woff2\n";
-    $base .= "AddOutputFilterByType BROTLI_COMPRESS application/wasm\n";
-    $base .= "</IfModule>\n";
-    $base .= "<IfModule mod_deflate.c>\n";
-    $base .= "AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml\n";
-    $base .= "AddOutputFilterByType DEFLATE application/javascript application/json application/xml\n";
-    $base .= "AddOutputFilterByType DEFLATE image/svg+xml image/x-icon\n";
-    $base .= "AddOutputFilterByType DEFLATE font/ttf font/otf font/woff font/woff2\n";
-    $base .= "AddOutputFilterByType DEFLATE application/wasm\n";
-    $base .= "</IfModule>\n\n";
+    if (!empty($options['compression'])) {
+        $base .= "# Compression (Brotli with gzip fallback)\n";
+        $base .= "<IfModule mod_brotli.c>\n";
+        $base .= "AddOutputFilterByType BROTLI_COMPRESS text/html text/plain text/css text/xml\n";
+        $base .= "AddOutputFilterByType BROTLI_COMPRESS application/javascript application/json application/xml\n";
+        $base .= "AddOutputFilterByType BROTLI_COMPRESS image/svg+xml image/x-icon\n";
+        $base .= "AddOutputFilterByType BROTLI_COMPRESS font/ttf font/otf font/woff font/woff2\n";
+        $base .= "AddOutputFilterByType BROTLI_COMPRESS application/wasm\n";
+        $base .= "</IfModule>\n";
+        $base .= "<IfModule mod_deflate.c>\n";
+        $base .= "AddOutputFilterByType DEFLATE text/html text/plain text/css text/xml\n";
+        $base .= "AddOutputFilterByType DEFLATE application/javascript application/json application/xml\n";
+        $base .= "AddOutputFilterByType DEFLATE image/svg+xml image/x-icon\n";
+        $base .= "AddOutputFilterByType DEFLATE font/ttf font/otf font/woff font/woff2\n";
+        $base .= "AddOutputFilterByType DEFLATE application/wasm\n";
+        $base .= "</IfModule>\n\n";
+    }
     
     // ===== ETAG REMOVAL =====
-    $base .= "# Remove ETags (reduces server overhead)\n";
-    $base .= "<IfModule mod_headers.c>\n";
-    $base .= "Header unset ETag\n";
-    $base .= "</IfModule>\n";
-    $base .= "FileETag None\n\n";
-    
-    // ===== CACHE-CONTROL HEADERS =====
-    $base .= "# Cache-Control Headers\n";
-    $base .= "<IfModule mod_headers.c>\n";
-    $base .= "# Long-lived static assets (1 year)\n";
-    $base .= "<FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|webp|avif|heic|heif|gif|svg|woff2|woff|ttf|otf|wasm)$\">\n";
-    $base .= "Header set Cache-Control \"public, max-age=31536000, immutable\"\n";
-    $base .= "</FilesMatch>\n";
-    $base .= "# CSS/JS (1 month)\n";
-    $base .= "<FilesMatch \"\\.(css|js)$\">\n";
-    $base .= "Header set Cache-Control \"public, max-age=2592000\"\n";
-    $base .= "</FilesMatch>\n";
-    $base .= "</IfModule>\n\n";
+    if (!empty($options['etag_removal'])) {
+        $base .= "# Remove ETags (reduces server overhead)\n";
+        $base .= "<IfModule mod_headers.c>\n";
+        $base .= "Header unset ETag\n";
+        $base .= "</IfModule>\n";
+        $base .= "FileETag None\n\n";
+    }
     
     // ===== SECURITY HEADERS =====
-    $base .= "# Security Headers\n";
-    $base .= "<IfModule mod_headers.c>\n";
-    $base .= "# Prevent MIME-type sniffing\n";
-    $base .= "Header always set X-Content-Type-Options \"nosniff\"\n";
-    $base .= "# Control referrer information\n";
-    $base .= "Header always set Referrer-Policy \"strict-origin-when-cross-origin\"\n";
-    $base .= "# Restrict browser features\n";
-    $base .= "Header always set Permissions-Policy \"geolocation=(), microphone=(), camera=(), payment=(), usb=()\"\n";
-    
-    // Optional: X-Frame-Options
-    if (!empty($options['x_frame_options'])) {
-        $base .= "# Prevent clickjacking\n";
-        $base .= "Header always set X-Frame-Options \"SAMEORIGIN\"\n";
+    if (!empty($options['security_headers']) || !empty($options['x_frame_options']) || !empty($options['x_xss_protection']) || !empty($options['coop']) || !empty($options['corp'])) {
+        $base .= "# Security Headers\n";
+        $base .= "<IfModule mod_headers.c>\n";
+        
+        if (!empty($options['security_headers'])) {
+            $base .= "# Prevent MIME-type sniffing\n";
+            $base .= "Header always set X-Content-Type-Options \"nosniff\"\n";
+            $base .= "# Control referrer information\n";
+            $base .= "Header always set Referrer-Policy \"strict-origin-when-cross-origin\"\n";
+            $base .= "# Restrict browser features\n";
+            $base .= "Header always set Permissions-Policy \"geolocation=(), microphone=(), camera=(), payment=(), usb=()\"\n";
+        }
+        
+        if (!empty($options['x_frame_options'])) {
+            $base .= "# Prevent clickjacking\n";
+            $base .= "Header always set X-Frame-Options \"SAMEORIGIN\"\n";
+        }
+        
+        if (!empty($options['x_xss_protection'])) {
+            $base .= "# Disable legacy XSS filter (modern CSP is preferred)\n";
+            $base .= "Header always set X-XSS-Protection \"0\"\n";
+        }
+        
+        if (!empty($options['coop'])) {
+            $base .= "# Isolate browsing context\n";
+            $base .= "Header always set Cross-Origin-Opener-Policy \"same-origin\"\n";
+        }
+        
+        if (!empty($options['corp'])) {
+            $base .= "# Restrict resource loading\n";
+            $base .= "Header always set Cross-Origin-Resource-Policy \"same-origin\"\n";
+        }
+        
+        $base .= "</IfModule>\n\n";
     }
-    
-    // Optional: X-XSS-Protection
-    if (!empty($options['x_xss_protection'])) {
-        $base .= "# Disable legacy XSS filter (modern CSP is preferred)\n";
-        $base .= "Header always set X-XSS-Protection \"0\"\n";
-    }
-    
-    // Optional: Cross-Origin headers
-    if (!empty($options['coop'])) {
-        $base .= "# Isolate browsing context\n";
-        $base .= "Header always set Cross-Origin-Opener-Policy \"same-origin\"\n";
-    }
-    
-    if (!empty($options['corp'])) {
-        $base .= "# Restrict resource loading\n";
-        $base .= "Header always set Cross-Origin-Resource-Policy \"same-origin\"\n";
-    }
-    
-    $base .= "</IfModule>\n\n";
     
     // ===== HSTS =====
-    $base .= "# HSTS (HTTP Strict Transport Security)\n";
-    $base .= "<IfModule mod_headers.c>\n";
-    $base .= "SetEnvIf X-Forwarded-Proto https HTTPS=on\n";
-    if (!empty($options['hsts_subdomains'])) {
-        $base .= "Header always set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" env=HTTPS\n";
-    } else {
-        $base .= "Header always set Strict-Transport-Security \"max-age=31536000\" env=HTTPS\n";
+    if (!empty($options['hsts_basic'])) {
+        $base .= "# HSTS (HTTP Strict Transport Security)\n";
+        $base .= "<IfModule mod_headers.c>\n";
+        $base .= "SetEnvIf X-Forwarded-Proto https HTTPS=on\n";
+        if (!empty($options['hsts_subdomains'])) {
+            $base .= "Header always set Strict-Transport-Security \"max-age=31536000; includeSubDomains\" env=HTTPS\n";
+        } else {
+            $base .= "Header always set Strict-Transport-Security \"max-age=31536000\" env=HTTPS\n";
+        }
+        $base .= "# Auto-upgrade insecure requests\n";
+        $base .= "Header always set Content-Security-Policy \"upgrade-insecure-requests\"\n";
+        $base .= "</IfModule>\n\n";
     }
-    $base .= "# Auto-upgrade insecure requests\n";
-    $base .= "Header always set Content-Security-Policy \"upgrade-insecure-requests\"\n";
-    $base .= "</IfModule>\n\n";
     
     // ===== DIRECTORY SECURITY =====
-    $base .= "# Disable directory browsing\n";
-    $base .= "Options -Indexes\n\n";
-    
-    // ===== HTTPS REDIRECT =====
-    $base .= "# HTTPS Redirect (with proxy support)\n";
-    $base .= "<IfModule mod_rewrite.c>\n";
-    $base .= "RewriteEngine On\n";
-    $base .= "RewriteCond %{HTTPS} !=on\n";
-    $base .= "RewriteCond %{HTTP:X-Forwarded-Proto} !https\n";
-    $base .= "RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]\n";
-    
-    // Optional: Block author enumeration
-    if (!empty($options['block_author_scan'])) {
-        $base .= "\n# Block username enumeration\n";
-        $base .= "RewriteCond %{QUERY_STRING} author=\\d\n";
-        $base .= "RewriteRule ^(.*)$ /? [R=301,L]\n";
+    if (!empty($options['disable_indexes'])) {
+        $base .= "# Disable directory browsing\n";
+        $base .= "Options -Indexes\n\n";
     }
     
-    $base .= "</IfModule>\n\n";
+    // ===== HTTPS REDIRECT =====
+    if (!empty($options['https_redirect']) || !empty($options['block_author_scan'])) {
+        $base .= "# Rewrite Rules\n";
+        $base .= "<IfModule mod_rewrite.c>\n";
+        $base .= "RewriteEngine On\n";
+        
+        if (!empty($options['https_redirect'])) {
+            $base .= "# HTTPS Redirect (with proxy support)\n";
+            $base .= "RewriteCond %{HTTPS} !=on\n";
+            $base .= "RewriteCond %{HTTP:X-Forwarded-Proto} !https\n";
+            $base .= "RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]\n";
+        }
+        
+        if (!empty($options['block_author_scan'])) {
+            $base .= "# Block username enumeration\n";
+            $base .= "RewriteCond %{QUERY_STRING} author=\\d\n";
+            $base .= "RewriteRule ^(.*)$ /? [R=301,L]\n";
+        }
+        
+        $base .= "</IfModule>\n\n";
+    }
     
     // ===== FILE PROTECTION =====
-    $base .= "# Protect sensitive files\n";
-    $base .= "<Files wp-config.php>\n";
-    $base .= "Require all denied\n";
-    $base .= "</Files>\n";
-    $base .= "<Files .htaccess>\n";
-    $base .= "Require all denied\n";
-    $base .= "</Files>\n";
-    $base .= "<FilesMatch \"^(wp-config\\.php|php\\.ini|\\.[hH][tT][aApP]|readme\\.html|license\\.txt)$\">\n";
-    $base .= "Require all denied\n";
-    $base .= "</FilesMatch>\n";
-    $base .= "<FilesMatch \"(\\.env|\\.env\\..*|composer\\.(json|lock)|package(-lock)?\\.json|yarn\\.lock|pnpm-lock\\.yaml)$\">\n";
-    $base .= "Require all denied\n";
-    $base .= "</FilesMatch>\n";
-    $base .= "<FilesMatch \"\\.(log|sql|bak|backup|old|tmp|temp|swp|swo|~)$\">\n";
-    $base .= "Require all denied\n";
-    $base .= "</FilesMatch>\n";
-    $base .= "<Files \"debug.log\">\n";
-    $base .= "Require all denied\n";
-    $base .= "</Files>\n";
-    $base .= "<Files \"wp-config-sample.php\">\n";
-    $base .= "Require all denied\n";
-    $base .= "</Files>\n\n";
-    
-    // ===== VCS PROTECTION =====
-    $base .= "# Hide version control directories\n";
-    $base .= "<IfModule mod_alias.c>\n";
-    $base .= "RedirectMatch 404 /(\\.git|\\.svn|\\.hg)(/|$)\n";
-    $base .= "</IfModule>\n\n";
+    if (!empty($options['file_protection'])) {
+        $base .= "# Protect sensitive files\n";
+        $base .= "<Files wp-config.php>\n";
+        $base .= "Require all denied\n";
+        $base .= "</Files>\n";
+        $base .= "<Files .htaccess>\n";
+        $base .= "Require all denied\n";
+        $base .= "</Files>\n";
+        $base .= "<FilesMatch \"^(wp-config\\.php|php\\.ini|\\.[hH][tT][aApP]|readme\\.html|license\\.txt)$\">\n";
+        $base .= "Require all denied\n";
+        $base .= "</FilesMatch>\n";
+        $base .= "<FilesMatch \"(\\.env|\\.env\\..*|composer\\.(json|lock)|package(-lock)?\\.json|yarn\\.lock|pnpm-lock\\.yaml)$\">\n";
+        $base .= "Require all denied\n";
+        $base .= "</FilesMatch>\n";
+        $base .= "<FilesMatch \"\\.(log|sql|bak|backup|old|tmp|temp|swp|swo|~)$\">\n";
+        $base .= "Require all denied\n";
+        $base .= "</FilesMatch>\n";
+        $base .= "<Files \"debug.log\">\n";
+        $base .= "Require all denied\n";
+        $base .= "</Files>\n";
+        $base .= "<Files \"wp-config-sample.php\">\n";
+        $base .= "Require all denied\n";
+        $base .= "</Files>\n";
+        $base .= "# Hide version control directories\n";
+        $base .= "<IfModule mod_alias.c>\n";
+        $base .= "RedirectMatch 404 /(\\.git|\\.svn|\\.hg)(/|$)\n";
+        $base .= "</IfModule>\n\n";
+    }
     
     // ===== HIGH RISK OPTIONS =====
     // Block XML-RPC
@@ -359,13 +388,22 @@ function ccm_tools_htaccess_content($options = array()): string {
  */
 function ccm_tools_detect_htaccess_options(string $content): array {
     $options = array(
+        // Safe options
+        'caching' => strpos($content, 'mod_expires.c') !== false || strpos($content, 'Browser Caching') !== false,
+        'compression' => strpos($content, 'BROTLI_COMPRESS') !== false || strpos($content, 'mod_deflate.c') !== false,
+        'security_headers' => strpos($content, 'X-Content-Type-Options') !== false,
+        'hsts_basic' => strpos($content, 'Strict-Transport-Security') !== false,
+        'https_redirect' => strpos($content, 'RewriteRule ^ https://') !== false,
+        'file_protection' => strpos($content, '<Files wp-config.php>') !== false,
+        'disable_indexes' => strpos($content, 'Options -Indexes') !== false,
+        'etag_removal' => strpos($content, 'FileETag None') !== false,
         // Moderate options
-        'x_frame_options' => strpos($content, 'X-Frame-Options') !== false && strpos($content, '# Header always set X-Frame-Options') === false,
+        'x_frame_options' => strpos($content, 'X-Frame-Options') !== false,
         'x_xss_protection' => strpos($content, 'X-XSS-Protection') !== false,
         'hsts_subdomains' => strpos($content, 'includeSubDomains') !== false,
         'coop' => strpos($content, 'Cross-Origin-Opener-Policy') !== false,
         'corp' => strpos($content, 'Cross-Origin-Resource-Policy') !== false,
-        'block_author_scan' => strpos($content, 'author=') !== false,
+        'block_author_scan' => strpos($content, 'author=\\d') !== false,
         // High risk options
         'block_xmlrpc' => strpos($content, '<Files xmlrpc.php>') !== false,
         'block_rest_api' => strpos($content, 'wp-json') !== false && strpos($content, 'wordpress_logged_in') !== false,
@@ -414,18 +452,33 @@ function ccm_tools_display_htaccess(): string {
     // Options container
     $output .= '<div id="htaccess-options" class="ccm-optimization-options">';
     
-    // Safe options (always included, shown as locked)
+    // Safe options (selectable, checked by default)
     $output .= '<div class="ccm-opt-group safe">';
     $output .= '<div class="ccm-opt-group-header">' . esc_html($available_options['safe']['label']) . '</div>';
     $output .= '<div class="ccm-opt-group-items">';
     foreach ($available_options['safe']['options'] as $key => $opt) {
-        $is_applied = $has_optimizations;
-        $status_class = $is_applied ? 'ccm-status-applied' : 'ccm-status-pending';
-        $status_icon = $is_applied ? '✓' : '○';
-        $status_text = $is_applied ? __('Applied', 'ccm-tools') : __('Will be applied', 'ccm-tools');
+        $is_applied = $has_optimizations && !empty($current_options[$key]);
+        $checked = $is_applied ? 'checked' : (!$has_optimizations && !empty($opt['default']) ? 'checked' : '');
+        
+        // Determine status
+        if ($has_optimizations) {
+            if ($is_applied) {
+                $status_class = 'ccm-status-applied';
+                $status_icon = '✓';
+                $status_text = __('Applied', 'ccm-tools');
+            } else {
+                $status_class = 'ccm-status-not-applied';
+                $status_icon = '○';
+                $status_text = __('Not applied', 'ccm-tools');
+            }
+        } else {
+            $status_class = 'ccm-status-pending';
+            $status_icon = '○';
+            $status_text = $checked ? __('Will be applied', 'ccm-tools') : __('Optional', 'ccm-tools');
+        }
         
         $output .= '<div class="ccm-opt-item ' . $status_class . '">';
-        $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" checked disabled>';
+        $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
         $output .= '<div class="ccm-opt-item-content">';
         $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
         $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';

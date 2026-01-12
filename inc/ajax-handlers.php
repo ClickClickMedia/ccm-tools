@@ -230,6 +230,8 @@ function ccm_tools_ajax_display_htaccess(): void {
 function ccm_tools_parse_htaccess_options(): array {
     $options = array();
     $valid_options = array(
+        // Safe options
+        'caching', 'compression', 'security_headers', 'hsts_basic', 'https_redirect', 'file_protection', 'disable_indexes', 'etag_removal',
         // Moderate options
         'x_frame_options', 'x_xss_protection', 'hsts_subdomains', 'coop', 'corp', 'block_author_scan',
         // High risk options
