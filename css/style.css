@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.2.11
+ * Version: 7.2.12
  */
 
 /* ===================================
@@ -904,6 +904,65 @@
 
 .ccm-notification-close:hover {
     opacity: 1;
+}
+
+/* ===================================
+   Confirmation Modal
+   =================================== */
+.ccm-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.ccm-modal-overlay.ccm-modal-show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.ccm-modal {
+    background: var(--ccm-surface);
+    border-radius: var(--ccm-radius-lg);
+    box-shadow: var(--ccm-shadow-lg);
+    max-width: 400px;
+    width: 90%;
+    transform: scale(0.9);
+    transition: transform 0.2s ease;
+}
+
+.ccm-modal-overlay.ccm-modal-show .ccm-modal {
+    transform: scale(1);
+}
+
+.ccm-modal-body {
+    padding: 24px;
+}
+
+.ccm-modal-body p {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ccm-text);
+}
+
+.ccm-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 24px;
+    background: var(--ccm-bg);
+    border-top: 1px solid var(--ccm-border);
+    border-radius: 0 0 var(--ccm-radius-lg) var(--ccm-radius-lg);
 }
 
 /* ===================================

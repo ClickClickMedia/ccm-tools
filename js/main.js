@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.2.11
+ * Version: 7.2.12
  */
 
 (function() {
@@ -177,6 +177,72 @@
                 }
             }, duration);
         }
+    }
+
+    /**
+     * Show confirmation modal (replaces confirm())
+     * @param {string} message - Message to display
+     * @param {Function} onConfirm - Callback when confirmed
+     * @param {string} confirmText - Text for confirm button (default: 'Confirm')
+     * @param {string} cancelText - Text for cancel button (default: 'Cancel')
+     */
+    function showConfirmModal(message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel') {
+        // Remove any existing modal
+        const existingModal = $('.ccm-modal-overlay');
+        if (existingModal) existingModal.remove();
+        
+        const modal = createElement('div', {
+            className: 'ccm-modal-overlay'
+        }, `
+            <div class="ccm-modal">
+                <div class="ccm-modal-body">
+                    <p>${escapeHtml(message)}</p>
+                </div>
+                <div class="ccm-modal-footer">
+                    <button class="ccm-button ccm-modal-cancel">${escapeHtml(cancelText)}</button>
+                    <button class="ccm-button ccm-button-primary ccm-modal-confirm">${escapeHtml(confirmText)}</button>
+                </div>
+            </div>
+        `);
+        
+        document.body.appendChild(modal);
+        
+        // Trigger animation
+        requestAnimationFrame(() => {
+            modal.classList.add('ccm-modal-show');
+        });
+        
+        const closeModal = () => {
+            modal.classList.remove('ccm-modal-show');
+            setTimeout(() => modal.remove(), 200);
+        };
+        
+        // Cancel button
+        const cancelBtn = $('.ccm-modal-cancel', modal);
+        cancelBtn.addEventListener('click', closeModal);
+        
+        // Confirm button
+        const confirmBtn = $('.ccm-modal-confirm', modal);
+        confirmBtn.addEventListener('click', () => {
+            closeModal();
+            if (typeof onConfirm === 'function') {
+                onConfirm();
+            }
+        });
+        
+        // Close on overlay click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+        
+        // Close on Escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
     }
 
     /**
@@ -863,27 +929,39 @@
             // Add htaccess
             if (e.target.id === 'htadd' || e.target.closest('#htadd')) {
                 e.preventDefault();
-                if (confirm(ccmToolsData.i18n.confirmAddHtaccess)) {
-                    const options = getSelectedHtaccessOptions();
-                    makeAjaxRequest('ccm_tools_add_htaccess', null, { options: options });
-                }
+                showConfirmModal(
+                    'Add selected optimizations to your .htaccess file?',
+                    () => {
+                        const options = getSelectedHtaccessOptions();
+                        makeAjaxRequest('ccm_tools_add_htaccess', null, { options: options });
+                    },
+                    'Add Optimizations'
+                );
             }
             
             // Update htaccess
             if (e.target.id === 'htupdate' || e.target.closest('#htupdate')) {
                 e.preventDefault();
-                if (confirm('Update .htaccess optimizations with new settings?')) {
-                    const options = getSelectedHtaccessOptions();
-                    makeAjaxRequest('ccm_tools_update_htaccess', null, { options: options });
-                }
+                showConfirmModal(
+                    'Update .htaccess with your selected options?',
+                    () => {
+                        const options = getSelectedHtaccessOptions();
+                        makeAjaxRequest('ccm_tools_update_htaccess', null, { options: options });
+                    },
+                    'Update'
+                );
             }
             
             // Remove htaccess
             if (e.target.id === 'htremove' || e.target.closest('#htremove')) {
                 e.preventDefault();
-                if (confirm(ccmToolsData.i18n.confirmRemoveHtaccess)) {
-                    makeAjaxRequest('ccm_tools_remove_htaccess');
-                }
+                showConfirmModal(
+                    'Remove all CCM optimizations from .htaccess?',
+                    () => {
+                        makeAjaxRequest('ccm_tools_remove_htaccess');
+                    },
+                    'Remove'
+                );
             }
         });
     }
