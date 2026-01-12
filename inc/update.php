@@ -700,30 +700,26 @@ class CCM_GitHub_Updater {
             return;
         }
 
-        // Force check requested via URL parameter OR visiting update-core.php
+        // Force check requested via URL parameter
         $force_requested = isset($_GET['force-check']) && '1' === sanitize_text_field(wp_unslash($_GET['force-check']));
-        $on_update_page = (strpos($_SERVER['REQUEST_URI'] ?? '', 'update-core.php') !== false);
         
-        if (!$force_requested && !$on_update_page) {
+        if (!$force_requested) {
             return;
         }
 
-        // Only force refresh if we haven't checked recently (within last 5 minutes)
-        $last_force_check = get_transient('ccm_last_force_check');
-        
-        if ($last_force_check && !$force_requested) {
-            return; // Allow force-check=1 to bypass
-        }
-
-        // Clear the GitHub cache to force fresh data
+        // Clear ALL caches to force fresh data
         $transient_key = 'ccm_github_' . md5($this->basename);
         delete_transient($transient_key);
+        delete_transient('ccm_last_force_check');
+        
+        // Clear our internal cache
+        $this->github_response = null;
         
         // Clear the plugin updates transient to force WordPress to re-check
         delete_site_transient('update_plugins');
         
-        // Set a transient to prevent excessive API calls (5 minutes)
-        set_transient('ccm_last_force_check', true, 5 * MINUTE_IN_SECONDS);
+        // Force WordPress to rebuild the update transient now
+        wp_clean_plugins_cache(true);
     }
 }
 
@@ -769,6 +765,19 @@ function ccm_initialize_updater() {
     new CCM_GitHub_Updater($plugin_file);
 }
 
-// Initialize early to ensure updates are available immediately
+// Initialize on multiple hooks to ensure we catch updates
 add_action('plugins_loaded', 'ccm_initialize_updater');
+add_action('admin_init', 'ccm_initialize_updater');
+
+// Also force check on admin_init when force-check param is present
+add_action('admin_init', function() {
+    if (isset($_GET['force-check']) && '1' === $_GET['force-check']) {
+        // Delete transients immediately on admin_init before anything else runs
+        global $wpdb;
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '%ccm_github_%'");
+        $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '%_site_transient_update_plugins%'");
+        delete_site_transient('update_plugins');
+        wp_clean_plugins_cache(true);
+    }
+}, 1);
 
