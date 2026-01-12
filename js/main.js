@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.1.1
+ * Version: 7.1.2
  */
 
 (function() {
@@ -689,7 +689,7 @@
     }
     
     /**
-     * Run selected optimization tasks
+     * Run selected optimization tasks progressively (one at a time with live updates)
      */
     async function runSelectedOptimizations() {
         const optionsContainer = $('#optimization-options');
@@ -698,10 +698,14 @@
         
         if (!optionsContainer || !resultsBox) return;
         
-        // Get selected options
+        // Get selected options with their labels
         const selected = [];
         optionsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
-            selected.push(cb.value);
+            const label = optionsContainer.querySelector(`label[for="${cb.id}"]`);
+            selected.push({
+                key: cb.value,
+                label: label ? label.textContent : cb.value.replace(/_/g, ' ')
+            });
         });
         
         if (selected.length === 0) {
@@ -711,12 +715,13 @@
         
         // Check for high-risk options and confirm
         const highRiskSelected = selected.filter(opt => {
-            const checkbox = optionsContainer.querySelector(`#opt-${opt}`);
+            const checkbox = optionsContainer.querySelector(`#opt-${opt.key}`);
             return checkbox && checkbox.closest('.ccm-opt-group.high');
         });
         
         if (highRiskSelected.length > 0) {
-            if (!confirm('⚠️ You have selected high-risk operations that cannot be undone. Are you sure you want to continue?\n\nSelected high-risk options:\n• ' + highRiskSelected.join('\n• '))) {
+            const highRiskNames = highRiskSelected.map(o => o.label).join('\n• ');
+            if (!confirm('⚠️ You have selected high-risk operations that cannot be undone. Are you sure you want to continue?\n\nSelected high-risk options:\n• ' + highRiskNames)) {
                 return;
             }
         }
@@ -725,65 +730,118 @@
         if (runButton) runButton.disabled = true;
         optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = true);
         
-        // Show progress
+        // Build initial results table
         resultsBox.style.display = 'block';
-        resultsBox.innerHTML = `
-            <div class="ccm-loading">
-                <div class="ccm-spinner"></div>
-                <span>Running ${selected.length} optimization task(s)...</span>
+        let tableHtml = `
+            <div class="ccm-optimization-progress">
+                <p><span class="ccm-icon ccm-info">⏳</span> <strong>Running optimizations...</strong> <span id="opt-progress-text">0/${selected.length} completed</span></p>
+                <div class="ccm-progress-bar"><div class="ccm-progress-fill" id="opt-progress-bar" style="width: 0%"></div></div>
             </div>
+            <table class="ccm-table"><thead><tr><th>Task</th><th>Status</th><th>Result</th><th>Items</th></tr></thead><tbody id="opt-results-body">
         `;
         
-        try {
-            const response = await ajax('ccm_tools_run_optimizations', { selected: selected });
+        // Add pending rows for each task
+        for (const task of selected) {
+            tableHtml += `
+                <tr id="opt-row-${task.key}">
+                    <td>${escapeHtml(task.label)}</td>
+                    <td><span class="ccm-status-pending">⏳ Pending</span></td>
+                    <td>-</td>
+                    <td>-</td>
+                </tr>
+            `;
+        }
+        
+        tableHtml += '</tbody></table>';
+        resultsBox.innerHTML = tableHtml;
+        
+        // Process tasks one by one
+        let completed = 0;
+        let successCount = 0;
+        let totalItems = 0;
+        
+        for (const task of selected) {
+            const row = $(`#opt-row-${task.key}`);
+            if (row) {
+                // Update row to show running
+                row.innerHTML = `
+                    <td>${escapeHtml(task.label)}</td>
+                    <td><span class="ccm-status-running"><div class="ccm-spinner ccm-spinner-small"></div> Running</span></td>
+                    <td>-</td>
+                    <td>-</td>
+                `;
+            }
             
-            if (response?.data?.results) {
-                const { results, total_count, success_count, total_tasks, summary } = response.data;
+            try {
+                const response = await ajax('ccm_tools_run_single_optimization', { task: task.key }, { timeout: 120000 });
                 
-                let html = `<p><span class="ccm-icon ccm-success">✓</span> <strong>Optimization Complete:</strong> ${success_count}/${total_tasks} tasks completed successfully</p>`;
+                completed++;
+                const result = response?.data || {};
+                const success = result.success;
+                const message = result.message || (success ? 'Completed' : 'Failed');
+                const count = result.count !== undefined ? result.count : '-';
                 
-                if (total_count > 0) {
-                    html += `<p><span class="ccm-icon ccm-info">ℹ</span> Total items processed: ${total_count}</p>`;
+                if (success) {
+                    successCount++;
+                    if (typeof count === 'number') {
+                        totalItems += count;
+                    }
                 }
                 
-                html += '<table class="ccm-table"><thead><tr><th>Task</th><th>Result</th><th>Items</th></tr></thead><tbody>';
-                
-                for (const [key, result] of Object.entries(results)) {
-                    const statusIcon = result.success ? '✓' : '✗';
-                    const statusClass = result.success ? 'success' : 'error';
-                    const count = result.count !== undefined ? result.count : '-';
-                    
-                    html += `
-                        <tr>
-                            <td>${escapeHtml(key.replace(/_/g, ' '))}</td>
-                            <td>${escapeHtml(result.message || 'Completed')}</td>
-                            <td><span class="ccm-icon ccm-${statusClass}">${statusIcon}</span> ${count}</td>
-                        </tr>
+                // Update row with result
+                if (row) {
+                    const statusIcon = success ? '✓' : '✗';
+                    const statusClass = success ? 'success' : 'error';
+                    row.innerHTML = `
+                        <td>${escapeHtml(task.label)}</td>
+                        <td><span class="ccm-status-${statusClass}"><span class="ccm-icon ccm-${statusClass}">${statusIcon}</span> ${success ? 'Done' : 'Failed'}</span></td>
+                        <td>${escapeHtml(message)}</td>
+                        <td>${count}</td>
                     `;
                 }
                 
-                html += '</tbody></table>';
+            } catch (error) {
+                completed++;
                 
-                resultsBox.innerHTML = html;
-                showNotification('Database optimization completed!', 'success');
-                
-                // Refresh stats
-                initOptimizationOptions();
-                
-            } else {
-                const errorMsg = response?.data?.message || response?.data || 'Unknown error';
-                resultsBox.innerHTML = `<p class="ccm-error"><span class="ccm-icon ccm-error">✗</span> Error: ${escapeHtml(errorMsg)}</p>`;
-                showNotification('Optimization failed', 'error');
+                // Update row with error
+                if (row) {
+                    row.innerHTML = `
+                        <td>${escapeHtml(task.label)}</td>
+                        <td><span class="ccm-status-error"><span class="ccm-icon ccm-error">✗</span> Error</span></td>
+                        <td>${escapeHtml(error.message)}</td>
+                        <td>-</td>
+                    `;
+                }
             }
             
-        } catch (error) {
-            resultsBox.innerHTML = `<p class="ccm-error"><span class="ccm-icon ccm-error">✗</span> Error: ${escapeHtml(error.message)}</p>`;
-            showNotification('Optimization failed: ' + error.message, 'error');
-        } finally {
-            // Re-enable UI
-            if (runButton) runButton.disabled = false;
-            optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
+            // Update progress bar
+            const progressPercent = Math.round((completed / selected.length) * 100);
+            const progressBar = $('#opt-progress-bar');
+            const progressText = $('#opt-progress-text');
+            if (progressBar) progressBar.style.width = `${progressPercent}%`;
+            if (progressText) progressText.textContent = `${completed}/${selected.length} completed`;
         }
+        
+        // Update header with final status
+        const progressDiv = $('.ccm-optimization-progress');
+        if (progressDiv) {
+            const allSuccess = successCount === selected.length;
+            const icon = allSuccess ? '✓' : '⚠';
+            const iconClass = allSuccess ? 'success' : 'warning';
+            progressDiv.innerHTML = `
+                <p><span class="ccm-icon ccm-${iconClass}">${icon}</span> <strong>Optimization Complete:</strong> ${successCount}/${selected.length} tasks successful, ${totalItems} items processed</p>
+                <div class="ccm-progress-bar"><div class="ccm-progress-fill ccm-progress-${iconClass}" style="width: 100%"></div></div>
+            `;
+        }
+        
+        showNotification(`Database optimization completed! ${successCount}/${selected.length} tasks successful.`, successCount === selected.length ? 'success' : 'warning');
+        
+        // Re-enable UI
+        if (runButton) runButton.disabled = false;
+        optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
+        
+        // Refresh stats after a short delay
+        setTimeout(() => initOptimizationOptions(), 1000);
     }
 
     // ===================================

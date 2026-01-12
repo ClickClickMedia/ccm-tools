@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.1.1
+ * Version: 7.1.2
  */
 
 /* ===================================
@@ -411,6 +411,76 @@
 .ccm-opt-item-stat.warning {
     background: var(--ccm-error-bg);
     color: var(--ccm-error);
+}
+
+/* Optimization Progress */
+.ccm-optimization-progress {
+    padding: var(--ccm-space-md);
+    background: var(--ccm-bg);
+    border-radius: var(--ccm-radius-lg);
+    margin-bottom: var(--ccm-space-md);
+}
+
+.ccm-optimization-progress p {
+    margin: 0 0 var(--ccm-space-sm) 0;
+    font-weight: 500;
+}
+
+.ccm-optimization-progress .ccm-progress-bar {
+    margin: var(--ccm-space-sm) 0 0 0;
+}
+
+.ccm-progress-fill.ccm-progress-success {
+    background: linear-gradient(90deg, var(--ccm-success), #4ade80);
+}
+
+.ccm-progress-fill.ccm-progress-warning {
+    background: linear-gradient(90deg, var(--ccm-warning), #fbbf24);
+}
+
+/* Status indicators in tables */
+.ccm-status-pending,
+.ccm-status-running,
+.ccm-status-success,
+.ccm-status-error {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ccm-space-xs);
+    font-size: var(--ccm-text-sm);
+    font-weight: 500;
+}
+
+.ccm-status-pending {
+    color: var(--ccm-text-muted);
+}
+
+.ccm-status-running {
+    color: var(--ccm-primary);
+}
+
+.ccm-status-running .ccm-spinner-small {
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
+}
+
+.ccm-status-success {
+    color: var(--ccm-success);
+}
+
+.ccm-status-error {
+    color: var(--ccm-error);
+}
+
+/* Small inline spinner */
+.ccm-spinner-small {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--ccm-border);
+    border-top-color: var(--ccm-primary);
+    border-radius: 50%;
+    animation: ccm-spin 0.8s linear infinite;
+    display: inline-block;
 }
 
 /* ===================================

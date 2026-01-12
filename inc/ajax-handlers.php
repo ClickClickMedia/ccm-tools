@@ -160,6 +160,42 @@ function ccm_tools_ajax_run_optimizations(): void {
     ));
 }
 
+/**
+ * AJAX handler to run a single optimization task
+ * This allows progressive execution with live feedback
+ */
+add_action('wp_ajax_ccm_tools_run_single_optimization', 'ccm_tools_ajax_run_single_optimization');
+function ccm_tools_ajax_run_single_optimization(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    $task = isset($_POST['task']) ? sanitize_text_field($_POST['task']) : '';
+    
+    if (empty($task)) {
+        wp_send_json_error(__('No optimization task specified.', 'ccm-tools'));
+    }
+    
+    // Validate the task exists
+    $available = ccm_tools_get_optimization_options();
+    if (!isset($available[$task])) {
+        wp_send_json_error(sprintf(__('Invalid optimization task: %s', 'ccm-tools'), $task));
+    }
+    
+    // Run the single task
+    $results = ccm_tools_run_selected_optimizations(array($task));
+    $result = isset($results[$task]) ? $results[$task] : array('success' => false, 'message' => 'Task not executed');
+    
+    wp_send_json_success(array(
+        'task' => $task,
+        'label' => $available[$task]['label'],
+        'success' => !empty($result['success']),
+        'message' => isset($result['message']) ? $result['message'] : '',
+        'count' => isset($result['count']) ? $result['count'] : 0
+    ));
+}
+
 // Optimize single table (AJAX)
 add_action('wp_ajax_ccm_tools_optimize_single_table', 'ccm_tools_ajax_optimize_single_table');
 function ccm_tools_ajax_optimize_single_table(): void {
