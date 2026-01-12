@@ -379,13 +379,18 @@ function ccm_tools_display_htaccess(): string {
     $output .= '<div class="ccm-opt-group-header">' . esc_html($available_options['safe']['label']) . '</div>';
     $output .= '<div class="ccm-opt-group-items">';
     foreach ($available_options['safe']['options'] as $key => $opt) {
-        $output .= '<div class="ccm-opt-item">';
+        $is_applied = $has_optimizations;
+        $status_class = $is_applied ? 'ccm-status-applied' : 'ccm-status-pending';
+        $status_icon = $is_applied ? '✓' : '○';
+        $status_text = $is_applied ? __('Applied', 'ccm-tools') : __('Will be applied', 'ccm-tools');
+        
+        $output .= '<div class="ccm-opt-item ' . $status_class . '">';
         $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" checked disabled>';
         $output .= '<div class="ccm-opt-item-content">';
         $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
         $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
         $output .= '</div>';
-        $output .= '<span class="ccm-opt-item-stat">✓</span>';
+        $output .= '<span class="ccm-opt-item-status ' . $status_class . '" title="' . esc_attr($status_text) . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
         $output .= '</div>';
     }
     $output .= '</div></div>';
@@ -395,13 +400,33 @@ function ccm_tools_display_htaccess(): string {
     $output .= '<div class="ccm-opt-group-header">' . esc_html($available_options['moderate']['label']) . '</div>';
     $output .= '<div class="ccm-opt-group-items">';
     foreach ($available_options['moderate']['options'] as $key => $opt) {
-        $checked = $has_optimizations ? (!empty($current_options[$key]) ? 'checked' : '') : (!empty($opt['default']) ? 'checked' : '');
-        $output .= '<div class="ccm-opt-item">';
+        $is_applied = $has_optimizations && !empty($current_options[$key]);
+        $checked = $is_applied ? 'checked' : (!$has_optimizations && !empty($opt['default']) ? 'checked' : '');
+        
+        // Determine status
+        if ($has_optimizations) {
+            if ($is_applied) {
+                $status_class = 'ccm-status-applied';
+                $status_icon = '✓';
+                $status_text = __('Applied', 'ccm-tools');
+            } else {
+                $status_class = 'ccm-status-not-applied';
+                $status_icon = '○';
+                $status_text = __('Not applied', 'ccm-tools');
+            }
+        } else {
+            $status_class = 'ccm-status-pending';
+            $status_icon = '○';
+            $status_text = $checked ? __('Will be applied', 'ccm-tools') : __('Optional', 'ccm-tools');
+        }
+        
+        $output .= '<div class="ccm-opt-item ' . $status_class . '">';
         $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
         $output .= '<div class="ccm-opt-item-content">';
         $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
         $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
         $output .= '</div>';
+        $output .= '<span class="ccm-opt-item-status ' . $status_class . '" title="' . esc_attr($status_text) . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
         $output .= '</div>';
     }
     $output .= '</div></div>';

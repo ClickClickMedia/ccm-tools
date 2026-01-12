@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.2.1
+ * Version: 7.2.2
  */
 
 /* ===================================
@@ -411,6 +411,53 @@
 .ccm-opt-item-stat.warning {
     background: var(--ccm-error-bg);
     color: var(--ccm-error);
+}
+
+/* .htaccess Option Status Indicators */
+.ccm-opt-item-status {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--ccm-space-xs);
+    padding: var(--ccm-space-xs) var(--ccm-space-sm);
+    font-size: var(--ccm-text-sm);
+    font-weight: 500;
+    border-radius: var(--ccm-radius-sm);
+    white-space: nowrap;
+}
+
+.ccm-opt-item-status small {
+    font-size: var(--ccm-text-xs);
+    opacity: 0.9;
+}
+
+.ccm-opt-item-status.ccm-status-applied {
+    background: var(--ccm-success-bg);
+    color: var(--ccm-success);
+}
+
+.ccm-opt-item-status.ccm-status-not-applied {
+    background: var(--ccm-bg);
+    color: var(--ccm-text-muted);
+}
+
+.ccm-opt-item-status.ccm-status-pending {
+    background: var(--ccm-info-bg);
+    color: var(--ccm-info);
+}
+
+/* Row highlighting based on status */
+.ccm-opt-item.ccm-status-applied {
+    border-left: 3px solid var(--ccm-success);
+}
+
+.ccm-opt-item.ccm-status-not-applied {
+    border-left: 3px solid var(--ccm-text-muted);
+    opacity: 0.85;
+}
+
+.ccm-opt-item.ccm-status-pending {
+    border-left: 3px solid var(--ccm-info);
 }
 
 /* Optimization Progress */
