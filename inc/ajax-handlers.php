@@ -229,7 +229,12 @@ function ccm_tools_ajax_display_htaccess(): void {
  */
 function ccm_tools_parse_htaccess_options(): array {
     $options = array();
-    $valid_options = array('x_frame_options', 'x_xss_protection', 'hsts_subdomains', 'coop', 'corp', 'block_author_scan');
+    $valid_options = array(
+        // Moderate options
+        'x_frame_options', 'x_xss_protection', 'hsts_subdomains', 'coop', 'corp', 'block_author_scan',
+        // High risk options
+        'block_xmlrpc', 'block_rest_api'
+    );
     
     // Parse options from POST - handle both array format and individual params
     if (isset($_POST['options']) && is_array($_POST['options'])) {

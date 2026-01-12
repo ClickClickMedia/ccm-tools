@@ -99,6 +99,21 @@ function ccm_tools_get_htaccess_options(): array {
                 ),
             ),
         ),
+        'high' => array(
+            'label' => '⚠️ High Risk Options (May Break Functionality)',
+            'options' => array(
+                'block_xmlrpc' => array(
+                    'label' => 'Block XML-RPC',
+                    'description' => 'Blocks xmlrpc.php. Will break: Jetpack, WordPress mobile app, pingbacks, some plugins.',
+                    'default' => false,
+                ),
+                'block_rest_api' => array(
+                    'label' => 'Block REST API for Non-Logged Users',
+                    'description' => 'Restricts REST API access. Will break: some Gutenberg features, headless WP, certain plugins.',
+                    'default' => false,
+                ),
+            ),
+        ),
     );
 }
 
@@ -309,7 +324,28 @@ function ccm_tools_htaccess_content($options = array()): string {
     $base .= "# Hide version control directories\n";
     $base .= "<IfModule mod_alias.c>\n";
     $base .= "RedirectMatch 404 /(\\.git|\\.svn|\\.hg)(/|$)\n";
-    $base .= "</IfModule>\n";
+    $base .= "</IfModule>\n\n";
+    
+    // ===== HIGH RISK OPTIONS =====
+    // Block XML-RPC
+    if (!empty($options['block_xmlrpc'])) {
+        $base .= "# Block XML-RPC (WARNING: Breaks Jetpack, WP mobile app, pingbacks)\n";
+        $base .= "<Files xmlrpc.php>\n";
+        $base .= "Require all denied\n";
+        $base .= "</Files>\n\n";
+    }
+    
+    // Block REST API for non-logged users
+    if (!empty($options['block_rest_api'])) {
+        $base .= "# Block REST API for non-authenticated users (WARNING: May break plugins)\n";
+        $base .= "<IfModule mod_rewrite.c>\n";
+        $base .= "RewriteEngine On\n";
+        $base .= "RewriteCond %{REQUEST_URI} ^/wp-json/ [OR]\n";
+        $base .= "RewriteCond %{REQUEST_URI} ^/\\?rest_route=\n";
+        $base .= "RewriteCond %{HTTP_COOKIE} !wordpress_logged_in\n";
+        $base .= "RewriteRule .* - [F,L]\n";
+        $base .= "</IfModule>\n\n";
+    }
     
     $base .= "# END CCM Optimise - DO NOT CHANGE!\n";
     return $base;
@@ -323,12 +359,16 @@ function ccm_tools_htaccess_content($options = array()): string {
  */
 function ccm_tools_detect_htaccess_options(string $content): array {
     $options = array(
+        // Moderate options
         'x_frame_options' => strpos($content, 'X-Frame-Options') !== false && strpos($content, '# Header always set X-Frame-Options') === false,
         'x_xss_protection' => strpos($content, 'X-XSS-Protection') !== false,
         'hsts_subdomains' => strpos($content, 'includeSubDomains') !== false,
         'coop' => strpos($content, 'Cross-Origin-Opener-Policy') !== false,
         'corp' => strpos($content, 'Cross-Origin-Resource-Policy') !== false,
         'block_author_scan' => strpos($content, 'author=') !== false,
+        // High risk options
+        'block_xmlrpc' => strpos($content, '<Files xmlrpc.php>') !== false,
+        'block_rest_api' => strpos($content, 'wp-json') !== false && strpos($content, 'wordpress_logged_in') !== false,
     );
     return $options;
 }
@@ -418,6 +458,42 @@ function ccm_tools_display_htaccess(): string {
             $status_class = 'ccm-status-pending';
             $status_icon = '○';
             $status_text = $checked ? __('Will be applied', 'ccm-tools') : __('Optional', 'ccm-tools');
+        }
+        
+        $output .= '<div class="ccm-opt-item ' . $status_class . '">';
+        $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
+        $output .= '<div class="ccm-opt-item-content">';
+        $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
+        $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
+        $output .= '</div>';
+        $output .= '<span class="ccm-opt-item-status ' . $status_class . '" title="' . esc_attr($status_text) . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
+        $output .= '</div>';
+    }
+    $output .= '</div></div>';
+    
+    // High risk options (selectable with warning)
+    $output .= '<div class="ccm-opt-group high">';
+    $output .= '<div class="ccm-opt-group-header">' . esc_html($available_options['high']['label']) . '</div>';
+    $output .= '<div class="ccm-opt-group-items">';
+    foreach ($available_options['high']['options'] as $key => $opt) {
+        $is_applied = $has_optimizations && !empty($current_options[$key]);
+        $checked = $is_applied ? 'checked' : '';
+        
+        // Determine status
+        if ($has_optimizations) {
+            if ($is_applied) {
+                $status_class = 'ccm-status-applied';
+                $status_icon = '✓';
+                $status_text = __('Applied', 'ccm-tools');
+            } else {
+                $status_class = 'ccm-status-not-applied';
+                $status_icon = '○';
+                $status_text = __('Not applied', 'ccm-tools');
+            }
+        } else {
+            $status_class = 'ccm-status-pending';
+            $status_icon = '○';
+            $status_text = __('Optional', 'ccm-tools');
         }
         
         $output .= '<div class="ccm-opt-item ' . $status_class . '">';
