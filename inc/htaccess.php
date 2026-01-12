@@ -477,13 +477,13 @@ function ccm_tools_display_htaccess(): string {
             $status_text = $checked ? __('Will be applied', 'ccm-tools') : __('Optional', 'ccm-tools');
         }
         
-        $output .= '<div class="ccm-opt-item ' . $status_class . '">';
+        $output .= '<div class="ccm-opt-item ' . $status_class . '" data-applied="' . ($is_applied ? '1' : '0') . '" data-has-optimizations="' . ($has_optimizations ? '1' : '0') . '">';
         $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
         $output .= '<div class="ccm-opt-item-content">';
         $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
         $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
         $output .= '</div>';
-        $output .= '<span class="ccm-opt-item-status ' . $status_class . '" title="' . esc_attr($status_text) . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
+        $output .= '<span class="ccm-opt-item-status ' . $status_class . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
         $output .= '</div>';
     }
     $output .= '</div></div>';
@@ -513,13 +513,13 @@ function ccm_tools_display_htaccess(): string {
             $status_text = $checked ? __('Will be applied', 'ccm-tools') : __('Optional', 'ccm-tools');
         }
         
-        $output .= '<div class="ccm-opt-item ' . $status_class . '">';
+        $output .= '<div class="ccm-opt-item ' . $status_class . '" data-applied="' . ($is_applied ? '1' : '0') . '" data-has-optimizations="' . ($has_optimizations ? '1' : '0') . '">';
         $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
         $output .= '<div class="ccm-opt-item-content">';
         $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
         $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
         $output .= '</div>';
-        $output .= '<span class="ccm-opt-item-status ' . $status_class . '" title="' . esc_attr($status_text) . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
+        $output .= '<span class="ccm-opt-item-status ' . $status_class . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
         $output .= '</div>';
     }
     $output .= '</div></div>';
@@ -549,13 +549,13 @@ function ccm_tools_display_htaccess(): string {
             $status_text = __('Optional', 'ccm-tools');
         }
         
-        $output .= '<div class="ccm-opt-item ' . $status_class . '">';
+        $output .= '<div class="ccm-opt-item ' . $status_class . '" data-applied="' . ($is_applied ? '1' : '0') . '" data-has-optimizations="' . ($has_optimizations ? '1' : '0') . '">';
         $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
         $output .= '<div class="ccm-opt-item-content">';
         $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
         $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
         $output .= '</div>';
-        $output .= '<span class="ccm-opt-item-status ' . $status_class . '" title="' . esc_attr($status_text) . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
+        $output .= '<span class="ccm-opt-item-status ' . $status_class . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
         $output .= '</div>';
     }
     $output .= '</div></div>';

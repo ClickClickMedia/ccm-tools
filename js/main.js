@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.2.4
+ * Version: 7.2.5
  */
 
 (function() {
@@ -848,6 +848,16 @@
      * Initialize .htaccess options and event handlers
      */
     function initHtaccessOptions() {
+        // Add change listeners to htaccess checkboxes for dynamic status updates
+        const optionsContainer = document.querySelector('#htaccess-options');
+        if (optionsContainer) {
+            optionsContainer.addEventListener('change', (e) => {
+                if (e.target.matches('input[name="htaccess_options[]"]')) {
+                    updateHtaccessOptionStatus(e.target);
+                }
+            });
+        }
+        
         // .htaccess Tools (using event delegation)
         document.addEventListener('click', async (e) => {
             // Add htaccess
@@ -876,6 +886,69 @@
                 }
             }
         });
+    }
+    
+    /**
+     * Update the status indicator for a htaccess option based on checkbox state
+     * @param {HTMLInputElement} checkbox - The checkbox element
+     */
+    function updateHtaccessOptionStatus(checkbox) {
+        const optItem = checkbox.closest('.ccm-opt-item');
+        if (!optItem) return;
+        
+        const statusEl = optItem.querySelector('.ccm-opt-item-status');
+        if (!statusEl) return;
+        
+        const isApplied = optItem.dataset.applied === '1';
+        const hasOptimizations = optItem.dataset.hasOptimizations === '1';
+        const isChecked = checkbox.checked;
+        
+        let statusClass, statusIcon, statusText;
+        
+        if (hasOptimizations) {
+            // Optimizations exist in .htaccess
+            if (isApplied && isChecked) {
+                // Currently applied and staying applied
+                statusClass = 'ccm-status-applied';
+                statusIcon = '✓';
+                statusText = 'Applied';
+            } else if (isApplied && !isChecked) {
+                // Currently applied but will be removed
+                statusClass = 'ccm-status-will-remove';
+                statusIcon = '−';
+                statusText = 'Will be removed';
+            } else if (!isApplied && isChecked) {
+                // Not applied but will be added
+                statusClass = 'ccm-status-pending';
+                statusIcon = '+';
+                statusText = 'Will be applied';
+            } else {
+                // Not applied and staying not applied
+                statusClass = 'ccm-status-not-applied';
+                statusIcon = '○';
+                statusText = 'Not applied';
+            }
+        } else {
+            // No optimizations yet (fresh install)
+            if (isChecked) {
+                statusClass = 'ccm-status-pending';
+                statusIcon = '○';
+                statusText = 'Will be applied';
+            } else {
+                statusClass = 'ccm-status-not-applied';
+                statusIcon = '○';
+                statusText = 'Will not be applied';
+            }
+        }
+        
+        // Update classes
+        optItem.classList.remove('ccm-status-applied', 'ccm-status-not-applied', 'ccm-status-pending', 'ccm-status-will-remove');
+        optItem.classList.add(statusClass);
+        statusEl.classList.remove('ccm-status-applied', 'ccm-status-not-applied', 'ccm-status-pending', 'ccm-status-will-remove');
+        statusEl.classList.add(statusClass);
+        
+        // Update content
+        statusEl.innerHTML = statusIcon + ' <small>' + statusText + '</small>';
     }
     
     /**
