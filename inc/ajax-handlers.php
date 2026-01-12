@@ -508,30 +508,26 @@ function ccm_tools_ajax_update_memory_limit(): void {
     
     $original_content = $config_content;
     
-    // More flexible regex patterns for detecting existing memory limit
-    $memory_limit_patterns = array(
-        '/define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[\'"][^\'\"]*[\'"]\s*\)\s*;?\s*\r?\n?/i',
-        '/define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[^)]*\)\s*;?\s*\r?\n?/i'
-    );
+    // Patterns for detecting existing memory limit (both commented and uncommented)
+    // Pattern 1: Uncommented active define
+    $active_memory_limit_pattern = '/^[\t ]*define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[\'"][^\'\"]*[\'"]\s*\)\s*;?[\t ]*\r?\n?/im';
+    // Pattern 2: Commented out define (// or #)
+    $commented_memory_limit_pattern = '/^[\t ]*(?:\/\/|#)[\t ]*define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[\'"][^\'\"]*[\'"]\s*\)\s*;?[\t ]*\r?\n?/im';
     
-    $existing_memory_limit_found = false;
-    foreach ($memory_limit_patterns as $pattern) {
-        if (preg_match($pattern, $config_content)) {
-            $existing_memory_limit_found = true;
-            break;
-        }
-    }
+    // Check what exists
+    $active_found = preg_match($active_memory_limit_pattern, $config_content);
+    $commented_found = preg_match($commented_memory_limit_pattern, $config_content);
+    $existing_memory_limit_found = $active_found || $commented_found;
     
     // Check if the memory limit is being set to default
     if ($memory_limit === $default_limit) {
         if ($existing_memory_limit_found) {
-            // Remove existing WP_MEMORY_LIMIT line
-            foreach ($memory_limit_patterns as $pattern) {
-                $new_content = preg_replace($pattern, '', $config_content);
-                if ($new_content !== $config_content) {
-                    $config_content = $new_content;
-                    break;
-                }
+            // Remove existing WP_MEMORY_LIMIT line (both commented and uncommented)
+            if ($active_found) {
+                $config_content = preg_replace($active_memory_limit_pattern, '', $config_content);
+            }
+            if ($commented_found) {
+                $config_content = preg_replace($commented_memory_limit_pattern, '', $config_content);
             }
         } else {
             wp_send_json_success(array(
@@ -546,14 +542,24 @@ function ccm_tools_ajax_update_memory_limit(): void {
         $new_define_line = "define('WP_MEMORY_LIMIT', '{$memory_limit}');";
         
         if ($existing_memory_limit_found) {
-            // Replace existing WP_MEMORY_LIMIT line
+            // Replace existing WP_MEMORY_LIMIT line (handles both commented and uncommented)
             $replaced = false;
-            foreach ($memory_limit_patterns as $pattern) {
-                $new_content = preg_replace($pattern, $new_define_line . "\n", $config_content);
+            
+            // First try to replace active (uncommented) line
+            if ($active_found) {
+                $new_content = preg_replace($active_memory_limit_pattern, $new_define_line . "\n", $config_content);
                 if ($new_content !== $config_content) {
                     $config_content = $new_content;
                     $replaced = true;
-                    break;
+                }
+            }
+            
+            // If no active line, replace commented line (uncomment it)
+            if (!$replaced && $commented_found) {
+                $new_content = preg_replace($commented_memory_limit_pattern, $new_define_line . "\n", $config_content);
+                if ($new_content !== $config_content) {
+                    $config_content = $new_content;
+                    $replaced = true;
                 }
             }
             
@@ -652,18 +658,13 @@ function ccm_tools_ajax_update_memory_limit(): void {
         $verification_successful = false;
         
         if ($memory_limit === $default_limit) {
-            // Verify removal
-            $still_exists = false;
-            foreach ($memory_limit_patterns as $pattern) {
-                if (preg_match($pattern, $verification_content)) {
-                    $still_exists = true;
-                    break;
-                }
-            }
-            $verification_successful = !$still_exists;
+            // Verify removal - check neither active nor commented exists
+            $still_active = preg_match($active_memory_limit_pattern, $verification_content);
+            $still_commented = preg_match($commented_memory_limit_pattern, $verification_content);
+            $verification_successful = !$still_active && !$still_commented;
         } else {
-            // Verify addition/update
-            $verification_successful = preg_match('/define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[\'"]\s*' . preg_quote($memory_limit, '/') . '\s*[\'"]\s*\)/i', $verification_content);
+            // Verify addition/update - must be active (uncommented) with correct value
+            $verification_successful = preg_match('/^[\t ]*define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[\'"]\s*' . preg_quote($memory_limit, '/') . '\s*[\'"]\s*\)/im', $verification_content);
         }
         
         if ($verification_successful) {
