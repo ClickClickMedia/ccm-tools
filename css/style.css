@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.2.5
+ * Version: 7.2.6
  */
 
 /* ===================================
@@ -418,12 +418,15 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--ccm-space-xs);
     padding: var(--ccm-space-xs) var(--ccm-space-sm);
     font-size: var(--ccm-text-sm);
     font-weight: 500;
     border-radius: var(--ccm-radius-sm);
     white-space: nowrap;
+    min-width: 120px;
+    text-align: right;
 }
 
 .ccm-opt-item-status small {
