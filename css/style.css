@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.2.7
+ * Version: 7.2.8
  */
 
 /* ===================================
@@ -350,7 +350,8 @@
     gap: var(--ccm-space-md);
     padding: var(--ccm-space-md);
     border-bottom: 1px solid var(--ccm-border);
-    transition: background var(--ccm-transition);
+    border-left: 3px solid transparent;
+    transition: background var(--ccm-transition), border-color var(--ccm-transition);
 }
 
 .ccm-opt-item:last-child {
