@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.1.0
+ * Version: 7.1.1
  */
 
 (function() {
@@ -210,7 +210,12 @@
         formData.append('nonce', ccmToolsData.nonce);
         
         Object.entries(data).forEach(([key, value]) => {
-            formData.append(key, value);
+            if (Array.isArray(value)) {
+                // Send arrays with [] notation for PHP to parse as array
+                value.forEach(item => formData.append(`${key}[]`, item));
+            } else {
+                formData.append(key, value);
+            }
         });
         
         const controller = new AbortController();

@@ -111,7 +111,14 @@ function ccm_tools_ajax_run_optimizations(): void {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
-    $selected = isset($_POST['selected']) ? array_map('sanitize_text_field', (array) $_POST['selected']) : array();
+    // Handle both selected and selected[] (array notation from FormData)
+    $selected = array();
+    if (isset($_POST['selected']) && is_array($_POST['selected'])) {
+        $selected = array_map('sanitize_text_field', $_POST['selected']);
+    } elseif (isset($_POST['selected'])) {
+        // Single value or comma-separated fallback
+        $selected = array_map('sanitize_text_field', explode(',', $_POST['selected']));
+    }
     
     if (empty($selected)) {
         wp_send_json_error(__('No optimization options selected.', 'ccm-tools'));
