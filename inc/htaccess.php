@@ -149,6 +149,8 @@ function ccm_tools_htaccess_content($options = array()): string {
     $base .= "ExpiresByType image/png \"access plus 1 year\"\n";
     $base .= "ExpiresByType image/webp \"access plus 1 year\"\n";
     $base .= "ExpiresByType image/avif \"access plus 1 year\"\n";
+    $base .= "ExpiresByType image/heic \"access plus 1 year\"\n";
+    $base .= "ExpiresByType image/heif \"access plus 1 year\"\n";
     $base .= "ExpiresByType image/svg+xml \"access plus 1 year\"\n";
     $base .= "ExpiresByType image/x-icon \"access plus 1 year\"\n";
     $base .= "# Fonts (1 year)\n";
@@ -201,7 +203,7 @@ function ccm_tools_htaccess_content($options = array()): string {
     $base .= "# Cache-Control Headers\n";
     $base .= "<IfModule mod_headers.c>\n";
     $base .= "# Long-lived static assets (1 year)\n";
-    $base .= "<FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|webp|avif|gif|svg|woff2|woff|ttf|otf|wasm)$\">\n";
+    $base .= "<FilesMatch \"\\.(ico|pdf|jpg|jpeg|png|webp|avif|heic|heif|gif|svg|woff2|woff|ttf|otf|wasm)$\">\n";
     $base .= "Header set Cache-Control \"public, max-age=31536000, immutable\"\n";
     $base .= "</FilesMatch>\n";
     $base .= "# CSS/JS (1 month)\n";
