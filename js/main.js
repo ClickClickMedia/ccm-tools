@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.1.6
+ * Version: 7.2.0
  */
 
 (function() {
@@ -844,6 +844,52 @@
         setTimeout(() => initOptimizationOptions(), 1000);
     }
 
+    /**
+     * Initialize .htaccess options and event handlers
+     */
+    function initHtaccessOptions() {
+        // .htaccess Tools (using event delegation)
+        document.addEventListener('click', async (e) => {
+            // Add htaccess
+            if (e.target.id === 'htadd' || e.target.closest('#htadd')) {
+                e.preventDefault();
+                if (confirm(ccmToolsData.i18n.confirmAddHtaccess)) {
+                    const options = getSelectedHtaccessOptions();
+                    makeAjaxRequest('ccm_tools_add_htaccess', null, { options: options });
+                }
+            }
+            
+            // Update htaccess
+            if (e.target.id === 'htupdate' || e.target.closest('#htupdate')) {
+                e.preventDefault();
+                if (confirm('Update .htaccess optimizations with new settings?')) {
+                    const options = getSelectedHtaccessOptions();
+                    makeAjaxRequest('ccm_tools_update_htaccess', null, { options: options });
+                }
+            }
+            
+            // Remove htaccess
+            if (e.target.id === 'htremove' || e.target.closest('#htremove')) {
+                e.preventDefault();
+                if (confirm(ccmToolsData.i18n.confirmRemoveHtaccess)) {
+                    makeAjaxRequest('ccm_tools_remove_htaccess');
+                }
+            }
+        });
+    }
+    
+    /**
+     * Get selected htaccess options from checkboxes
+     */
+    function getSelectedHtaccessOptions() {
+        const options = [];
+        const checkboxes = document.querySelectorAll('#htaccess-options input[name="htaccess_options[]"]:checked');
+        checkboxes.forEach(cb => {
+            options.push(cb.value);
+        });
+        return options;
+    }
+
     // ===================================
     // Event Handlers Setup
     // ===================================
@@ -867,41 +913,8 @@
         // Initialize optimization options if on database page
         initOptimizationOptions();
         
-        // .htaccess Tools (using event delegation)
-        document.addEventListener('click', async (e) => {
-            // Add htaccess
-            if (e.target.id === 'htadd' || e.target.closest('#htadd')) {
-                e.preventDefault();
-                if (confirm(ccmToolsData.i18n.confirmAddHtaccess)) {
-                    const hardening = $('#ht_hardening')?.checked || false;
-                    makeAjaxRequest('ccm_tools_add_htaccess', null, { hardening: hardening });
-                }
-            }
-            
-            // Remove htaccess
-            if (e.target.id === 'htremove' || e.target.closest('#htremove')) {
-                e.preventDefault();
-                if (confirm(ccmToolsData.i18n.confirmRemoveHtaccess)) {
-                    makeAjaxRequest('ccm_tools_remove_htaccess');
-                }
-            }
-        });
-        
-        // Hardening checkbox
-        const htHardening = $('#ht_hardening');
-        if (htHardening) {
-            htHardening.addEventListener('change', async (e) => {
-                const htremove = $('#htremove');
-                if (htremove) {
-                    const hardening = e.target.checked;
-                    if (confirm('Update hardening setting? This will temporarily remove and re-add optimizations.')) {
-                        makeAjaxRequest('ccm_tools_update_htaccess_hardening', null, { hardening: hardening });
-                    } else {
-                        e.target.checked = !hardening;
-                    }
-                }
-            });
-        }
+        // Initialize htaccess options
+        initHtaccessOptions();
         
         // Debug mode toggles
         initDebugToggles();

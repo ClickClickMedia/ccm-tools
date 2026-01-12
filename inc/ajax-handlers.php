@@ -224,6 +224,33 @@ function ccm_tools_ajax_display_htaccess(): void {
     wp_send_json_success($result);
 }
 
+/**
+ * Helper function to parse htaccess options from POST
+ */
+function ccm_tools_parse_htaccess_options(): array {
+    $options = array();
+    $valid_options = array('x_frame_options', 'x_xss_protection', 'hsts_subdomains', 'coop', 'corp', 'block_author_scan');
+    
+    // Parse options from POST - handle both array format and individual params
+    if (isset($_POST['options']) && is_array($_POST['options'])) {
+        foreach ($_POST['options'] as $opt) {
+            $opt = sanitize_text_field($opt);
+            if (in_array($opt, $valid_options)) {
+                $options[$opt] = true;
+            }
+        }
+    }
+    
+    // Fill in missing options as false
+    foreach ($valid_options as $opt) {
+        if (!isset($options[$opt])) {
+            $options[$opt] = false;
+        }
+    }
+    
+    return $options;
+}
+
 // Add .htaccess optimizations
 add_action('wp_ajax_ccm_tools_add_htaccess', 'ccm_tools_ajax_add_htaccess');
 function ccm_tools_ajax_add_htaccess(): void {
@@ -231,17 +258,35 @@ function ccm_tools_ajax_add_htaccess(): void {
     if (!current_user_can('manage_options')) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
-    // Prevent double execution by checking if DOING_AJAX is defined and true
+    // Prevent double execution
     if (defined('CCM_HTACCESS_ADD_RUNNING')) {
-        // Already running, prevent duplicate
         wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html__('Request already processing.', 'ccm-tools') . '</p>');
     }
     define('CCM_HTACCESS_ADD_RUNNING', true);
 
-    // Get hardening option from POST data
-    $hardening = isset($_POST['hardening']) && $_POST['hardening'] === 'true';
+    // Get options from POST data
+    $options = ccm_tools_parse_htaccess_options();
     
-    $result = ccm_tools_update_htaccess('add', $hardening);
+    $result = ccm_tools_update_htaccess('add', $options);
+    if ($result['success']) {
+        wp_send_json_success('<p class="ccm-success"><span class="ccm-icon">✓</span>' . esc_html($result['message']) . '</p>' . ccm_tools_display_htaccess());
+    } else {
+        wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html($result['message']) . '</p>');
+    }
+}
+
+// Update .htaccess optimizations (with new options)
+add_action('wp_ajax_ccm_tools_update_htaccess', 'ccm_tools_ajax_update_htaccess');
+function ccm_tools_ajax_update_htaccess(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
+    }
+    
+    // Get options from POST data
+    $options = ccm_tools_parse_htaccess_options();
+    
+    $result = ccm_tools_update_htaccess('update', $options);
     if ($result['success']) {
         wp_send_json_success('<p class="ccm-success"><span class="ccm-icon">✓</span>' . esc_html($result['message']) . '</p>' . ccm_tools_display_htaccess());
     } else {
@@ -256,9 +301,8 @@ function ccm_tools_ajax_remove_htaccess(): void {
     if (!current_user_can('manage_options')) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
-    // Prevent double execution by checking if DOING_AJAX is defined and true
+    // Prevent double execution
     if (defined('CCM_HTACCESS_REMOVE_RUNNING')) {
-        // Already running, prevent duplicate
         wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html__('Request already processing.', 'ccm-tools') . '</p>');
     }
     define('CCM_HTACCESS_REMOVE_RUNNING', true);
@@ -268,31 +312,6 @@ function ccm_tools_ajax_remove_htaccess(): void {
         wp_send_json_success('<p class="ccm-success"><span class="ccm-icon">✓</span>' . esc_html($result['message']) . '</p>' . ccm_tools_display_htaccess());
     } else {
         wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html($result['message']) . '</p>');
-    }
-}
-
-// Update .htaccess hardening
-add_action('wp_ajax_ccm_tools_update_htaccess_hardening', 'ccm_tools_ajax_update_htaccess_hardening');
-function ccm_tools_ajax_update_htaccess_hardening(): void {
-    check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
-    }
-    
-    // Get hardening option from POST data
-    $hardening = isset($_POST['hardening']) && $_POST['hardening'] === 'true';
-    
-    // First remove existing optimizations, then add with new hardening setting
-    $remove_result = ccm_tools_update_htaccess('remove');
-    if ($remove_result['success']) {
-        $add_result = ccm_tools_update_htaccess('add', $hardening);
-        if ($add_result['success']) {
-            wp_send_json_success('<p class="ccm-success"><span class="ccm-icon">✓</span>' . esc_html__('Hardening setting updated successfully.', 'ccm-tools') . '</p>' . ccm_tools_display_htaccess());
-        } else {
-            wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html($add_result['message']) . '</p>');
-        }
-    } else {
-        wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html($remove_result['message']) . '</p>');
     }
 }
 
