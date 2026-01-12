@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.2.10
+ * Version: 7.2.11
  */
 
 /* ===================================
@@ -347,8 +347,8 @@
 .ccm-opt-item {
     display: flex;
     align-items: center;
-    gap: var(--ccm-space-md);
-    padding: var(--ccm-space-md);
+    gap: 16px;
+    padding: 16px;
     border-bottom: 1px solid var(--ccm-border);
     border-left: 3px solid transparent;
     transition: background var(--ccm-transition), border-color var(--ccm-transition);
@@ -363,9 +363,11 @@
 }
 
 .ccm-opt-item input[type="checkbox"] {
-    flex: 0 0 auto;
+    flex: 0 0 18px;
     width: 18px !important;
     height: 18px !important;
+    min-width: 18px !important;
+    max-width: 18px !important;
     margin: 0 !important;
     padding: 0 !important;
     accent-color: var(--ccm-primary);
@@ -375,20 +377,29 @@
 .ccm-opt-item-content {
     flex: 1 1 auto;
     min-width: 0;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 .ccm-opt-item-label {
-    display: block;
-    font-weight: 500;
-    color: var(--ccm-text);
+    display: block !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    line-height: 1.4 !important;
+    color: var(--ccm-text) !important;
     cursor: pointer;
-    margin-bottom: 0.25rem;
+    margin: 0 0 4px 0 !important;
+    padding: 0 !important;
 }
 
 .ccm-opt-item-desc {
-    display: block;
-    font-size: var(--ccm-text-sm);
-    color: var(--ccm-text-muted);
+    display: block !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    line-height: 1.4 !important;
+    color: var(--ccm-text-muted) !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
 .ccm-opt-item-stat {
