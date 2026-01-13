@@ -521,37 +521,49 @@ function ccm_tools_filter_errors_only($content) {
     $current_error_is_actual_error = false;
     
     foreach ($lines as $line) {
+        // Skip empty lines
+        if (trim($line) === '') {
+            continue;
+        }
+        
         // Check if this line is a FATAL ERROR or PARSE ERROR only (true errors)
+        // These are the ONLY log entries we want to show
         if (preg_match('/PHP (Fatal error|Parse error|Catchable fatal error):/i', $line)) {
             $filtered_lines[] = $line;
-            $in_stack_trace = false; // Reset stack trace flag
-            $current_error_is_actual_error = true;
-        }
-        // Skip warnings, notices, deprecated, and strict standards (these are NOT actual errors)
-        elseif (preg_match('/PHP (Warning|Notice|Deprecated|Strict Standards):/i', $line)) {
             $in_stack_trace = false;
-            $current_error_is_actual_error = false;
-            // Don't include this line - skip it entirely
+            $current_error_is_actual_error = true;
+            continue;
         }
-        // Check if this line starts a stack trace (only include if the preceding error was an actual error)
-        elseif ($current_error_is_actual_error && preg_match('/Stack trace:\s*$/i', $line)) {
+        
+        // Check if this line starts a stack trace (only include if preceded by an actual error)
+        if ($current_error_is_actual_error && preg_match('/Stack trace:\s*$/i', $line)) {
             $filtered_lines[] = $line;
             $in_stack_trace = true;
+            continue;
         }
-        // Include stack trace lines (they start with # followed by a number) only if we're in a valid stack trace
-        elseif ($in_stack_trace && $current_error_is_actual_error && preg_match('/^\s*#\d+\s+/', $line)) {
+        
+        // Include stack trace lines (they start with # followed by a number)
+        if ($in_stack_trace && $current_error_is_actual_error && preg_match('/^\s*#\d+\s+/', $line)) {
             $filtered_lines[] = $line;
-        }        // Include thrown in lines that are part of error context (only for actual errors)
-        elseif ($current_error_is_actual_error && preg_match('/(thrown in|in \/.*\.php on line \d+)/i', $line)) {
-            $filtered_lines[] = $line;
-            $in_stack_trace = false; // End of error context
-            $current_error_is_actual_error = false; // Reset for next error
+            continue;
         }
-        // End stack trace if we hit a non-stack trace line
-        else {
+        
+        // Include "thrown in" lines that are part of error context
+        if ($current_error_is_actual_error && preg_match('/(thrown in|in \/.*\.php on line \d+)/i', $line)) {
+            $filtered_lines[] = $line;
             $in_stack_trace = false;
-            // Don't reset $current_error_is_actual_error here as we might have multi-line error messages
+            $current_error_is_actual_error = false;
+            continue;
         }
+        
+        // Any other line - check if it's a new log entry (starts with timestamp)
+        // If so, reset our state since it's not an error we care about
+        if (preg_match('/^\[[\d]{2}-[A-Za-z]{3}-[\d]{4}/', $line)) {
+            $in_stack_trace = false;
+            $current_error_is_actual_error = false;
+        }
+        
+        // All other lines are excluded (notices, warnings, deprecated, doing_it_wrong, etc.)
     }
     
     return implode("\n", $filtered_lines);
