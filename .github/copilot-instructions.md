@@ -221,18 +221,25 @@ After completing changes:
    git commit -m "Description of changes (vX.Y.Z)"
    git push
    ```
-4. **Build release zip**:
+4. **Build release zips**:
    ```powershell
-   Compress-Archive -Path "ccm.php", "index.php", "css", "inc", "js", "img", "assets" -DestinationPath "ccm-tools-X.Y.Z.zip" -Force
+   # Versioned zip in archive folder
+   Compress-Archive -Path "ccm.php", "index.php", "css", "inc", "js", "img", "assets" -DestinationPath "archive\ccm-tools-X.Y.Z.zip" -Force
+   # Master zip (always latest) in root
+   Compress-Archive -Path "ccm.php", "index.php", "css", "inc", "js", "img", "assets" -DestinationPath "ccm-tools.zip" -Force
    ```
 5. **Create GitHub release** (required for WordPress auto-updates):
    ```powershell
-   & "C:\Program Files\GitHub CLI\gh.exe" release create vX.Y.Z "ccm-tools-X.Y.Z.zip" --title "vX.Y.Z" --notes "## Changes in vX.Y.Z
+   & "C:\Program Files\GitHub CLI\gh.exe" release create vX.Y.Z "archive\ccm-tools-X.Y.Z.zip" --title "vX.Y.Z" --notes "## Changes in vX.Y.Z
 
    - Change 1
    - Change 2"
    ```
-6. **Note:** Release zips are in `.gitignore` and should not be committed
+
+### Release File Structure
+- `ccm-tools.zip` - Master zip in root (always latest version, git ignored)
+- `archive/` - Contains all versioned zips (git ignored folder)
+  - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
 
