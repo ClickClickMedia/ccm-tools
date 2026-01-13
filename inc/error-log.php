@@ -208,6 +208,7 @@ function ccm_tools_ajax_get_error_log() {
     $log_file_input = isset($_POST['log_file']) ? sanitize_text_field(wp_unslash($_POST['log_file'])) : '';
     $lines = isset($_POST['lines']) ? intval($_POST['lines']) : 100;
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    $errors_only = isset($_POST['errors_only']) && filter_var($_POST['errors_only'], FILTER_VALIDATE_BOOLEAN);
     
     if ($log_file_input !== '') {
         $log_file = ccm_tools_validate_log_file_path($log_file_input);
@@ -220,6 +221,48 @@ function ccm_tools_ajax_get_error_log() {
 
     if (empty($log_file)) {
         wp_send_json_error(array('message' => __('No error log file found.', 'ccm-tools')));
+    }
+
+    // If errors_only is enabled, filter the content
+    if ($errors_only) {
+        if (!file_exists($log_file) || !is_readable($log_file)) {
+            wp_send_json_error(array('message' => __('Log file not found or not readable.', 'ccm-tools')));
+        }
+        
+        $full_content = file_get_contents($log_file);
+        if ($full_content === false) {
+            wp_send_json_error(array('message' => __('Failed to read log file.', 'ccm-tools')));
+        }
+        
+        // Convert timestamps and filter for errors only
+        $full_content = ccm_tools_convert_error_log_timestamps($full_content);
+        $filtered_content = ccm_tools_filter_errors_only($full_content);
+        
+        // Limit to requested number of lines from the end
+        if (!empty($filtered_content)) {
+            $lines_array = explode("\n", $filtered_content);
+            $total_lines = count($lines_array);
+            
+            if ($total_lines > $lines) {
+                $start = max(0, $total_lines - $lines);
+                $lines_array = array_slice($lines_array, $start);
+                $filtered_content = implode("\n", $lines_array);
+            }
+        }
+        
+        // Format the filtered content for display
+        $formatted_content = ccm_tools_format_error_log($filtered_content);
+        
+        $filesize = filesize($log_file);
+        $last_modified = filemtime($log_file);
+        
+        wp_send_json_success(array(
+            'content' => $filtered_content,
+            'formatted_content' => $formatted_content,
+            'file_size' => size_format($filesize, 2),
+            'last_modified' => human_time_diff($last_modified) . ' ' . __('ago', 'ccm-tools'),
+            'raw_last_modified' => $last_modified
+        ));
     }
 
     $log_data = ccm_tools_read_error_log($log_file, $lines, $offset);
