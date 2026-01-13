@@ -225,7 +225,14 @@ After completing changes:
    ```powershell
    Compress-Archive -Path "ccm.php", "index.php", "css", "inc", "js", "img", "assets" -DestinationPath "ccm-tools-X.Y.Z.zip" -Force
    ```
-5. **Add zip to .gitignore** (release zips should not be committed)
+5. **Create GitHub release** (required for WordPress auto-updates):
+   ```powershell
+   & "C:\Program Files\GitHub CLI\gh.exe" release create vX.Y.Z "ccm-tools-X.Y.Z.zip" --title "vX.Y.Z" --notes "## Changes in vX.Y.Z
+
+   - Change 1
+   - Change 2"
+   ```
+6. **Note:** Release zips are in `.gitignore` and should not be committed
 
 ## Change Log (Recent)
 
