@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "&": true,
+        "/^php -r \"var_dump\\(filter_var\\('true', FILTER_VALIDATE_BOOLEAN\\)\\); var_dump\\(filter_var\\(true, FILTER_VALIDATE_BOOLEAN\\)\\); var_dump\\(filter_var\\('false', FILTER_VALIDATE_BOOLEAN\\)\\); var_dump\\(filter_var\\(false, FILTER_VALIDATE_BOOLEAN\\)\\);\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

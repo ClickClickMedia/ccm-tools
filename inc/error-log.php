@@ -208,7 +208,12 @@ function ccm_tools_ajax_get_error_log() {
     $log_file_input = isset($_POST['log_file']) ? sanitize_text_field(wp_unslash($_POST['log_file'])) : '';
     $lines = isset($_POST['lines']) ? intval($_POST['lines']) : 100;
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
-    $errors_only = isset($_POST['errors_only']) && filter_var($_POST['errors_only'], FILTER_VALIDATE_BOOLEAN);
+    
+    // Check for errors_only parameter - handle various boolean formats
+    $errors_only = false;
+    if (isset($_POST['errors_only'])) {
+        $errors_only = filter_var($_POST['errors_only'], FILTER_VALIDATE_BOOLEAN);
+    }
     
     if ($log_file_input !== '') {
         $log_file = ccm_tools_validate_log_file_path($log_file_input);
@@ -223,19 +228,25 @@ function ccm_tools_ajax_get_error_log() {
         wp_send_json_error(array('message' => __('No error log file found.', 'ccm-tools')));
     }
 
-    // If errors_only is enabled, filter the content
+    // Get file metadata first
+    $filesize = filesize($log_file);
+    $last_modified = filemtime($log_file);
+
+    // If errors_only is enabled, filter the content to show only PHP Fatal/Parse errors
     if ($errors_only) {
         if (!file_exists($log_file) || !is_readable($log_file)) {
             wp_send_json_error(array('message' => __('Log file not found or not readable.', 'ccm-tools')));
         }
         
-        $full_content = file_get_contents($log_file);
+        $full_content = @file_get_contents($log_file);
         if ($full_content === false) {
             wp_send_json_error(array('message' => __('Failed to read log file.', 'ccm-tools')));
         }
         
-        // Convert timestamps and filter for errors only
+        // Convert timestamps first
         $full_content = ccm_tools_convert_error_log_timestamps($full_content);
+        
+        // Filter to show only fatal errors and their stack traces
         $filtered_content = ccm_tools_filter_errors_only($full_content);
         
         // Limit to requested number of lines from the end
@@ -250,22 +261,22 @@ function ccm_tools_ajax_get_error_log() {
             }
         }
         
-        // Format the filtered content for display
-        $formatted_content = ccm_tools_format_error_log($filtered_content);
-        
-        $filesize = filesize($log_file);
-        $last_modified = filemtime($log_file);
+        // Format the filtered content for display with syntax highlighting
+        $formatted_content = !empty($filtered_content) ? ccm_tools_format_error_log($filtered_content) : '';
         
         wp_send_json_success(array(
             'content' => $filtered_content,
             'formatted_content' => $formatted_content,
             'file_size' => size_format($filesize, 2),
             'last_modified' => human_time_diff($last_modified) . ' ' . __('ago', 'ccm-tools'),
-            'raw_last_modified' => $last_modified
+            'raw_last_modified' => $last_modified,
+            'filtered' => true
         ));
     }
 
+    // Normal unfiltered log reading
     $log_data = ccm_tools_read_error_log($log_file, $lines, $offset);
+    $log_data['filtered'] = false;
     wp_send_json_success($log_data);
 }
 add_action('wp_ajax_ccm_tools_get_error_log', 'ccm_tools_ajax_get_error_log');
