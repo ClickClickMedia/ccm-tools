@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.0.3
+- **Current Version:** 7.2.13
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -208,7 +208,31 @@ When making changes, verify:
 - `feature/*` - Feature development branches
 - Current feature branch: `feature/modern-pure-ui` (v7.x pure CSS/JS rewrite)
 
+## Release Process
+
+After completing changes:
+1. **Update version numbers** in `ccm.php` (header + constant), `js/main.js`, `css/style.css`
+2. **Update this file** (`copilot-instructions.md`) with:
+   - Current version number in Project Overview
+   - Change log entry for the new version
+3. **Commit and push** to GitHub:
+   ```bash
+   git add -A
+   git commit -m "Description of changes (vX.Y.Z)"
+   git push
+   ```
+4. **Build release zip**:
+   ```powershell
+   Compress-Archive -Path "ccm.php", "index.php", "css", "inc", "js", "img", "assets" -DestinationPath "ccm-tools-X.Y.Z.zip" -Force
+   ```
+5. **Add zip to .gitignore** (release zips should not be committed)
+
 ## Change Log (Recent)
+
+### v7.2.13
+- Fixed Show Errors Only filter in Error Log Viewer
+- `ccm_tools_ajax_get_error_log()` now properly reads and uses `errors_only` parameter
+- When enabled, filters log to show only Fatal/Parse errors and stack traces
 
 ### v7.0.3 (Security Release)
 - **CRITICAL:** Removed hardcoded GitHub API token from source code
