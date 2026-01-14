@@ -805,6 +805,33 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
             $sizes_attr = $sizes_match[1];
         }
         
+        // Check if image has full-width CSS classes but a restrictive sizes attribute
+        // This fixes blurry images where WordPress generates sizes based on width attribute
+        // but CSS makes the image display larger (e.g., w-100, object-fit-cover)
+        $has_fullwidth_class = preg_match('/class=["\'][^"\']*\b(w-100|w-full|object-fit-cover|object-cover|img-fluid)\b[^"\']*["\']/', $img_attrs);
+        
+        if ($has_fullwidth_class && !empty($sizes_attr)) {
+            // Check if sizes ends with a small fixed pixel value (e.g., "300px", "400px")
+            // These are often wrong for full-width images
+            if (preg_match('/\b(\d+)px\s*$/', $sizes_attr, $px_match)) {
+                $declared_size = intval($px_match[1]);
+                
+                // Find the largest image in srcset to determine actual max size
+                $max_srcset_width = 0;
+                if (preg_match('/srcset=["\']([^"\']+)["\']/', $img_attrs, $srcset_check)) {
+                    if (preg_match_all('/(\d+)w/', $srcset_check[1], $width_matches)) {
+                        $max_srcset_width = max(array_map('intval', $width_matches[1]));
+                    }
+                }
+                
+                // If declared size is much smaller than max srcset width, use a responsive default
+                if ($max_srcset_width > 0 && $declared_size < ($max_srcset_width * 0.8)) {
+                    // Use 100vw up to the max srcset width
+                    $sizes_attr = '(max-width: ' . $max_srcset_width . 'px) 100vw, ' . $max_srcset_width . 'px';
+                }
+            }
+        }
+        
         // Extract srcset attribute
         if (preg_match('/srcset=["\']([^"\']+)["\']/', $img_attrs, $srcset_match)) {
             $srcset_value = $srcset_match[1];
