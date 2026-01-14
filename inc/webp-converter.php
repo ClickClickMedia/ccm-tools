@@ -710,21 +710,28 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
     // Get upload directory info
     $upload_dir = wp_upload_dir();
     
+    // TWO-PASS APPROACH to handle nested picture tags correctly
+    // Pass 1: Mark all img tags that are already inside <picture> elements
+    $content = preg_replace_callback(
+        '/<picture[^>]*>(.*?)<\/picture>/is',
+        function($matches) {
+            $picture_content = $matches[1];
+            // Add data-inside-picture to any img tags inside this picture element
+            $marked = preg_replace(
+                '/<img\s+/i',
+                '<img data-inside-picture="true" ',
+                $picture_content
+            );
+            return '<picture>' . $marked . '</picture>';
+        },
+        $content
+    );
+    
     // Pattern to match img tags - including WebP images (for fallback to original format)
     $pattern = '/<img\s+([^>]*?)src=["\']([^"\']+\.(jpe?g|png|gif|webp))["\']([^>]*?)>/i';
     
-    // We need to track positions to check if img is inside <picture>
-    // First, find all <picture>...</picture> ranges
-    $picture_ranges = array();
-    if (preg_match_all('/<picture[^>]*>.*?<\/picture>/is', $content, $picture_matches, PREG_OFFSET_CAPTURE)) {
-        foreach ($picture_matches[0] as $match) {
-            $start = $match[1];
-            $end = $start + strlen($match[0]);
-            $picture_ranges[] = array('start' => $start, 'end' => $end);
-        }
-    }
-    
-    $content = preg_replace_callback($pattern, function($matches) use ($upload_dir, $content, $picture_ranges) {
+    // Pass 2: Convert img tags that are NOT marked
+    $content = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
         $full_match = $matches[0];
         $before_src = $matches[1];
         $img_url = $matches[2];
@@ -736,16 +743,9 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
             return $full_match;
         }
         
-        // Check if this img tag is already inside a <picture> element
-        // Find position of this match in the content
-        $match_pos = strpos($content, $full_match);
-        if ($match_pos !== false) {
-            foreach ($picture_ranges as $range) {
-                if ($match_pos >= $range['start'] && $match_pos < $range['end']) {
-                    // This img is inside a <picture> tag, skip it
-                    return $full_match;
-                }
-            }
+        // Skip if marked as inside a picture element (from Pass 1)
+        if (strpos($before_src, 'data-inside-picture') !== false || strpos($after_src, 'data-inside-picture') !== false) {
+            return $full_match;
         }
         
         // Check if this is a local upload
@@ -842,6 +842,9 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         
         return $picture;
     }, $content);
+    
+    // Pass 3: Remove the temporary data-inside-picture markers
+    $content = str_replace(' data-inside-picture="true"', '', $content);
     
     return $content;
 }
