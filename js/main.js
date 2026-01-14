@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.5.1
+ * Version: 7.5.2
  */
 
 (function() {
@@ -2163,20 +2163,29 @@
             detectDnsBtn.addEventListener('click', () => detectExternalOrigins('dns-prefetch'));
         }
         
-        // Detect scripts button
+        // Detect scripts button (Defer JS)
         const detectScriptsBtn = $('#detect-scripts-btn');
         if (detectScriptsBtn) {
-            detectScriptsBtn.addEventListener('click', detectScripts);
+            detectScriptsBtn.addEventListener('click', () => detectScripts('defer'));
+        }
+        
+        // Detect scripts button (Delay JS)
+        const detectDelayScriptsBtn = $('#detect-delay-scripts-btn');
+        if (detectDelayScriptsBtn) {
+            detectDelayScriptsBtn.addEventListener('click', () => detectScripts('delay'));
         }
     }
     
     /**
      * Detect scripts on the homepage and categorize them
+     * @param {string} target - 'defer' or 'delay'
      */
-    async function detectScripts() {
-        const detectBtn = $('#detect-scripts-btn');
-        const resultDiv = $('#detected-scripts-result');
-        const excludeInput = $('#perf-defer-js-excludes');
+    async function detectScripts(target = 'defer') {
+        const isDefer = target === 'defer';
+        const detectBtn = isDefer ? $('#detect-scripts-btn') : $('#detect-delay-scripts-btn');
+        const resultDiv = isDefer ? $('#detected-scripts-result') : $('#detected-delay-scripts-result');
+        const excludeInput = isDefer ? $('#perf-defer-js-excludes') : $('#perf-delay-js-excludes');
+        const targetLabel = isDefer ? 'Defer' : 'Delay';
         
         if (!detectBtn || !resultDiv) return;
         

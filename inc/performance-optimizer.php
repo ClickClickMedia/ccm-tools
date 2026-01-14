@@ -805,9 +805,15 @@ function ccm_tools_render_perf_page() {
                         <input type="number" id="perf-delay-js-timeout" class="ccm-input" value="<?php echo esc_attr($settings['delay_js_timeout']); ?>" min="0" step="500" placeholder="0">
                         <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('Set to 0 to wait for user interaction only, or enter milliseconds (e.g., 3000 for 3 seconds) for a timeout fallback.', 'ccm-tools'); ?></p>
                         
-                        <label style="margin-top: var(--ccm-space-md);"><strong><?php _e('Exclude scripts (comma-separated handles):', 'ccm-tools'); ?></strong></label>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: var(--ccm-space-md); margin-bottom: var(--ccm-space-sm);">
+                            <label><strong><?php _e('Exclude scripts containing:', 'ccm-tools'); ?></strong></label>
+                            <button type="button" id="detect-delay-scripts-btn" class="ccm-button ccm-button-small ccm-button-secondary">
+                                <?php _e('🔍 Detect Scripts', 'ccm-tools'); ?>
+                            </button>
+                        </div>
                         <input type="text" id="perf-delay-js-excludes" class="ccm-input" value="<?php echo esc_attr(implode(', ', $settings['delay_js_excludes'])); ?>" placeholder="critical-script, analytics">
-                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('jQuery and core WordPress scripts are always excluded automatically.', 'ccm-tools'); ?></p>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('Comma-separated patterns. jQuery and WordPress core are always excluded automatically.', 'ccm-tools'); ?></p>
+                        <div id="detected-delay-scripts-result" style="display: none; margin-top: var(--ccm-space-md); padding: var(--ccm-space-md); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius);"></div>
                     </div>
                 </div>
             </div>
