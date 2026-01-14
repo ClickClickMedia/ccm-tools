@@ -1245,3 +1245,271 @@ function ccm_tools_ajax_toggle_admin_payment(): void {
         'enabled' => $enabled
     ));
 }
+
+// ==========================================
+// WebP Converter AJAX Handlers
+// ==========================================
+
+// Save WebP Settings
+add_action('wp_ajax_ccm_tools_save_webp_settings', 'ccm_tools_ajax_save_webp_settings');
+function ccm_tools_ajax_save_webp_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $settings = array(
+        'enabled' => isset($_POST['enabled']) && $_POST['enabled'] === '1',
+        'quality' => isset($_POST['quality']) ? max(1, min(100, intval($_POST['quality']))) : 82,
+        'convert_on_upload' => isset($_POST['convert_on_upload']) && $_POST['convert_on_upload'] === '1',
+        'serve_webp' => isset($_POST['serve_webp']) && $_POST['serve_webp'] === '1',
+        'convert_on_demand' => isset($_POST['convert_on_demand']) && $_POST['convert_on_demand'] === '1',
+        'use_picture_tags' => isset($_POST['use_picture_tags']) && $_POST['use_picture_tags'] === '1',
+        'keep_originals' => isset($_POST['keep_originals']) && $_POST['keep_originals'] === '1',
+        'preferred_extension' => isset($_POST['preferred_extension']) ? sanitize_text_field($_POST['preferred_extension']) : 'auto'
+    );
+    
+    if (ccm_tools_webp_save_settings($settings)) {
+        wp_send_json_success(array(
+            'message' => __('WebP settings saved successfully.', 'ccm-tools'),
+            'settings' => $settings
+        ));
+    } else {
+        wp_send_json_error(array('message' => __('Failed to save WebP settings.', 'ccm-tools')));
+    }
+}
+
+// Get WebP Statistics
+add_action('wp_ajax_ccm_tools_get_webp_stats', 'ccm_tools_ajax_get_webp_stats');
+function ccm_tools_ajax_get_webp_stats(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $stats = ccm_tools_webp_get_statistics();
+    wp_send_json_success($stats);
+}
+
+// Get unconverted images for bulk conversion
+add_action('wp_ajax_ccm_tools_get_unconverted_images', 'ccm_tools_ajax_get_unconverted_images');
+function ccm_tools_ajax_get_unconverted_images(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    global $wpdb;
+    
+    $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    $limit = isset($_POST['limit']) ? min(50, max(1, intval($_POST['limit']))) : 10;
+    
+    // Get images that haven't been converted yet
+    $images = $wpdb->get_results($wpdb->prepare(
+        "SELECT p.ID, p.post_title, p.guid 
+         FROM {$wpdb->posts} p
+         LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ccm_webp_converted'
+         WHERE p.post_type = 'attachment' 
+         AND p.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
+         AND pm.meta_id IS NULL
+         ORDER BY p.ID ASC
+         LIMIT %d OFFSET %d",
+        $limit,
+        $offset
+    ));
+    
+    // Get total count
+    $total = (int) $wpdb->get_var(
+        "SELECT COUNT(*) 
+         FROM {$wpdb->posts} p
+         LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ccm_webp_converted'
+         WHERE p.post_type = 'attachment' 
+         AND p.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
+         AND pm.meta_id IS NULL"
+    );
+    
+    $image_list = array();
+    foreach ($images as $image) {
+        $image_list[] = array(
+            'id' => $image->ID,
+            'title' => $image->post_title,
+            'url' => wp_get_attachment_url($image->ID)
+        );
+    }
+    
+    wp_send_json_success(array(
+        'images' => $image_list,
+        'total' => $total,
+        'offset' => $offset,
+        'limit' => $limit
+    ));
+}
+
+// Convert single image to WebP (for bulk conversion)
+add_action('wp_ajax_ccm_tools_convert_single_image', 'ccm_tools_ajax_convert_single_image');
+function ccm_tools_ajax_convert_single_image(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $attachment_id = isset($_POST['attachment_id']) ? intval($_POST['attachment_id']) : 0;
+    
+    if (!$attachment_id) {
+        wp_send_json_error(array('message' => __('No attachment ID provided.', 'ccm-tools')));
+    }
+    
+    // Get attachment file path
+    $file_path = get_attached_file($attachment_id);
+    
+    if (!$file_path || !file_exists($file_path)) {
+        wp_send_json_error(array('message' => __('Attachment file not found.', 'ccm-tools')));
+    }
+    
+    // Check if it's an image type we can convert
+    $mime_type = get_post_mime_type($attachment_id);
+    $allowed_mimes = array('image/jpeg', 'image/png', 'image/gif');
+    
+    if (!in_array($mime_type, $allowed_mimes)) {
+        wp_send_json_error(array('message' => __('Invalid image type for conversion.', 'ccm-tools')));
+    }
+    
+    // Get settings
+    $settings = ccm_tools_webp_get_settings();
+    $quality = intval($settings['quality']);
+    $extension = $settings['preferred_extension'];
+    
+    $converted_files = array();
+    $total_source_size = 0;
+    $total_dest_size = 0;
+    
+    // Convert the main file
+    $main_result = ccm_tools_webp_convert_image($file_path, '', $quality, $extension);
+    if ($main_result['success']) {
+        $converted_files['full'] = $main_result;
+        $total_source_size += $main_result['source_size'];
+        $total_dest_size += $main_result['dest_size'];
+    }
+    
+    // Convert all generated sizes
+    $metadata = wp_get_attachment_metadata($attachment_id);
+    if (!empty($metadata['sizes'])) {
+        $file_dir = dirname($file_path);
+        
+        foreach ($metadata['sizes'] as $size_name => $size_data) {
+            $size_file_path = $file_dir . '/' . $size_data['file'];
+            
+            if (file_exists($size_file_path)) {
+                $size_result = ccm_tools_webp_convert_image($size_file_path, '', $quality, $extension);
+                if ($size_result['success']) {
+                    $converted_files[$size_name] = $size_result;
+                    $total_source_size += $size_result['source_size'];
+                    $total_dest_size += $size_result['dest_size'];
+                }
+            }
+        }
+    }
+    
+    // Store conversion info as post meta
+    if (!empty($converted_files)) {
+        update_post_meta($attachment_id, '_ccm_webp_converted', $converted_files);
+        
+        $savings_percent = 0;
+        if ($total_source_size > 0) {
+            $savings_percent = round((($total_source_size - $total_dest_size) / $total_source_size) * 100, 1);
+        }
+        
+        wp_send_json_success(array(
+            'attachment_id' => $attachment_id,
+            'converted_count' => count($converted_files),
+            'source_size' => $total_source_size,
+            'dest_size' => $total_dest_size,
+            'savings_percent' => $savings_percent,
+            'extension_used' => $main_result['extension_used'] ?? 'unknown',
+            'message' => sprintf(
+                __('Converted %d file(s), saved %s (%s%% reduction)', 'ccm-tools'),
+                count($converted_files),
+                size_format($total_source_size - $total_dest_size),
+                $savings_percent
+            )
+        ));
+    } else {
+        wp_send_json_error(array(
+            'message' => $main_result['message'] ?? __('Conversion failed.', 'ccm-tools')
+        ));
+    }
+}
+
+// Test WebP conversion with uploaded file
+add_action('wp_ajax_ccm_tools_test_webp_conversion', 'ccm_tools_ajax_test_webp_conversion');
+function ccm_tools_ajax_test_webp_conversion(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    if (empty($_FILES['test_image'])) {
+        wp_send_json_error(array('message' => __('No test image uploaded.', 'ccm-tools')));
+    }
+    
+    $file = $_FILES['test_image'];
+    
+    // Validate file type
+    $allowed_types = array('image/jpeg', 'image/png', 'image/gif');
+    if (!in_array($file['type'], $allowed_types)) {
+        wp_send_json_error(array('message' => __('Invalid file type. Please upload a JPG, PNG, or GIF image.', 'ccm-tools')));
+    }
+    
+    // Get upload directory for temp storage
+    $upload_dir = wp_upload_dir();
+    $temp_dir = $upload_dir['basedir'] . '/ccm-webp-test/';
+    
+    // Create temp directory if it doesn't exist
+    if (!file_exists($temp_dir)) {
+        wp_mkdir_p($temp_dir);
+    }
+    
+    // Generate unique filename
+    $filename = 'test-' . time() . '-' . sanitize_file_name($file['name']);
+    $source_path = $temp_dir . $filename;
+    
+    // Move uploaded file
+    if (!move_uploaded_file($file['tmp_name'], $source_path)) {
+        wp_send_json_error(array('message' => __('Failed to save uploaded file.', 'ccm-tools')));
+    }
+    
+    // Get settings
+    $settings = ccm_tools_webp_get_settings();
+    $quality = intval($settings['quality']);
+    $extension = $settings['preferred_extension'];
+    
+    // Perform conversion
+    $result = ccm_tools_webp_convert_image($source_path, '', $quality, $extension);
+    
+    // Get image dimensions
+    $image_info = getimagesize($source_path);
+    $width = $image_info[0] ?? 0;
+    $height = $image_info[1] ?? 0;
+    
+    // Clean up temp files
+    if (file_exists($source_path)) {
+        unlink($source_path);
+    }
+    if ($result['success'] && file_exists($result['dest_path'])) {
+        unlink($result['dest_path']);
+    }
+    
+    if ($result['success']) {
+        wp_send_json_success(array(
+            'message' => $result['message'],
+            'source_size' => size_format($result['source_size']),
+            'dest_size' => size_format($result['dest_size']),
+            'savings_percent' => $result['savings_percent'],
+            'extension_used' => $result['extension_used'],
+            'quality' => $quality,
+            'dimensions' => $width . 'x' . $height
+        ));
+    } else {
+        wp_send_json_error(array('message' => $result['message']));
+    }
+}

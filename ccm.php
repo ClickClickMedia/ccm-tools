@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.2.15
+ * Version: 7.3.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.2.15');
+    define('CCM_HELPER_VERSION', '7.3.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -142,6 +142,7 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/error-log.php'; // Add the new error log file
     require_once CCM_HELPER_ROOT_DIR . 'inc/update.php';  // Add GitHub update functionality
     require_once CCM_HELPER_ROOT_DIR . 'inc/woocommerce-tools.php'; // Add WooCommerce tools
+    require_once CCM_HELPER_ROOT_DIR . 'inc/webp-converter.php'; // Add WebP image converter
     
     // Initialize plugin settings
     global $ccm_tools;
@@ -223,6 +224,18 @@ class CCMSettings {
             'ccm-tools-error-log',
             'ccm_tools_render_error_log_page'
         );
+        
+        // Add WebP Converter submenu (only if image extension is available)
+        if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()) {
+            add_submenu_page(
+                'ccm-tools',
+                'WebP Converter',
+                'WebP Converter',
+                'manage_options',
+                'ccm-tools-webp',
+                'ccm_tools_render_webp_page'
+            );
+        }
         
         // Add debug submenu if debug mode is enabled
         if (defined('CCM_DEBUG_FRONT_PAGE')) {
@@ -601,6 +614,9 @@ class CCMSettings {
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
+                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
+                        <?php endif; ?>
                     </div>
                 </nav>
                 <div class="ccm-header-title">
@@ -1187,6 +1203,9 @@ class CCMSettings {
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
+                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
+                        <?php endif; ?>
                     </div>
                 </nav>
                 <div class="ccm-header-title">
@@ -1251,6 +1270,9 @@ class CCMSettings {
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab active"><?php _e('.htaccess', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
+                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
+                        <?php endif; ?>
                     </div>
                 </nav>
                 <div class="ccm-header-title">
@@ -1296,6 +1318,9 @@ class CCMSettings {
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab active"><?php _e('Error Log', 'ccm-tools'); ?></a>
+                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
+                        <?php endif; ?>
                     </div>
                 </nav>
                 <div class="ccm-header-title">
@@ -1336,6 +1361,9 @@ class CCMSettings {
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab active"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                         <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
+                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
+                        <?php endif; ?>
                     </div>
                 </nav>
                 <div class="ccm-header-title">

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.2.15
+- **Current Version:** 7.3.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -35,6 +35,7 @@ ccm-tools/
 │   ├── system-info.php    # System information gathering (TTFB, disk, etc.)
 │   ├── tableconverter.php # Database table conversion (InnoDB/utf8mb4)
 │   ├── update.php         # Plugin update checker
+│   ├── webp-converter.php # WebP image converter
 │   └── woocommerce-tools.php # WooCommerce-specific utilities
 ├── img/                   # Image assets
 └── assets/               # (Legacy - being phased out)
@@ -151,6 +152,11 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_optimize_single_table` | `ccm_tools_ajax_optimize_single_table()` | Optimize single DB table |
 | `ccm_tools_update_debug_mode` | `ccm_tools_ajax_update_debug_mode()` | Toggle WP_DEBUG |
 | `ccm_tools_configure_redis` | `ccm_tools_ajax_configure_redis()` | Configure Redis settings |
+| `ccm_tools_save_webp_settings` | `ccm_tools_ajax_save_webp_settings()` | Save WebP converter settings |
+| `ccm_tools_get_webp_stats` | `ccm_tools_ajax_get_webp_stats()` | Get WebP conversion statistics |
+| `ccm_tools_get_unconverted_images` | `ccm_tools_ajax_get_unconverted_images()` | Get images pending conversion |
+| `ccm_tools_convert_single_image` | `ccm_tools_ajax_convert_single_image()` | Convert single image to WebP |
+| `ccm_tools_test_webp_conversion` | `ccm_tools_ajax_test_webp_conversion()` | Test WebP conversion with upload |
 
 ## Performance Considerations
 
@@ -242,6 +248,54 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.3.0
+- **WebP Image Converter - Stable Release**
+  - Automatic WebP conversion on image upload
+  - Serve WebP to supported browsers with original fallback
+  - On-demand/lazy conversion (converts images as pages are viewed)
+  - `<picture>` tag conversion for better browser compatibility
+  - Support for GD, ImageMagick, and libvips extensions
+  - Configurable compression quality (1-100) with presets
+  - Bulk conversion for existing media library images
+  - Test conversion feature to verify settings
+  - Conversion statistics dashboard
+  - WooCommerce product image support
+
+### v7.2.19
+- Added on-demand/lazy WebP conversion
+  - Images without WebP versions are automatically converted when displayed
+  - No need for bulk conversion - images convert as pages are viewed
+  - Failed conversions are cached for 1 hour to avoid repeated attempts
+  - Conversion metadata stored for tracking
+- New toggle: "Convert On-Demand" in WebP settings
+
+### v7.2.18
+- Fixed `<picture>` tag conversion not working on WooCommerce product images
+  - Added hooks for `woocommerce_product_get_image`, `woocommerce_single_product_image_thumbnail_html`
+  - Added hooks for `post_thumbnail_html` and `wp_get_attachment_image`
+- Fixed `<picture>` tags not working when source image is already WebP
+  - Now detects if source is `.webp` and finds original JPG/PNG for fallback
+  - Works both ways: WebP→original fallback and original→WebP upgrade
+- Improved picture tag detection to skip already-wrapped images
+
+### v7.2.17
+- Added `<picture>` tag conversion option to WebP Converter
+  - Converts `<img>` tags to `<picture>` elements with WebP sources
+  - Provides automatic fallback for browsers that don't support WebP
+  - Applies to post content and widget text
+  - Optional toggle in settings (disabled by default)
+
+### v7.2.16
+- Added WebP Image Converter tool
+  - Automatic WebP conversion on image upload
+  - Serve WebP to supported browsers with original fallback
+  - Configurable compression quality (1-100) with presets
+  - Support for GD, ImageMagick, and libvips extensions
+  - Bulk conversion for existing media library images
+  - Test conversion feature to verify settings
+  - Conversion statistics dashboard
+- Menu only appears if a compatible PHP image extension with WebP support is available
 
 ### v7.2.15
 - Added filtered indicator to AJAX response for debugging

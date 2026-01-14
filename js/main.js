@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.2.15
+ * Version: 7.3.0
  */
 
 (function() {
@@ -1639,6 +1639,342 @@
     }
 
     // ===================================
+    // WebP Converter Handlers
+    // ===================================
+
+    let webpConversionRunning = false;
+    let webpConversionStopped = false;
+
+    /**
+     * Initialize WebP converter event handlers
+     */
+    function initWebPConverterHandlers() {
+        // Quality range slider
+        const qualitySlider = $('#webp-quality');
+        const qualityValue = $('#webp-quality-value');
+        
+        if (qualitySlider && qualityValue) {
+            qualitySlider.addEventListener('input', () => {
+                qualityValue.textContent = qualitySlider.value;
+            });
+        }
+        
+        // Quality presets
+        $$('.ccm-quality-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const quality = btn.dataset.quality;
+                if (qualitySlider && qualityValue) {
+                    qualitySlider.value = quality;
+                    qualityValue.textContent = quality;
+                }
+            });
+        });
+        
+        // Save settings form
+        const settingsForm = $('#webp-settings-form');
+        if (settingsForm) {
+            settingsForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await saveWebPSettings();
+            });
+        }
+        
+        // Test image upload
+        const selectTestBtn = $('#select-test-image');
+        const testImageInput = $('#test-image-upload');
+        const testImageName = $('#test-image-name');
+        const runTestBtn = $('#run-test-conversion');
+        
+        if (selectTestBtn && testImageInput) {
+            selectTestBtn.addEventListener('click', () => {
+                testImageInput.click();
+            });
+            
+            testImageInput.addEventListener('change', () => {
+                if (testImageInput.files.length > 0) {
+                    const file = testImageInput.files[0];
+                    if (testImageName) {
+                        testImageName.textContent = file.name + ' (' + formatBytes(file.size) + ')';
+                    }
+                    if (runTestBtn) {
+                        runTestBtn.disabled = false;
+                    }
+                }
+            });
+        }
+        
+        // Run test conversion
+        if (runTestBtn) {
+            runTestBtn.addEventListener('click', async () => {
+                await runTestConversion();
+            });
+        }
+        
+        // Bulk conversion buttons
+        const startBulkBtn = $('#start-bulk-conversion');
+        const stopBulkBtn = $('#stop-bulk-conversion');
+        
+        if (startBulkBtn) {
+            startBulkBtn.addEventListener('click', async () => {
+                await startBulkConversion();
+            });
+        }
+        
+        if (stopBulkBtn) {
+            stopBulkBtn.addEventListener('click', () => {
+                webpConversionStopped = true;
+                stopBulkBtn.disabled = true;
+                stopBulkBtn.textContent = ccmToolsData.i18n?.stopping || 'Stopping...';
+            });
+        }
+    }
+
+    /**
+     * Format bytes to human readable
+     */
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    /**
+     * Save WebP settings
+     */
+    async function saveWebPSettings() {
+        const saveBtn = $('#save-webp-settings');
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> ' + (ccmToolsData.i18n?.saving || 'Saving...');
+        }
+        
+        try {
+            const formData = {
+                enabled: $('#webp-enabled')?.checked ? '1' : '0',
+                quality: $('#webp-quality')?.value || '82',
+                convert_on_upload: $('#webp-convert-on-upload')?.checked ? '1' : '0',
+                serve_webp: $('#webp-serve')?.checked ? '1' : '0',
+                convert_on_demand: $('#webp-convert-on-demand')?.checked ? '1' : '0',
+                use_picture_tags: $('#webp-picture-tags')?.checked ? '1' : '0',
+                keep_originals: $('#webp-keep-originals')?.checked ? '1' : '0',
+                preferred_extension: $('#webp-preferred-extension')?.value || 'auto'
+            };
+            
+            const response = await ajax('ccm_tools_save_webp_settings', formData);
+            showNotification(response.data?.message || 'Settings saved successfully', 'success');
+            
+        } catch (error) {
+            showNotification('Error: ' + error.message, 'error');
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = ccmToolsData.i18n?.saveSettings || 'Save Settings';
+            }
+        }
+    }
+
+    /**
+     * Run test conversion
+     */
+    async function runTestConversion() {
+        const testInput = $('#test-image-upload');
+        const runTestBtn = $('#run-test-conversion');
+        const resultDiv = $('#test-conversion-result');
+        const resultContent = $('#test-result-content');
+        
+        if (!testInput?.files?.length) {
+            showNotification('Please select an image first', 'warning');
+            return;
+        }
+        
+        if (runTestBtn) {
+            runTestBtn.disabled = true;
+            runTestBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> ' + (ccmToolsData.i18n?.testing || 'Testing...');
+        }
+        
+        if (resultDiv) {
+            resultDiv.style.display = 'block';
+        }
+        
+        if (resultContent) {
+            resultContent.innerHTML = '<div class="ccm-spinner"></div>';
+        }
+        
+        try {
+            const formData = new FormData();
+            formData.append('action', 'ccm_tools_test_webp_conversion');
+            formData.append('nonce', ccmToolsData.nonce);
+            formData.append('test_image', testInput.files[0]);
+            
+            const response = await fetch(ccmToolsData.ajax_url, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                resultContent.innerHTML = `
+                    <div class="ccm-test-result ccm-success">
+                        <h4><span class="ccm-icon">✓</span> Conversion Successful</h4>
+                        <table class="ccm-table">
+                            <tr><th>Original Size</th><td>${escapeHtml(result.data.source_size)}</td></tr>
+                            <tr><th>WebP Size</th><td>${escapeHtml(result.data.dest_size)}</td></tr>
+                            <tr><th>Savings</th><td class="ccm-success">${escapeHtml(result.data.savings_percent)}%</td></tr>
+                            <tr><th>Extension Used</th><td>${escapeHtml(result.data.extension_used)}</td></tr>
+                            <tr><th>Quality Setting</th><td>${escapeHtml(result.data.quality)}</td></tr>
+                            <tr><th>Dimensions</th><td>${escapeHtml(result.data.dimensions)}</td></tr>
+                        </table>
+                    </div>
+                `;
+            } else {
+                resultContent.innerHTML = `
+                    <div class="ccm-test-result ccm-error">
+                        <h4><span class="ccm-icon">✗</span> Conversion Failed</h4>
+                        <p>${escapeHtml(result.data?.message || 'Unknown error')}</p>
+                    </div>
+                `;
+            }
+            
+        } catch (error) {
+            if (resultContent) {
+                resultContent.innerHTML = `
+                    <div class="ccm-test-result ccm-error">
+                        <h4><span class="ccm-icon">✗</span> Error</h4>
+                        <p>${escapeHtml(error.message)}</p>
+                    </div>
+                `;
+            }
+        } finally {
+            if (runTestBtn) {
+                runTestBtn.disabled = false;
+                runTestBtn.innerHTML = ccmToolsData.i18n?.testConversion || 'Test Conversion';
+            }
+        }
+    }
+
+    /**
+     * Start bulk conversion
+     */
+    async function startBulkConversion() {
+        const startBtn = $('#start-bulk-conversion');
+        const stopBtn = $('#stop-bulk-conversion');
+        const progressDiv = $('#bulk-conversion-progress');
+        const progressBar = $('#bulk-progress-bar');
+        const currentSpan = $('#bulk-current');
+        const totalSpan = $('#bulk-total');
+        const logBox = $('#bulk-conversion-log');
+        
+        webpConversionRunning = true;
+        webpConversionStopped = false;
+        
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) {
+            stopBtn.style.display = 'inline-flex';
+            stopBtn.disabled = false;
+            stopBtn.textContent = ccmToolsData.i18n?.stopConversion || 'Stop Conversion';
+        }
+        if (progressDiv) progressDiv.style.display = 'block';
+        if (logBox) logBox.innerHTML = '';
+        
+        let offset = 0;
+        const batchSize = 5;
+        let totalConverted = 0;
+        let totalErrors = 0;
+        
+        try {
+            // Get first batch to determine total
+            const firstBatch = await ajax('ccm_tools_get_unconverted_images', { offset: 0, limit: batchSize });
+            const total = firstBatch.data?.total || 0;
+            
+            if (totalSpan) totalSpan.textContent = total;
+            
+            if (total === 0) {
+                addLogEntry(logBox, 'No images found to convert.', 'info');
+                return;
+            }
+            
+            addLogEntry(logBox, `Starting conversion of ${total} images...`, 'info');
+            
+            while (!webpConversionStopped) {
+                const batchResponse = await ajax('ccm_tools_get_unconverted_images', { offset: 0, limit: batchSize });
+                const images = batchResponse.data?.images || [];
+                
+                if (images.length === 0) {
+                    break;
+                }
+                
+                for (const image of images) {
+                    if (webpConversionStopped) break;
+                    
+                    try {
+                        const convertResponse = await ajax('ccm_tools_convert_single_image', { attachment_id: image.id });
+                        totalConverted++;
+                        addLogEntry(logBox, `✓ ${image.title || 'Image #' + image.id}: ${convertResponse.data?.message || 'Converted'}`, 'success');
+                    } catch (error) {
+                        totalErrors++;
+                        addLogEntry(logBox, `✗ ${image.title || 'Image #' + image.id}: ${error.message}`, 'error');
+                    }
+                    
+                    // Update progress
+                    if (currentSpan) currentSpan.textContent = totalConverted + totalErrors;
+                    if (progressBar) {
+                        const percent = Math.round(((totalConverted + totalErrors) / total) * 100);
+                        progressBar.style.width = `${percent}%`;
+                    }
+                    
+                    // Small delay between conversions
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+            }
+            
+            // Summary
+            const summaryType = webpConversionStopped ? 'warning' : 'success';
+            const summaryMsg = webpConversionStopped 
+                ? `Conversion stopped. Converted: ${totalConverted}, Errors: ${totalErrors}`
+                : `Conversion complete! Converted: ${totalConverted}, Errors: ${totalErrors}`;
+            addLogEntry(logBox, summaryMsg, summaryType);
+            
+        } catch (error) {
+            addLogEntry(logBox, `Error: ${error.message}`, 'error');
+        } finally {
+            webpConversionRunning = false;
+            if (startBtn) startBtn.style.display = 'inline-flex';
+            if (stopBtn) stopBtn.style.display = 'none';
+            
+            // Refresh stats
+            refreshWebPStats();
+        }
+    }
+
+    /**
+     * Add entry to log box
+     */
+    function addLogEntry(logBox, message, type = 'info') {
+        if (!logBox) return;
+        
+        const entry = document.createElement('div');
+        entry.className = `ccm-log-entry ccm-log-${type}`;
+        entry.innerHTML = `<span class="ccm-log-time">${new Date().toLocaleTimeString()}</span> ${escapeHtml(message)}`;
+        logBox.appendChild(entry);
+        logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    /**
+     * Refresh WebP statistics
+     */
+    async function refreshWebPStats() {
+        try {
+            const response = await ajax('ccm_tools_get_webp_stats');
+            // Stats are refreshed on page reload for simplicity
+        } catch (error) {
+            console.error('Failed to refresh stats:', error);
+        }
+    }
+
+    // ===================================
     // Initialize
     // ===================================
 
@@ -1648,6 +1984,11 @@
         
         // Initialize event handlers
         initEventHandlers();
+        
+        // Initialize WebP converter handlers if on WebP page
+        if ($('#webp-settings-form') || $('#start-bulk-conversion')) {
+            initWebPConverterHandlers();
+        }
         
         // Mark front page rows
         const frontPageIndicators = $$('.ccm-front-page-indicator');
