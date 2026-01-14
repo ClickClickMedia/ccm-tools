@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.3.0
+ * Version: 7.5.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.3.0');
+    define('CCM_HELPER_VERSION', '7.5.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -143,6 +143,7 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/update.php';  // Add GitHub update functionality
     require_once CCM_HELPER_ROOT_DIR . 'inc/woocommerce-tools.php'; // Add WooCommerce tools
     require_once CCM_HELPER_ROOT_DIR . 'inc/webp-converter.php'; // Add WebP image converter
+    require_once CCM_HELPER_ROOT_DIR . 'inc/performance-optimizer.php';
     
     // Initialize plugin settings
     global $ccm_tools;
@@ -236,6 +237,16 @@ class CCMSettings {
                 'ccm_tools_render_webp_page'
             );
         }
+        
+        // Add Performance Optimizer submenu
+        add_submenu_page(
+            'ccm-tools',
+            'Performance',
+            'Performance',
+            'manage_options',
+            'ccm-tools-perf',
+            'ccm_tools_render_perf_page'
+        );
         
         // Add debug submenu if debug mode is enabled
         if (defined('CCM_DEBUG_FRONT_PAGE')) {
@@ -655,6 +666,61 @@ class CCMSettings {
                     <?php } else { ?>
                         <p class="ccm-warning"><span class="ccm-icon">⚠</span> <?php _e('Disk information is not available.', 'ccm-tools'); ?></p>
                     <?php } ?>
+                </div>
+                
+                <!-- Uploads Backup Card -->
+                <div class="ccm-card">
+                    <h2><?php _e('Uploads Backup', 'ccm-tools'); ?></h2>
+                    <?php if (class_exists('ZipArchive') || extension_loaded('zip')) : ?>
+                        <p class="ccm-text-muted"><?php _e('Create a downloadable ZIP backup of your uploads folder.', 'ccm-tools'); ?></p>
+                        
+                        <div id="backup-info" style="margin: var(--ccm-space-md) 0;">
+                            <p><span class="ccm-icon">📁</span> <?php _e('Loading uploads information...', 'ccm-tools'); ?></p>
+                        </div>
+                        
+                        <div id="backup-actions" style="display: flex; gap: var(--ccm-space-sm); flex-wrap: wrap; align-items: center;">
+                            <button type="button" id="start-uploads-backup" class="ccm-button ccm-button-primary">
+                                <?php _e('Create Backup', 'ccm-tools'); ?>
+                            </button>
+                            <button type="button" id="cancel-uploads-backup" class="ccm-button ccm-button-danger" style="display: none;">
+                                <?php _e('Cancel', 'ccm-tools'); ?>
+                            </button>
+                        </div>
+                        
+                        <div id="backup-progress" style="display: none; margin-top: var(--ccm-space-md);">
+                            <div class="ccm-progress-info">
+                                <p><?php _e('Processing:', 'ccm-tools'); ?> <span id="backup-current">0</span>/<span id="backup-total">0</span> <?php _e('files', 'ccm-tools'); ?> (<span id="backup-percent">0</span>%)</p>
+                                <div class="ccm-progress-bar">
+                                    <div class="ccm-progress-fill" id="backup-progress-bar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="backup-complete" style="display: none; margin-top: var(--ccm-space-md);">
+                            <div class="ccm-alert ccm-alert-success">
+                                <span class="ccm-icon">✓</span>
+                                <div>
+                                    <strong><?php _e('Backup Complete!', 'ccm-tools'); ?></strong>
+                                    <p><?php _e('File size:', 'ccm-tools'); ?> <span id="backup-size"></span></p>
+                                    <p style="margin-top: var(--ccm-space-sm); display: flex; gap: var(--ccm-space-sm); flex-wrap: wrap;">
+                                        <a href="#" id="download-backup" class="ccm-button ccm-button-primary"><?php _e('Download Backup', 'ccm-tools'); ?></a>
+                                        <button type="button" id="delete-backup" class="ccm-button ccm-button-danger"><?php _e('Delete Backup', 'ccm-tools'); ?></button>
+                                    </p>
+                                    <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin-top: var(--ccm-space-sm);">
+                                        <?php _e('Backup files are automatically deleted after 24 hours.', 'ccm-tools'); ?>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    <?php else : ?>
+                        <div class="ccm-alert ccm-alert-warning">
+                            <span class="ccm-icon">⚠</span>
+                            <div>
+                                <strong><?php _e('ZipArchive Not Available', 'ccm-tools'); ?></strong>
+                                <p><?php _e('The PHP ZipArchive extension is not installed on this server. Contact your hosting provider to enable it.', 'ccm-tools'); ?></p>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
                     
                 <!-- Database Information Card -->

@@ -1513,3 +1513,790 @@ function ccm_tools_ajax_test_webp_conversion(): void {
         wp_send_json_error(array('message' => $result['message']));
     }
 }
+
+// Reset WebP conversions for regeneration
+add_action('wp_ajax_ccm_tools_reset_webp_conversions', 'ccm_tools_ajax_reset_webp_conversions');
+function ccm_tools_ajax_reset_webp_conversions(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    global $wpdb;
+    
+    $delete_files = !empty($_POST['delete_files']);
+    
+    // Get all attachments with WebP conversions
+    $attachments = $wpdb->get_results(
+        "SELECT p.ID, pm.meta_value 
+         FROM {$wpdb->posts} p
+         INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ccm_webp_converted'
+         WHERE p.post_type = 'attachment'"
+    );
+    
+    $deleted_files = 0;
+    $reset_count = 0;
+    
+    foreach ($attachments as $attachment) {
+        // Optionally delete WebP files
+        if ($delete_files) {
+            $conversion_data = maybe_unserialize($attachment->meta_value);
+            if (is_array($conversion_data)) {
+                foreach ($conversion_data as $size => $data) {
+                    if (!empty($data['dest_path']) && file_exists($data['dest_path'])) {
+                        if (unlink($data['dest_path'])) {
+                            $deleted_files++;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Remove the conversion meta
+        delete_post_meta($attachment->ID, '_ccm_webp_converted');
+        $reset_count++;
+    }
+    
+    // Also clear the failed conversion cache
+    $wpdb->query(
+        "DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_ccm_webp_conversion_failed'"
+    );
+    
+    wp_send_json_success(array(
+        'message' => sprintf(
+            __('Reset %d images for re-conversion. %d WebP files deleted.', 'ccm-tools'),
+            $reset_count,
+            $deleted_files
+        ),
+        'reset_count' => $reset_count,
+        'deleted_files' => $deleted_files
+    ));
+}
+
+/**
+ * Process background WebP conversion queue
+ * This is called via AJAX from the frontend to convert queued images
+ */
+add_action('wp_ajax_ccm_tools_process_webp_queue', 'ccm_tools_ajax_process_webp_queue');
+add_action('wp_ajax_nopriv_ccm_tools_process_webp_queue', 'ccm_tools_ajax_process_webp_queue');
+function ccm_tools_ajax_process_webp_queue(): void {
+    // No nonce check - this is a background process that should work for all visitors
+    // Rate limiting prevents abuse
+    
+    $queue = get_transient('ccm_webp_conversion_queue');
+    
+    if (empty($queue) || !is_array($queue)) {
+        wp_send_json_success(array('processed' => 0, 'remaining' => 0));
+        return;
+    }
+    
+    $settings = ccm_tools_webp_get_settings();
+    
+    if (empty($settings['enabled']) || empty($settings['convert_on_demand'])) {
+        wp_send_json_success(array('processed' => 0, 'remaining' => count($queue), 'disabled' => true));
+        return;
+    }
+    
+    $quality = intval($settings['quality']);
+    $extension = $settings['preferred_extension'];
+    
+    // Process up to 5 images per request (faster with optimized settings)
+    $batch_size = 5;
+    $processed = 0;
+    $processed_items = array();
+    
+    foreach ($queue as $key => $item) {
+        if ($processed >= $batch_size) {
+            break;
+        }
+        
+        // Skip if already converted
+        if (file_exists($item['webp_path'])) {
+            $processed_items[] = $key;
+            continue;
+        }
+        
+        // Skip if source doesn't exist
+        if (!file_exists($item['source_path'])) {
+            $processed_items[] = $key;
+            continue;
+        }
+        
+        // Perform conversion
+        $result = ccm_tools_webp_convert_image($item['source_path'], $item['webp_path'], $quality, $extension);
+        
+        if ($result['success']) {
+            // Try to update attachment meta
+            $upload_dir = wp_upload_dir();
+            $relative_path = str_replace($upload_dir['basedir'] . '/', '', $item['source_path']);
+            
+            global $wpdb;
+            $attachment_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_wp_attached_file' AND meta_value = %s",
+                $relative_path
+            ));
+            
+            if ($attachment_id) {
+                $converted = get_post_meta($attachment_id, '_ccm_webp_converted', true);
+                if (!is_array($converted)) {
+                    $converted = array();
+                }
+                $converted['background'] = array(
+                    'success' => true,
+                    'source_path' => $item['source_path'],
+                    'dest_path' => $item['webp_path'],
+                    'source_size' => $result['source_size'],
+                    'dest_size' => $result['dest_size'],
+                    'converted_at' => current_time('mysql')
+                );
+                update_post_meta($attachment_id, '_ccm_webp_converted', $converted);
+            }
+        } else {
+            // Mark as failed
+            $failed_key = 'ccm_webp_failed_' . md5($item['source_path']);
+            set_transient($failed_key, true, HOUR_IN_SECONDS);
+        }
+        
+        $processed_items[] = $key;
+        $processed++;
+    }
+    
+    // Remove processed items from queue
+    foreach ($processed_items as $key) {
+        unset($queue[$key]);
+    }
+    
+    // Update or delete queue
+    if (empty($queue)) {
+        delete_transient('ccm_webp_conversion_queue');
+    } else {
+        set_transient('ccm_webp_conversion_queue', $queue, 3600);
+    }
+    
+    wp_send_json_success(array(
+        'processed' => $processed,
+        'remaining' => count($queue)
+    ));
+}
+
+// ===================================
+// Performance Optimizer AJAX Handlers
+// ===================================
+
+/**
+ * Save performance optimizer settings
+ */
+add_action('wp_ajax_ccm_tools_save_perf_settings', 'ccm_tools_ajax_save_perf_settings');
+function ccm_tools_ajax_save_perf_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    // Sanitize and validate settings
+    $settings = array(
+        'enabled' => !empty($_POST['enabled']),
+        'defer_js' => !empty($_POST['defer_js']),
+        'defer_js_excludes' => ccm_tools_perf_sanitize_list($_POST['defer_js_excludes'] ?? ''),
+        'delay_js' => !empty($_POST['delay_js']),
+        'delay_js_timeout' => absint($_POST['delay_js_timeout'] ?? 0),
+        'delay_js_excludes' => ccm_tools_perf_sanitize_list($_POST['delay_js_excludes'] ?? ''),
+        'preload_css' => !empty($_POST['preload_css']),
+        'preconnect' => !empty($_POST['preconnect']),
+        'preconnect_urls' => ccm_tools_perf_sanitize_urls($_POST['preconnect_urls'] ?? ''),
+        'dns_prefetch' => !empty($_POST['dns_prefetch']),
+        'dns_prefetch_urls' => ccm_tools_perf_sanitize_urls($_POST['dns_prefetch_urls'] ?? ''),
+        'lcp_fetchpriority' => !empty($_POST['lcp_fetchpriority']),
+        'lcp_preload' => !empty($_POST['lcp_preload']),
+        'lcp_preload_url' => esc_url_raw($_POST['lcp_preload_url'] ?? ''),
+        'remove_query_strings' => !empty($_POST['remove_query_strings']),
+        'disable_emoji' => !empty($_POST['disable_emoji']),
+        'disable_dashicons' => !empty($_POST['disable_dashicons']),
+        'lazy_load_iframes' => !empty($_POST['lazy_load_iframes']),
+        'youtube_facade' => !empty($_POST['youtube_facade']),
+    );
+    
+    // Save settings - update_option returns false if value unchanged, so we check if option exists
+    ccm_tools_perf_save_settings($settings);
+    
+    // Always return success since we processed the request
+    wp_send_json_success(array(
+        'message' => __('Performance settings saved successfully.', 'ccm-tools'),
+        'settings' => $settings
+    ));
+}
+
+/**
+ * Get performance optimizer settings
+ */
+add_action('wp_ajax_ccm_tools_get_perf_settings', 'ccm_tools_ajax_get_perf_settings');
+function ccm_tools_ajax_get_perf_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $settings = ccm_tools_perf_get_settings();
+    wp_send_json_success($settings);
+}
+
+/**
+ * Sanitize comma-separated list of handles
+ * 
+ * @param string $input Comma-separated list
+ * @return array Array of sanitized handles
+ */
+function ccm_tools_perf_sanitize_list($input) {
+    if (empty($input)) {
+        return array();
+    }
+    
+    $items = explode(',', $input);
+    $sanitized = array();
+    
+    foreach ($items as $item) {
+        $item = sanitize_key(trim($item));
+        if (!empty($item)) {
+            $sanitized[] = $item;
+        }
+    }
+    
+    return array_unique($sanitized);
+}
+
+/**
+ * Sanitize newline-separated list of URLs
+ * 
+ * @param string $input Newline-separated URLs
+ * @return array Array of sanitized URLs
+ */
+function ccm_tools_perf_sanitize_urls($input) {
+    if (empty($input)) {
+        return array();
+    }
+    
+    $lines = explode("\n", $input);
+    $sanitized = array();
+    
+    foreach ($lines as $line) {
+        $url = esc_url_raw(trim($line));
+        if (!empty($url)) {
+            $sanitized[] = $url;
+        }
+    }
+    
+    return array_unique($sanitized);
+}
+
+/**
+ * Detect external origins by fetching the site's homepage
+ * Uses wp_remote_get to fetch the page and parses for external resources
+ */
+add_action('wp_ajax_ccm_tools_detect_external_origins', 'ccm_tools_ajax_detect_external_origins');
+function ccm_tools_ajax_detect_external_origins(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    // Get the site URL to fetch
+    $site_url = home_url('/');
+    $site_host = wp_parse_url($site_url, PHP_URL_HOST);
+    
+    // Fetch the homepage
+    $response = wp_remote_get($site_url, array(
+        'timeout' => 30,
+        'sslverify' => false,
+        'user-agent' => 'CCM-Tools External Origin Detector',
+    ));
+    
+    if (is_wp_error($response)) {
+        wp_send_json_error(array(
+            'message' => __('Failed to fetch homepage: ', 'ccm-tools') . $response->get_error_message()
+        ));
+    }
+    
+    $html = wp_remote_retrieve_body($response);
+    
+    if (empty($html)) {
+        wp_send_json_error(array('message' => __('Empty response from homepage.', 'ccm-tools')));
+    }
+    
+    $external_origins = array();
+    
+    // Patterns to find external URLs
+    // Match src="...", href="...", url(...), data-src="...", srcset="..."
+    $patterns = array(
+        '/\s(?:src|href|data-src)=["\']?(https?:\/\/[^"\'>\s]+)["\']?/i',
+        '/url\s*\(\s*["\']?(https?:\/\/[^"\')\s]+)["\']?\s*\)/i',
+        '/srcset=["\']([^"\']+)["\']/i',
+    );
+    
+    foreach ($patterns as $pattern) {
+        if (preg_match_all($pattern, $html, $matches)) {
+            foreach ($matches[1] as $url) {
+                // For srcset, we might have multiple URLs
+                if (strpos($url, ',') !== false || strpos($url, ' ') !== false) {
+                    // Parse srcset format: "url1 1x, url2 2x"
+                    $srcset_parts = preg_split('/,\s*/', $url);
+                    foreach ($srcset_parts as $part) {
+                        $parts = preg_split('/\s+/', trim($part));
+                        if (!empty($parts[0]) && filter_var($parts[0], FILTER_VALIDATE_URL)) {
+                            $parsed = wp_parse_url($parts[0]);
+                            if (!empty($parsed['host']) && $parsed['host'] !== $site_host) {
+                                $origin = $parsed['scheme'] . '://' . $parsed['host'];
+                                $external_origins[$origin] = true;
+                            }
+                        }
+                    }
+                } else {
+                    // Regular URL
+                    $parsed = wp_parse_url($url);
+                    if (!empty($parsed['host']) && $parsed['host'] !== $site_host) {
+                        $origin = $parsed['scheme'] . '://' . $parsed['host'];
+                        $external_origins[$origin] = true;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Also check for preconnect/dns-prefetch that might already be in the page
+    if (preg_match_all('/<link[^>]+rel=["\'](?:preconnect|dns-prefetch)["\'][^>]+href=["\']([^"\']+)["\']/', $html, $link_matches)) {
+        foreach ($link_matches[1] as $url) {
+            $parsed = wp_parse_url($url);
+            if (!empty($parsed['host']) && $parsed['host'] !== $site_host) {
+                $origin = (isset($parsed['scheme']) ? $parsed['scheme'] : 'https') . '://' . $parsed['host'];
+                $external_origins[$origin] = true;
+            }
+        }
+    }
+    
+    // Sort origins alphabetically
+    $origins = array_keys($external_origins);
+    sort($origins);
+    
+    // Categorize origins for better UX
+    $categorized = array(
+        'fonts' => array(),
+        'analytics' => array(),
+        'cdn' => array(),
+        'social' => array(),
+        'other' => array(),
+    );
+    
+    foreach ($origins as $origin) {
+        $host = wp_parse_url($origin, PHP_URL_HOST);
+        
+        // Fonts
+        if (strpos($host, 'fonts.') !== false || strpos($host, 'font') !== false || strpos($host, 'typekit') !== false) {
+            $categorized['fonts'][] = $origin;
+        }
+        // Analytics
+        elseif (strpos($host, 'google-analytics') !== false || strpos($host, 'googletagmanager') !== false || 
+                strpos($host, 'analytics') !== false || strpos($host, 'gtm') !== false ||
+                strpos($host, 'hotjar') !== false || strpos($host, 'clarity') !== false) {
+            $categorized['analytics'][] = $origin;
+        }
+        // CDN
+        elseif (strpos($host, 'cdn') !== false || strpos($host, 'cloudflare') !== false || 
+                strpos($host, 'jsdelivr') !== false || strpos($host, 'unpkg') !== false ||
+                strpos($host, 'cdnjs') !== false || strpos($host, 'bootstrapcdn') !== false) {
+            $categorized['cdn'][] = $origin;
+        }
+        // Social
+        elseif (strpos($host, 'facebook') !== false || strpos($host, 'twitter') !== false ||
+                strpos($host, 'instagram') !== false || strpos($host, 'linkedin') !== false ||
+                strpos($host, 'pinterest') !== false || strpos($host, 'youtube') !== false) {
+            $categorized['social'][] = $origin;
+        }
+        // Other
+        else {
+            $categorized['other'][] = $origin;
+        }
+    }
+    
+    wp_send_json_success(array(
+        'origins' => $origins,
+        'categorized' => $categorized,
+        'count' => count($origins),
+        'site_host' => $site_host,
+    ));
+}
+
+// ===================================
+// Uploads Backup AJAX Handlers
+// ===================================
+
+/**
+ * Check if ZipArchive is available
+ */
+add_action('wp_ajax_ccm_tools_check_zip_available', 'ccm_tools_ajax_check_zip_available');
+function ccm_tools_ajax_check_zip_available(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    // Check for zip extension - try both methods
+    $available = class_exists('ZipArchive') || extension_loaded('zip');
+    
+    // Get uploads info
+    $upload_dir = wp_upload_dir();
+    $uploads_path = $upload_dir['basedir'];
+    $uploads_size = 0;
+    $file_count = 0;
+    
+    if (is_dir($uploads_path)) {
+        // Get size and count in one pass for efficiency
+        $stats = ccm_tools_get_directory_stats($uploads_path);
+        $uploads_size = $stats['size'];
+        $file_count = $stats['count'];
+    }
+    
+    wp_send_json_success(array(
+        'zip_available' => $available,
+        'uploads_path' => $uploads_path,
+        'uploads_size' => size_format($uploads_size),
+        'uploads_size_bytes' => $uploads_size,
+        'file_count' => $file_count
+    ));
+}
+
+/**
+ * Get directory size and file count in one pass (more efficient)
+ * Has a time limit to prevent timeouts on massive folders
+ */
+function ccm_tools_get_directory_stats($path, $max_time = 10) {
+    $size = 0;
+    $count = 0;
+    $start_time = time();
+    
+    if (!is_dir($path)) {
+        return array('size' => $size, 'count' => $count, 'complete' => true);
+    }
+    
+    try {
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        
+        foreach ($iterator as $file) {
+            // Check time limit
+            if ((time() - $start_time) > $max_time) {
+                return array('size' => $size, 'count' => $count, 'complete' => false);
+            }
+            
+            // Skip backup directory
+            $filepath = $file->getPathname();
+            if (strpos($filepath, 'ccm-backups') !== false) {
+                continue;
+            }
+            
+            if ($file->isFile()) {
+                $size += $file->getSize();
+                $count++;
+            }
+        }
+    } catch (Exception $e) {
+        // Handle permission errors gracefully
+    }
+    
+    return array('size' => $size, 'count' => $count, 'complete' => true);
+}
+
+/**
+ * Get directory size recursively (legacy - kept for compatibility)
+ */
+function ccm_tools_get_directory_size($path) {
+    $stats = ccm_tools_get_directory_stats($path);
+    return $stats['size'];
+}
+
+/**
+ * Count files in directory recursively (legacy - kept for compatibility)
+ */
+function ccm_tools_count_files($path) {
+    $stats = ccm_tools_get_directory_stats($path);
+    return $stats['count'];
+}
+
+/**
+ * Start uploads backup process
+ */
+add_action('wp_ajax_ccm_tools_start_uploads_backup', 'ccm_tools_ajax_start_uploads_backup');
+function ccm_tools_ajax_start_uploads_backup(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    if (!class_exists('ZipArchive')) {
+        wp_send_json_error(array('message' => __('ZipArchive is not available on this server.', 'ccm-tools')));
+    }
+    
+    $upload_dir = wp_upload_dir();
+    $uploads_path = $upload_dir['basedir'];
+    
+    if (!is_dir($uploads_path)) {
+        wp_send_json_error(array('message' => __('Uploads directory not found.', 'ccm-tools')));
+    }
+    
+    // Create backup directory
+    $backup_dir = $uploads_path . '/ccm-backups';
+    if (!file_exists($backup_dir)) {
+        wp_mkdir_p($backup_dir);
+        // Add index.php for security
+        file_put_contents($backup_dir . '/index.php', '<?php // Silence is golden');
+        // Add .htaccess to prevent direct access
+        file_put_contents($backup_dir . '/.htaccess', 'deny from all');
+    }
+    
+    // Clean up old backups (older than 24 hours)
+    ccm_tools_cleanup_old_backups($backup_dir);
+    
+    // Generate unique backup filename
+    $backup_filename = 'uploads-backup-' . date('Y-m-d-His') . '-' . wp_generate_password(8, false) . '.zip';
+    $backup_path = $backup_dir . '/' . $backup_filename;
+    
+    // Get all files to process
+    $files = array();
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($uploads_path, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+    
+    foreach ($iterator as $file) {
+        $path = $file->getPathname();
+        
+        // Skip backup directory itself
+        if (strpos($path, '/ccm-backups') !== false || strpos($path, '\\ccm-backups') !== false) {
+            continue;
+        }
+        
+        if ($file->isFile()) {
+            $files[] = $path;
+        }
+    }
+    
+    // Store backup state
+    $backup_state = array(
+        'status' => 'in_progress',
+        'backup_path' => $backup_path,
+        'backup_filename' => $backup_filename,
+        'uploads_path' => $uploads_path,
+        'files' => $files,
+        'total_files' => count($files),
+        'processed_files' => 0,
+        'current_batch' => 0,
+        'started_at' => time(),
+        'error' => null
+    );
+    
+    update_option('ccm_tools_backup_state', $backup_state, false);
+    
+    wp_send_json_success(array(
+        'message' => __('Backup started', 'ccm-tools'),
+        'total_files' => count($files),
+        'backup_filename' => $backup_filename
+    ));
+}
+
+/**
+ * Process a batch of files for backup
+ */
+add_action('wp_ajax_ccm_tools_process_backup_batch', 'ccm_tools_ajax_process_backup_batch');
+function ccm_tools_ajax_process_backup_batch(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $state = get_option('ccm_tools_backup_state');
+    
+    if (empty($state) || $state['status'] !== 'in_progress') {
+        wp_send_json_error(array('message' => __('No backup in progress.', 'ccm-tools')));
+    }
+    
+    $batch_size = 50; // Process 50 files at a time
+    $start_index = $state['processed_files'];
+    $end_index = min($start_index + $batch_size, $state['total_files']);
+    
+    try {
+        $zip = new ZipArchive();
+        $mode = ($start_index === 0) ? ZipArchive::CREATE | ZipArchive::OVERWRITE : ZipArchive::CREATE;
+        
+        if ($zip->open($state['backup_path'], $mode) !== true) {
+            throw new Exception(__('Failed to open zip file for writing.', 'ccm-tools'));
+        }
+        
+        for ($i = $start_index; $i < $end_index; $i++) {
+            $file_path = $state['files'][$i];
+            
+            if (file_exists($file_path)) {
+                // Get relative path from uploads directory
+                $relative_path = str_replace($state['uploads_path'] . '/', '', $file_path);
+                $relative_path = str_replace($state['uploads_path'] . '\\', '', $relative_path);
+                
+                $zip->addFile($file_path, $relative_path);
+            }
+        }
+        
+        $zip->close();
+        
+        // Update state
+        $state['processed_files'] = $end_index;
+        $state['current_batch']++;
+        
+        // Check if complete
+        if ($state['processed_files'] >= $state['total_files']) {
+            $state['status'] = 'complete';
+            $state['completed_at'] = time();
+            
+            // Get final file size
+            if (file_exists($state['backup_path'])) {
+                $state['backup_size'] = filesize($state['backup_path']);
+            }
+        }
+        
+        update_option('ccm_tools_backup_state', $state, false);
+        
+        wp_send_json_success(array(
+            'status' => $state['status'],
+            'processed_files' => $state['processed_files'],
+            'total_files' => $state['total_files'],
+            'percent' => round(($state['processed_files'] / $state['total_files']) * 100, 1),
+            'backup_size' => isset($state['backup_size']) ? size_format($state['backup_size']) : null
+        ));
+        
+    } catch (Exception $e) {
+        $state['status'] = 'error';
+        $state['error'] = $e->getMessage();
+        update_option('ccm_tools_backup_state', $state, false);
+        
+        wp_send_json_error(array('message' => $e->getMessage()));
+    }
+}
+
+/**
+ * Get backup status
+ */
+add_action('wp_ajax_ccm_tools_get_backup_status', 'ccm_tools_ajax_get_backup_status');
+function ccm_tools_ajax_get_backup_status(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $state = get_option('ccm_tools_backup_state');
+    
+    if (empty($state)) {
+        wp_send_json_success(array('status' => 'none'));
+        return;
+    }
+    
+    $response = array(
+        'status' => $state['status'],
+        'processed_files' => $state['processed_files'] ?? 0,
+        'total_files' => $state['total_files'] ?? 0,
+        'backup_filename' => $state['backup_filename'] ?? ''
+    );
+    
+    if ($state['status'] === 'complete' && !empty($state['backup_path']) && file_exists($state['backup_path'])) {
+        $response['backup_size'] = size_format(filesize($state['backup_path']));
+        $response['download_ready'] = true;
+    }
+    
+    if ($state['status'] === 'error') {
+        $response['error'] = $state['error'];
+    }
+    
+    wp_send_json_success($response);
+}
+
+/**
+ * Download backup file
+ */
+add_action('wp_ajax_ccm_tools_download_backup', 'ccm_tools_ajax_download_backup');
+function ccm_tools_ajax_download_backup(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    $state = get_option('ccm_tools_backup_state');
+    
+    if (empty($state) || $state['status'] !== 'complete' || !file_exists($state['backup_path'])) {
+        wp_die(__('Backup file not found.', 'ccm-tools'));
+    }
+    
+    $file_path = $state['backup_path'];
+    $file_name = $state['backup_filename'];
+    
+    // Set headers for download
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $file_name . '"');
+    header('Content-Length: ' . filesize($file_path));
+    header('Pragma: public');
+    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+    
+    // Clear output buffer
+    if (ob_get_level()) {
+        ob_end_clean();
+    }
+    
+    // Read file in chunks to handle large files
+    $handle = fopen($file_path, 'rb');
+    while (!feof($handle)) {
+        echo fread($handle, 8192);
+        flush();
+    }
+    fclose($handle);
+    
+    exit;
+}
+
+/**
+ * Cancel/reset backup
+ */
+add_action('wp_ajax_ccm_tools_cancel_backup', 'ccm_tools_ajax_cancel_backup');
+function ccm_tools_ajax_cancel_backup(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $state = get_option('ccm_tools_backup_state');
+    
+    // Delete partial backup file if exists
+    if (!empty($state['backup_path']) && file_exists($state['backup_path'])) {
+        unlink($state['backup_path']);
+    }
+    
+    delete_option('ccm_tools_backup_state');
+    
+    wp_send_json_success(array('message' => __('Backup cancelled.', 'ccm-tools')));
+}
+
+/**
+ * Clean up old backup files
+ */
+function ccm_tools_cleanup_old_backups($backup_dir, $max_age_hours = 24) {
+    if (!is_dir($backup_dir)) {
+        return;
+    }
+    
+    $files = glob($backup_dir . '/*.zip');
+    $max_age_seconds = $max_age_hours * 3600;
+    $now = time();
+    
+    foreach ($files as $file) {
+        if (is_file($file) && ($now - filemtime($file)) > $max_age_seconds) {
+            unlink($file);
+        }
+    }
+}

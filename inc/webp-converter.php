@@ -111,7 +111,7 @@ function ccm_tools_webp_get_best_extension() {
 function ccm_tools_webp_get_settings() {
     $defaults = array(
         'enabled' => false,
-        'quality' => 82,
+        'quality' => 85, // Default to 85 for near-lossless quality
         'convert_on_upload' => true,
         'serve_webp' => true,
         'convert_on_demand' => false,
@@ -239,7 +239,11 @@ function ccm_tools_webp_convert_image($source_path, $dest_path = '', $quality = 
 function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality, $result) {
     $imagick = new Imagick($source_path);
     
-    // Strip metadata to reduce file size
+    // Get source format to determine if it's lossless (PNG/GIF)
+    $source_format = strtolower($imagick->getImageFormat());
+    $is_lossless_source = in_array($source_format, array('png', 'gif'));
+    
+    // Strip metadata to reduce file size (skip ICC profile handling for speed)
     $imagick->stripImage();
     
     // Set WebP format
@@ -248,9 +252,21 @@ function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality,
     // Set compression quality
     $imagick->setImageCompressionQuality($quality);
     
-    // Additional WebP options
-    $imagick->setOption('webp:lossless', 'false');
-    $imagick->setOption('webp:method', '6'); // Best compression method
+    // Determine compression mode based on source type and quality setting
+    if ($is_lossless_source) {
+        // PNG/GIF: Use lossless to preserve sharp edges and transparency
+        $imagick->setOption('webp:lossless', 'true');
+        $imagick->setOption('webp:alpha-quality', '100');
+    } else if ($quality >= 95) {
+        // Very high quality: use lossless
+        $imagick->setOption('webp:lossless', 'true');
+    } else {
+        // Standard/high quality: lossy compression (faster than near-lossless)
+        $imagick->setOption('webp:lossless', 'false');
+    }
+    
+    // Use method 4 - good balance of speed and compression (0=fast, 6=slow)
+    $imagick->setOption('webp:method', '4');
     
     // Write the file
     if ($imagick->writeImage($dest_path)) {
@@ -567,13 +583,77 @@ function ccm_tools_webp_convert_on_demand($source_path, $webp_path) {
 }
 
 /**
- * Get or create WebP version of an image URL
- * Returns the WebP URL if it exists or can be created, otherwise returns false
+ * Queue an image for background WebP conversion
+ * This adds the image to a queue that will be processed asynchronously
  * 
  * @param string $original_url The original image URL
+ * @return void
+ */
+function ccm_tools_webp_queue_for_conversion($original_url) {
+    $settings = ccm_tools_webp_get_settings();
+    
+    // Check if on-demand conversion is enabled
+    if (empty($settings['enabled']) || empty($settings['convert_on_demand'])) {
+        return;
+    }
+    
+    // Skip if already WebP
+    if (preg_match('/\.webp$/i', $original_url)) {
+        return;
+    }
+    
+    // Only process JPG, PNG, GIF
+    if (!preg_match('/\.(jpe?g|png|gif)$/i', $original_url)) {
+        return;
+    }
+    
+    $upload_dir = wp_upload_dir();
+    
+    // Check if this is a local upload
+    if (strpos($original_url, $upload_dir['baseurl']) === false) {
+        return;
+    }
+    
+    // Generate paths
+    $original_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $original_url);
+    $webp_path = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_path);
+    
+    // Skip if WebP already exists
+    if (file_exists($webp_path)) {
+        return;
+    }
+    
+    // Check if already failed
+    $failed_key = 'ccm_webp_failed_' . md5($original_path);
+    if (get_transient($failed_key)) {
+        return;
+    }
+    
+    // Add to conversion queue
+    $queue = get_transient('ccm_webp_conversion_queue') ?: array();
+    $queue_key = md5($original_url);
+    
+    if (!isset($queue[$queue_key])) {
+        $queue[$queue_key] = array(
+            'url' => $original_url,
+            'source_path' => $original_path,
+            'webp_path' => $webp_path,
+            'queued_at' => time()
+        );
+        set_transient('ccm_webp_conversion_queue', $queue, 3600); // Queue expires after 1 hour
+    }
+}
+
+/**
+ * Get or create WebP version of an image URL
+ * Now queues for background conversion instead of blocking
+ * Returns the WebP URL if it exists, otherwise returns false and queues conversion
+ * 
+ * @param string $original_url The original image URL
+ * @param bool $queue_if_missing Whether to queue for conversion if WebP doesn't exist
  * @return string|false WebP URL or false if not available
  */
-function ccm_tools_webp_get_or_create($original_url) {
+function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     // Skip if already WebP
     if (preg_match('/\.webp$/i', $original_url)) {
         return $original_url;
@@ -593,17 +673,16 @@ function ccm_tools_webp_get_or_create($original_url) {
     
     // Generate paths
     $webp_url = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_url);
-    $original_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $original_url);
     $webp_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $webp_url);
     
-    // Check if WebP exists or can be created
+    // Check if WebP exists
     if (file_exists($webp_path)) {
         return $webp_url;
     }
     
-    // Try on-demand conversion
-    if (ccm_tools_webp_convert_on_demand($original_path, $webp_path)) {
-        return $webp_url;
+    // Queue for background conversion (non-blocking)
+    if ($queue_if_missing) {
+        ccm_tools_webp_queue_for_conversion($original_url);
     }
     
     return false;
@@ -898,8 +977,62 @@ function ccm_tools_webp_init() {
         add_filter('post_thumbnail_html', 'ccm_tools_webp_filter_wc_product_image', 999, 2);
         add_filter('wp_get_attachment_image', 'ccm_tools_webp_filter_wc_single_product_image', 999, 2);
     }
+    
+    // Add background queue processor for on-demand conversion
+    if (!empty($settings['convert_on_demand']) && !is_admin()) {
+        add_action('wp_footer', 'ccm_tools_webp_background_queue_script', 999);
+    }
 }
 add_action('init', 'ccm_tools_webp_init');
+
+/**
+ * Output JavaScript for background WebP queue processing
+ * This runs after page load to convert queued images without blocking
+ */
+function ccm_tools_webp_background_queue_script() {
+    // Check if there's anything in the queue
+    $queue = get_transient('ccm_webp_conversion_queue');
+    if (empty($queue)) {
+        return;
+    }
+    
+    ?>
+    <script>
+    (function() {
+        // Process WebP conversion queue in background
+        // Runs after page is fully loaded to avoid blocking
+        if (document.readyState === 'complete') {
+            processWebPQueue();
+        } else {
+            window.addEventListener('load', processWebPQueue);
+        }
+        
+        function processWebPQueue() {
+            // Small delay to ensure page is interactive first
+            setTimeout(function() {
+                doProcessBatch();
+            }, 2000);
+        }
+        
+        function doProcessBatch() {
+            fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'action=ccm_tools_process_webp_queue'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data.remaining > 0) {
+                    // More images to process, continue after delay
+                    setTimeout(doProcessBatch, 1000);
+                }
+            })
+            .catch(err => console.debug('WebP background conversion:', err));
+        }
+    })();
+    </script>
+    <?php
+}
 
 /**
  * Render the WebP Converter admin page
@@ -979,41 +1112,39 @@ function ccm_tools_render_webp_page() {
             <?php if ($available): ?>
             
             <!-- Conversion Statistics -->
-            <div class="ccm-card">
+            <div class="ccm-card" id="webp-stats-card">
                 <h2><?php _e('Conversion Statistics', 'ccm-tools'); ?></h2>
                 <div class="ccm-stats-grid">
                     <div class="ccm-stat-box">
-                        <span class="ccm-stat-value"><?php echo esc_html($stats['total_images']); ?></span>
+                        <span class="ccm-stat-value" id="stat-total-images"><?php echo esc_html($stats['total_images']); ?></span>
                         <span class="ccm-stat-label"><?php _e('Total Images', 'ccm-tools'); ?></span>
                     </div>
                     <div class="ccm-stat-box">
-                        <span class="ccm-stat-value ccm-success"><?php echo esc_html($stats['converted_images']); ?></span>
+                        <span class="ccm-stat-value ccm-success" id="stat-converted-images"><?php echo esc_html($stats['converted_images']); ?></span>
                         <span class="ccm-stat-label"><?php _e('Converted to WebP', 'ccm-tools'); ?></span>
                     </div>
                     <div class="ccm-stat-box">
-                        <span class="ccm-stat-value <?php echo $stats['pending_conversion'] > 0 ? 'ccm-warning' : ''; ?>"><?php echo esc_html($stats['pending_conversion']); ?></span>
+                        <span class="ccm-stat-value <?php echo $stats['pending_conversion'] > 0 ? 'ccm-warning' : ''; ?>" id="stat-pending-images"><?php echo esc_html($stats['pending_conversion']); ?></span>
                         <span class="ccm-stat-label"><?php _e('Pending Conversion', 'ccm-tools'); ?></span>
                     </div>
                     <div class="ccm-stat-box">
-                        <span class="ccm-stat-value ccm-info"><?php echo esc_html($stats['total_savings']); ?>%</span>
+                        <span class="ccm-stat-value ccm-info" id="stat-average-savings"><?php echo esc_html($stats['total_savings']); ?>%</span>
                         <span class="ccm-stat-label"><?php _e('Average Savings', 'ccm-tools'); ?></span>
                     </div>
                 </div>
                 
-                <?php if ($stats['total_original_size'] > 0): ?>
-                <div class="ccm-size-comparison">
+                <div class="ccm-size-comparison" id="stat-size-comparison" <?php echo $stats['total_original_size'] > 0 ? '' : 'style="display:none;"'; ?>>
                     <p>
                         <strong><?php _e('Original Size:', 'ccm-tools'); ?></strong> 
-                        <?php echo esc_html(size_format($stats['total_original_size'])); ?>
+                        <span id="stat-original-size"><?php echo esc_html(size_format($stats['total_original_size'])); ?></span>
                         &rarr;
                         <strong><?php _e('WebP Size:', 'ccm-tools'); ?></strong> 
-                        <?php echo esc_html(size_format($stats['total_webp_size'])); ?>
+                        <span id="stat-webp-size"><?php echo esc_html(size_format($stats['total_webp_size'])); ?></span>
                         <span class="ccm-success">
-                            (<?php echo sprintf(__('Saved %s', 'ccm-tools'), size_format($stats['total_original_size'] - $stats['total_webp_size'])); ?>)
+                            (<span id="stat-saved-size"><?php echo sprintf(__('Saved %s', 'ccm-tools'), size_format($stats['total_original_size'] - $stats['total_webp_size'])); ?></span>)
                         </span>
                     </p>
                 </div>
-                <?php endif; ?>
             </div>
             
             <!-- Settings -->
@@ -1154,14 +1285,21 @@ function ccm_tools_render_webp_page() {
                     </div>
                 </div>
                 
-                <div class="ccm-bulk-actions">
+                <div class="ccm-bulk-actions" style="display: flex; gap: var(--ccm-space-sm); flex-wrap: wrap;">
                     <button type="button" id="start-bulk-conversion" class="ccm-button ccm-button-primary" <?php echo $stats['pending_conversion'] === 0 ? 'disabled' : ''; ?>>
                         <?php echo sprintf(__('Convert %d Images', 'ccm-tools'), $stats['pending_conversion']); ?>
+                    </button>
+                    <button type="button" id="regenerate-all-webp" class="ccm-button" <?php echo $stats['converted_images'] === 0 ? 'disabled' : ''; ?>>
+                        <?php echo sprintf(__('Regenerate %d WebP Images', 'ccm-tools'), $stats['converted_images']); ?>
                     </button>
                     <button type="button" id="stop-bulk-conversion" class="ccm-button ccm-button-danger" style="display: none;">
                         <?php _e('Stop Conversion', 'ccm-tools'); ?>
                     </button>
                 </div>
+                
+                <p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm); font-size: var(--ccm-text-sm);">
+                    <?php _e('Use "Regenerate" to re-convert all images with new quality settings.', 'ccm-tools'); ?>
+                </p>
                 
                 <div id="bulk-conversion-progress" style="display: none;">
                     <div class="ccm-progress-info">

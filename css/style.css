@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.3.0
+ * Version: 7.5.0
  */
 
 /* ===================================
@@ -2024,4 +2024,169 @@ tr.ccm-front-page-row {
         box-shadow: none;
         border: 1px solid #ddd;
     }
+}
+
+/* ===================================
+   Performance Optimizer Styles
+   =================================== */
+
+/* Toggle Switch */
+.ccm-toggle {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.ccm-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.ccm-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--ccm-border);
+    border-radius: var(--ccm-radius-full);
+    transition: var(--ccm-transition);
+}
+
+.ccm-toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 22px;
+    width: 22px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: var(--ccm-transition);
+    box-shadow: var(--ccm-shadow-sm);
+}
+
+.ccm-toggle input:checked + .ccm-toggle-slider {
+    background-color: var(--ccm-success);
+}
+
+.ccm-toggle input:focus + .ccm-toggle-slider {
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+}
+
+.ccm-toggle input:checked + .ccm-toggle-slider:before {
+    transform: translateX(24px);
+}
+
+/* Disabled state */
+.ccm-toggle input:disabled + .ccm-toggle-slider {
+    background-color: var(--ccm-border);
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* Performance Setting Rows */
+.ccm-setting-row {
+    padding: var(--ccm-space-md) 0;
+}
+
+.ccm-setting-row:last-child {
+    border-bottom: none;
+}
+
+.ccm-setting-detail {
+    margin-top: var(--ccm-space-md);
+    padding: var(--ccm-space-md);
+    background: var(--ccm-bg);
+    border-radius: var(--ccm-radius-md);
+    border: 1px solid var(--ccm-border);
+}
+
+/* Input and Textarea Styles */
+.ccm-input {
+    width: 100%;
+    padding: var(--ccm-space-sm) var(--ccm-space-md);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    font-family: var(--ccm-font-sans);
+    font-size: var(--ccm-text-base);
+    color: var(--ccm-text);
+    background: var(--ccm-surface);
+    transition: var(--ccm-transition);
+    margin-top: var(--ccm-space-xs);
+}
+
+.ccm-input:focus {
+    outline: none;
+    border-color: var(--ccm-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.ccm-textarea {
+    width: 100%;
+    padding: var(--ccm-space-md);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    font-family: var(--ccm-font-mono);
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text);
+    background: var(--ccm-surface);
+    resize: vertical;
+    min-height: 100px;
+    transition: var(--ccm-transition);
+    margin-top: var(--ccm-space-sm);
+}
+
+.ccm-textarea:focus {
+    outline: none;
+    border-color: var(--ccm-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Text muted helper */
+.ccm-text-muted {
+    color: var(--ccm-text-muted);
+    font-size: var(--ccm-text-sm);
+    margin: var(--ccm-space-xs) 0;
+}
+
+/* Warning Card */
+.ccm-warning-card {
+    background: var(--ccm-warning-bg) !important;
+    border-color: var(--ccm-warning) !important;
+}
+
+.ccm-warning-card h2 {
+    color: var(--ccm-warning) !important;
+    border-bottom-color: var(--ccm-warning) !important;
+}
+
+/* Status indicator on perf page */
+#perf-status {
+    padding: var(--ccm-space-sm) var(--ccm-space-md);
+    border-radius: var(--ccm-radius-md);
+    font-weight: 500;
+    text-align: center;
+    margin-top: var(--ccm-space-md);
+}
+
+#perf-status.ccm-success {
+    background: var(--ccm-success-bg);
+    color: var(--ccm-success);
+}
+
+#perf-status.ccm-warning {
+    background: var(--ccm-warning-bg);
+    color: var(--ccm-warning);
+}
+
+/* Small spinner variant */
+.ccm-spinner-small {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
 }

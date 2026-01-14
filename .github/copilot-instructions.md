@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.3.0
+- **Current Version:** 7.4.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -32,6 +32,7 @@ ccm-tools/
 │   ├── error-log.php      # Error log viewer and management
 │   ├── htaccess.php       # .htaccess optimization functions
 │   ├── optimize.php       # Database optimization tools
+│   ├── performance-optimizer.php # Performance optimizer (experimental)
 │   ├── system-info.php    # System information gathering (TTFB, disk, etc.)
 │   ├── tableconverter.php # Database table conversion (InnoDB/utf8mb4)
 │   ├── update.php         # Plugin update checker
@@ -157,6 +158,8 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_get_unconverted_images` | `ccm_tools_ajax_get_unconverted_images()` | Get images pending conversion |
 | `ccm_tools_convert_single_image` | `ccm_tools_ajax_convert_single_image()` | Convert single image to WebP |
 | `ccm_tools_test_webp_conversion` | `ccm_tools_ajax_test_webp_conversion()` | Test WebP conversion with upload |
+| `ccm_tools_save_perf_settings` | `ccm_tools_ajax_save_perf_settings()` | Save performance optimizer settings |
+| `ccm_tools_get_perf_settings` | `ccm_tools_ajax_get_perf_settings()` | Get performance optimizer settings |
 
 ## Performance Considerations
 
@@ -261,6 +264,32 @@ After completing changes:
   - Test conversion feature to verify settings
   - Conversion statistics dashboard
   - WooCommerce product image support
+
+### v7.4.0
+- **Performance Optimizer Tool (Experimental)**
+  - New tool to eliminate render-blocking resources and improve Lighthouse scores
+  - **JavaScript Optimizations:**
+    - Defer JavaScript: Add defer attribute to non-critical scripts
+    - Delay JavaScript: Delay script execution until user interaction (scroll, click, touch)
+    - Configurable exclude lists for both features
+    - Fallback timeout option for delayed scripts
+  - **CSS Optimizations:**
+    - Async CSS Loading: Convert stylesheets to non-blocking using print media trick
+    - Critical CSS: Inline above-the-fold CSS to prevent FOUC
+    - Configurable exclude list
+  - **Resource Hints:**
+    - Preconnect: Early connections to important third-party origins
+    - DNS Prefetch: Advance DNS lookups for external domains
+  - **Additional Optimizations:**
+    - Remove query strings from static resources
+    - Disable WordPress emoji scripts (~10KB savings)
+    - Disable dashicons for logged-out users (~35KB savings)
+    - Lazy load iframes with native loading="lazy"
+    - YouTube Lite Embeds: Replace iframes with lightweight facade
+  - Per-feature toggle controls with detailed explanations
+  - Clear experimental warnings and testing guidance
+  - Links to external testing tools (PageSpeed, GTmetrix, WebPageTest)
+- Menu item shows flask emoji (⚗️) to indicate experimental status
 
 ### v7.2.19
 - Added on-demand/lazy WebP conversion

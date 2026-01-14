@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.3.0
+ * Version: 7.5.0
  */
 
 (function() {
@@ -1644,11 +1644,109 @@
 
     let webpConversionRunning = false;
     let webpConversionStopped = false;
+    let webpStatsRefreshInterval = null;
+
+    /**
+     * Refresh WebP conversion statistics
+     * Called periodically to keep stats current
+     */
+    async function refreshWebPStats() {
+        try {
+            const response = await ajax('ccm_tools_get_webp_stats', {});
+            
+            if (response && response.data) {
+                const data = response.data;
+                
+                // Update stat values
+                const totalEl = $('#stat-total-images');
+                const convertedEl = $('#stat-converted-images');
+                const pendingEl = $('#stat-pending-images');
+                const savingsEl = $('#stat-average-savings');
+                const origSizeEl = $('#stat-original-size');
+                const webpSizeEl = $('#stat-webp-size');
+                const savedSizeEl = $('#stat-saved-size');
+                const sizeComparisonEl = $('#stat-size-comparison');
+                
+                if (totalEl) totalEl.textContent = data.total_images;
+                if (convertedEl) convertedEl.textContent = data.converted_images;
+                if (pendingEl) {
+                    pendingEl.textContent = data.pending_conversion;
+                    // Update warning class
+                    if (data.pending_conversion > 0) {
+                        pendingEl.classList.add('ccm-warning');
+                    } else {
+                        pendingEl.classList.remove('ccm-warning');
+                    }
+                }
+                if (savingsEl) savingsEl.textContent = data.total_savings + '%';
+                
+                // Update size comparison section
+                if (data.total_original_size > 0) {
+                    if (origSizeEl) origSizeEl.textContent = formatBytes(data.total_original_size);
+                    if (webpSizeEl) webpSizeEl.textContent = formatBytes(data.total_webp_size);
+                    if (savedSizeEl) savedSizeEl.textContent = 'Saved ' + formatBytes(data.total_original_size - data.total_webp_size);
+                    if (sizeComparisonEl) sizeComparisonEl.style.display = '';
+                } else {
+                    if (sizeComparisonEl) sizeComparisonEl.style.display = 'none';
+                }
+                
+                // Update button states and text (only if not currently converting)
+                if (!webpConversionRunning) {
+                    const startBulkBtn = $('#start-bulk-conversion');
+                    const regenerateBtn = $('#regenerate-all-webp');
+                    
+                    if (startBulkBtn) {
+                        startBulkBtn.disabled = data.pending_conversion === 0;
+                        startBulkBtn.textContent = `Convert ${data.pending_conversion} Images`;
+                    }
+                    
+                    if (regenerateBtn && !regenerateBtn.disabled) {
+                        regenerateBtn.textContent = `Regenerate ${data.converted_images} WebP Images`;
+                        if (data.converted_images === 0) {
+                            regenerateBtn.disabled = true;
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            // Silently fail - stats refresh is non-critical
+            console.debug('WebP stats refresh failed:', error);
+        }
+    }
+
+    /**
+     * Start WebP stats auto-refresh (every 30 seconds)
+     */
+    function startWebPStatsRefresh() {
+        // Only start if we're on the WebP page
+        if (!$('#webp-stats-card')) return;
+        
+        // Clear any existing interval
+        if (webpStatsRefreshInterval) {
+            clearInterval(webpStatsRefreshInterval);
+        }
+        
+        // Refresh every 30 seconds (non-invasive)
+        webpStatsRefreshInterval = setInterval(refreshWebPStats, 30000);
+    }
+
+    /**
+     * Stop WebP stats auto-refresh
+     */
+    function stopWebPStatsRefresh() {
+        if (webpStatsRefreshInterval) {
+            clearInterval(webpStatsRefreshInterval);
+            webpStatsRefreshInterval = null;
+        }
+    }
 
     /**
      * Initialize WebP converter event handlers
      */
     function initWebPConverterHandlers() {
+        // Start stats auto-refresh
+        startWebPStatsRefresh();
+        
         // Quality range slider
         const qualitySlider = $('#webp-quality');
         const qualityValue = $('#webp-quality-value');
@@ -1713,6 +1811,7 @@
         // Bulk conversion buttons
         const startBulkBtn = $('#start-bulk-conversion');
         const stopBulkBtn = $('#stop-bulk-conversion');
+        const regenerateBtn = $('#regenerate-all-webp');
         
         if (startBulkBtn) {
             startBulkBtn.addEventListener('click', async () => {
@@ -1725,6 +1824,32 @@
                 webpConversionStopped = true;
                 stopBulkBtn.disabled = true;
                 stopBulkBtn.textContent = ccmToolsData.i18n?.stopping || 'Stopping...';
+            });
+        }
+        
+        if (regenerateBtn) {
+            regenerateBtn.addEventListener('click', async () => {
+                if (!confirm('This will delete all existing WebP images and mark them for re-conversion with the current quality settings.\n\nAre you sure you want to continue?')) {
+                    return;
+                }
+                
+                regenerateBtn.disabled = true;
+                regenerateBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Resetting...';
+                
+                try {
+                    const response = await ajax('ccm_tools_reset_webp_conversions', { delete_files: '1' });
+                    
+                    showNotification(response.message || 'WebP images reset successfully. You can now re-convert them.', 'success');
+                    
+                    // Reload page to update stats
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+                } catch (error) {
+                    showNotification(error.message || 'Failed to reset WebP conversions.', 'error');
+                    regenerateBtn.disabled = false;
+                    regenerateBtn.textContent = 'Regenerate WebP Images';
+                }
             });
         }
     }
@@ -1898,6 +2023,8 @@
             
             addLogEntry(logBox, `Starting conversion of ${total} images...`, 'info');
             
+            let processedCount = 0;
+            
             while (!webpConversionStopped) {
                 const batchResponse = await ajax('ccm_tools_get_unconverted_images', { offset: 0, limit: batchSize });
                 const images = batchResponse.data?.images || [];
@@ -1918,6 +2045,8 @@
                         addLogEntry(logBox, `✗ ${image.title || 'Image #' + image.id}: ${error.message}`, 'error');
                     }
                     
+                    processedCount++;
+                    
                     // Update progress
                     if (currentSpan) currentSpan.textContent = totalConverted + totalErrors;
                     if (progressBar) {
@@ -1925,8 +2054,13 @@
                         progressBar.style.width = `${percent}%`;
                     }
                     
-                    // Small delay between conversions
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                    // Refresh stats every 10 images
+                    if (processedCount % 10 === 0) {
+                        refreshWebPStats();
+                    }
+                    
+                    // Minimal delay to allow UI updates
+                    await new Promise(resolve => setTimeout(resolve, 50));
                 }
             }
             
@@ -1962,15 +2096,380 @@
         logBox.scrollTop = logBox.scrollHeight;
     }
 
+    // ===================================
+    // Performance Optimizer Handlers
+    // ===================================
+    
     /**
-     * Refresh WebP statistics
+     * Initialize performance optimizer event handlers
      */
-    async function refreshWebPStats() {
+    function initPerfOptimizerHandlers() {
+        // Toggle visibility of setting details when checkboxes change
+        const toggleSettings = [
+            { checkbox: '#perf-defer-js', detail: '#perf-defer-js' },
+            { checkbox: '#perf-delay-js', detail: '#perf-delay-js' },
+            { checkbox: '#perf-preconnect', detail: '#perf-preconnect' },
+            { checkbox: '#perf-dns-prefetch', detail: '#perf-dns-prefetch' },
+            { checkbox: '#perf-lcp-preload', detail: '#perf-lcp-preload' },
+        ];
+        
+        toggleSettings.forEach(({ checkbox }) => {
+            const el = $(checkbox);
+            if (el) {
+                el.addEventListener('change', function() {
+                    const settingRow = this.closest('.ccm-setting-row');
+                    if (settingRow) {
+                        const detail = settingRow.querySelector('.ccm-setting-detail');
+                        if (detail) {
+                            detail.style.display = this.checked ? 'block' : 'none';
+                        }
+                    }
+                });
+            }
+        });
+        
+        // Master enable toggle
+        const masterEnable = $('#perf-master-enable');
+        if (masterEnable) {
+            masterEnable.addEventListener('change', function() {
+                const statusEl = $('#perf-status');
+                if (statusEl) {
+                    if (this.checked) {
+                        statusEl.className = 'ccm-success';
+                        statusEl.textContent = 'Performance optimizations are ACTIVE';
+                    } else {
+                        statusEl.className = 'ccm-warning';
+                        statusEl.textContent = 'Performance optimizations are INACTIVE';
+                    }
+                }
+            });
+        }
+        
+        // Save button
+        const saveBtn = $('#save-perf-settings');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', savePerfSettings);
+        }
+        
+        // Detect external origins button (Preconnect)
+        const detectBtn = $('#detect-external-origins');
+        if (detectBtn) {
+            detectBtn.addEventListener('click', () => detectExternalOrigins('preconnect'));
+        }
+        
+        // Detect external origins button (DNS Prefetch)
+        const detectDnsBtn = $('#detect-dns-prefetch-origins');
+        if (detectDnsBtn) {
+            detectDnsBtn.addEventListener('click', () => detectExternalOrigins('dns-prefetch'));
+        }
+    }
+    
+    /**
+     * Save performance optimizer settings
+     */
+    async function savePerfSettings() {
+        const saveBtn = $('#save-perf-settings');
+        const statusEl = $('#perf-save-status');
+        const resultBox = $('#perf-result');
+        
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Saving...';
+        }
+        
+        if (statusEl) {
+            statusEl.innerHTML = '';
+        }
+        
         try {
-            const response = await ajax('ccm_tools_get_webp_stats');
-            // Stats are refreshed on page reload for simplicity
+            // Gather all settings
+            const data = {
+                enabled: $('#perf-master-enable')?.checked ? '1' : '',
+                defer_js: $('#perf-defer-js')?.checked ? '1' : '',
+                defer_js_excludes: $('#perf-defer-js-excludes')?.value || '',
+                delay_js: $('#perf-delay-js')?.checked ? '1' : '',
+                delay_js_timeout: $('#perf-delay-js-timeout')?.value || '0',
+                delay_js_excludes: $('#perf-delay-js-excludes')?.value || '',
+                preload_css: $('#perf-preload-css')?.checked ? '1' : '',
+                preconnect: $('#perf-preconnect')?.checked ? '1' : '',
+                preconnect_urls: $('#perf-preconnect-urls')?.value || '',
+                dns_prefetch: $('#perf-dns-prefetch')?.checked ? '1' : '',
+                dns_prefetch_urls: $('#perf-dns-prefetch-urls')?.value || '',
+                lcp_fetchpriority: $('#perf-lcp-fetchpriority')?.checked ? '1' : '',
+                lcp_preload: $('#perf-lcp-preload')?.checked ? '1' : '',
+                lcp_preload_url: $('#perf-lcp-preload-url')?.value || '',
+                remove_query_strings: $('#perf-remove-query-strings')?.checked ? '1' : '',
+                disable_emoji: $('#perf-disable-emoji')?.checked ? '1' : '',
+                disable_dashicons: $('#perf-disable-dashicons')?.checked ? '1' : '',
+                lazy_load_iframes: $('#perf-lazy-load-iframes')?.checked ? '1' : '',
+                youtube_facade: $('#perf-youtube-facade')?.checked ? '1' : '',
+            };
+            
+            const response = await ajax('ccm_tools_save_perf_settings', data);
+            
+            showNotification('Performance settings saved successfully!', 'success');
+            
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="ccm-success">✓ Saved</span>';
+            }
+            
         } catch (error) {
-            console.error('Failed to refresh stats:', error);
+            showNotification('Failed to save settings: ' + error.message, 'error');
+            
+            if (statusEl) {
+                statusEl.innerHTML = '<span class="ccm-error">✗ Error</span>';
+            }
+            
+            if (resultBox) {
+                resultBox.innerHTML = `<p class="ccm-error">${escapeHtml(error.message)}</p>`;
+            }
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = 'Save Settings';
+            }
+        }
+    }
+    
+    /**
+     * Detect external origins from the site's homepage
+     * @param {string} target - 'preconnect' or 'dns-prefetch'
+     */
+    async function detectExternalOrigins(target = 'preconnect') {
+        const isPreconnect = target === 'preconnect';
+        const detectBtn = isPreconnect ? $('#detect-external-origins') : $('#detect-dns-prefetch-origins');
+        const resultDiv = isPreconnect ? $('#detected-origins-result') : $('#detected-dns-origins-result');
+        const textarea = isPreconnect ? $('#perf-preconnect-urls') : $('#perf-dns-prefetch-urls');
+        const otherTextarea = isPreconnect ? $('#perf-dns-prefetch-urls') : $('#perf-preconnect-urls');
+        const targetLabel = isPreconnect ? 'Preconnect' : 'DNS Prefetch';
+        const otherLabel = isPreconnect ? 'DNS Prefetch' : 'Preconnect';
+        
+        if (!detectBtn || !resultDiv) return;
+        
+        // Get current URLs in both lists
+        const currentUrls = new Set(textarea.value.trim().split('\n').filter(url => url.trim()));
+        const otherUrls = new Set(otherTextarea.value.trim().split('\n').filter(url => url.trim()));
+        
+        // Store original button content
+        const originalBtnContent = detectBtn.innerHTML;
+        detectBtn.disabled = true;
+        detectBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Scanning...';
+        
+        try {
+            const response = await ajax('ccm_tools_detect_external_origins', {});
+            
+            if (!response.data || !response.data.origins) {
+                throw new Error('Invalid response from server');
+            }
+            
+            const { origins, categorized, count, site_host } = response.data;
+            
+            if (count === 0) {
+                resultDiv.innerHTML = `
+                    <p class="ccm-text-muted">
+                        <strong>No external origins detected.</strong><br>
+                        Your site doesn't appear to load any external resources.
+                    </p>
+                `;
+                resultDiv.style.display = 'block';
+                showNotification('No external origins found', 'info');
+                return;
+            }
+            
+            // Count origins in each state
+            let inCurrentCount = 0;
+            let inOtherCount = 0;
+            let availableCount = 0;
+            
+            for (const origin of origins) {
+                if (currentUrls.has(origin)) inCurrentCount++;
+                else if (otherUrls.has(origin)) inOtherCount++;
+                else availableCount++;
+            }
+            
+            // Build categorized display
+            let html = `
+                <p style="margin-bottom: var(--ccm-space-md);">
+                    <strong>Found ${count} external origin${count !== 1 ? 's' : ''}:</strong>
+                    <span class="ccm-text-muted">(excluding ${escapeHtml(site_host)})</span>
+                </p>
+            `;
+            
+            // Show summary of states
+            if (inCurrentCount > 0 || inOtherCount > 0) {
+                html += `<div style="margin-bottom: var(--ccm-space-md); padding: var(--ccm-space-sm); background: var(--ccm-bg); border-radius: var(--ccm-radius); font-size: 0.85em;">`;
+                if (inCurrentCount > 0) {
+                    html += `<span class="ccm-success">✓ ${inCurrentCount} already in ${targetLabel}</span> `;
+                }
+                if (inOtherCount > 0) {
+                    html += `<span class="ccm-warning">⚠ ${inOtherCount} in ${otherLabel}</span>`;
+                }
+                html += `</div>`;
+            }
+            
+            // Category labels and icons
+            const categoryLabels = {
+                fonts: '🔤 Fonts',
+                analytics: '📊 Analytics',
+                cdn: '🌐 CDN',
+                social: '📱 Social',
+                other: '📦 Other'
+            };
+            
+            // Recommended categories for each target type
+            const recommendedFor = {
+                'preconnect': ['fonts', 'cdn'],
+                'dns-prefetch': ['analytics', 'social']
+            };
+            const recommended = recommendedFor[target] || [];
+            
+            // Build checkboxes for each origin
+            html += '<div style="max-height: 300px; overflow-y: auto;">';
+            
+            for (const [category, catOrigins] of Object.entries(categorized)) {
+                if (catOrigins.length === 0) continue;
+                
+                const isRecommended = recommended.includes(category);
+                const categoryNote = isRecommended ? ' <span class="ccm-success" style="font-size: 0.8em;">(recommended)</span>' : '';
+                
+                html += `
+                    <div style="margin-bottom: var(--ccm-space-md);">
+                        <strong>${categoryLabels[category] || category}${categoryNote}</strong>
+                        <div style="margin-top: var(--ccm-space-xs);">
+                `;
+                
+                for (const origin of catOrigins) {
+                    const inCurrent = currentUrls.has(origin);
+                    const inOther = otherUrls.has(origin);
+                    const isAvailable = !inCurrent && !inOther;
+                    
+                    // Default: check if recommended category AND available
+                    const shouldCheck = isRecommended && isAvailable;
+                    
+                    let statusBadge = '';
+                    let labelStyle = 'display: flex; align-items: center; gap: var(--ccm-space-xs); margin-bottom: var(--ccm-space-xs);';
+                    let checkboxAttrs = `class="detected-origin-checkbox-${target}" value="${escapeHtml(origin)}"`;
+                    
+                    if (inCurrent) {
+                        statusBadge = `<span class="ccm-success" style="font-size: 0.75em; margin-left: var(--ccm-space-xs);">✓ already added</span>`;
+                        labelStyle += ' opacity: 0.5;';
+                        checkboxAttrs += ' disabled checked';
+                    } else if (inOther) {
+                        statusBadge = `<span class="ccm-warning" style="font-size: 0.75em; margin-left: var(--ccm-space-xs);">in ${otherLabel}</span>`;
+                        checkboxAttrs += ` data-in-other="true"`;
+                        if (shouldCheck) checkboxAttrs += ' checked';
+                    } else {
+                        labelStyle += ' cursor: pointer;';
+                        if (shouldCheck) checkboxAttrs += ' checked';
+                    }
+                    
+                    html += `
+                        <label style="${labelStyle}">
+                            <input type="checkbox" ${checkboxAttrs}>
+                            <code style="font-size: 0.85em;">${escapeHtml(origin)}</code>
+                            ${statusBadge}
+                        </label>
+                    `;
+                }
+                
+                html += '</div></div>';
+            }
+            
+            html += '</div>';
+            
+            // Action buttons
+            html += `
+                <div style="margin-top: var(--ccm-space-md); display: flex; gap: var(--ccm-space-sm); flex-wrap: wrap;">
+                    <button type="button" class="add-selected-origins-btn ccm-button ccm-button-small ccm-button-primary">
+                        Add Selected
+                    </button>
+                    <button type="button" class="select-recommended-btn ccm-button ccm-button-small ccm-button-secondary">
+                        Select Recommended
+                    </button>
+                    <button type="button" class="select-none-origins-btn ccm-button ccm-button-small ccm-button-secondary">
+                        Select None
+                    </button>
+                </div>
+            `;
+            
+            // Info about overlap handling
+            html += `<p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm); font-size: 0.85em;">
+                💡 <strong>${targetLabel}</strong>: Best for ${isPreconnect ? 'fonts & CDNs (critical resources)' : 'analytics & social (resources that might load)'}.<br>
+                ${inOtherCount > 0 ? `⚠️ Origins in ${otherLabel} will be <strong>moved</strong> here (no duplicates).` : 'Origins already in this list are greyed out.'}
+            </p>`;
+            
+            resultDiv.innerHTML = html;
+            resultDiv.style.display = 'block';
+            
+            // Bind action buttons (scoped to this result div)
+            resultDiv.querySelector('.add-selected-origins-btn')?.addEventListener('click', () => {
+                const checkboxes = resultDiv.querySelectorAll(`.detected-origin-checkbox-${target}:checked:not(:disabled)`);
+                const selectedOrigins = Array.from(checkboxes).map(cb => cb.value);
+                
+                if (selectedOrigins.length === 0) {
+                    showNotification('No origins selected', 'warning');
+                    return;
+                }
+                
+                // Separate origins that need to be moved from the other list
+                const toMove = selectedOrigins.filter(url => otherUrls.has(url));
+                const toAdd = selectedOrigins.filter(url => !otherUrls.has(url));
+                
+                // Remove moved origins from other list
+                if (toMove.length > 0) {
+                    const otherCurrentUrls = otherTextarea.value.trim().split('\n').filter(url => url.trim());
+                    const otherUpdated = otherCurrentUrls.filter(url => !toMove.includes(url));
+                    otherTextarea.value = otherUpdated.join('\n');
+                }
+                
+                // Add to current list
+                const existingUrls = textarea.value.trim().split('\n').filter(url => url.trim());
+                const allUrls = [...new Set([...existingUrls, ...selectedOrigins])];
+                textarea.value = allUrls.join('\n');
+                
+                // Show appropriate message
+                let message = '';
+                if (toMove.length > 0 && toAdd.length > 0) {
+                    message = `Added ${toAdd.length} and moved ${toMove.length} origin${toMove.length !== 1 ? 's' : ''} to ${targetLabel}`;
+                } else if (toMove.length > 0) {
+                    message = `Moved ${toMove.length} origin${toMove.length !== 1 ? 's' : ''} from ${otherLabel} to ${targetLabel}`;
+                } else {
+                    message = `Added ${toAdd.length} origin${toAdd.length !== 1 ? 's' : ''} to ${targetLabel}`;
+                }
+                
+                showNotification(message, 'success');
+                resultDiv.style.display = 'none';
+            });
+            
+            resultDiv.querySelector('.select-recommended-btn')?.addEventListener('click', () => {
+                resultDiv.querySelectorAll(`.detected-origin-checkbox-${target}:not(:disabled)`).forEach(cb => {
+                    // Check the category of this origin
+                    const categoryDiv = cb.closest('[style*="margin-bottom: var(--ccm-space-md)"]');
+                    const categoryLabel = categoryDiv?.querySelector('strong')?.textContent || '';
+                    
+                    // Check if it's a recommended category
+                    const isRecommendedCategory = recommended.some(cat => 
+                        categoryLabel.toLowerCase().includes(cat) || 
+                        categoryLabels[cat]?.includes(categoryLabel.split(' ')[0])
+                    );
+                    
+                    cb.checked = isRecommendedCategory;
+                });
+            });
+            
+            resultDiv.querySelector('.select-none-origins-btn')?.addEventListener('click', () => {
+                resultDiv.querySelectorAll(`.detected-origin-checkbox-${target}:not(:disabled)`).forEach(cb => cb.checked = false);
+            });
+            
+            showNotification(`Detected ${count} external origins (${availableCount} available)`, 'success');
+            
+        } catch (error) {
+            showNotification('Failed to detect origins: ' + error.message, 'error');
+            resultDiv.innerHTML = `<p class="ccm-error">${escapeHtml(error.message)}</p>`;
+            resultDiv.style.display = 'block';
+        } finally {
+            detectBtn.disabled = false;
+            detectBtn.innerHTML = originalBtnContent;
         }
     }
 
@@ -1990,6 +2489,16 @@
             initWebPConverterHandlers();
         }
         
+        // Initialize Performance Optimizer handlers if on perf page
+        if ($('#save-perf-settings')) {
+            initPerfOptimizerHandlers();
+        }
+        
+        // Initialize uploads backup handlers
+        if ($('#start-uploads-backup')) {
+            initUploadsBackupHandlers();
+        }
+        
         // Mark front page rows
         const frontPageIndicators = $$('.ccm-front-page-indicator');
         frontPageIndicators.forEach(indicator => {
@@ -1997,5 +2506,305 @@
             if (row) row.classList.add('ccm-front-page-row');
         });
     });
+    
+    // ===================================
+    // Uploads Backup Functions
+    // ===================================
+    
+    let backupStopped = false;
+    
+    /**
+     * Initialize uploads backup event handlers
+     */
+    function initUploadsBackupHandlers() {
+        const startBtn = $('#start-uploads-backup');
+        const cancelBtn = $('#cancel-uploads-backup');
+        const downloadBtn = $('#download-backup');
+        const deleteBtn = $('#delete-backup');
+        
+        // Load initial info
+        loadUploadsInfo();
+        
+        // Check for existing backup status
+        checkBackupStatus();
+        
+        if (startBtn) {
+            startBtn.addEventListener('click', startUploadsBackup);
+        }
+        
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to cancel the backup? The partial file will be deleted.')) {
+                    await cancelBackup();
+                }
+            });
+        }
+        
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                downloadBackup();
+            });
+        }
+        
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', async () => {
+                if (confirm('Are you sure you want to delete this backup? This cannot be undone.')) {
+                    await deleteBackup();
+                }
+            });
+        }
+    }
+    
+    /**
+     * Load uploads folder information
+     */
+    async function loadUploadsInfo() {
+        const infoEl = $('#backup-info');
+        if (!infoEl) return;
+        
+        try {
+            const response = await ajax('ccm_tools_check_zip_available');
+            
+            if (response && response.data && response.data.zip_available) {
+                infoEl.innerHTML = `
+                    <p><span class="ccm-icon">📁</span> <strong>Uploads folder:</strong> ${response.data.file_count.toLocaleString()} files (${response.data.uploads_size})</p>
+                `;
+            } else if (response) {
+                infoEl.innerHTML = `<p class="ccm-warning"><span class="ccm-icon">⚠</span> ZipArchive not available on this server.</p>`;
+            }
+        } catch (error) {
+            console.error('Error loading uploads info:', error);
+            infoEl.innerHTML = `<p class="ccm-error"><span class="ccm-icon">✕</span> Failed to load uploads information.</p>`;
+        }
+    }
+    
+    /**
+     * Check for existing backup status
+     */
+    async function checkBackupStatus() {
+        try {
+            const response = await ajax('ccm_tools_get_backup_status');
+            const data = response.data || {};
+            
+            if (data.status === 'complete' && data.download_ready) {
+                showBackupComplete(data.backup_size);
+            }
+            // Note: We no longer auto-resume in_progress backups on page load
+            // User must click "Create Backup" to start a new backup
+            // This prevents unexpected backup resumption from stale state
+        } catch (error) {
+            console.error('Error checking backup status:', error);
+        }
+    }
+    
+    /**
+     * Start uploads backup
+     */
+    async function startUploadsBackup() {
+        const startBtn = $('#start-uploads-backup');
+        const cancelBtn = $('#cancel-uploads-backup');
+        
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Starting...';
+        }
+        
+        backupStopped = false;
+        
+        try {
+            const response = await ajax('ccm_tools_start_uploads_backup');
+            const data = response.data || {};
+            
+            showNotification('Backup started. Processing ' + data.total_files + ' files...', 'info');
+            
+            // Update UI
+            const totalEl = $('#backup-total');
+            if (totalEl) totalEl.textContent = data.total_files;
+            
+            showBackupProgress();
+            
+            if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+            if (startBtn) startBtn.style.display = 'none';
+            
+            // Start processing batches
+            await processBackupBatch();
+            
+        } catch (error) {
+            showNotification(error.message || 'Failed to start backup.', 'error');
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.textContent = 'Create Backup';
+            }
+        }
+    }
+    
+    /**
+     * Process backup batch
+     */
+    async function processBackupBatch() {
+        if (backupStopped) {
+            return;
+        }
+        
+        try {
+            const response = await ajax('ccm_tools_process_backup_batch');
+            const data = response.data || {};
+            
+            // Update progress UI
+            const currentEl = $('#backup-current');
+            const totalEl = $('#backup-total');
+            const percentEl = $('#backup-percent');
+            const progressBar = $('#backup-progress-bar');
+            
+            if (currentEl) currentEl.textContent = data.processed_files;
+            if (totalEl) totalEl.textContent = data.total_files;
+            if (percentEl) percentEl.textContent = data.percent;
+            if (progressBar) progressBar.style.width = data.percent + '%';
+            
+            if (data.status === 'complete') {
+                showBackupComplete(data.backup_size);
+                showNotification('Backup completed successfully!', 'success');
+            } else {
+                // Process next batch
+                await processBackupBatch();
+            }
+            
+        } catch (error) {
+            showNotification(error.message || 'Backup failed.', 'error');
+            resetBackupUI();
+        }
+    }
+    
+    /**
+     * Show backup progress UI
+     */
+    function showBackupProgress() {
+        const progressEl = $('#backup-progress');
+        const completeEl = $('#backup-complete');
+        
+        if (progressEl) progressEl.style.display = 'block';
+        if (completeEl) completeEl.style.display = 'none';
+    }
+    
+    /**
+     * Show backup complete UI
+     */
+    function showBackupComplete(size) {
+        const progressEl = $('#backup-progress');
+        const completeEl = $('#backup-complete');
+        const startBtn = $('#start-uploads-backup');
+        const cancelBtn = $('#cancel-uploads-backup');
+        const sizeEl = $('#backup-size');
+        
+        if (progressEl) progressEl.style.display = 'none';
+        if (completeEl) completeEl.style.display = 'block';
+        if (startBtn) startBtn.style.display = 'none';
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        if (sizeEl) sizeEl.textContent = size;
+    }
+    
+    /**
+     * Reset backup UI to initial state
+     */
+    function resetBackupUI() {
+        const progressEl = $('#backup-progress');
+        const completeEl = $('#backup-complete');
+        const startBtn = $('#start-uploads-backup');
+        const cancelBtn = $('#cancel-uploads-backup');
+        const currentEl = $('#backup-current');
+        const totalEl = $('#backup-total');
+        const percentEl = $('#backup-percent');
+        const progressBar = $('#backup-progress-bar');
+        
+        if (progressEl) progressEl.style.display = 'none';
+        if (completeEl) completeEl.style.display = 'none';
+        if (startBtn) {
+            startBtn.style.display = 'inline-flex';
+            startBtn.disabled = false;
+            startBtn.textContent = 'Create Backup';
+        }
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        
+        // Reset progress
+        if (currentEl) currentEl.textContent = '0';
+        if (totalEl) totalEl.textContent = '0';
+        if (percentEl) percentEl.textContent = '0';
+        if (progressBar) progressBar.style.width = '0%';
+    }
+    
+    /**
+     * Cancel backup (during processing)
+     */
+    async function cancelBackup() {
+        backupStopped = true;
+        
+        const cancelBtn = $('#cancel-uploads-backup');
+        if (cancelBtn) {
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = 'Cancelling...';
+        }
+        
+        try {
+            await ajax('ccm_tools_cancel_backup');
+            showNotification('Backup cancelled and file deleted.', 'info');
+        } catch (error) {
+            console.error('Error cancelling backup:', error);
+            showNotification('Error cancelling backup.', 'error');
+        }
+        
+        resetBackupUI();
+    }
+    
+    /**
+     * Delete completed backup
+     */
+    async function deleteBackup() {
+        const deleteBtn = $('#delete-backup');
+        if (deleteBtn) {
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = 'Deleting...';
+        }
+        
+        try {
+            await ajax('ccm_tools_cancel_backup'); // Same action - deletes file and clears state
+            showNotification('Backup deleted successfully.', 'success');
+            resetBackupUI();
+        } catch (error) {
+            console.error('Error deleting backup:', error);
+            showNotification('Error deleting backup.', 'error');
+            if (deleteBtn) {
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = 'Delete Backup';
+            }
+        }
+    }
+    
+    /**
+     * Download backup file
+     */
+    function downloadBackup() {
+        // Create a form to submit download request with nonce
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = ccmToolsData.ajax_url;
+        form.style.display = 'none';
+        
+        const actionInput = document.createElement('input');
+        actionInput.type = 'hidden';
+        actionInput.name = 'action';
+        actionInput.value = 'ccm_tools_download_backup';
+        form.appendChild(actionInput);
+        
+        const nonceInput = document.createElement('input');
+        nonceInput.type = 'hidden';
+        nonceInput.name = 'nonce';
+        nonceInput.value = ccmToolsData.nonce;
+        form.appendChild(nonceInput);
+        
+        document.body.appendChild(form);
+        form.submit();
+        document.body.removeChild(form);
+    }
 
 })();
