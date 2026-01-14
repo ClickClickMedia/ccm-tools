@@ -1199,26 +1199,11 @@ function ccm_tools_render_webp_page() {
     
     ?>
     <div class="wrap ccm-tools">
-        <div class="ccm-header">
-            <div class="ccm-header-logo">
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
-                    <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
-                </a>
-            </div>
-            <nav class="ccm-header-menu">
-                <div class="ccm-tabs">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab"><?php _e('System Info', 'ccm-tools'); ?></a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab"><?php _e('Database', 'ccm-tools'); ?></a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab active"><?php _e('WebP', 'ccm-tools'); ?></a>
-                </div>
-            </nav>
-            <div class="ccm-header-title">
-                <h1><?php _e('WebP Converter', 'ccm-tools'); ?></h1>
-            </div>
-        </div>
+        <?php 
+        if (function_exists('ccm_tools_render_header_nav')) {
+            ccm_tools_render_header_nav('ccm-tools-webp');
+        }
+        ?>
         
         <div class="ccm-content">
             <!-- Available Extensions -->

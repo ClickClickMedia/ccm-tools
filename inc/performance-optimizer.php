@@ -720,23 +720,11 @@ function ccm_tools_render_perf_page() {
     $settings = ccm_tools_perf_get_settings();
     ?>
     <div class="wrap ccm-tools ccm-tools-perf">
-        <div class="ccm-header">
-            <div class="ccm-header-logo">
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
-                    <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
-                </a>
-            </div>
-            <div class="ccm-header-title">
-                <h1><?php _e('Performance Optimizer', 'ccm-tools'); ?></h1>
-            </div>
-            <nav class="ccm-tabs">
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab"><?php _e('Dashboard', 'ccm-tools'); ?></a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-optimizer')); ?>" class="ccm-tab"><?php _e('Database', 'ccm-tools'); ?></a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-perf')); ?>" class="ccm-tab active"><?php _e('Performance', 'ccm-tools'); ?></a>
-            </nav>
-        </div>
+        <?php 
+        if (function_exists('ccm_tools_render_header_nav')) {
+            ccm_tools_render_header_nav('ccm-tools-perf');
+        }
+        ?>
         
         <div class="ccm-content">
             <!-- Master Enable Toggle -->

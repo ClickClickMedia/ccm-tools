@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.5.8
+ * Version: 7.5.9
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.5.8');
+    define('CCM_HELPER_VERSION', '7.5.9');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -148,6 +148,41 @@ function ccm_initialize_plugin() {
     // Initialize plugin settings
     global $ccm_tools;
     $ccm_tools = new CCMSettings();
+}
+
+/**
+ * Render the CCM Tools header navigation menu
+ * 
+ * @param string $active_page The current active page slug (e.g., 'ccm-tools', 'ccm-tools-database')
+ * @return void
+ */
+function ccm_tools_render_header_nav($active_page = '') {
+    $webp_available = function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available();
+    ?>
+    <div class="ccm-header">
+        <div class="ccm-header-logo">
+            <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
+                <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
+            </a>
+        </div>
+        <nav class="ccm-header-menu">
+            <div class="ccm-tabs">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools' ? 'active' : ''; ?>"><?php _e('System Info', 'ccm-tools'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-database' ? 'active' : ''; ?>"><?php _e('Database', 'ccm-tools'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-htaccess' ? 'active' : ''; ?>"><?php _e('.htaccess', 'ccm-tools'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-woocommerce' ? 'active' : ''; ?>"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-error-log' ? 'active' : ''; ?>"><?php _e('Error Log', 'ccm-tools'); ?></a>
+                <?php if ($webp_available): ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-webp' ? 'active' : ''; ?>"><?php _e('WebP', 'ccm-tools'); ?></a>
+                <?php endif; ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-perf')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-perf' ? 'active' : ''; ?>"><?php _e('Performance', 'ccm-tools'); ?></a>
+            </div>
+        </nav>
+        <div class="ccm-header-title">
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+        </div>
+    </div>
+    <?php
 }
 
 /**
@@ -612,28 +647,7 @@ class CCMSettings {
         
         ?>
         <div class="wrap ccm-tools">
-            <div class="ccm-header">
-                <div class="ccm-header-logo">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
-                        <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
-                    </a>
-                </div>
-                <nav class="ccm-header-menu">
-                    <div class="ccm-tabs">
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab active"><?php _e('System Info', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab"><?php _e('Database', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
-                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
-                        <?php endif; ?>
-                    </div>
-                </nav>
-                <div class="ccm-header-title">
-                    <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
-                </div>
-            </div>
+            <?php ccm_tools_render_header_nav('ccm-tools'); ?>
             
             <div class="ccm-content">
                 <!-- Disk Information Card -->
@@ -1256,28 +1270,7 @@ class CCMSettings {
         }
         ?>
         <div class="wrap ccm-tools">
-            <div class="ccm-header">
-                <div class="ccm-header-logo">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
-                        <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
-                    </a>
-                </div>
-                <nav class="ccm-header-menu">
-                    <div class="ccm-tabs">
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab"><?php _e('System Info', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab active"><?php _e('Database', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
-                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
-                        <?php endif; ?>
-                    </div>
-                </nav>
-                <div class="ccm-header-title">
-                    <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
-                </div>
-            </div>
+            <?php ccm_tools_render_header_nav('ccm-tools-database'); ?>
             
             <div class="ccm-content">
                 <div class="ccm-card">
@@ -1323,28 +1316,7 @@ class CCMSettings {
         }
         ?>
         <div class="wrap ccm-tools">
-            <div class="ccm-header">
-                <div class="ccm-header-logo">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
-                        <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
-                    </a>
-                </div>
-                <nav class="ccm-header-menu">
-                    <div class="ccm-tabs">
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab"><?php _e('System Info', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab"><?php _e('Database', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab active"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
-                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
-                        <?php endif; ?>
-                    </div>
-                </nav>
-                <div class="ccm-header-title">
-                    <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
-                </div>
-            </div>
+            <?php ccm_tools_render_header_nav('ccm-tools-htaccess'); ?>
             <div class="ccm-content">
                 <div class="ccm-card">
                     <h2><?php _e('.htaccess Optimization', 'ccm-tools'); ?></h2>
@@ -1371,28 +1343,7 @@ class CCMSettings {
         }
         ?>
         <div class="wrap ccm-tools">
-            <div class="ccm-header">
-                <div class="ccm-header-logo">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
-                        <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
-                    </a>
-                </div>
-                <nav class="ccm-header-menu">
-                    <div class="ccm-tabs">
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab"><?php _e('System Info', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab"><?php _e('Database', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab active"><?php _e('Error Log', 'ccm-tools'); ?></a>
-                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
-                        <?php endif; ?>
-                    </div>
-                </nav>
-                <div class="ccm-header-title">
-                    <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
-                </div>
-            </div>
+            <?php ccm_tools_render_header_nav('ccm-tools-error-log'); ?>
             <!-- ...rest of error log page... -->
         </div>
         <?php
@@ -1414,28 +1365,7 @@ class CCMSettings {
         
         ?>
         <div class="wrap ccm-tools">
-            <div class="ccm-header">
-                <div class="ccm-header-logo">
-                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>">
-                        <img src="<?php echo esc_url(CCM_HELPER_ROOT_URL); ?>img/logo.svg" alt="CCM Tools">
-                    </a>
-                </div>
-                <nav class="ccm-header-menu">
-                    <div class="ccm-tabs">
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab"><?php _e('System Info', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab"><?php _e('Database', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab active"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab"><?php _e('Error Log', 'ccm-tools'); ?></a>
-                        <?php if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()): ?>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab"><?php _e('WebP', 'ccm-tools'); ?></a>
-                        <?php endif; ?>
-                    </div>
-                </nav>
-                <div class="ccm-header-title">
-                    <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
-                </div>
-            </div>
+            <?php ccm_tools_render_header_nav('ccm-tools-woocommerce'); ?>
             
             <div class="ccm-content">
                 <?php if (!$woocommerce_active): ?>

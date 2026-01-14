@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.4.0
+- **Current Version:** 7.5.9
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -251,6 +251,36 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.5.9
+- **Consistent Navigation Menu**
+  - Added Performance tab to all page navigation menus
+  - Created centralized `ccm_tools_render_header_nav()` helper function
+  - All pages now display consistent navigation: System Info, Database, .htaccess, WooCommerce, Error Log, WebP (if available), Performance
+
+### v7.5.8
+- **Fixed srcset being stripped when WebP serving enabled without picture tags**
+  - Removed `wp_get_attachment_image_src` filter that was changing src to WebP BEFORE WordPress calculated srcset
+  - WordPress srcset calculation compares src to attachment metadata - WebP src didn't match, causing empty srcset
+  - Added new `ccm_tools_webp_filter_content_src()` function that converts img src URLs AFTER WordPress generates srcset
+  - Filter runs at priority 1000 on `the_content`, `widget_text_content`, and `wp_get_attachment_image` filters
+  - Only activates when picture tags disabled but serve_webp enabled
+
+### v7.5.7
+- **Fixed blurry full-width images when using picture tags**
+  - Smart detection of full-width CSS classes (full-width, wp-block-cover, hero, banner, etc.)
+  - Automatically overrides restrictive sizes attribute with responsive `100vw` for full-width images
+  - Preserves original sizes for non-full-width images
+
+### v7.5.6
+- **Fixed responsive images not working with picture tags**
+  - Now properly extracts and preserves srcset and sizes attributes when converting to picture tags
+  - Source elements include sizes attribute for proper responsive image selection
+
+### v7.5.5
+- **Fixed picture tag double-wrapping on hero images**
+  - Removed `post_thumbnail_html` and `wp_get_attachment_image` hooks that caused double conversion
+  - Picture tag conversion now only runs via `the_content` and `widget_text_content` filters
 
 ### v7.3.0
 - **WebP Image Converter - Stable Release**
