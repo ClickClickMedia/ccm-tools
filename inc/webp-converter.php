@@ -495,6 +495,76 @@ function ccm_tools_webp_filter_image_src($image, $attachment_id, $size) {
 }
 
 /**
+ * Filter content to convert img src URLs to WebP (without using picture tags)
+ * This runs AFTER WordPress has generated srcset, so it won't break srcset
+ * 
+ * @param string $content The content to filter
+ * @return string Content with WebP src URLs
+ */
+function ccm_tools_webp_filter_content_src($content) {
+    $settings = ccm_tools_webp_get_settings();
+    
+    // Check if feature is enabled
+    if (empty($settings['enabled']) || empty($settings['serve_webp'])) {
+        return $content;
+    }
+    
+    // Skip if picture tags are enabled (they handle WebP differently)
+    if (!empty($settings['use_picture_tags'])) {
+        return $content;
+    }
+    
+    // Check if browser supports WebP
+    if (!ccm_tools_webp_browser_supports_webp()) {
+        return $content;
+    }
+    
+    // Don't process in admin, feeds, or REST API
+    if (is_admin() || is_feed() || (defined('REST_REQUEST') && REST_REQUEST)) {
+        return $content;
+    }
+    
+    $upload_dir = wp_upload_dir();
+    
+    // Pattern to match img tags
+    $pattern = '/<img\s+([^>]*?)>/i';
+    
+    $content = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
+        $img_tag = $matches[0];
+        $attrs = $matches[1];
+        
+        // Extract src
+        if (!preg_match('/src=["\']([^"\']+)["\']/', $attrs, $src_match)) {
+            return $img_tag;
+        }
+        
+        $original_src = $src_match[1];
+        
+        // Skip if already WebP
+        if (preg_match('/\.webp$/i', $original_src)) {
+            return $img_tag;
+        }
+        
+        // Check if this is a local upload
+        if (strpos($original_src, $upload_dir['baseurl']) === false) {
+            return $img_tag;
+        }
+        
+        // Try to get WebP version
+        $webp_src = ccm_tools_webp_get_or_create($original_src);
+        
+        if ($webp_src && $webp_src !== $original_src) {
+            // Replace src
+            $img_tag = str_replace($original_src, $webp_src, $img_tag);
+        }
+        
+        return $img_tag;
+    }, $content);
+    
+    return $content;
+}
+
+/**
  * Check if browser supports WebP
  * 
  * @return bool
@@ -1033,7 +1103,16 @@ function ccm_tools_webp_init() {
     // Hook into frontend image display
     if (!empty($settings['serve_webp'])) {
         add_filter('wp_calculate_image_srcset', 'ccm_tools_webp_filter_image_srcset', 10, 5);
-        add_filter('wp_get_attachment_image_src', 'ccm_tools_webp_filter_image_src', 10, 3);
+        // NOTE: Removed wp_get_attachment_image_src filter
+        // Changing src before srcset calculation breaks WordPress's srcset generation
+        // because WordPress compares src to metadata and returns empty srcset if they don't match
+        // Instead, we convert URLs in the final HTML output via the_content filter below
+        
+        // Add content filter to convert img src URLs to WebP (when picture tags disabled)
+        // This runs AFTER WordPress has generated the srcset
+        add_filter('the_content', 'ccm_tools_webp_filter_content_src', 1000);
+        add_filter('widget_text', 'ccm_tools_webp_filter_content_src', 1000);
+        add_filter('widget_block_content', 'ccm_tools_webp_filter_content_src', 1000);
     }
     
     // Hook into content for picture tag conversion
