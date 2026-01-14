@@ -1791,6 +1791,200 @@ function ccm_tools_perf_sanitize_urls($input) {
 }
 
 /**
+ * Detect scripts on the homepage and categorize them for defer/exclude recommendations
+ */
+add_action('wp_ajax_ccm_tools_detect_scripts', 'ccm_tools_ajax_detect_scripts');
+function ccm_tools_ajax_detect_scripts(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    // Get the site URL to fetch
+    $site_url = home_url('/');
+    $site_host = wp_parse_url($site_url, PHP_URL_HOST);
+    
+    // Fetch the homepage
+    $response = wp_remote_get($site_url, array(
+        'timeout' => 30,
+        'sslverify' => false,
+        'user-agent' => 'CCM-Tools Script Detector',
+    ));
+    
+    if (is_wp_error($response)) {
+        wp_send_json_error(array(
+            'message' => __('Failed to fetch homepage: ', 'ccm-tools') . $response->get_error_message()
+        ));
+    }
+    
+    $html = wp_remote_retrieve_body($response);
+    
+    if (empty($html)) {
+        wp_send_json_error(array('message' => __('Empty response from homepage.', 'ccm-tools')));
+    }
+    
+    $scripts = array();
+    
+    // Find all script tags with src attribute
+    if (preg_match_all('/<script[^>]+src=["\']([^"\']+)["\'][^>]*>/i', $html, $matches)) {
+        foreach ($matches[1] as $index => $src) {
+            $full_tag = $matches[0][$index];
+            
+            // Skip if already has defer or async
+            $has_defer = stripos($full_tag, 'defer') !== false;
+            $has_async = stripos($full_tag, 'async') !== false;
+            
+            // Extract script handle/identifier from URL
+            $handle = ccm_tools_extract_script_handle($src);
+            
+            $scripts[] = array(
+                'src' => $src,
+                'handle' => $handle,
+                'has_defer' => $has_defer,
+                'has_async' => $has_async,
+            );
+        }
+    }
+    
+    // Categorize scripts
+    $categorized = array(
+        'wp_core' => array(),      // WordPress core - DO NOT defer
+        'jquery' => array(),       // jQuery family - DO NOT defer
+        'theme' => array(),        // Theme scripts - usually safe
+        'plugins' => array(),      // Plugin scripts - usually safe
+        'third_party' => array(),  // External CDN - usually safe
+        'other' => array(),        // Unknown - needs testing
+    );
+    
+    // Patterns for categorization
+    $wp_core_patterns = array('wp-includes', 'wp-admin', 'wp-embed', 'wp-polyfill', 'wp-hooks', 'wp-i18n', 'wp-a11y', 'wp-dom-ready');
+    $jquery_patterns = array('jquery', 'jquery-core', 'jquery-migrate', 'jquery-ui');
+    
+    foreach ($scripts as &$script) {
+        $src = $script['src'];
+        $handle = $script['handle'];
+        $src_lower = strtolower($src);
+        $handle_lower = strtolower($handle);
+        
+        // Determine category
+        $category = 'other';
+        $safe_to_defer = true;
+        $reason = '';
+        
+        // Check jQuery first (highest priority to exclude)
+        foreach ($jquery_patterns as $pattern) {
+            if (strpos($src_lower, $pattern) !== false || strpos($handle_lower, $pattern) !== false) {
+                $category = 'jquery';
+                $safe_to_defer = false;
+                $reason = 'jQuery must load synchronously - many scripts depend on it';
+                break;
+            }
+        }
+        
+        // Check WordPress core
+        if ($category === 'other') {
+            foreach ($wp_core_patterns as $pattern) {
+                if (strpos($src_lower, $pattern) !== false) {
+                    $category = 'wp_core';
+                    $safe_to_defer = false;
+                    $reason = 'WordPress core scripts have inline dependencies';
+                    break;
+                }
+            }
+        }
+        
+        // Check if third-party (different host)
+        if ($category === 'other') {
+            $script_host = wp_parse_url($src, PHP_URL_HOST);
+            if ($script_host && $script_host !== $site_host) {
+                $category = 'third_party';
+                $safe_to_defer = true;
+                $reason = 'External script - usually safe to defer';
+            }
+        }
+        
+        // Check if theme
+        if ($category === 'other') {
+            if (strpos($src_lower, '/themes/') !== false) {
+                $category = 'theme';
+                $safe_to_defer = true;
+                $reason = 'Theme script - test after deferring';
+            }
+        }
+        
+        // Check if plugin
+        if ($category === 'other') {
+            if (strpos($src_lower, '/plugins/') !== false) {
+                $category = 'plugins';
+                $safe_to_defer = true;
+                $reason = 'Plugin script - test after deferring';
+            }
+        }
+        
+        // Default unknown
+        if ($category === 'other') {
+            $safe_to_defer = true;
+            $reason = 'Unknown origin - test after deferring';
+        }
+        
+        $script['category'] = $category;
+        $script['safe_to_defer'] = $safe_to_defer;
+        $script['reason'] = $reason;
+        
+        $categorized[$category][] = $script;
+    }
+    
+    // Count stats
+    $total = count($scripts);
+    $already_deferred = count(array_filter($scripts, function($s) { return $s['has_defer'] || $s['has_async']; }));
+    $safe_count = count(array_filter($scripts, function($s) { return $s['safe_to_defer']; }));
+    $exclude_count = count(array_filter($scripts, function($s) { return !$s['safe_to_defer']; }));
+    
+    wp_send_json_success(array(
+        'scripts' => $scripts,
+        'categorized' => $categorized,
+        'stats' => array(
+            'total' => $total,
+            'already_deferred' => $already_deferred,
+            'safe_to_defer' => $safe_count,
+            'should_exclude' => $exclude_count,
+        ),
+        'site_host' => $site_host,
+    ));
+}
+
+/**
+ * Extract a readable handle/identifier from a script URL
+ */
+function ccm_tools_extract_script_handle($src) {
+    // Remove query strings
+    $src = strtok($src, '?');
+    
+    // Get filename without extension
+    $filename = basename($src);
+    $handle = pathinfo($filename, PATHINFO_FILENAME);
+    
+    // Remove common suffixes
+    $handle = preg_replace('/[._-]?(min|bundle|packed|dist)$/i', '', $handle);
+    
+    // If the handle is very generic, try to get more context from path
+    $generic_names = array('index', 'main', 'app', 'script', 'scripts', 'frontend', 'public');
+    if (in_array(strtolower($handle), $generic_names)) {
+        // Try to get parent folder name
+        $path_parts = explode('/', trim(wp_parse_url($src, PHP_URL_PATH), '/'));
+        if (count($path_parts) >= 2) {
+            $parent = $path_parts[count($path_parts) - 2];
+            if (!in_array(strtolower($parent), array('js', 'scripts', 'assets', 'dist', 'build'))) {
+                $handle = $parent . '-' . $handle;
+            }
+        }
+    }
+    
+    return $handle;
+}
+
+/**
  * Detect external origins by fetching the site's homepage
  * Uses wp_remote_get to fetch the page and parses for external resources
  */

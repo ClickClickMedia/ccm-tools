@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.5.0
+ * Version: 7.5.1
  */
 
 (function() {
@@ -2162,8 +2162,209 @@
         if (detectDnsBtn) {
             detectDnsBtn.addEventListener('click', () => detectExternalOrigins('dns-prefetch'));
         }
+        
+        // Detect scripts button
+        const detectScriptsBtn = $('#detect-scripts-btn');
+        if (detectScriptsBtn) {
+            detectScriptsBtn.addEventListener('click', detectScripts);
+        }
     }
     
+    /**
+     * Detect scripts on the homepage and categorize them
+     */
+    async function detectScripts() {
+        const detectBtn = $('#detect-scripts-btn');
+        const resultDiv = $('#detected-scripts-result');
+        const excludeInput = $('#perf-defer-js-excludes');
+        
+        if (!detectBtn || !resultDiv) return;
+        
+        // Get current excludes
+        const currentExcludes = new Set(
+            excludeInput.value.split(',').map(s => s.trim().toLowerCase()).filter(s => s)
+        );
+        
+        // Store original button content
+        const originalBtnContent = detectBtn.innerHTML;
+        detectBtn.disabled = true;
+        detectBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Scanning...';
+        
+        try {
+            const response = await ajax('ccm_tools_detect_scripts', {});
+            
+            if (!response.data || !response.data.scripts) {
+                throw new Error('Invalid response from server');
+            }
+            
+            const { scripts, categorized, stats, site_host } = response.data;
+            
+            if (stats.total === 0) {
+                resultDiv.innerHTML = `
+                    <p class="ccm-text-muted">
+                        <strong>No scripts detected.</strong><br>
+                        Your site doesn't appear to have any external JavaScript files.
+                    </p>
+                `;
+                resultDiv.style.display = 'block';
+                showNotification('No scripts found', 'info');
+                return;
+            }
+            
+            // Build the results HTML
+            let html = `
+                <p style="margin-bottom: var(--ccm-space-md);">
+                    <strong>Found ${stats.total} script${stats.total !== 1 ? 's' : ''}:</strong>
+                </p>
+                <div style="display: flex; gap: var(--ccm-space-md); flex-wrap: wrap; margin-bottom: var(--ccm-space-md);">
+                    <span class="ccm-error">❌ ${stats.should_exclude} to exclude</span>
+                    <span class="ccm-success">✓ ${stats.safe_to_defer} safe to defer</span>
+                    ${stats.already_deferred > 0 ? `<span class="ccm-info">↻ ${stats.already_deferred} already deferred</span>` : ''}
+                </div>
+            `;
+            
+            // Category labels and icons
+            const categoryLabels = {
+                jquery: '⚠️ jQuery (DO NOT defer)',
+                wp_core: '⚠️ WordPress Core (DO NOT defer)',
+                theme: '🎨 Theme Scripts',
+                plugins: '🔌 Plugin Scripts',
+                third_party: '🌐 Third-Party Scripts',
+                other: '📦 Other Scripts'
+            };
+            
+            const categoryOrder = ['jquery', 'wp_core', 'theme', 'plugins', 'third_party', 'other'];
+            
+            html += '<div style="max-height: 400px; overflow-y: auto;">';
+            
+            for (const category of categoryOrder) {
+                const catScripts = categorized[category];
+                if (!catScripts || catScripts.length === 0) continue;
+                
+                const isSafeCategory = !['jquery', 'wp_core'].includes(category);
+                
+                html += `
+                    <div style="margin-bottom: var(--ccm-space-md); padding: var(--ccm-space-sm); background: var(--ccm-bg); border-radius: var(--ccm-radius);">
+                        <strong style="color: ${isSafeCategory ? 'var(--ccm-success)' : 'var(--ccm-error)'};">
+                            ${categoryLabels[category]}
+                        </strong>
+                        <div style="margin-top: var(--ccm-space-xs); font-size: 0.85em;">
+                `;
+                
+                for (const script of catScripts) {
+                    const isExcluded = Array.from(currentExcludes).some(exc => 
+                        script.src.toLowerCase().includes(exc) || script.handle.toLowerCase().includes(exc)
+                    );
+                    
+                    let statusIcon = '';
+                    let labelStyle = 'display: flex; align-items: center; gap: var(--ccm-space-xs); margin-bottom: var(--ccm-space-xs);';
+                    
+                    if (script.has_defer || script.has_async) {
+                        statusIcon = '<span class="ccm-info" title="Already deferred/async">↻</span>';
+                    } else if (!script.safe_to_defer) {
+                        statusIcon = '<span class="ccm-error" title="Should exclude">❌</span>';
+                    } else if (isExcluded) {
+                        statusIcon = '<span class="ccm-warning" title="Currently excluded">⊘</span>';
+                    } else {
+                        statusIcon = '<span class="ccm-success" title="Safe to defer">✓</span>';
+                    }
+                    
+                    html += `
+                        <div style="${labelStyle}">
+                            ${statusIcon}
+                            <code style="word-break: break-all;">${escapeHtml(script.handle)}</code>
+                            <span class="ccm-text-muted" style="font-size: 0.8em;">${escapeHtml(script.reason)}</span>
+                        </div>
+                    `;
+                }
+                
+                html += '</div></div>';
+            }
+            
+            html += '</div>';
+            
+            // Recommended excludes
+            const recommendedExcludes = [];
+            for (const script of scripts) {
+                if (!script.safe_to_defer && !currentExcludes.has(script.handle.toLowerCase())) {
+                    recommendedExcludes.push(script.handle);
+                }
+            }
+            
+            if (recommendedExcludes.length > 0) {
+                // Simplify to patterns
+                const patterns = new Set();
+                for (const handle of recommendedExcludes) {
+                    if (handle.toLowerCase().includes('jquery')) {
+                        patterns.add('jquery');
+                    } else if (handle.toLowerCase().includes('wp-')) {
+                        patterns.add('wp-');
+                    } else {
+                        patterns.add(handle);
+                    }
+                }
+                
+                const patternList = Array.from(patterns).join(', ');
+                
+                html += `
+                    <div style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm); background: var(--ccm-warning-bg, #fef3c7); border-radius: var(--ccm-radius); border-left: 3px solid var(--ccm-warning);">
+                        <strong>Recommended Excludes:</strong>
+                        <p style="margin: var(--ccm-space-xs) 0;">
+                            <code>${escapeHtml(patternList)}</code>
+                        </p>
+                        <button type="button" class="apply-recommended-excludes-btn ccm-button ccm-button-small ccm-button-primary" 
+                                data-excludes="${escapeHtml(patternList)}">
+                            Apply Recommended
+                        </button>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm); background: var(--ccm-success-bg, #d1fae5); border-radius: var(--ccm-radius); border-left: 3px solid var(--ccm-success);">
+                        <strong>✓ All critical scripts are already excluded!</strong>
+                    </div>
+                `;
+            }
+            
+            resultDiv.innerHTML = html;
+            resultDiv.style.display = 'block';
+            
+            // Bind apply button
+            resultDiv.querySelector('.apply-recommended-excludes-btn')?.addEventListener('click', (e) => {
+                const newExcludes = e.target.dataset.excludes;
+                const currentValue = excludeInput.value.trim();
+                
+                if (currentValue) {
+                    // Merge with existing, avoiding duplicates
+                    const existing = currentValue.split(',').map(s => s.trim().toLowerCase());
+                    const toAdd = newExcludes.split(',').map(s => s.trim());
+                    const merged = [...new Set([...existing, ...toAdd.map(s => s.toLowerCase())])];
+                    excludeInput.value = merged.join(', ');
+                } else {
+                    excludeInput.value = newExcludes;
+                }
+                
+                showNotification('Recommended excludes applied. Remember to save settings!', 'success');
+                resultDiv.style.display = 'none';
+            });
+            
+            showNotification(`Detected ${stats.total} scripts`, 'success');
+            
+        } catch (error) {
+            console.error('Script detection error:', error);
+            showNotification('Failed to detect scripts: ' + error.message, 'error');
+            resultDiv.innerHTML = `
+                <p class="ccm-error">
+                    <strong>Error:</strong> ${escapeHtml(error.message)}
+                </p>
+            `;
+            resultDiv.style.display = 'block';
+        } finally {
+            detectBtn.disabled = false;
+            detectBtn.innerHTML = originalBtnContent;
+        }
+    }
+
     /**
      * Save performance optimizer settings
      */

@@ -775,9 +775,15 @@ function ccm_tools_render_perf_page() {
                         </label>
                     </div>
                     <div class="ccm-setting-detail" style="margin-top: var(--ccm-space-md); <?php echo $settings['defer_js'] ? '' : 'display:none;'; ?>">
-                        <label><strong><?php _e('Exclude scripts (comma-separated handles):', 'ccm-tools'); ?></strong></label>
-                        <input type="text" id="perf-defer-js-excludes" class="ccm-input" value="<?php echo esc_attr(implode(', ', $settings['defer_js_excludes'])); ?>" placeholder="jquery, jquery-core, jquery-migrate">
-                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('jQuery is excluded by default as many plugins depend on it loading synchronously.', 'ccm-tools'); ?></p>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--ccm-space-sm);">
+                            <label><strong><?php _e('Exclude scripts containing:', 'ccm-tools'); ?></strong></label>
+                            <button type="button" id="detect-scripts-btn" class="ccm-button ccm-button-small ccm-button-secondary">
+                                <?php _e('🔍 Detect Scripts', 'ccm-tools'); ?>
+                            </button>
+                        </div>
+                        <input type="text" id="perf-defer-js-excludes" class="ccm-input" value="<?php echo esc_attr(implode(', ', $settings['defer_js_excludes'])); ?>" placeholder="jquery, wp-">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('Comma-separated patterns. Scripts with URLs containing these strings won\'t be deferred.', 'ccm-tools'); ?></p>
+                        <div id="detected-scripts-result" style="display: none; margin-top: var(--ccm-space-md); padding: var(--ccm-space-md); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius);"></div>
                     </div>
                 </div>
                 
