@@ -1001,8 +1001,10 @@ function ccm_tools_webp_init() {
         // WooCommerce specific hooks for product images
         add_filter('woocommerce_product_get_image', 'ccm_tools_webp_filter_wc_product_image', 999, 2);
         add_filter('woocommerce_single_product_image_thumbnail_html', 'ccm_tools_webp_filter_wc_single_product_image', 999, 2);
-        add_filter('post_thumbnail_html', 'ccm_tools_webp_filter_wc_product_image', 999, 2);
-        add_filter('wp_get_attachment_image', 'ccm_tools_webp_filter_wc_single_product_image', 999, 2);
+        
+        // NOTE: Removed post_thumbnail_html and wp_get_attachment_image hooks
+        // These run BEFORE themes add their own <picture> wrappers, causing double-wrapping
+        // Images from these hooks will still get WebP served via srcset filters instead
     }
     
     // Add background queue processor for on-demand conversion
