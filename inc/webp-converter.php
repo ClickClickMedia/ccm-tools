@@ -797,7 +797,16 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         // Extract srcset if present and convert URLs
         $srcset_webp = '';
         $srcset_original = '';
-        if (preg_match('/srcset=["\']([^"\']+)["\']/', $before_src . $after_src, $srcset_match)) {
+        $sizes_attr = '';
+        $img_attrs = $before_src . $after_src;
+        
+        // Extract sizes attribute (needed for responsive source elements)
+        if (preg_match('/sizes=["\']([^"\']+)["\']/', $img_attrs, $sizes_match)) {
+            $sizes_attr = $sizes_match[1];
+        }
+        
+        // Extract srcset attribute
+        if (preg_match('/srcset=["\']([^"\']+)["\']/', $img_attrs, $srcset_match)) {
             $srcset_value = $srcset_match[1];
             
             if ($is_source_webp) {
@@ -815,12 +824,15 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
             }
         }
         
+        // Build sizes attribute string if present
+        $sizes_html = !empty($sizes_attr) ? ' sizes="' . esc_attr($sizes_attr) . '"' : '';
+        
         // Build the picture element
         $picture = '<picture>';
         
         // WebP source (first for browsers that support it)
         if (!empty($srcset_webp)) {
-            $picture .= '<source type="image/webp" srcset="' . esc_attr($srcset_webp) . '">';
+            $picture .= '<source type="image/webp" srcset="' . esc_attr($srcset_webp) . '"' . $sizes_html . '>';
         } else {
             $picture .= '<source type="image/webp" srcset="' . esc_url($webp_url) . '">';
         }
@@ -828,14 +840,19 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         // Original format source (fallback for browsers that don't support WebP)
         $mime_type = 'image/' . ($original_extension === 'jpg' ? 'jpeg' : strtolower($original_extension));
         if (!empty($srcset_original)) {
-            $picture .= '<source type="' . esc_attr($mime_type) . '" srcset="' . esc_attr($srcset_original) . '">';
+            $picture .= '<source type="' . esc_attr($mime_type) . '" srcset="' . esc_attr($srcset_original) . '"' . $sizes_html . '>';
         } else {
             $picture .= '<source type="' . esc_attr($mime_type) . '" srcset="' . esc_url($original_url) . '">';
         }
         
         // Use original format img tag as fallback (most compatible)
-        // Update the src in the img tag to use the original format for maximum compatibility
-        $fallback_img = '<img ' . $before_src . 'src="' . esc_url($original_url) . '"' . $after_src . ' data-no-picture="true">';
+        // Strip srcset and sizes from img tag since picture/source handles responsive behavior
+        $clean_before = preg_replace('/\s*srcset=["\'][^"\']*["\']/i', '', $before_src);
+        $clean_after = preg_replace('/\s*srcset=["\'][^"\']*["\']/i', '', $after_src);
+        $clean_before = preg_replace('/\s*sizes=["\'][^"\']*["\']/i', '', $clean_before);
+        $clean_after = preg_replace('/\s*sizes=["\'][^"\']*["\']/i', '', $clean_after);
+        
+        $fallback_img = '<img ' . $clean_before . 'src="' . esc_url($original_url) . '"' . $clean_after . ' data-no-picture="true">';
         
         $picture .= $fallback_img;
         $picture .= '</picture>';
