@@ -599,39 +599,33 @@ function ccm_tools_webp_end_output_buffer() {
  * @return string Modified HTML with WebP background images
  */
 function ccm_tools_webp_process_output_buffer($html) {
-    // Quick check - if no background-image in the HTML, return early
-    if (stripos($html, 'background') === false) {
+    // Quick check - if no url( in the HTML, return early
+    if (stripos($html, 'url(') === false) {
         return $html;
     }
     
     $upload_dir = wp_upload_dir();
     
-    // Pattern to match style attributes AND <style> blocks
-    // This catches: style="background-image: url(...)" AND <style>...background-image: url(...)...</style>
-    $pattern = '/style\s*=\s*(["\'])([^"\']*(?:background(?:-image)?)\s*:[^"\']*)\1|<style[^>]*>(.*?)<\/style>/is';
+    // Simple and safe approach: find all background-image url() patterns and convert them
+    // This pattern matches url() with optional quotes, capturing the image URL
+    $pattern = '/url\s*\(\s*["\']?(https?:\/\/[^"\')\s]+\.(?:jpg|jpeg|png|gif))["\']?\s*\)/i';
     
     $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-        $full_match = $matches[0];
+        $original_url = $matches[1];
         
-        // Handle inline style attribute (style="...")
-        if (isset($matches[2]) && !empty($matches[2]) && stripos($matches[2], 'background') !== false) {
-            $style = $matches[2];
-            $new_style = ccm_tools_webp_convert_bg_urls($style, $upload_dir);
-            if ($new_style !== $style) {
-                return str_replace($style, $new_style, $full_match);
-            }
+        // Check if this is a local upload
+        if (strpos($original_url, '/wp-content/uploads/') === false) {
+            return $matches[0]; // Return unchanged
         }
         
-        // Handle <style> block
-        if (isset($matches[3]) && !empty($matches[3])) {
-            $css = $matches[3];
-            $new_css = ccm_tools_webp_convert_bg_urls($css, $upload_dir);
-            if ($new_css !== $css) {
-                return str_replace($css, $new_css, $full_match);
-            }
+        // Try to get WebP version
+        $webp_url = ccm_tools_webp_get_or_create($original_url);
+        
+        if ($webp_url && $webp_url !== $original_url) {
+            return 'url("' . $webp_url . '")';
         }
         
-        return $full_match;
+        return $matches[0]; // Return unchanged if no WebP available
     }, $html);
     
     return $html;
