@@ -1270,7 +1270,11 @@ function ccm_tools_ajax_save_webp_settings(): void {
         'preferred_extension' => isset($_POST['preferred_extension']) ? sanitize_text_field($_POST['preferred_extension']) : 'auto'
     );
     
-    if (ccm_tools_webp_save_settings($settings)) {
+    // update_option returns false if value unchanged, so we check if save succeeded OR value is same
+    $saved = update_option('ccm_tools_webp_settings', $settings);
+    $current = get_option('ccm_tools_webp_settings');
+    
+    if ($saved || $current == $settings) {
         wp_send_json_success(array(
             'message' => __('WebP settings saved successfully.', 'ccm-tools'),
             'settings' => $settings
