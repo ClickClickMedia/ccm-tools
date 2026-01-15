@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.6.3
+ * Version: 7.6.4
  */
 
 (function() {
@@ -1883,6 +1883,7 @@
                 serve_webp: $('#webp-serve')?.checked ? '1' : '0',
                 convert_on_demand: $('#webp-convert-on-demand')?.checked ? '1' : '0',
                 use_picture_tags: $('#webp-picture-tags')?.checked ? '1' : '0',
+                convert_bg_images: $('#webp-bg-images')?.checked ? '1' : '0',
                 keep_originals: $('#webp-keep-originals')?.checked ? '1' : '0',
                 preferred_extension: $('#webp-preferred-extension')?.value || 'auto'
             };
