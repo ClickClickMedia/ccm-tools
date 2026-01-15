@@ -116,6 +116,7 @@ function ccm_tools_webp_get_settings() {
         'serve_webp' => true,
         'convert_on_demand' => false,
         'use_picture_tags' => false,
+        'convert_bg_images' => false,
         'keep_originals' => true,
         'convert_existing' => false,
         'exclude_sizes' => array(),
@@ -562,6 +563,139 @@ function ccm_tools_webp_filter_content_src($content) {
     }, $content);
     
     return $content;
+}
+
+/**
+ * Filter content to convert background-image URLs to WebP
+ * Handles inline styles with background-image property
+ * 
+ * @param string $content The content to filter
+ * @return string Content with WebP background image URLs
+ */
+function ccm_tools_webp_filter_bg_images($content) {
+    $settings = ccm_tools_webp_get_settings();
+    
+    // Check if feature is enabled
+    if (empty($settings['enabled']) || empty($settings['convert_bg_images'])) {
+        return $content;
+    }
+    
+    // Check if browser supports WebP
+    if (!ccm_tools_webp_browser_supports_webp()) {
+        return $content;
+    }
+    
+    // Don't process in admin, feeds, or REST API
+    if (is_admin() || is_feed() || (defined('REST_REQUEST') && REST_REQUEST)) {
+        return $content;
+    }
+    
+    $upload_dir = wp_upload_dir();
+    
+    // Pattern to match style attributes containing background-image
+    $pattern = '/style\s*=\s*["\']([^"\']*background(?:-image)?\s*:[^"\']*)["\']|<style[^>]*>(.*?)<\/style>/is';
+    
+    $content = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
+        $full_match = $matches[0];
+        
+        // Handle inline style attribute
+        if (isset($matches[1]) && !empty($matches[1])) {
+            $style = $matches[1];
+            $new_style = ccm_tools_webp_convert_bg_urls($style, $upload_dir);
+            return str_replace($matches[1], $new_style, $full_match);
+        }
+        
+        // Handle <style> block
+        if (isset($matches[2]) && !empty($matches[2])) {
+            $css = $matches[2];
+            $new_css = ccm_tools_webp_convert_bg_urls($css, $upload_dir);
+            return str_replace($matches[2], $new_css, $full_match);
+        }
+        
+        return $full_match;
+    }, $content);
+    
+    return $content;
+}
+
+/**
+ * Convert background image URLs in CSS string to WebP
+ * 
+ * @param string $css The CSS string containing background-image URLs
+ * @param array $upload_dir The WordPress upload directory info
+ * @return string CSS with WebP URLs
+ */
+function ccm_tools_webp_convert_bg_urls($css, $upload_dir) {
+    // Pattern to match url() values in background properties
+    $url_pattern = '/url\s*\(\s*["\']?([^"\')\s]+\.(?:jpg|jpeg|png|gif))["\']?\s*\)/i';
+    
+    return preg_replace_callback($url_pattern, function($url_match) use ($upload_dir) {
+        $original_url = $url_match[1];
+        
+        // Check if this is a local upload
+        if (strpos($original_url, $upload_dir['baseurl']) === false) {
+            return $url_match[0];
+        }
+        
+        // Try to get WebP version
+        $webp_url = ccm_tools_webp_get_or_create($original_url);
+        
+        if ($webp_url && $webp_url !== $original_url) {
+            return 'url("' . $webp_url . '")';
+        }
+        
+        return $url_match[0];
+    }, $css);
+}
+
+/**
+ * Add inline styles in wp_head for dynamically generated background images
+ * This handles cases where background images are set via theme customizer or page builders
+ */
+function ccm_tools_webp_add_bg_image_styles() {
+    $settings = ccm_tools_webp_get_settings();
+    
+    // Check if feature is enabled
+    if (empty($settings['enabled']) || empty($settings['convert_bg_images'])) {
+        return;
+    }
+    
+    // Check if browser supports WebP
+    if (!ccm_tools_webp_browser_supports_webp()) {
+        return;
+    }
+    
+    // Get featured image for current page/post if it might be used as background
+    if (is_singular() && has_post_thumbnail()) {
+        $thumbnail_id = get_post_thumbnail_id();
+        $thumbnail_url = wp_get_attachment_image_url($thumbnail_id, 'full');
+        
+        if ($thumbnail_url) {
+            $webp_url = ccm_tools_webp_get_or_create($thumbnail_url);
+            
+            if ($webp_url && $webp_url !== $thumbnail_url) {
+                // Output CSS to override common background image selectors
+                echo '<style id="ccm-webp-bg-override">';
+                
+                // Common selectors that might use featured image as background
+                $selectors = array(
+                    '.has-post-thumbnail .post-thumbnail-bg',
+                    '.wp-block-cover.has-background-dim',
+                    '.entry-header.has-featured-image',
+                    '.hero-section',
+                    '.page-header',
+                );
+                
+                foreach ($selectors as $selector) {
+                    echo $selector . '[style*="' . esc_attr(basename($thumbnail_url)) . '"] { ';
+                    echo 'background-image: url("' . esc_url($webp_url) . '") !important; ';
+                    echo '} ';
+                }
+                
+                echo '</style>';
+            }
+        }
+    }
 }
 
 /**
@@ -1115,6 +1249,15 @@ function ccm_tools_webp_init() {
         add_filter('widget_block_content', 'ccm_tools_webp_filter_content_src', 1000);
     }
     
+    // Hook into content for background image conversion
+    if (!empty($settings['convert_bg_images'])) {
+        add_filter('the_content', 'ccm_tools_webp_filter_bg_images', 1001);
+        add_filter('widget_text', 'ccm_tools_webp_filter_bg_images', 1001);
+        add_filter('widget_block_content', 'ccm_tools_webp_filter_bg_images', 1001);
+        // Also filter the body class for page builder support
+        add_action('wp_head', 'ccm_tools_webp_add_bg_image_styles', 999);
+    }
+    
     // Hook into content for picture tag conversion
     if (!empty($settings['use_picture_tags'])) {
         add_filter('the_content', 'ccm_tools_webp_filter_content', 999);
@@ -1366,6 +1509,25 @@ function ccm_tools_render_webp_page() {
   &lt;source type="image/webp" srcset="image.webp"&gt;
   &lt;img src="image.jpg" alt="..."&gt;
 &lt;/picture&gt;</pre>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Convert Background Images', 'ccm-tools'); ?></th>
+                            <td>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="convert_bg_images" id="webp-bg-images" value="1" <?php checked($settings['convert_bg_images'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                                <p class="ccm-note"><?php _e('Convert CSS background-image URLs to WebP in inline styles and style blocks. Works with page builders and custom CSS.', 'ccm-tools'); ?></p>
+                                <div class="ccm-code-example">
+                                    <small><?php _e('Example:', 'ccm-tools'); ?></small>
+                                    <pre>background-image: url("image.jpg")
+→ background-image: url("image.webp")</pre>
+                                </div>
+                                <div class="ccm-alert ccm-alert-info ccm-alert-small">
+                                    <span class="ccm-icon">ℹ</span>
+                                    <small><?php _e('Only converts images from your uploads folder. External images are not affected.', 'ccm-tools'); ?></small>
                                 </div>
                             </td>
                         </tr>

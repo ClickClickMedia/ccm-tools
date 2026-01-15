@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.5.9
+- **Current Version:** 7.6.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -251,6 +251,16 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.6.0
+- **WebP Background Image Conversion**
+  - New option to convert CSS background-image URLs to WebP
+  - Handles inline style attributes and `<style>` blocks
+  - Works with page builders and custom CSS
+  - Only converts images from the uploads folder
+  - New `ccm_tools_webp_filter_bg_images()` filter function
+  - New `ccm_tools_webp_convert_bg_urls()` helper function
+  - Adds dynamic CSS overrides for featured images used as backgrounds
 
 ### v7.5.9
 - **Consistent Navigation Menu**
