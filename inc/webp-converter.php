@@ -606,12 +606,13 @@ function ccm_tools_webp_process_output_buffer($html) {
     
     $upload_dir = wp_upload_dir();
     
-    // Simple and safe approach: find all background-image url() patterns and convert them
-    // This pattern matches url() with optional quotes, capturing the image URL
-    $pattern = '/url\s*\(\s*["\']?(https?:\/\/[^"\')\s]+\.(?:jpg|jpeg|png|gif))["\']?\s*\)/i';
+    // Pattern matches url() with the full URL structure, preserving original quote style
+    // Captures: 1=opening quote (if any), 2=URL, 3=closing quote (if any)
+    $pattern = '/url\s*\(\s*(["\']?)(https?:\/\/[^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
     
     $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-        $original_url = $matches[1];
+        $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
+        $original_url = $matches[2];
         
         // Check if this is a local upload
         if (strpos($original_url, '/wp-content/uploads/') === false) {
@@ -622,7 +623,8 @@ function ccm_tools_webp_process_output_buffer($html) {
         $webp_url = ccm_tools_webp_get_or_create($original_url);
         
         if ($webp_url && $webp_url !== $original_url) {
-            return 'url("' . $webp_url . '")';
+            // Return with same quote style as original
+            return 'url(' . $quote . $webp_url . $quote . ')';
         }
         
         return $matches[0]; // Return unchanged if no WebP available
