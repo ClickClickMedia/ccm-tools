@@ -840,22 +840,58 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     }
     
     $upload_dir = wp_upload_dir();
+    $settings = ccm_tools_webp_get_settings();
     
-    // Check if this is a local upload
-    if (strpos($original_url, $upload_dir['baseurl']) === false) {
+    // Check if this is a local upload - support both full URL and relative path
+    $is_local = false;
+    $original_path = '';
+    
+    if (strpos($original_url, $upload_dir['baseurl']) !== false) {
+        // Full URL with baseurl
+        $is_local = true;
+        $original_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $original_url);
+    } elseif (strpos($original_url, '/wp-content/uploads/') !== false) {
+        // Relative path - reconstruct full path
+        $is_local = true;
+        // Extract the path after /wp-content/uploads/
+        if (preg_match('#/wp-content/uploads/(.+)$#', $original_url, $path_match)) {
+            $original_path = $upload_dir['basedir'] . '/' . $path_match[1];
+        }
+    }
+    
+    if (!$is_local || empty($original_path)) {
         return false;
     }
     
-    // Generate paths
+    // Generate WebP path
+    $webp_path = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_path);
     $webp_url = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_url);
-    $webp_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $webp_url);
     
     // Check if WebP exists
     if (file_exists($webp_path)) {
         return $webp_url;
     }
     
-    // Queue for background conversion (non-blocking)
+    // Try synchronous on-demand conversion if enabled
+    if (!empty($settings['convert_on_demand']) && file_exists($original_path)) {
+        // Check if we've already failed to convert this file
+        $failed_key = 'ccm_webp_failed_' . md5($original_path);
+        if (!get_transient($failed_key)) {
+            $quality = intval($settings['quality']);
+            $extension = $settings['preferred_extension'];
+            
+            $result = ccm_tools_webp_convert_image($original_path, $webp_path, $quality, $extension);
+            
+            if ($result['success']) {
+                return $webp_url;
+            } else {
+                // Mark as failed to avoid repeated attempts (cache for 1 hour)
+                set_transient($failed_key, true, HOUR_IN_SECONDS);
+            }
+        }
+    }
+    
+    // Queue for background conversion if still not converted
     if ($queue_if_missing) {
         ccm_tools_webp_queue_for_conversion($original_url);
     }
