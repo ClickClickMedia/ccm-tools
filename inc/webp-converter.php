@@ -1090,7 +1090,20 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         $clean_before = preg_replace('/\s*sizes=["\'][^"\']*["\']/i', '', $clean_before);
         $clean_after = preg_replace('/\s*sizes=["\'][^"\']*["\']/i', '', $clean_after);
         
-        $fallback_img = '<img ' . $clean_before . 'src="' . esc_url($original_url) . '"' . $clean_after . ' data-no-picture="true">';
+        // Add inline styles to img to ensure it fills the picture container
+        // This is needed because CSS selectors like .ratio > * no longer target the img
+        // when it's wrapped in <picture>
+        $img_style = 'width:100%;height:100%;';
+        
+        // Check if img already has a style attribute and merge
+        if (preg_match('/style=["\']([^"\']*)["\']/', $clean_before . $clean_after, $style_match)) {
+            $existing_style = rtrim($style_match[1], ';');
+            $img_style = $existing_style . ';' . $img_style;
+            $clean_before = preg_replace('/\s*style=["\'][^"\']*["\']/i', '', $clean_before);
+            $clean_after = preg_replace('/\s*style=["\'][^"\']*["\']/i', '', $clean_after);
+        }
+        
+        $fallback_img = '<img style="' . esc_attr($img_style) . '" ' . $clean_before . 'src="' . esc_url($original_url) . '"' . $clean_after . ' data-no-picture="true">';
         
         $picture .= $fallback_img;
         $picture .= '</picture>';
