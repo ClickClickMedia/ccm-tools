@@ -918,21 +918,21 @@ function ccm_tools_render_redis_page() {
                 
                 <div class="ccm-stats-grid">
                     <div class="ccm-stat-box">
-                        <div class="ccm-stat-value"><?php echo number_format_i18n($stats['hits']); ?></div>
+                        <div class="ccm-stat-value" id="redis-stat-hits"><?php echo number_format_i18n($stats['hits']); ?></div>
                         <div class="ccm-stat-label"><?php _e('Cache Hits', 'ccm-tools'); ?></div>
                     </div>
                     <div class="ccm-stat-box">
-                        <div class="ccm-stat-value"><?php echo number_format_i18n($stats['misses']); ?></div>
+                        <div class="ccm-stat-value" id="redis-stat-misses"><?php echo number_format_i18n($stats['misses']); ?></div>
                         <div class="ccm-stat-label"><?php _e('Cache Misses', 'ccm-tools'); ?></div>
                     </div>
                     <div class="ccm-stat-box">
-                        <div class="ccm-stat-value <?php echo $stats['hit_ratio'] >= 80 ? 'ccm-success' : ($stats['hit_ratio'] >= 50 ? 'ccm-warning' : 'ccm-error'); ?>">
+                        <div class="ccm-stat-value <?php echo $stats['hit_ratio'] >= 80 ? 'ccm-success' : ($stats['hit_ratio'] >= 50 ? 'ccm-warning' : 'ccm-error'); ?>" id="redis-stat-ratio">
                             <?php echo number_format($stats['hit_ratio'], 1); ?>%
                         </div>
                         <div class="ccm-stat-label"><?php _e('Hit Ratio', 'ccm-tools'); ?></div>
                     </div>
                     <div class="ccm-stat-box">
-                        <div class="ccm-stat-value"><?php echo number_format_i18n($stats['keys']); ?></div>
+                        <div class="ccm-stat-value" id="redis-stat-keys"><?php echo number_format_i18n($stats['keys']); ?></div>
                         <div class="ccm-stat-label"><?php _e('Cached Keys', 'ccm-tools'); ?></div>
                     </div>
                 </div>

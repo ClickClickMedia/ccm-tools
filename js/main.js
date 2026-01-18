@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.8.2
+ * Version: 7.8.3
  */
 
 (function() {
@@ -2728,6 +2728,47 @@
     // ===================================
     
     /**
+     * Refresh Redis cache statistics display
+     */
+    async function refreshRedisStats() {
+        const hitsEl = $('#redis-stat-hits');
+        const missesEl = $('#redis-stat-misses');
+        const ratioEl = $('#redis-stat-ratio');
+        const keysEl = $('#redis-stat-keys');
+        
+        // Only proceed if stats elements exist
+        if (!hitsEl || !missesEl || !ratioEl || !keysEl) {
+            return;
+        }
+        
+        try {
+            const response = await ajax('ccm_tools_redis_get_stats');
+            const stats = response.data.stats;
+            
+            // Update the stat values
+            hitsEl.textContent = Number(stats.hits).toLocaleString();
+            missesEl.textContent = Number(stats.misses).toLocaleString();
+            keysEl.textContent = Number(stats.keys).toLocaleString();
+            
+            // Update hit ratio with color class
+            const ratio = parseFloat(stats.hit_ratio) || 0;
+            ratioEl.textContent = ratio.toFixed(1) + '%';
+            
+            // Update color class based on ratio
+            ratioEl.classList.remove('ccm-success', 'ccm-warning', 'ccm-error');
+            if (ratio >= 80) {
+                ratioEl.classList.add('ccm-success');
+            } else if (ratio >= 50) {
+                ratioEl.classList.add('ccm-warning');
+            } else {
+                ratioEl.classList.add('ccm-error');
+            }
+        } catch (error) {
+            console.error('Failed to refresh Redis stats:', error);
+        }
+    }
+    
+    /**
      * Initialize Redis Object Cache page handlers
      */
     function initRedisObjectCacheHandlers() {
@@ -2798,6 +2839,9 @@
                 try {
                     const response = await ajax('ccm_tools_redis_flush');
                     showNotification(response.data.message, 'success');
+                    
+                    // Refresh stats after flush
+                    await refreshRedisStats();
                 } catch (error) {
                     showNotification(error.message, 'error');
                 } finally {
