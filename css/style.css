@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.8.1
+ * Version: 7.8.2
  */
 
 /* ===================================
@@ -2194,7 +2194,150 @@ tr.ccm-front-page-row {
    Redis Object Cache Styles
    =================================== */
 
-/* Form row with multiple form groups */
+/* Form grid layout */
+.ccm-form-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--ccm-space-md) var(--ccm-space-lg);
+    margin-bottom: var(--ccm-space-md);
+}
+
+@media (max-width: 900px) {
+    .ccm-form-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .ccm-form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Form field */
+.ccm-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ccm-space-xs);
+}
+
+.ccm-form-field-wide {
+    grid-column: span 2;
+}
+
+.ccm-form-field-full {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+    .ccm-form-field-wide {
+        grid-column: span 1;
+    }
+}
+
+.ccm-form-field label {
+    font-weight: 500;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text);
+}
+
+.ccm-form-field input,
+.ccm-form-field select {
+    width: 100%;
+    padding: var(--ccm-space-sm) var(--ccm-space-md);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    font-size: var(--ccm-text-base);
+    background: var(--ccm-bg);
+    color: var(--ccm-text);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ccm-form-field input:focus,
+.ccm-form-field select:focus {
+    outline: none;
+    border-color: var(--ccm-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.ccm-form-field input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+/* Field hint text */
+.ccm-field-hint {
+    font-size: var(--ccm-text-xs);
+    color: var(--ccm-text-muted);
+    margin-top: 2px;
+}
+
+/* Input with suffix (e.g., "sec") */
+.ccm-input-with-suffix {
+    display: flex;
+    align-items: stretch;
+}
+
+.ccm-input-with-suffix input {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    flex: 1;
+}
+
+.ccm-input-suffix {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--ccm-space-md);
+    background: var(--ccm-bg);
+    border: 1px solid var(--ccm-border);
+    border-left: none;
+    border-radius: 0 var(--ccm-radius-md) var(--ccm-radius-md) 0;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text-muted);
+    white-space: nowrap;
+}
+
+/* Checkbox label styling */
+.ccm-checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ccm-space-sm);
+    cursor: pointer;
+    padding: var(--ccm-space-md);
+    background: var(--ccm-bg);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.ccm-checkbox-label:hover {
+    border-color: var(--ccm-primary);
+    background: rgba(59, 130, 246, 0.02);
+}
+
+.ccm-checkbox-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    accent-color: var(--ccm-primary);
+    flex-shrink: 0;
+}
+
+.ccm-checkbox-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ccm-checkbox-text strong {
+    font-size: var(--ccm-text-base);
+    color: var(--ccm-text);
+}
+
+.ccm-checkbox-text .ccm-field-hint {
+    margin-top: 0;
+}
+
+/* Legacy form row support */
 .ccm-form-row {
     margin-bottom: var(--ccm-space-md);
 }
@@ -2207,8 +2350,8 @@ tr.ccm-front-page-row {
 
 /* Make flex for side-by-side inputs */
 #tcp-settings {
-    display: flex;
-    gap: var(--ccm-space-md);
+    display: grid;
+    grid-template-columns: 2fr 1fr;
 }
 
 #tcp-settings .ccm-form-group {
@@ -2229,8 +2372,12 @@ tr.ccm-front-page-row {
 .ccm-form-section h3 {
     font-size: var(--ccm-text-lg);
     font-weight: 600;
-    margin-bottom: var(--ccm-space-md);
+    margin-bottom: var(--ccm-space-sm);
     color: var(--ccm-text);
+}
+
+.ccm-form-section > .ccm-note {
+    margin-bottom: var(--ccm-space-md);
 }
 
 .ccm-form-actions {
@@ -2238,6 +2385,7 @@ tr.ccm-front-page-row {
     gap: var(--ccm-space-sm);
     flex-wrap: wrap;
     padding-top: var(--ccm-space-md);
+    border-top: 1px solid var(--ccm-border);
 }
 
 /* Code blocks */

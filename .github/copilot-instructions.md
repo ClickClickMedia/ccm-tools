@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.8.1
+- **Current Version:** 7.8.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,21 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.8.2
+- **Improved Redis Configuration UI**
+  - Redesigned form layout using CSS Grid for cleaner, more organized appearance
+  - Connection Settings now displays fields in a logical 3-column grid layout
+  - Host/Port fields properly sized (2:1 ratio) for better visual hierarchy
+  - Database Index field moved next to Connection Type for logical grouping
+  - Cache Settings use 2-column layout with Key Prefix and Max TTL side-by-side
+  - Selective Flush option redesigned as a checkbox card with description
+  - Advanced Settings (timeouts) displayed in 2-column grid with "sec" suffix
+  - Added `.ccm-form-grid`, `.ccm-form-field`, `.ccm-field-hint` CSS classes
+  - Added `.ccm-input-with-suffix` for inputs with unit labels
+  - Added `.ccm-checkbox-label` styling for enhanced checkbox appearance
+  - Responsive breakpoints at 900px and 600px for mobile compatibility
+  - Form actions section now has top border for visual separation
 
 ### v7.8.1
 - **Security Improvements for Redis Object Cache**

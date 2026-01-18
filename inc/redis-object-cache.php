@@ -947,79 +947,96 @@ function ccm_tools_render_redis_page() {
                         <h3><?php _e('Connection Settings', 'ccm-tools'); ?></h3>
                         <p class="ccm-note"><?php _e('These settings can also be defined as constants in wp-config.php. Constants take precedence over these settings.', 'ccm-tools'); ?></p>
                         
-                        <div class="ccm-form-row">
-                            <label for="redis-scheme"><?php _e('Connection Type', 'ccm-tools'); ?></label>
-                            <select id="redis-scheme" name="scheme">
-                                <option value="tcp" <?php selected($settings['scheme'], 'tcp'); ?>><?php _e('TCP/IP', 'ccm-tools'); ?></option>
-                                <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix Socket', 'ccm-tools'); ?></option>
-                                <option value="tls" <?php selected($settings['scheme'], 'tls'); ?>><?php _e('TLS/SSL', 'ccm-tools'); ?></option>
-                            </select>
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field">
+                                <label for="redis-scheme"><?php _e('Connection Type', 'ccm-tools'); ?></label>
+                                <select id="redis-scheme" name="scheme">
+                                    <option value="tcp" <?php selected($settings['scheme'], 'tcp'); ?>><?php _e('TCP/IP', 'ccm-tools'); ?></option>
+                                    <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix Socket', 'ccm-tools'); ?></option>
+                                    <option value="tls" <?php selected($settings['scheme'], 'tls'); ?>><?php _e('TLS/SSL', 'ccm-tools'); ?></option>
+                                </select>
+                            </div>
+                            
+                            <div class="ccm-form-field" id="redis-database-field">
+                                <label for="redis-database"><?php _e('Database Index', 'ccm-tools'); ?></label>
+                                <input type="number" id="redis-database" name="database" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
+                                <span class="ccm-field-hint"><?php _e('0-15', 'ccm-tools'); ?></span>
+                            </div>
                         </div>
                         
-                        <div class="ccm-form-row" id="tcp-settings">
-                            <div class="ccm-form-group">
+                        <div class="ccm-form-grid" id="tcp-settings">
+                            <div class="ccm-form-field ccm-form-field-wide">
                                 <label for="redis-host"><?php _e('Host', 'ccm-tools'); ?></label>
                                 <input type="text" id="redis-host" name="host" value="<?php echo esc_attr($settings['host']); ?>" placeholder="127.0.0.1">
                             </div>
-                            <div class="ccm-form-group">
+                            <div class="ccm-form-field">
                                 <label for="redis-port"><?php _e('Port', 'ccm-tools'); ?></label>
                                 <input type="number" id="redis-port" name="port" value="<?php echo esc_attr($settings['port']); ?>" placeholder="6379" min="1" max="65535">
                             </div>
                         </div>
                         
-                        <div class="ccm-form-row" id="unix-settings" style="display: none;">
-                            <label for="redis-path"><?php _e('Socket Path', 'ccm-tools'); ?></label>
-                            <input type="text" id="redis-path" name="path" value="<?php echo esc_attr($settings['path']); ?>" placeholder="/var/run/redis/redis.sock">
+                        <div class="ccm-form-grid" id="unix-settings" style="display: none;">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label for="redis-path"><?php _e('Socket Path', 'ccm-tools'); ?></label>
+                                <input type="text" id="redis-path" name="path" value="<?php echo esc_attr($settings['path']); ?>" placeholder="/var/run/redis/redis.sock">
+                            </div>
                         </div>
                         
-                        <div class="ccm-form-row">
-                            <label for="redis-password"><?php _e('Password', 'ccm-tools'); ?></label>
-                            <input type="password" id="redis-password" name="password" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>">
-                        </div>
-                        
-                        <div class="ccm-form-row">
-                            <label for="redis-database"><?php _e('Database Index', 'ccm-tools'); ?></label>
-                            <input type="number" id="redis-database" name="database" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
-                            <p class="ccm-note"><?php _e('Redis databases are numbered 0-15. Use different databases for different sites.', 'ccm-tools'); ?></p>
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label for="redis-password"><?php _e('Password', 'ccm-tools'); ?></label>
+                                <input type="password" id="redis-password" name="password" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>">
+                            </div>
                         </div>
                     </div>
                     
                     <div class="ccm-form-section">
                         <h3><?php _e('Cache Settings', 'ccm-tools'); ?></h3>
                         
-                        <div class="ccm-form-row">
-                            <label for="redis-key-salt"><?php _e('Key Prefix/Salt', 'ccm-tools'); ?></label>
-                            <input type="text" id="redis-key-salt" name="key_salt" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST)); ?>_">
-                            <p class="ccm-note"><?php _e('Unique prefix for cache keys. Essential for multisite or shared Redis servers.', 'ccm-tools'); ?></p>
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-wide">
+                                <label for="redis-key-salt"><?php _e('Key Prefix/Salt', 'ccm-tools'); ?></label>
+                                <input type="text" id="redis-key-salt" name="key_salt" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST)); ?>_">
+                                <span class="ccm-field-hint"><?php _e('Unique prefix for cache keys (essential for multisite)', 'ccm-tools'); ?></span>
+                            </div>
+                            <div class="ccm-form-field">
+                                <label for="redis-max-ttl"><?php _e('Max TTL (seconds)', 'ccm-tools'); ?></label>
+                                <input type="number" id="redis-max-ttl" name="max_ttl" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0" placeholder="3600">
+                                <span class="ccm-field-hint"><?php _e('0 = no limit', 'ccm-tools'); ?></span>
+                            </div>
                         </div>
                         
-                        <div class="ccm-form-row">
-                            <label for="redis-max-ttl"><?php _e('Maximum TTL (seconds)', 'ccm-tools'); ?></label>
-                            <input type="number" id="redis-max-ttl" name="max_ttl" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0">
-                            <p class="ccm-note"><?php _e('Maximum time-to-live for cache entries. Set to 0 for no limit.', 'ccm-tools'); ?></p>
-                        </div>
-                        
-                        <div class="ccm-form-row">
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="selective_flush" <?php checked($settings['selective_flush']); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                                <?php _e('Selective Flush', 'ccm-tools'); ?>
-                            </label>
-                            <p class="ccm-note"><?php _e('Only flush keys for this site when clearing cache (recommended for shared Redis).', 'ccm-tools'); ?></p>
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label class="ccm-checkbox-label">
+                                    <input type="checkbox" name="selective_flush" <?php checked($settings['selective_flush']); ?>>
+                                    <span class="ccm-checkbox-text">
+                                        <strong><?php _e('Selective Flush', 'ccm-tools'); ?></strong>
+                                        <span class="ccm-field-hint"><?php _e('Only flush keys for this site when clearing cache (recommended for shared Redis)', 'ccm-tools'); ?></span>
+                                    </span>
+                                </label>
+                            </div>
                         </div>
                     </div>
                     
                     <div class="ccm-form-section">
                         <h3><?php _e('Advanced Settings', 'ccm-tools'); ?></h3>
                         
-                        <div class="ccm-form-row">
-                            <label for="redis-timeout"><?php _e('Connection Timeout (seconds)', 'ccm-tools'); ?></label>
-                            <input type="number" id="redis-timeout" name="timeout" value="<?php echo esc_attr($settings['timeout']); ?>" min="0" step="0.1">
-                        </div>
-                        
-                        <div class="ccm-form-row">
-                            <label for="redis-read-timeout"><?php _e('Read Timeout (seconds)', 'ccm-tools'); ?></label>
-                            <input type="number" id="redis-read-timeout" name="read_timeout" value="<?php echo esc_attr($settings['read_timeout']); ?>" min="0" step="0.1">
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field">
+                                <label for="redis-timeout"><?php _e('Connection Timeout', 'ccm-tools'); ?></label>
+                                <div class="ccm-input-with-suffix">
+                                    <input type="number" id="redis-timeout" name="timeout" value="<?php echo esc_attr($settings['timeout']); ?>" min="0" step="0.1">
+                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                </div>
+                            </div>
+                            <div class="ccm-form-field">
+                                <label for="redis-read-timeout"><?php _e('Read Timeout', 'ccm-tools'); ?></label>
+                                <div class="ccm-input-with-suffix">
+                                    <input type="number" id="redis-read-timeout" name="read_timeout" value="<?php echo esc_attr($settings['read_timeout']); ?>" min="0" step="0.1">
+                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
