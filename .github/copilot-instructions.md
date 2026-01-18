@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.6.1
+- **Current Version:** 7.6.7
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -251,6 +251,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.6.7
+- **Fixed Picture Tag Layout Breaking**
+  - Added `display: contents` CSS to `<picture>` elements to prevent layout issues
+  - When images are wrapped in `<picture>` tags, CSS rules targeting `<img>` (like flex/grid positioning, object-fit) were breaking because `<picture>` is `display: inline` by default
+  - `display: contents` makes the picture element invisible to layout - children are laid out as if picture doesn't exist
+  - Fixes issues with themes/page builders that rely on img being direct flex/grid children
 
 ### v7.6.1
 - **Fixed Background Image Conversion for Theme Templates**

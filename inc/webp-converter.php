@@ -1062,7 +1062,9 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         $sizes_html = !empty($sizes_attr) ? ' sizes="' . esc_attr($sizes_attr) . '"' : '';
         
         // Build the picture element
-        $picture = '<picture>';
+        // Use display:contents to make picture element invisible to layout
+        // This ensures the img inherits flex/grid positioning from its grandparent
+        $picture = '<picture style="display:contents;">';
         
         // WebP source (first for browsers that support it)
         if (!empty($srcset_webp)) {
