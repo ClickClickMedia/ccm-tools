@@ -564,8 +564,11 @@ function ccm_tools_redis_get_stats() {
     $stats = array(
         'status' => 'disconnected',
         'keys' => 0,
-        'memory_used' => '',
+        'memory_used' => 'N/A',
         'memory_bytes' => 0,
+        'groups' => 0,
+        'avg_ttl' => 'N/A',
+        'largest_key' => 'N/A',
         'uptime' => 0,
         'version' => '',
         'key_prefix' => '',
@@ -599,37 +602,85 @@ function ccm_tools_redis_get_stats() {
                 $redis->select($settings['database']);
             }
             
-            // Count keys and calculate memory for this site only
+            // Count keys for this site only
             if (!empty($settings['key_salt'])) {
                 $pattern = $settings['key_salt'] . '*';
                 $keys = $redis->keys($pattern);
                 $stats['keys'] = count($keys);
                 
-                // Calculate approximate memory usage for site keys
-                // Sample up to 100 keys to estimate average size
-                $total_memory = 0;
-                $sample_size = min(100, count($keys));
-                
-                if ($sample_size > 0) {
+                if (count($keys) > 0) {
+                    // Calculate memory usage and other stats
+                    // Sample up to 100 keys to estimate
+                    $sample_size = min(100, count($keys));
                     $sample_keys = array_slice($keys, 0, $sample_size);
+                    
+                    $total_memory = 0;
+                    $total_ttl = 0;
+                    $ttl_count = 0;
+                    $largest_size = 0;
+                    $largest_key_name = '';
+                    $groups = array();
+                    
                     foreach ($sample_keys as $key) {
-                        $debug = $redis->rawCommand('DEBUG', 'OBJECT', $key);
-                        if ($debug && preg_match('/serializedlength:(\d+)/', $debug, $matches)) {
-                            $total_memory += intval($matches[1]);
+                        // Try MEMORY USAGE first (Redis 4.0+), then fall back to STRLEN
+                        $mem = $redis->rawCommand('MEMORY', 'USAGE', $key);
+                        if ($mem === false || $mem === null) {
+                            // Fallback: get string length
+                            $value = $redis->get($key);
+                            $mem = $value ? strlen($value) : 0;
+                        }
+                        
+                        $total_memory += $mem;
+                        
+                        // Track largest key
+                        if ($mem > $largest_size) {
+                            $largest_size = $mem;
+                            $largest_key_name = $key;
+                        }
+                        
+                        // Get TTL
+                        $ttl = $redis->ttl($key);
+                        if ($ttl > 0) {
+                            $total_ttl += $ttl;
+                            $ttl_count++;
+                        }
+                        
+                        // Extract cache group from key (format: prefix:group:hash)
+                        $key_without_prefix = substr($key, strlen($settings['key_salt']));
+                        $parts = explode(':', $key_without_prefix);
+                        if (!empty($parts[0])) {
+                            $groups[$parts[0]] = true;
                         }
                     }
                     
-                    // Extrapolate for all keys
-                    if ($sample_size > 0) {
+                    // Extrapolate memory for all keys
+                    if ($sample_size > 0 && $total_memory > 0) {
                         $avg_size = $total_memory / $sample_size;
-                        $total_memory = $avg_size * count($keys);
+                        $estimated_total = $avg_size * count($keys);
+                        $stats['memory_bytes'] = $estimated_total;
+                        $stats['memory_used'] = ccm_tools_redis_format_bytes($estimated_total);
+                    }
+                    
+                    // Cache groups count (extrapolate if sampled)
+                    $stats['groups'] = count($groups);
+                    
+                    // Average TTL
+                    if ($ttl_count > 0) {
+                        $avg_ttl_seconds = $total_ttl / $ttl_count;
+                        $stats['avg_ttl'] = ccm_tools_redis_format_duration($avg_ttl_seconds);
+                    } else {
+                        $stats['avg_ttl'] = __('No expiry', 'ccm-tools');
+                    }
+                    
+                    // Largest key (show group name, not full key for security)
+                    if ($largest_key_name) {
+                        $key_without_prefix = substr($largest_key_name, strlen($settings['key_salt']));
+                        $parts = explode(':', $key_without_prefix);
+                        $stats['largest_key'] = $parts[0] . ' (' . ccm_tools_redis_format_bytes($largest_size) . ')';
                     }
                 }
-                
-                $stats['memory_bytes'] = $total_memory;
-                $stats['memory_used'] = ccm_tools_redis_format_bytes($total_memory);
             } else {
-                // No key salt - show database size (less secure but fallback)
+                // No key salt - show database size
                 $stats['keys'] = $redis->dbSize();
                 $stats['memory_used'] = $connection['memory_used'];
             }
@@ -637,13 +688,30 @@ function ccm_tools_redis_get_stats() {
             $redis->close();
             
         } catch (Exception $e) {
-            // Silently fail - DEBUG OBJECT may not be available
-            // Fall back to just key count
-            $stats['memory_used'] = __('N/A', 'ccm-tools');
+            // Silently fail
+            error_log('CCM Tools Redis Stats Error: ' . $e->getMessage());
         }
     }
     
     return $stats;
+}
+
+/**
+ * Format seconds to human readable duration
+ * 
+ * @param int $seconds Seconds to format
+ * @return string Formatted duration
+ */
+function ccm_tools_redis_format_duration($seconds) {
+    if ($seconds < 60) {
+        return round($seconds) . 's';
+    } elseif ($seconds < 3600) {
+        return round($seconds / 60) . 'm';
+    } elseif ($seconds < 86400) {
+        return round($seconds / 3600, 1) . 'h';
+    } else {
+        return round($seconds / 86400, 1) . 'd';
+    }
 }
 
 /**
@@ -958,7 +1026,7 @@ function ccm_tools_render_redis_page() {
                 <h2><?php _e('Site Cache Statistics', 'ccm-tools'); ?></h2>
                 <p class="ccm-note"><?php printf(__('Showing statistics for keys prefixed with: %s', 'ccm-tools'), '<code>' . esc_html($stats['key_prefix']) . '</code>'); ?></p>
                 
-                <div class="ccm-stats-grid ccm-stats-grid-2">
+                <div class="ccm-stats-grid">
                     <div class="ccm-stat-box">
                         <div class="ccm-stat-value" id="redis-stat-keys"><?php echo number_format_i18n($stats['keys']); ?></div>
                         <div class="ccm-stat-label"><?php _e('Cached Keys', 'ccm-tools'); ?></div>
@@ -966,6 +1034,14 @@ function ccm_tools_render_redis_page() {
                     <div class="ccm-stat-box">
                         <div class="ccm-stat-value" id="redis-stat-memory"><?php echo esc_html($stats['memory_used']); ?></div>
                         <div class="ccm-stat-label"><?php _e('Estimated Memory', 'ccm-tools'); ?></div>
+                    </div>
+                    <div class="ccm-stat-box">
+                        <div class="ccm-stat-value" id="redis-stat-groups"><?php echo number_format_i18n($stats['groups']); ?></div>
+                        <div class="ccm-stat-label"><?php _e('Cache Groups', 'ccm-tools'); ?></div>
+                    </div>
+                    <div class="ccm-stat-box">
+                        <div class="ccm-stat-value" id="redis-stat-ttl"><?php echo esc_html($stats['avg_ttl']); ?></div>
+                        <div class="ccm-stat-label"><?php _e('Avg. TTL', 'ccm-tools'); ?></div>
                     </div>
                 </div>
             </div>

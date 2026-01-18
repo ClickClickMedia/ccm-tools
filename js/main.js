@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.8.4
+ * Version: 7.8.5
  */
 
 (function() {
@@ -2733,9 +2733,11 @@
     async function refreshRedisStats() {
         const keysEl = $('#redis-stat-keys');
         const memoryEl = $('#redis-stat-memory');
+        const groupsEl = $('#redis-stat-groups');
+        const ttlEl = $('#redis-stat-ttl');
         
         // Only proceed if stats elements exist
-        if (!keysEl && !memoryEl) {
+        if (!keysEl && !memoryEl && !groupsEl && !ttlEl) {
             return;
         }
         
@@ -2749,6 +2751,12 @@
             }
             if (memoryEl) {
                 memoryEl.textContent = stats.memory_used || 'N/A';
+            }
+            if (groupsEl) {
+                groupsEl.textContent = Number(stats.groups).toLocaleString();
+            }
+            if (ttlEl) {
+                ttlEl.textContent = stats.avg_ttl || 'N/A';
             }
         } catch (error) {
             console.error('Failed to refresh Redis stats:', error);
