@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.7.0
+- **Current Version:** 7.8.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -33,13 +33,15 @@ ccm-tools/
 │   ├── htaccess.php       # .htaccess optimization functions
 │   ├── optimize.php       # Database optimization tools
 │   ├── performance-optimizer.php # Performance optimizer (experimental)
+│   ├── redis-object-cache.php # Redis object cache management
 │   ├── system-info.php    # System information gathering (TTFB, disk, etc.)
 │   ├── tableconverter.php # Database table conversion (InnoDB/utf8mb4)
 │   ├── update.php         # Plugin update checker
 │   ├── webp-converter.php # WebP image converter
 │   └── woocommerce-tools.php # WooCommerce-specific utilities
 ├── img/                   # Image assets
-└── assets/               # (Legacy - being phased out)
+└── assets/
+    └── object-cache.php   # WordPress object cache drop-in for Redis
 ```
 
 ## Key Features
@@ -78,6 +80,18 @@ ccm-tools/
 ### 6. WooCommerce Tools (when WooCommerce active)
 - Admin payment method toggle
 - Store configuration overview
+
+### 7. Redis Object Cache
+- Custom WordPress object cache implementation (replaces third-party plugins)
+- WordPress object cache drop-in (`object-cache.php`) with full API support
+- Redis connection management with multiple connection schemes (tcp, tls, unix)
+- Configuration via wp-config.php constants or database settings
+- One-click drop-in installation/uninstallation
+- Cache flushing (selective site flush or full Redis flush)
+- Real-time statistics (memory usage, hit/miss ratio, keys count)
+- Multisite support with separate prefixes per blog
+- Global cache groups for network-wide data
+- Automatic fallback to in-memory cache if Redis unavailable
 
 ## Coding Conventions
 
@@ -152,7 +166,14 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_convert_single_table` | `ccm_tools_ajax_convert_single_table()` | Convert single DB table |
 | `ccm_tools_optimize_single_table` | `ccm_tools_ajax_optimize_single_table()` | Optimize single DB table |
 | `ccm_tools_update_debug_mode` | `ccm_tools_ajax_update_debug_mode()` | Toggle WP_DEBUG |
-| `ccm_tools_configure_redis` | `ccm_tools_ajax_configure_redis()` | Configure Redis settings |
+| `ccm_tools_redis_enable` | `ccm_tools_ajax_redis_enable()` | Install Redis object-cache.php drop-in |
+| `ccm_tools_redis_disable` | `ccm_tools_ajax_redis_disable()` | Uninstall Redis object-cache.php drop-in |
+| `ccm_tools_redis_flush` | `ccm_tools_ajax_redis_flush()` | Flush Redis cache (param: `flush_type`) |
+| `ccm_tools_redis_test` | `ccm_tools_ajax_redis_test()` | Test Redis connection |
+| `ccm_tools_redis_save_settings` | `ccm_tools_ajax_redis_save_settings()` | Save Redis configuration settings |
+| `ccm_tools_redis_add_config` | `ccm_tools_ajax_redis_add_config()` | Add Redis constants to wp-config.php |
+| `ccm_tools_redis_get_stats` | `ccm_tools_ajax_redis_get_stats()` | Get Redis server statistics |
+| `ccm_tools_configure_redis` | `ccm_tools_ajax_configure_redis()` | Configure Redis settings (legacy) |
 | `ccm_tools_save_webp_settings` | `ccm_tools_ajax_save_webp_settings()` | Save WebP converter settings |
 | `ccm_tools_get_webp_stats` | `ccm_tools_ajax_get_webp_stats()` | Get WebP conversion statistics |
 | `ccm_tools_get_unconverted_images` | `ccm_tools_ajax_get_unconverted_images()` | Get images pending conversion |
@@ -251,6 +272,39 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.8.0
+- **Redis Object Cache - Custom Implementation**
+  - New dedicated Redis admin page (CCM Tools → Redis)
+  - Custom WordPress object cache drop-in replacing third-party plugins
+  - Full WordPress Object Cache API implementation (`wp_cache_add`, `wp_cache_get`, `wp_cache_set`, `wp_cache_delete`, `wp_cache_flush`, etc.)
+  - **Connection Management:**
+    - Support for tcp, tls, and unix socket connections
+    - Configurable host, port, password, and database number
+    - Connection timeout settings
+    - Real-time connection testing
+  - **Settings Storage:**
+    - Database-stored settings with wp-config.php override support
+    - One-click "Add to wp-config.php" for permanent configuration
+    - Automatic detection of existing Redis constants
+  - **Drop-in Management:**
+    - One-click install/uninstall of object-cache.php drop-in
+    - Status indicator showing if drop-in is installed and active
+    - Automatic backup of existing drop-in files
+  - **Cache Operations:**
+    - Selective flush (current site only in multisite)
+    - Full Redis flush (clears entire database)
+    - Cache statistics display (memory, keys, hit ratio)
+  - **Multisite Support:**
+    - Separate cache prefixes per blog
+    - Global cache groups for network-wide data
+    - Compatible with WordPress multisite installations
+  - **Reliability:**
+    - Automatic fallback to in-memory cache if Redis unavailable
+    - Graceful error handling for connection failures
+    - Non-persistent local cache layer for performance
+  - Dashboard simplified to show Redis status with link to configure page
+  - New files: `inc/redis-object-cache.php`, `assets/object-cache.php`
 
 ### v7.7.0
 - **Reorganized Menu Order**

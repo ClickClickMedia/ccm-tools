@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.7.0
+ * Version: 7.8.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.7.0');
+    define('CCM_HELPER_VERSION', '7.8.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -102,6 +102,10 @@ if (!defined('CCM_HELPER_ROOT_DIR')) {
     define('CCM_HELPER_ROOT_DIR', plugin_dir_path(__FILE__));
 }
 
+if (!defined('CCM_HELPER_ROOT_PATH')) {
+    define('CCM_HELPER_ROOT_PATH', plugin_dir_path(__FILE__));
+}
+
 if (!defined('CCM_HELPER_ROOT_URL')) {
     define('CCM_HELPER_ROOT_URL', plugin_dir_url(__FILE__));
 }
@@ -144,6 +148,7 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/woocommerce-tools.php'; // Add WooCommerce tools
     require_once CCM_HELPER_ROOT_DIR . 'inc/webp-converter.php'; // Add WebP image converter
     require_once CCM_HELPER_ROOT_DIR . 'inc/performance-optimizer.php';
+    require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php'; // Add Redis Object Cache
     
     // Initialize plugin settings
     global $ccm_tools;
@@ -158,6 +163,7 @@ function ccm_initialize_plugin() {
  */
 function ccm_tools_render_header_nav($active_page = '') {
     $webp_available = function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available();
+    $redis_available = function_exists('ccm_tools_redis_extension_available') && ccm_tools_redis_extension_available();
     $woocommerce_active = class_exists('WooCommerce');
     ?>
     <div class="ccm-header">
@@ -171,6 +177,9 @@ function ccm_tools_render_header_nav($active_page = '') {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools' ? 'active' : ''; ?>"><?php _e('System Info', 'ccm-tools'); ?></a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-database' ? 'active' : ''; ?>"><?php _e('Database', 'ccm-tools'); ?></a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-htaccess' ? 'active' : ''; ?>"><?php _e('.htaccess', 'ccm-tools'); ?></a>
+                <?php if ($redis_available): ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-redis')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-redis' ? 'active' : ''; ?>"><?php _e('Redis', 'ccm-tools'); ?></a>
+                <?php endif; ?>
                 <?php if ($webp_available): ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-webp' ? 'active' : ''; ?>"><?php _e('WebP', 'ccm-tools'); ?></a>
                 <?php endif; ?>
@@ -243,6 +252,18 @@ class CCMSettings {
             'ccm-tools-htaccess',
             array($this, 'create_htaccess_page')
         );
+        
+        // Add Redis Object Cache submenu (only if Redis extension is available)
+        if (function_exists('ccm_tools_redis_extension_available') && ccm_tools_redis_extension_available()) {
+            add_submenu_page(
+                'ccm-tools',
+                'Redis Cache',
+                'Redis Cache',
+                'manage_options',
+                'ccm-tools-redis',
+                'ccm_tools_render_redis_page'
+            );
+        }
         
         // Add WebP Converter submenu (only if image extension is available)
         if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()) {
@@ -1058,118 +1079,20 @@ class CCMSettings {
                         
                         <?php if ($redis_status['server_available']): ?>
                         <tr>
-                            <th rowspan="4"><?php _e('Redis Cache', 'ccm-tools'); ?></th>
-                            <td>
-                                <strong><?php _e('Server:', 'ccm-tools'); ?></strong> 
-                                <span class="<?php echo esc_attr($server_status_class); ?>"><?php echo esc_html($server_status_text); ?></span>
-                                <?php if ($redis_status['server_available'] && !empty($redis_status['version'])): ?>
-                                    (<?php echo esc_html($redis_status['version']); ?>)
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
+                            <th><?php _e('Redis Cache', 'ccm-tools'); ?></th>
                             <td>
                                 <div class="ccm-config-control">
                                     <div>
-                                        <strong><?php _e('Configuration:', 'ccm-tools'); ?></strong> 
-                                        <span class="<?php echo esc_attr($config_status_class); ?>"><?php echo esc_html($config_status_text); ?></span>
-                                    </div>
-                                    <?php if (!$redis_config['configured']): ?>
-                                        <button id="configure-redis" class="ccm-button" <?php echo !$redis_status['server_available'] ? 'disabled' : ''; ?>>
-                                            <?php _e('Add to wp-config.php', 'ccm-tools'); ?>
-                                        </button>
-                                    <?php else: ?>
-                                        <button id="show-redis-config" class="ccm-button ccm-button-small" data-shown="false">
-                                            <?php _e('Show Config', 'ccm-tools'); ?>
-                                        </button>
-                                    <?php endif; ?>
-                                </div>
-                                <?php if (!$redis_status['server_available'] && !$redis_config['configured']): ?>
-                                    <small class="ccm-note"><?php _e('Redis server must be available to configure.', 'ccm-tools'); ?></small>
-                                <?php endif; ?>
-                                
-                                <?php if ($redis_config['configured']): ?>
-                                    <div id="redis-config-details" style="margin-top: 5px; display: none;">
-                                        <small>
-                                            <?php 
-                                            if (!empty($redis_config['constants'])) {
-                                                echo '<div style="margin-top: 5px; line-height: 1.5;">';
-                                                foreach ($redis_config['constants'] as $constant => $value) {
-                                                    echo "<div><code>{$constant}</code>: " . esc_html($value) . "</div>";
-                                                }
-                                                echo '</div>';
-                                            }
-                                            ?>
-                                        </small>
-                                    </div>
-                                <?php endif; ?>
-                                
-                                <?php if (isset($redis_config['partially_configured']) && $redis_config['partially_configured'] && !empty($redis_config['missing_constants'])) {
-                                    $missing_html = '<small class="ccm-note">' . __('Missing recommended constants:', 'ccm-tools') . ' ';
-                                    $missing_html .= implode(', ', array_map('esc_html', $redis_config['missing_constants']));
-                                    $missing_html .= '</small>';
-                                    
-                                    // Display this information in the Redis configuration section
-                                    // For example, right after the config details div:
-                                    echo $missing_html;
-                                } ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                <div class="ccm-config-control">
-                                    <div>
-                                        <strong><?php _e('Plugin:', 'ccm-tools'); ?></strong> 
-                                        <span class="<?php echo esc_attr($plugin_status_class); ?>"><?php echo esc_html($plugin_status_text); ?></span>
-                                        <?php if ($redis_plugin['installed'] && !empty($redis_plugin['version'])): ?>
-                                            (<?php echo esc_html($redis_plugin['version']); ?>)
+                                        <strong><?php _e('Server:', 'ccm-tools'); ?></strong> 
+                                        <span class="ccm-success"><?php _e('Available', 'ccm-tools'); ?></span>
+                                        <?php if (!empty($redis_status['version'])): ?>
+                                            (<?php echo esc_html($redis_status['version']); ?>)
                                         <?php endif; ?>
                                     </div>
-                                    <?php if (!$redis_plugin['installed']): ?>
-                                        <button id="install-redis-plugin" class="ccm-button">
-                                            <?php _e('Install Redis Cache Plugin', 'ccm-tools'); ?>
-                                        </button>
-                                    <?php endif; ?>
+                                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-redis')); ?>" class="ccm-button ccm-button-small">
+                                        <?php _e('Configure', 'ccm-tools'); ?>
+                                    </a>
                                 </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                <div class="ccm-config-control">
-                                    <div>
-                                        <strong><?php _e('Object Cache:', 'ccm-tools'); ?></strong> 
-                                        <span class="<?php echo esc_attr($cache_status_class); ?>"><?php echo esc_html($cache_status_text); ?></span>
-                                    </div>
-                                    <?php if ($redis_plugin['active']): ?>
-                                        <?php if (!$redis_plugin['object_cache_enabled']): ?>
-                                            <button id="enable-redis-cache" class="ccm-button" <?php echo !$redis_config['configured'] ? 'disabled' : ''; ?>>
-                                                <?php _e('Enable', 'ccm-tools'); ?>
-                                            </button>
-                                            <?php if (!$redis_config['configured']): ?>
-                                                <small class="ccm-note"><?php _e('Redis must be configured first.', 'ccm-tools'); ?></small>
-                                            <?php endif; ?>
-                                        <?php else: ?>
-                                            <button id="disable-redis-cache" class="ccm-button">
-                                                <?php _e('Disable', 'ccm-tools'); ?>
-                                            </button>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
-                                </div>
-                                
-                                <?php if (isset($redis_plugin['object_cache_enabled']) && $redis_plugin['object_cache_enabled'] && isset($redis_plugin['redis_info'])): ?>
-                                    <small class="ccm-note">
-                                        <?php 
-                                        if (isset($redis_plugin['redis_info']['hits']) && isset($redis_plugin['redis_info']['misses'])) {
-                                            $hits = intval($redis_plugin['redis_info']['hits']);
-                                            $misses = intval($redis_plugin['redis_info']['misses']);
-                                            $total = $hits + $misses;
-                                            $ratio = $total > 0 ? round(($hits / $total) * 100, 1) : 0;
-                                            echo sprintf(__('Hit ratio: %s%% (%s hits, %s misses)', 'ccm-tools'), 
-                                                $ratio, number_format_i18n($hits), number_format_i18n($misses));
-                                        }
-                                        ?>
-                                    </small>
-                                <?php endif; ?>
                             </td>
                         </tr>
                         <?php endif; ?>

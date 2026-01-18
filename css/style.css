@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.7.0
+ * Version: 7.8.0
  */
 
 /* ===================================
@@ -2189,4 +2189,79 @@ tr.ccm-front-page-row {
     width: 16px;
     height: 16px;
     border-width: 2px;
+}
+/* ===================================
+   Redis Object Cache Styles
+   =================================== */
+
+/* Form row with multiple form groups */
+.ccm-form-row {
+    margin-bottom: var(--ccm-space-md);
+}
+
+.ccm-form-row > .ccm-form-group {
+    display: inline-block;
+    margin-right: var(--ccm-space-md);
+    vertical-align: top;
+}
+
+/* Make flex for side-by-side inputs */
+#tcp-settings {
+    display: flex;
+    gap: var(--ccm-space-md);
+}
+
+#tcp-settings .ccm-form-group {
+    flex: 1;
+}
+
+.ccm-form-section {
+    margin-bottom: var(--ccm-space-xl);
+    padding-bottom: var(--ccm-space-lg);
+    border-bottom: 1px solid var(--ccm-border);
+}
+
+.ccm-form-section:last-of-type {
+    border-bottom: none;
+    margin-bottom: var(--ccm-space-md);
+}
+
+.ccm-form-section h3 {
+    font-size: var(--ccm-text-lg);
+    font-weight: 600;
+    margin-bottom: var(--ccm-space-md);
+    color: var(--ccm-text);
+}
+
+.ccm-form-actions {
+    display: flex;
+    gap: var(--ccm-space-sm);
+    flex-wrap: wrap;
+    padding-top: var(--ccm-space-md);
+}
+
+/* Code blocks */
+.ccm-code-block {
+    background: var(--ccm-bg);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    padding: var(--ccm-space-md);
+    font-family: monospace;
+    font-size: var(--ccm-text-sm);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Stats boxes color variants */
+.ccm-stat-value.ccm-success {
+    color: var(--ccm-success);
+}
+
+.ccm-stat-value.ccm-warning {
+    color: var(--ccm-warning);
+}
+
+.ccm-stat-value.ccm-error {
+    color: var(--ccm-error);
 }

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.7.0
+ * Version: 7.8.0
  */
 
 (function() {
@@ -2710,6 +2710,11 @@
             initUploadsBackupHandlers();
         }
         
+        // Initialize Redis Object Cache page handlers
+        if ($('#redis-settings-form') || $('#redis-enable') || $('#redis-disable')) {
+            initRedisObjectCacheHandlers();
+        }
+        
         // Mark front page rows
         const frontPageIndicators = $$('.ccm-front-page-indicator');
         frontPageIndicators.forEach(indicator => {
@@ -2717,6 +2722,189 @@
             if (row) row.classList.add('ccm-front-page-row');
         });
     });
+    
+    // ===================================
+    // Redis Object Cache Functions
+    // ===================================
+    
+    /**
+     * Initialize Redis Object Cache page handlers
+     */
+    function initRedisObjectCacheHandlers() {
+        const enableBtn = $('#redis-enable');
+        const disableBtn = $('#redis-disable');
+        const flushBtn = $('#redis-flush');
+        const testBtn = $('#redis-test');
+        const settingsForm = $('#redis-settings-form');
+        const addConfigBtn = $('#add-to-wp-config');
+        const schemeSelect = $('#redis-scheme');
+        
+        // Enable Redis Object Cache
+        if (enableBtn) {
+            enableBtn.addEventListener('click', async () => {
+                const force = enableBtn.dataset.force === 'true';
+                
+                if (force && !confirm('This will replace the existing object-cache.php from another plugin. Continue?')) {
+                    return;
+                }
+                
+                enableBtn.disabled = true;
+                enableBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Enabling...';
+                
+                try {
+                    const response = await ajax('ccm_tools_redis_enable', { force: force ? 'true' : 'false' });
+                    showNotification(response.data.message, 'success');
+                    if (response.data.reload) {
+                        setTimeout(() => location.reload(), 1500);
+                    }
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                    enableBtn.disabled = false;
+                    enableBtn.innerHTML = force ? 'Replace & Enable' : 'Enable Object Cache';
+                }
+            });
+        }
+        
+        // Disable Redis Object Cache
+        if (disableBtn) {
+            disableBtn.addEventListener('click', async () => {
+                if (!confirm('Are you sure you want to disable the Redis Object Cache?')) {
+                    return;
+                }
+                
+                disableBtn.disabled = true;
+                disableBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Disabling...';
+                
+                try {
+                    const response = await ajax('ccm_tools_redis_disable');
+                    showNotification(response.data.message, 'success');
+                    if (response.data.reload) {
+                        setTimeout(() => location.reload(), 1500);
+                    }
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                    disableBtn.disabled = false;
+                    disableBtn.innerHTML = 'Disable Object Cache';
+                }
+            });
+        }
+        
+        // Flush Redis Cache
+        if (flushBtn) {
+            flushBtn.addEventListener('click', async () => {
+                flushBtn.disabled = true;
+                flushBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Flushing...';
+                
+                try {
+                    const response = await ajax('ccm_tools_redis_flush');
+                    showNotification(response.data.message, 'success');
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                } finally {
+                    flushBtn.disabled = false;
+                    flushBtn.innerHTML = 'Flush Cache';
+                }
+            });
+        }
+        
+        // Test Redis Connection
+        if (testBtn) {
+            testBtn.addEventListener('click', async () => {
+                testBtn.disabled = true;
+                testBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Testing...';
+                
+                try {
+                    const response = await ajax('ccm_tools_redis_test');
+                    showNotification(response.data.message, 'success');
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                } finally {
+                    testBtn.disabled = false;
+                    testBtn.innerHTML = 'Test Connection';
+                }
+            });
+        }
+        
+        // Connection type toggle (show/hide TCP vs Unix socket fields)
+        if (schemeSelect) {
+            const tcpSettings = $('#tcp-settings');
+            const unixSettings = $('#unix-settings');
+            
+            const updateSchemeVisibility = () => {
+                const scheme = schemeSelect.value;
+                if (tcpSettings) tcpSettings.style.display = scheme === 'unix' ? 'none' : 'flex';
+                if (unixSettings) unixSettings.style.display = scheme === 'unix' ? 'block' : 'none';
+            };
+            
+            schemeSelect.addEventListener('change', updateSchemeVisibility);
+            updateSchemeVisibility(); // Initial state
+        }
+        
+        // Save Settings Form
+        if (settingsForm) {
+            settingsForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const submitBtn = settingsForm.querySelector('button[type="submit"]');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Saving...';
+                }
+                
+                try {
+                    // Collect form data
+                    const formData = new FormData(settingsForm);
+                    const data = {};
+                    
+                    formData.forEach((value, key) => {
+                        if (key === 'selective_flush') {
+                            // Checkbox - convert to boolean string
+                            data[key] = 'true';
+                        } else {
+                            data[key] = value;
+                        }
+                    });
+                    
+                    // Handle unchecked checkboxes
+                    if (!formData.has('selective_flush')) {
+                        data['selective_flush'] = 'false';
+                    }
+                    
+                    const response = await ajax('ccm_tools_redis_save_settings', data);
+                    showNotification(response.data.message, 'success');
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                } finally {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = 'Save Settings';
+                    }
+                }
+            });
+        }
+        
+        // Add to wp-config.php
+        if (addConfigBtn) {
+            addConfigBtn.addEventListener('click', async () => {
+                if (!confirm('This will add Redis configuration constants to your wp-config.php file. A backup will be created. Continue?')) {
+                    return;
+                }
+                
+                addConfigBtn.disabled = true;
+                addConfigBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Adding...';
+                
+                try {
+                    const response = await ajax('ccm_tools_redis_add_config');
+                    showNotification(response.data.message, 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                    addConfigBtn.disabled = false;
+                    addConfigBtn.innerHTML = 'Add to wp-config.php';
+                }
+            });
+        }
+    }
     
     // ===================================
     // Uploads Backup Functions

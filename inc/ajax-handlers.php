@@ -2499,3 +2499,265 @@ function ccm_tools_cleanup_old_backups($backup_dir, $max_age_hours = 24) {
         }
     }
 }
+
+/**
+ * =================================================================
+ * Redis Object Cache AJAX Handlers
+ * =================================================================
+ */
+
+/**
+ * AJAX handler to enable Redis object cache
+ */
+add_action('wp_ajax_ccm_tools_redis_enable', 'ccm_tools_ajax_redis_enable');
+function ccm_tools_ajax_redis_enable(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    $force = isset($_POST['force']) && $_POST['force'] === 'true';
+    
+    if (!function_exists('ccm_tools_redis_install_dropin')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+    
+    $result = ccm_tools_redis_install_dropin($force);
+    
+    if ($result['success']) {
+        wp_send_json_success(array(
+            'message' => $result['message'],
+            'reload' => true
+        ));
+    } else {
+        wp_send_json_error($result['message']);
+    }
+}
+
+/**
+ * AJAX handler to disable Redis object cache
+ */
+add_action('wp_ajax_ccm_tools_redis_disable', 'ccm_tools_ajax_redis_disable');
+function ccm_tools_ajax_redis_disable(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    if (!function_exists('ccm_tools_redis_uninstall_dropin')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+    
+    $result = ccm_tools_redis_uninstall_dropin();
+    
+    if ($result['success']) {
+        wp_send_json_success(array(
+            'message' => $result['message'],
+            'reload' => true
+        ));
+    } else {
+        wp_send_json_error($result['message']);
+    }
+}
+
+/**
+ * AJAX handler to flush Redis cache
+ */
+add_action('wp_ajax_ccm_tools_redis_flush', 'ccm_tools_ajax_redis_flush');
+function ccm_tools_ajax_redis_flush(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    if (!function_exists('ccm_tools_redis_flush_cache')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+    
+    $settings = ccm_tools_redis_get_settings();
+    $result = ccm_tools_redis_flush_cache($settings['selective_flush']);
+    
+    if ($result['success']) {
+        wp_send_json_success(array(
+            'message' => $result['message'],
+            'keys_deleted' => $result['keys_deleted']
+        ));
+    } else {
+        wp_send_json_error($result['message']);
+    }
+}
+
+/**
+ * AJAX handler to test Redis connection
+ */
+add_action('wp_ajax_ccm_tools_redis_test', 'ccm_tools_ajax_redis_test');
+function ccm_tools_ajax_redis_test(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    if (!function_exists('ccm_tools_redis_check_connection')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+    
+    $connection = ccm_tools_redis_check_connection();
+    
+    if ($connection['connected']) {
+        wp_send_json_success(array(
+            'message' => sprintf(
+                __('Successfully connected to Redis %s at %s', 'ccm-tools'),
+                $connection['version'],
+                $connection['host'] . ($connection['port'] ? ':' . $connection['port'] : '')
+            ),
+            'connection' => $connection
+        ));
+    } else {
+        wp_send_json_error(
+            __('Connection failed: ', 'ccm-tools') . ($connection['error'] ?: __('Unknown error', 'ccm-tools'))
+        );
+    }
+}
+
+/**
+ * AJAX handler to save Redis settings
+ */
+add_action('wp_ajax_ccm_tools_redis_save_settings', 'ccm_tools_ajax_redis_save_settings');
+function ccm_tools_ajax_redis_save_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    if (!function_exists('ccm_tools_redis_save_settings')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+    
+    $settings = array();
+    
+    // Collect settings from POST data
+    if (isset($_POST['host'])) {
+        $settings['host'] = sanitize_text_field($_POST['host']);
+    }
+    if (isset($_POST['port'])) {
+        $settings['port'] = absint($_POST['port']);
+    }
+    if (isset($_POST['path'])) {
+        $settings['path'] = sanitize_text_field($_POST['path']);
+    }
+    if (isset($_POST['scheme'])) {
+        $settings['scheme'] = sanitize_text_field($_POST['scheme']);
+    }
+    if (isset($_POST['database'])) {
+        $settings['database'] = absint($_POST['database']);
+    }
+    if (isset($_POST['password'])) {
+        $settings['password'] = $_POST['password']; // Don't sanitize password
+    }
+    if (isset($_POST['timeout'])) {
+        $settings['timeout'] = floatval($_POST['timeout']);
+    }
+    if (isset($_POST['read_timeout'])) {
+        $settings['read_timeout'] = floatval($_POST['read_timeout']);
+    }
+    if (isset($_POST['max_ttl'])) {
+        $settings['max_ttl'] = absint($_POST['max_ttl']);
+    }
+    if (isset($_POST['key_salt'])) {
+        $settings['key_salt'] = sanitize_text_field($_POST['key_salt']);
+    }
+    if (isset($_POST['selective_flush'])) {
+        $settings['selective_flush'] = $_POST['selective_flush'] === 'true' || $_POST['selective_flush'] === '1';
+    }
+    
+    $saved = ccm_tools_redis_save_settings($settings);
+    
+    if ($saved) {
+        wp_send_json_success(array(
+            'message' => __('Redis settings saved successfully.', 'ccm-tools')
+        ));
+    } else {
+        wp_send_json_error(__('Failed to save Redis settings.', 'ccm-tools'));
+    }
+}
+
+/**
+ * AJAX handler to add Redis config to wp-config.php
+ */
+add_action('wp_ajax_ccm_tools_redis_add_config', 'ccm_tools_ajax_redis_add_config');
+function ccm_tools_ajax_redis_add_config(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    if (!function_exists('ccm_tools_redis_add_config')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+    
+    // Get current settings to use as config
+    $settings = ccm_tools_redis_get_settings();
+    
+    $config = array(
+        'WP_REDIS_HOST' => $settings['host'],
+        'WP_REDIS_PORT' => $settings['port'],
+        'WP_REDIS_MAXTTL' => $settings['max_ttl'] ?: 3600,
+        'WP_REDIS_DISABLE_METRICS' => true,
+        'WP_REDIS_DISABLE_COMMENT' => true,
+    );
+    
+    if (!empty($settings['key_salt'])) {
+        $config['WP_CACHE_KEY_SALT'] = $settings['key_salt'];
+    }
+    
+    if (!empty($settings['password'])) {
+        $config['WP_REDIS_PASSWORD'] = $settings['password'];
+    }
+    
+    if ($settings['database'] > 0) {
+        $config['WP_REDIS_DATABASE'] = $settings['database'];
+    }
+    
+    if ($settings['selective_flush']) {
+        $config['WP_REDIS_SELECTIVE_FLUSH'] = true;
+    }
+    
+    $result = ccm_tools_redis_add_config($config);
+    
+    if ($result['success']) {
+        wp_send_json_success(array(
+            'message' => $result['message'],
+            'backup_path' => isset($result['backup_path']) ? $result['backup_path'] : ''
+        ));
+    } else {
+        wp_send_json_error($result['message']);
+    }
+}
+
+/**
+ * AJAX handler to get Redis stats
+ */
+add_action('wp_ajax_ccm_tools_redis_get_stats', 'ccm_tools_ajax_redis_get_stats');
+function ccm_tools_ajax_redis_get_stats(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+    
+    if (!function_exists('ccm_tools_redis_get_stats')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+    
+    $stats = ccm_tools_redis_get_stats();
+    
+    wp_send_json_success(array(
+        'stats' => $stats
+    ));
+}
