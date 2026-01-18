@@ -1062,9 +1062,11 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         $sizes_html = !empty($sizes_attr) ? ' sizes="' . esc_attr($sizes_attr) . '"' : '';
         
         // Build the picture element
-        // Use display:contents to make picture element invisible to layout
-        // This ensures the img inherits flex/grid positioning from its grandparent
-        $picture = '<picture style="display:contents;">';
+        // Apply styles to make picture element behave like the img it wraps:
+        // - display:block prevents inline spacing issues
+        // - width/height:100% ensures it fills containers like .ratio that use absolute positioning
+        // - The img inside will inherit object-fit from its own classes
+        $picture = '<picture style="display:block;width:100%;height:100%;">';
         
         // WebP source (first for browsers that support it)
         if (!empty($srcset_webp)) {
