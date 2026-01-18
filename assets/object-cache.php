@@ -5,7 +5,7 @@
  * A high-performance Redis-based object cache for WordPress.
  * 
  * @package CCM_Tools
- * @version 7.8.0
+ * @version 7.8.1
  * 
  * Based on WordPress object cache API.
  * 

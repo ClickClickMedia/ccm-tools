@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.8.0
+- **Current Version:** 7.8.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,24 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.8.1
+- **Security Improvements for Redis Object Cache**
+  - Redis menu and navigation items now only display when PHP Redis extension is installed
+  - Added Redis extension availability checks to all AJAX handlers
+  - Improved wp-config.php path validation using `realpath()` to prevent path traversal
+  - Added secure backup filename generation with `wp_generate_password()`
+  - Enhanced input validation for Redis settings (host, port, path, scheme, database, timeout, key_salt)
+  - Host validation now checks for valid IP addresses and hostnames
+  - Port validation ensures range 1-65535
+  - Unix socket path validation with regex pattern matching
+  - Scheme whitelist validation (tcp, unix, tls only)
+  - Database index validation (0-15 range)
+  - Timeout validation (0-30 seconds)
+  - Key salt validation (alphanumeric with underscores/hyphens)
+  - Backup path in AJAX response now only returns filename (not full path)
+  - Added `wp_unslash()` for proper password handling
+  - Added `esc_html()` escaping in AJAX JSON responses
 
 ### v7.8.0
 - **Redis Object Cache - Custom Implementation**

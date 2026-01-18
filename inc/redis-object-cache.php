@@ -243,7 +243,8 @@ function ccm_tools_redis_save_settings($settings) {
         $sanitized['database'] = absint($settings['database']);
     }
     if (isset($settings['password'])) {
-        $sanitized['password'] = $settings['password']; // Don't sanitize password
+        // Use wp_unslash to handle escaped characters, don't sanitize password content
+        $sanitized['password'] = wp_unslash($settings['password']);
     }
     if (isset($settings['timeout'])) {
         $sanitized['timeout'] = floatval($settings['timeout']);
@@ -634,19 +635,36 @@ function ccm_tools_redis_add_config($config = array()) {
         'message' => '',
     );
     
+    // Security: Build and validate the wp-config.php path
     $wp_config_path = ABSPATH . 'wp-config.php';
     
-    if (!file_exists($wp_config_path)) {
+    // Resolve to real path and verify it's within ABSPATH
+    $real_config_path = realpath($wp_config_path);
+    $real_abspath = realpath(ABSPATH);
+    
+    if ($real_config_path === false || $real_abspath === false) {
         $result['message'] = __('wp-config.php file not found.', 'ccm-tools');
         return $result;
     }
     
-    if (!is_writable($wp_config_path)) {
+    // Ensure the file is actually within ABSPATH (prevent path traversal)
+    if (strpos($real_config_path, $real_abspath) !== 0) {
+        $result['message'] = __('Invalid wp-config.php path.', 'ccm-tools');
+        return $result;
+    }
+    
+    // Verify the file is named wp-config.php
+    if (basename($real_config_path) !== 'wp-config.php') {
+        $result['message'] = __('Invalid configuration file.', 'ccm-tools');
+        return $result;
+    }
+    
+    if (!is_writable($real_config_path)) {
         $result['message'] = __('wp-config.php file is not writable.', 'ccm-tools');
         return $result;
     }
     
-    $config_content = file_get_contents($wp_config_path);
+    $config_content = file_get_contents($real_config_path);
     if ($config_content === false) {
         $result['message'] = __('Could not read wp-config.php file.', 'ccm-tools');
         return $result;
@@ -722,22 +740,24 @@ function ccm_tools_redis_add_config($config = array()) {
         $config_content .= $config_text;
     }
     
-    // Create backup
-    $backup_path = ABSPATH . 'wp-config-backup-' . date('Y-m-d-His') . '.php';
-    if (!@copy($wp_config_path, $backup_path)) {
+    // Create backup with secure filename
+    $backup_filename = 'wp-config-backup-' . wp_generate_password(8, false, false) . '-' . date('Y-m-d-His') . '.php';
+    $backup_path = dirname($real_config_path) . DIRECTORY_SEPARATOR . $backup_filename;
+    
+    if (!@copy($real_config_path, $backup_path)) {
         $result['message'] = __('Could not create backup of wp-config.php.', 'ccm-tools');
         return $result;
     }
     
     // Write the new content
-    if (@file_put_contents($wp_config_path, $config_content) === false) {
+    if (@file_put_contents($real_config_path, $config_content) === false) {
         $result['message'] = __('Could not write to wp-config.php file.', 'ccm-tools');
         return $result;
     }
     
     // Clear opcode cache
     if (function_exists('opcache_invalidate')) {
-        opcache_invalidate($wp_config_path, true);
+        opcache_invalidate($real_config_path, true);
     }
     
     $result['success'] = true;
