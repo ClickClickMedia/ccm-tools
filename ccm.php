@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.6.9
+ * Version: 7.7.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.6.9');
+    define('CCM_HELPER_VERSION', '7.7.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -158,6 +158,7 @@ function ccm_initialize_plugin() {
  */
 function ccm_tools_render_header_nav($active_page = '') {
     $webp_available = function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available();
+    $woocommerce_active = class_exists('WooCommerce');
     ?>
     <div class="ccm-header">
         <div class="ccm-header-logo">
@@ -170,12 +171,14 @@ function ccm_tools_render_header_nav($active_page = '') {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools' ? 'active' : ''; ?>"><?php _e('System Info', 'ccm-tools'); ?></a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-database')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-database' ? 'active' : ''; ?>"><?php _e('Database', 'ccm-tools'); ?></a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-htaccess')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-htaccess' ? 'active' : ''; ?>"><?php _e('.htaccess', 'ccm-tools'); ?></a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-woocommerce' ? 'active' : ''; ?>"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-error-log' ? 'active' : ''; ?>"><?php _e('Error Log', 'ccm-tools'); ?></a>
                 <?php if ($webp_available): ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-webp' ? 'active' : ''; ?>"><?php _e('WebP', 'ccm-tools'); ?></a>
                 <?php endif; ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-perf')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-perf' ? 'active' : ''; ?>"><?php _e('Performance', 'ccm-tools'); ?></a>
+                <?php if ($woocommerce_active): ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-woocommerce' ? 'active' : ''; ?>"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
+                <?php endif; ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-error-log' ? 'active' : ''; ?>"><?php _e('Error Log', 'ccm-tools'); ?></a>
             </div>
         </nav>
         <div class="ccm-header-title">
@@ -241,26 +244,6 @@ class CCMSettings {
             array($this, 'create_htaccess_page')
         );
         
-        // Add WooCommerce Tools submenu
-        add_submenu_page(
-            'ccm-tools',
-            'WooCommerce Tools',
-            'WooCommerce Tools',
-            'manage_options',
-            'ccm-tools-woocommerce',
-            array($this, 'create_woocommerce_page')
-        );
-        
-        // Add new Error Log submenu
-        add_submenu_page(
-            'ccm-tools',
-            'Error Log',
-            'Error Log',
-            'manage_options',
-            'ccm-tools-error-log',
-            'ccm_tools_render_error_log_page'
-        );
-        
         // Add WebP Converter submenu (only if image extension is available)
         if (function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available()) {
             add_submenu_page(
@@ -281,6 +264,28 @@ class CCMSettings {
             'manage_options',
             'ccm-tools-perf',
             'ccm_tools_render_perf_page'
+        );
+        
+        // Add WooCommerce Tools submenu (only if WooCommerce is active)
+        if (class_exists('WooCommerce')) {
+            add_submenu_page(
+                'ccm-tools',
+                'WooCommerce Tools',
+                'WooCommerce Tools',
+                'manage_options',
+                'ccm-tools-woocommerce',
+                array($this, 'create_woocommerce_page')
+            );
+        }
+        
+        // Add Error Log submenu
+        add_submenu_page(
+            'ccm-tools',
+            'Error Log',
+            'Error Log',
+            'manage_options',
+            'ccm-tools-error-log',
+            'ccm_tools_render_error_log_page'
         );
         
         // Add debug submenu if debug mode is enabled

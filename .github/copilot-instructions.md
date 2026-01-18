@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.6.9
+- **Current Version:** 7.7.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -251,6 +251,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.7.0
+- **Reorganized Menu Order**
+  - New menu order: System Info, Database, .htaccess, WebP, Performance, WooCommerce, Error Log
+  - WooCommerce menu item now only shows if WooCommerce plugin is installed and active
+  - Applies to both the header navigation tabs and the WordPress admin sidebar menu
+  - Consistent menu across all CCM Tools pages
 
 ### v7.6.9
 - **Fixed Picture Tag Layout Breaking (Take 3)**
