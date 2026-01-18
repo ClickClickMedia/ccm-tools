@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.8.3
+ * Version: 7.8.4
  */
 
 /* ===================================
@@ -1704,6 +1704,11 @@ tr.ccm-front-page-row {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: var(--ccm-space-md);
     margin-bottom: var(--ccm-space-lg);
+}
+
+.ccm-stats-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 500px;
 }
 
 .ccm-stat-box {

@@ -556,36 +556,31 @@ function ccm_tools_redis_flush_cache($selective = true) {
 }
 
 /**
- * Get Redis cache statistics
+ * Get Redis cache statistics (site-specific only)
  * 
  * @return array Cache statistics
  */
 function ccm_tools_redis_get_stats() {
     $stats = array(
         'status' => 'disconnected',
-        'hits' => 0,
-        'misses' => 0,
-        'hit_ratio' => 0,
-        'size' => 0,
         'keys' => 0,
         'memory_used' => '',
+        'memory_bytes' => 0,
         'uptime' => 0,
         'version' => '',
+        'key_prefix' => '',
     );
     
     $connection = ccm_tools_redis_check_connection();
     
     if ($connection['connected']) {
         $stats['status'] = 'connected';
-        $stats['hits'] = $connection['hits'];
-        $stats['misses'] = $connection['misses'];
-        $stats['hit_ratio'] = $connection['hit_ratio'];
-        $stats['memory_used'] = $connection['memory_used'];
         $stats['uptime'] = $connection['uptime'];
         $stats['version'] = $connection['version'];
         
-        // Get key count for our site
+        // Get site-specific stats
         $settings = ccm_tools_redis_get_settings();
+        $stats['key_prefix'] = $settings['key_salt'];
         
         try {
             $redis = new Redis();
@@ -604,23 +599,69 @@ function ccm_tools_redis_get_stats() {
                 $redis->select($settings['database']);
             }
             
-            // Count keys
+            // Count keys and calculate memory for this site only
             if (!empty($settings['key_salt'])) {
                 $pattern = $settings['key_salt'] . '*';
                 $keys = $redis->keys($pattern);
                 $stats['keys'] = count($keys);
+                
+                // Calculate approximate memory usage for site keys
+                // Sample up to 100 keys to estimate average size
+                $total_memory = 0;
+                $sample_size = min(100, count($keys));
+                
+                if ($sample_size > 0) {
+                    $sample_keys = array_slice($keys, 0, $sample_size);
+                    foreach ($sample_keys as $key) {
+                        $debug = $redis->rawCommand('DEBUG', 'OBJECT', $key);
+                        if ($debug && preg_match('/serializedlength:(\d+)/', $debug, $matches)) {
+                            $total_memory += intval($matches[1]);
+                        }
+                    }
+                    
+                    // Extrapolate for all keys
+                    if ($sample_size > 0) {
+                        $avg_size = $total_memory / $sample_size;
+                        $total_memory = $avg_size * count($keys);
+                    }
+                }
+                
+                $stats['memory_bytes'] = $total_memory;
+                $stats['memory_used'] = ccm_tools_redis_format_bytes($total_memory);
             } else {
+                // No key salt - show database size (less secure but fallback)
                 $stats['keys'] = $redis->dbSize();
+                $stats['memory_used'] = $connection['memory_used'];
             }
             
             $redis->close();
             
         } catch (Exception $e) {
-            // Silently fail
+            // Silently fail - DEBUG OBJECT may not be available
+            // Fall back to just key count
+            $stats['memory_used'] = __('N/A', 'ccm-tools');
         }
     }
     
     return $stats;
+}
+
+/**
+ * Format bytes to human readable string
+ * 
+ * @param int $bytes Bytes to format
+ * @return string Formatted string
+ */
+function ccm_tools_redis_format_bytes($bytes) {
+    if ($bytes == 0) {
+        return '0 B';
+    }
+    
+    $units = array('B', 'KB', 'MB', 'GB', 'TB');
+    $i = floor(log($bytes, 1024));
+    $i = min($i, count($units) - 1);
+    
+    return round($bytes / pow(1024, $i), 2) . ' ' . $units[$i];
 }
 
 /**
@@ -914,26 +955,17 @@ function ccm_tools_render_redis_page() {
             <?php if ($extension_available && $connection['connected']): ?>
             <!-- Statistics Card -->
             <div class="ccm-card">
-                <h2><?php _e('Cache Statistics', 'ccm-tools'); ?></h2>
+                <h2><?php _e('Site Cache Statistics', 'ccm-tools'); ?></h2>
+                <p class="ccm-note"><?php printf(__('Showing statistics for keys prefixed with: %s', 'ccm-tools'), '<code>' . esc_html($stats['key_prefix']) . '</code>'); ?></p>
                 
-                <div class="ccm-stats-grid">
-                    <div class="ccm-stat-box">
-                        <div class="ccm-stat-value" id="redis-stat-hits"><?php echo number_format_i18n($stats['hits']); ?></div>
-                        <div class="ccm-stat-label"><?php _e('Cache Hits', 'ccm-tools'); ?></div>
-                    </div>
-                    <div class="ccm-stat-box">
-                        <div class="ccm-stat-value" id="redis-stat-misses"><?php echo number_format_i18n($stats['misses']); ?></div>
-                        <div class="ccm-stat-label"><?php _e('Cache Misses', 'ccm-tools'); ?></div>
-                    </div>
-                    <div class="ccm-stat-box">
-                        <div class="ccm-stat-value <?php echo $stats['hit_ratio'] >= 80 ? 'ccm-success' : ($stats['hit_ratio'] >= 50 ? 'ccm-warning' : 'ccm-error'); ?>" id="redis-stat-ratio">
-                            <?php echo number_format($stats['hit_ratio'], 1); ?>%
-                        </div>
-                        <div class="ccm-stat-label"><?php _e('Hit Ratio', 'ccm-tools'); ?></div>
-                    </div>
+                <div class="ccm-stats-grid ccm-stats-grid-2">
                     <div class="ccm-stat-box">
                         <div class="ccm-stat-value" id="redis-stat-keys"><?php echo number_format_i18n($stats['keys']); ?></div>
                         <div class="ccm-stat-label"><?php _e('Cached Keys', 'ccm-tools'); ?></div>
+                    </div>
+                    <div class="ccm-stat-box">
+                        <div class="ccm-stat-value" id="redis-stat-memory"><?php echo esc_html($stats['memory_used']); ?></div>
+                        <div class="ccm-stat-label"><?php _e('Estimated Memory', 'ccm-tools'); ?></div>
                     </div>
                 </div>
             </div>

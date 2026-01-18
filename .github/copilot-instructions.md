@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.8.3
+- **Current Version:** 7.8.4
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,19 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.8.4
+- **Site-Specific Redis Cache Statistics**
+  - Removed server-wide statistics (hits, misses, hit ratio) for security and accuracy
+  - Statistics now only show data for the current site's cache keys
+  - New "Cached Keys" stat shows count of keys matching the site's key prefix
+  - New "Estimated Memory" stat shows approximate memory usage for site keys
+  - Statistics card header updated to "Site Cache Statistics"
+  - Added note showing the key prefix being used for filtering
+  - Updated `ccm_tools_redis_get_stats()` to calculate site-specific memory using DEBUG OBJECT
+  - Added `ccm_tools_redis_format_bytes()` helper function
+  - Simplified `refreshRedisStats()` JavaScript function
+  - Added `.ccm-stats-grid-2` CSS class for 2-column layout
 
 ### v7.8.3
 - **Redis Cache Statistics Auto-Refresh**
