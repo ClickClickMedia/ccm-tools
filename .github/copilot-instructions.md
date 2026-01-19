@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.9.1
+- **Current Version:** 7.9.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,16 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.9.2
+- **Font Display: Swap for Self-Hosted Fonts**
+  - Fixed font-display issue not working on self-hosted theme fonts
+  - Previous version only handled Google Fonts URLs via `<link>` tags
+  - Now uses output buffering to inject `font-display: swap` into ALL `@font-face` rules
+  - Works with self-hosted fonts in inline `<style>` blocks and theme CSS
+  - Detects commented-out `/* font-display: swap; */` and adds the property
+  - Skips `@font-face` rules that already have `font-display` set
+  - New functions: `ccm_tools_perf_font_display_start_buffer()`, `ccm_tools_perf_font_display_process_buffer()`
 
 ### v7.9.1
 - **Import/Export Performance Settings**

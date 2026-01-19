@@ -172,6 +172,8 @@ function ccm_tools_perf_init() {
     if (!empty($settings['font_display_swap'])) {
         add_filter('style_loader_tag', 'ccm_tools_perf_font_display_swap', 10, 4);
         add_action('wp_head', 'ccm_tools_perf_font_display_preload', 2);
+        // Use output buffering to inject font-display: swap into @font-face rules (self-hosted fonts)
+        add_action('template_redirect', 'ccm_tools_perf_font_display_start_buffer', 1);
     }
     
     // Speculation Rules API (instant page navigation)
@@ -774,6 +776,64 @@ function ccm_tools_perf_font_display_swap($tag, $handle, $href, $media) {
 function ccm_tools_perf_font_display_preload() {
     // Add preconnect for fonts.gstatic.com (actual font files)
     echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
+}
+
+/**
+ * Start output buffering to inject font-display: swap into @font-face rules
+ * This catches self-hosted fonts in theme CSS that don't have font-display set
+ */
+function ccm_tools_perf_font_display_start_buffer() {
+    // Don't buffer AJAX requests, admin, or REST API
+    if (wp_doing_ajax() || is_admin() || (defined('REST_REQUEST') && REST_REQUEST)) {
+        return;
+    }
+    
+    ob_start('ccm_tools_perf_font_display_process_buffer');
+}
+
+/**
+ * Process output buffer to inject font-display: swap into @font-face rules
+ * 
+ * @param string $html The complete HTML output
+ * @return string Modified HTML with font-display: swap injected
+ */
+function ccm_tools_perf_font_display_process_buffer($html) {
+    // Only process HTML responses
+    if (empty($html)) {
+        return $html;
+    }
+    
+    // Find all @font-face rules and inject font-display: swap if not present
+    // This regex matches @font-face rules that don't already have font-display
+    $html = preg_replace_callback(
+        '/@font-face\s*\{([^}]+)\}/is',
+        function($matches) {
+            $rule = $matches[0];
+            $content = $matches[1];
+            
+            // Check if font-display is already set (not commented out)
+            // Look for font-display that's not in a comment
+            if (preg_match('/(?<!\/\*\s*)font-display\s*:/i', $content)) {
+                return $rule; // Already has font-display, don't modify
+            }
+            
+            // Inject font-display: swap before the closing brace
+            // Add it after the last property
+            $content = rtrim($content);
+            
+            // Check if content ends with semicolon
+            if (substr($content, -1) !== ';') {
+                $content .= ';';
+            }
+            
+            $content .= "\n            font-display: swap;";
+            
+            return '@font-face {' . $content . "\n        }";
+        },
+        $html
+    );
+    
+    return $html;
 }
 
 /**
