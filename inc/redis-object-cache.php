@@ -230,6 +230,9 @@ function ccm_tools_redis_get_settings() {
  * @return bool Success
  */
 function ccm_tools_redis_save_settings($settings) {
+    // Get existing settings to merge with
+    $existing = get_option('ccm_tools_redis_settings', array());
+    
     // Sanitize settings
     $sanitized = array();
     
@@ -286,7 +289,27 @@ function ccm_tools_redis_save_settings($settings) {
         $sanitized['async_flush'] = (bool) $settings['async_flush'];
     }
     
-    return update_option('ccm_tools_redis_settings', $sanitized);
+    // WooCommerce specific settings
+    if (isset($settings['wc_cache_cart_fragments'])) {
+        $sanitized['wc_cache_cart_fragments'] = (bool) $settings['wc_cache_cart_fragments'];
+    }
+    if (isset($settings['wc_persistent_cart'])) {
+        $sanitized['wc_persistent_cart'] = (bool) $settings['wc_persistent_cart'];
+    }
+    if (isset($settings['wc_session_cache'])) {
+        $sanitized['wc_session_cache'] = (bool) $settings['wc_session_cache'];
+    }
+    if (isset($settings['wc_product_cache_ttl'])) {
+        $sanitized['wc_product_cache_ttl'] = absint($settings['wc_product_cache_ttl']);
+    }
+    if (isset($settings['wc_session_cache_ttl'])) {
+        $sanitized['wc_session_cache_ttl'] = absint($settings['wc_session_cache_ttl']);
+    }
+    
+    // Merge with existing settings (new values override existing)
+    $merged = array_merge($existing, $sanitized);
+    
+    return update_option('ccm_tools_redis_settings', $merged);
 }
 
 /**
