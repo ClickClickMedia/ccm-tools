@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.9.0
+- **Current Version:** 7.9.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,17 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.9.1
+- **Import/Export Performance Settings**
+  - Export current settings to a JSON file for backup
+  - Import settings from a previously exported JSON file
+  - Settings preview panel shows current configuration as JSON
+  - Export includes metadata: plugin version, export date, site URL
+  - Import validates file format and plugin compatibility
+  - Confirmation dialog before import shows source details
+  - Page auto-refreshes after successful import
+  - New AJAX handlers: `ccm_tools_export_perf_settings`, `ccm_tools_import_perf_settings`
 
 ### v7.9.0
 - **New Performance Optimizations for PageSpeed Insights**

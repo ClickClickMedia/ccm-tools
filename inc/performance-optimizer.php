@@ -1462,13 +1462,57 @@ body { margin: 0; }
             
             <!-- Save Button -->
             <div class="ccm-card">
-                <div style="display: flex; gap: var(--ccm-space-md); align-items: center;">
+                <div style="display: flex; gap: var(--ccm-space-md); align-items: center; flex-wrap: wrap;">
                     <button type="button" id="save-perf-settings" class="ccm-button ccm-button-primary">
                         <?php _e('Save Settings', 'ccm-tools'); ?>
                     </button>
                     <span id="perf-save-status"></span>
                 </div>
                 <div id="perf-result" class="ccm-result-box" style="margin-top: var(--ccm-space-md);"></div>
+            </div>
+            
+            <!-- Import/Export Settings -->
+            <div class="ccm-card" id="import-export">
+                <h2><?php _e('Import / Export Settings', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Export your settings to a JSON file for backup or to import on another site.', 'ccm-tools'); ?></p>
+                
+                <div style="display: flex; gap: var(--ccm-space-lg); flex-wrap: wrap; margin-top: var(--ccm-space-md);">
+                    <!-- Export -->
+                    <div style="flex: 1; min-width: 280px;">
+                        <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Export Settings', 'ccm-tools'); ?></h3>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('Download current settings as a JSON file.', 'ccm-tools'); ?></p>
+                        <button type="button" id="export-perf-settings" class="ccm-button ccm-button-secondary" style="margin-top: var(--ccm-space-sm);">
+                            📥 <?php _e('Export Settings', 'ccm-tools'); ?>
+                        </button>
+                    </div>
+                    
+                    <!-- Import -->
+                    <div style="flex: 1; min-width: 280px;">
+                        <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Import Settings', 'ccm-tools'); ?></h3>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('Upload a previously exported JSON file.', 'ccm-tools'); ?></p>
+                        <div style="display: flex; gap: var(--ccm-space-sm); align-items: center; margin-top: var(--ccm-space-sm);">
+                            <input type="file" id="import-perf-file" accept=".json" style="display: none;">
+                            <button type="button" id="import-perf-settings-btn" class="ccm-button ccm-button-secondary">
+                                📤 <?php _e('Choose File', 'ccm-tools'); ?>
+                            </button>
+                            <span id="import-file-name" class="ccm-text-muted"></span>
+                        </div>
+                        <button type="button" id="import-perf-settings" class="ccm-button ccm-button-primary" style="margin-top: var(--ccm-space-sm); display: none;">
+                            <?php _e('Import Settings', 'ccm-tools'); ?>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Current Settings Preview -->
+                <div style="margin-top: var(--ccm-space-lg);">
+                    <h3 style="margin-bottom: var(--ccm-space-sm);">
+                        <?php _e('Current Settings Preview', 'ccm-tools'); ?>
+                        <button type="button" id="toggle-settings-preview" class="ccm-button ccm-button-small ccm-button-secondary" style="margin-left: var(--ccm-space-sm);">
+                            <?php _e('Show/Hide', 'ccm-tools'); ?>
+                        </button>
+                    </h3>
+                    <pre id="settings-preview" style="display: none; background: var(--ccm-bg-secondary); padding: var(--ccm-space-md); border-radius: var(--ccm-radius); overflow-x: auto; font-size: var(--ccm-text-sm); max-height: 400px; overflow-y: auto;"><?php echo esc_html(wp_json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); ?></pre>
+                </div>
             </div>
             
             <!-- Testing Tips -->

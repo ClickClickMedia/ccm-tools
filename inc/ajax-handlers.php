@@ -1766,6 +1766,142 @@ function ccm_tools_ajax_get_perf_settings(): void {
 }
 
 /**
+ * Export performance optimizer settings as JSON
+ */
+add_action('wp_ajax_ccm_tools_export_perf_settings', 'ccm_tools_ajax_export_perf_settings');
+function ccm_tools_ajax_export_perf_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $settings = ccm_tools_perf_get_settings();
+    
+    // Add export metadata
+    $export_data = array(
+        'plugin' => 'ccm-tools',
+        'version' => defined('CCM_HELPER_VERSION') ? CCM_HELPER_VERSION : '7.9.0',
+        'exported_at' => current_time('mysql'),
+        'site_url' => get_site_url(),
+        'settings' => $settings,
+    );
+    
+    wp_send_json_success($export_data);
+}
+
+/**
+ * Import performance optimizer settings from JSON
+ */
+add_action('wp_ajax_ccm_tools_import_perf_settings', 'ccm_tools_ajax_import_perf_settings');
+function ccm_tools_ajax_import_perf_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    // Get the JSON data from POST
+    $json_data = isset($_POST['settings_json']) ? wp_unslash($_POST['settings_json']) : '';
+    
+    if (empty($json_data)) {
+        wp_send_json_error(array('message' => __('No settings data provided.', 'ccm-tools')));
+    }
+    
+    // Decode JSON
+    $import_data = json_decode($json_data, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        wp_send_json_error(array('message' => __('Invalid JSON format: ', 'ccm-tools') . json_last_error_msg()));
+    }
+    
+    // Validate it's from CCM Tools
+    if (!isset($import_data['plugin']) || $import_data['plugin'] !== 'ccm-tools') {
+        wp_send_json_error(array('message' => __('Invalid settings file. This does not appear to be a CCM Tools export.', 'ccm-tools')));
+    }
+    
+    // Check if settings exist
+    if (!isset($import_data['settings']) || !is_array($import_data['settings'])) {
+        wp_send_json_error(array('message' => __('No settings found in the import file.', 'ccm-tools')));
+    }
+    
+    $imported_settings = $import_data['settings'];
+    
+    // Get current defaults to merge with imported settings (in case import is from older version)
+    $defaults = ccm_tools_perf_get_settings();
+    
+    // Sanitize each setting based on its type
+    $sanitized_settings = array();
+    
+    // Boolean settings
+    $boolean_keys = array(
+        'enabled', 'defer_js', 'delay_js', 'preload_css', 'preconnect', 'dns_prefetch',
+        'lcp_fetchpriority', 'lcp_preload', 'remove_query_strings', 'disable_emoji',
+        'disable_dashicons', 'lazy_load_iframes', 'youtube_facade', 'font_display_swap',
+        'speculation_rules', 'critical_css', 'disable_jquery_migrate', 'disable_block_css',
+        'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
+        'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed'
+    );
+    
+    foreach ($boolean_keys as $key) {
+        $sanitized_settings[$key] = isset($imported_settings[$key]) ? (bool) $imported_settings[$key] : $defaults[$key];
+    }
+    
+    // Array settings (comma-separated lists)
+    $array_keys = array('defer_js_excludes', 'delay_js_excludes');
+    foreach ($array_keys as $key) {
+        if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
+            $sanitized_settings[$key] = array_map('sanitize_key', $imported_settings[$key]);
+        } else {
+            $sanitized_settings[$key] = $defaults[$key];
+        }
+    }
+    
+    // URL array settings
+    $url_array_keys = array('preconnect_urls', 'dns_prefetch_urls');
+    foreach ($url_array_keys as $key) {
+        if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
+            $sanitized_settings[$key] = array_map('esc_url_raw', $imported_settings[$key]);
+        } else {
+            $sanitized_settings[$key] = $defaults[$key];
+        }
+    }
+    
+    // String settings
+    $sanitized_settings['lcp_preload_url'] = isset($imported_settings['lcp_preload_url']) 
+        ? esc_url_raw($imported_settings['lcp_preload_url']) 
+        : $defaults['lcp_preload_url'];
+    
+    $sanitized_settings['speculation_eagerness'] = isset($imported_settings['speculation_eagerness']) && 
+        in_array($imported_settings['speculation_eagerness'], array('conservative', 'moderate', 'eager'))
+        ? $imported_settings['speculation_eagerness']
+        : $defaults['speculation_eagerness'];
+    
+    $sanitized_settings['critical_css_code'] = isset($imported_settings['critical_css_code'])
+        ? wp_strip_all_tags($imported_settings['critical_css_code'])
+        : $defaults['critical_css_code'];
+    
+    // Integer settings
+    $sanitized_settings['delay_js_timeout'] = isset($imported_settings['delay_js_timeout'])
+        ? absint($imported_settings['delay_js_timeout'])
+        : $defaults['delay_js_timeout'];
+    
+    $sanitized_settings['heartbeat_interval'] = isset($imported_settings['heartbeat_interval'])
+        ? max(15, min(120, absint($imported_settings['heartbeat_interval'])))
+        : $defaults['heartbeat_interval'];
+    
+    // Save the sanitized settings
+    ccm_tools_perf_save_settings($sanitized_settings);
+    
+    wp_send_json_success(array(
+        'message' => __('Settings imported successfully!', 'ccm-tools'),
+        'imported_from' => isset($import_data['site_url']) ? $import_data['site_url'] : 'Unknown',
+        'exported_at' => isset($import_data['exported_at']) ? $import_data['exported_at'] : 'Unknown',
+        'settings' => $sanitized_settings,
+    ));
+}
+
+/**
  * Sanitize comma-separated list of handles
  * 
  * @param string $input Comma-separated list

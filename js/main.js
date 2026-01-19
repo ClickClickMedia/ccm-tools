@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.9.0
+ * Version: 7.9.1
  */
 
 (function() {
@@ -2179,6 +2179,35 @@
         if (detectDelayScriptsBtn) {
             detectDelayScriptsBtn.addEventListener('click', () => detectScripts('delay'));
         }
+        
+        // Export settings button
+        const exportBtn = $('#export-perf-settings');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', exportPerfSettings);
+        }
+        
+        // Import file input trigger
+        const importFileBtn = $('#import-perf-settings-btn');
+        const importFileInput = $('#import-perf-file');
+        if (importFileBtn && importFileInput) {
+            importFileBtn.addEventListener('click', () => importFileInput.click());
+            importFileInput.addEventListener('change', handleImportFileSelect);
+        }
+        
+        // Import settings button
+        const importBtn = $('#import-perf-settings');
+        if (importBtn) {
+            importBtn.addEventListener('click', importPerfSettings);
+        }
+        
+        // Toggle settings preview
+        const togglePreviewBtn = $('#toggle-settings-preview');
+        const settingsPreview = $('#settings-preview');
+        if (togglePreviewBtn && settingsPreview) {
+            togglePreviewBtn.addEventListener('click', () => {
+                settingsPreview.style.display = settingsPreview.style.display === 'none' ? 'block' : 'none';
+            });
+        }
     }
     
     /**
@@ -2458,6 +2487,157 @@
             if (saveBtn) {
                 saveBtn.disabled = false;
                 saveBtn.innerHTML = 'Save Settings';
+            }
+        }
+    }
+    
+    /**
+     * Export performance settings to JSON file
+     */
+    async function exportPerfSettings() {
+        const exportBtn = $('#export-perf-settings');
+        
+        if (exportBtn) {
+            exportBtn.disabled = true;
+            exportBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Exporting...';
+        }
+        
+        try {
+            const response = await ajax('ccm_tools_export_perf_settings', {});
+            
+            if (!response.data) {
+                throw new Error('No data received from server');
+            }
+            
+            // Create and download the JSON file
+            const jsonString = JSON.stringify(response.data, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            // Generate filename with site name and date
+            const siteName = window.location.hostname.replace(/[^a-z0-9]/gi, '-');
+            const date = new Date().toISOString().split('T')[0];
+            const filename = `ccm-tools-perf-settings-${siteName}-${date}.json`;
+            
+            // Create download link and trigger
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification('Settings exported successfully!', 'success');
+            
+        } catch (error) {
+            showNotification('Failed to export settings: ' + error.message, 'error');
+        } finally {
+            if (exportBtn) {
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = '📥 Export Settings';
+            }
+        }
+    }
+    
+    /**
+     * Handle file selection for import
+     */
+    function handleImportFileSelect(e) {
+        const file = e.target.files[0];
+        const fileNameSpan = $('#import-file-name');
+        const importBtn = $('#import-perf-settings');
+        
+        if (file) {
+            if (fileNameSpan) {
+                fileNameSpan.textContent = file.name;
+            }
+            if (importBtn) {
+                importBtn.style.display = 'inline-block';
+            }
+        } else {
+            if (fileNameSpan) {
+                fileNameSpan.textContent = '';
+            }
+            if (importBtn) {
+                importBtn.style.display = 'none';
+            }
+        }
+    }
+    
+    /**
+     * Import performance settings from JSON file
+     */
+    async function importPerfSettings() {
+        const importBtn = $('#import-perf-settings');
+        const fileInput = $('#import-perf-file');
+        
+        if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+            showNotification('Please select a file to import', 'warning');
+            return;
+        }
+        
+        const file = fileInput.files[0];
+        
+        if (importBtn) {
+            importBtn.disabled = true;
+            importBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Importing...';
+        }
+        
+        try {
+            // Read the file
+            const fileContent = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                reader.readAsText(file);
+            });
+            
+            // Parse and validate JSON
+            let importData;
+            try {
+                importData = JSON.parse(fileContent);
+            } catch (e) {
+                throw new Error('Invalid JSON file');
+            }
+            
+            // Validate it's a CCM Tools export
+            if (!importData.plugin || importData.plugin !== 'ccm-tools') {
+                throw new Error('This file does not appear to be a CCM Tools settings export');
+            }
+            
+            // Confirm import
+            const confirmed = confirm(
+                `Import settings from:\n` +
+                `Site: ${importData.site_url || 'Unknown'}\n` +
+                `Exported: ${importData.exported_at || 'Unknown'}\n` +
+                `Version: ${importData.version || 'Unknown'}\n\n` +
+                `This will overwrite your current settings. Continue?`
+            );
+            
+            if (!confirmed) {
+                showNotification('Import cancelled', 'info');
+                return;
+            }
+            
+            // Send to server for import
+            const response = await ajax('ccm_tools_import_perf_settings', {
+                settings_json: fileContent
+            });
+            
+            showNotification('Settings imported successfully! Refreshing page...', 'success');
+            
+            // Refresh to show new settings
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+            
+        } catch (error) {
+            showNotification('Failed to import settings: ' + error.message, 'error');
+        } finally {
+            if (importBtn) {
+                importBtn.disabled = false;
+                importBtn.innerHTML = 'Import Settings';
             }
         }
     }
