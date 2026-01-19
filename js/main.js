@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.8.5
+ * Version: 7.8.6
  */
 
 (function() {
@@ -2895,8 +2895,16 @@
                     const formData = new FormData(settingsForm);
                     const data = {};
                     
+                    // List of checkbox fields
+                    const checkboxFields = [
+                        'selective_flush',
+                        'wc_cache_cart_fragments',
+                        'wc_persistent_cart',
+                        'wc_session_cache'
+                    ];
+                    
                     formData.forEach((value, key) => {
-                        if (key === 'selective_flush') {
+                        if (checkboxFields.includes(key)) {
                             // Checkbox - convert to boolean string
                             data[key] = 'true';
                         } else {
@@ -2905,9 +2913,11 @@
                     });
                     
                     // Handle unchecked checkboxes
-                    if (!formData.has('selective_flush')) {
-                        data['selective_flush'] = 'false';
-                    }
+                    checkboxFields.forEach(field => {
+                        if (!formData.has(field)) {
+                            data[field] = 'false';
+                        }
+                    });
                     
                     const response = await ajax('ccm_tools_redis_save_settings', data);
                     showNotification(response.data.message, 'success');

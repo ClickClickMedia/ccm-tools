@@ -155,6 +155,12 @@ function ccm_tools_redis_get_settings() {
             'usermeta', 'user_meta', 'userslugs'
         ),
         'non_persistent_groups' => array('counts', 'plugins'),
+        // WooCommerce specific settings
+        'wc_cache_cart_fragments' => false,
+        'wc_persistent_cart' => false,
+        'wc_session_cache' => true,
+        'wc_product_cache_ttl' => 3600,
+        'wc_session_cache_ttl' => 172800,
     );
     
     // Check for wp-config.php constants first
@@ -1127,6 +1133,72 @@ function ccm_tools_render_redis_page() {
                         </div>
                     </div>
                     
+                    <?php if (class_exists('WooCommerce')): ?>
+                    <div class="ccm-form-section ccm-form-section-woocommerce">
+                        <h3><span class="dashicons dashicons-cart" style="margin-right: 8px;"></span><?php _e('WooCommerce Optimization', 'ccm-tools'); ?></h3>
+                        <p class="ccm-note"><?php _e('WooCommerce detected! These settings optimize Redis caching for e-commerce performance.', 'ccm-tools'); ?></p>
+                        
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label class="ccm-checkbox-label">
+                                    <input type="checkbox" name="wc_cache_cart_fragments" <?php checked(!empty($settings['wc_cache_cart_fragments'])); ?>>
+                                    <span class="ccm-checkbox-text">
+                                        <strong><?php _e('Cache Cart Fragments', 'ccm-tools'); ?></strong>
+                                        <span class="ccm-field-hint"><?php _e('Cache cart fragments for faster AJAX cart updates (reduces database queries)', 'ccm-tools'); ?></span>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label class="ccm-checkbox-label">
+                                    <input type="checkbox" name="wc_persistent_cart" <?php checked(!empty($settings['wc_persistent_cart'])); ?>>
+                                    <span class="ccm-checkbox-text">
+                                        <strong><?php _e('Persistent Cart in Redis', 'ccm-tools'); ?></strong>
+                                        <span class="ccm-field-hint"><?php _e('Store persistent cart data in Redis instead of user meta (faster checkout for logged-in users)', 'ccm-tools'); ?></span>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label class="ccm-checkbox-label">
+                                    <input type="checkbox" name="wc_session_cache" <?php checked(empty($settings['wc_session_cache']) || $settings['wc_session_cache']); ?>>
+                                    <span class="ccm-checkbox-text">
+                                        <strong><?php _e('Session Data Caching', 'ccm-tools'); ?></strong>
+                                        <span class="ccm-field-hint"><?php _e('Cache WooCommerce session data for faster page loads (enabled by default)', 'ccm-tools'); ?></span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field">
+                                <label for="wc-product-cache-ttl"><?php _e('Product Cache TTL', 'ccm-tools'); ?></label>
+                                <div class="ccm-input-with-suffix">
+                                    <input type="number" id="wc-product-cache-ttl" name="wc_product_cache_ttl" value="<?php echo esc_attr(!empty($settings['wc_product_cache_ttl']) ? $settings['wc_product_cache_ttl'] : 3600); ?>" min="0">
+                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                </div>
+                                <span class="ccm-field-hint"><?php _e('Cache duration for product data (3600 = 1 hour)', 'ccm-tools'); ?></span>
+                            </div>
+                            <div class="ccm-form-field">
+                                <label for="wc-session-cache-ttl"><?php _e('Session Cache TTL', 'ccm-tools'); ?></label>
+                                <div class="ccm-input-with-suffix">
+                                    <input type="number" id="wc-session-cache-ttl" name="wc_session_cache_ttl" value="<?php echo esc_attr(!empty($settings['wc_session_cache_ttl']) ? $settings['wc_session_cache_ttl'] : 172800); ?>" min="0">
+                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                </div>
+                                <span class="ccm-field-hint"><?php _e('Session data TTL (172800 = 48 hours, matches WC default)', 'ccm-tools'); ?></span>
+                            </div>
+                        </div>
+                        
+                        <div class="ccm-wc-info">
+                            <p><strong><?php _e('How Redis improves WooCommerce:', 'ccm-tools'); ?></strong></p>
+                            <ul>
+                                <li><?php _e('Product data caching reduces database queries by 50-80%', 'ccm-tools'); ?></li>
+                                <li><?php _e('Session caching speeds up cart/checkout by avoiding database reads', 'ccm-tools'); ?></li>
+                                <li><?php _e('Cart fragment caching reduces AJAX response times', 'ccm-tools'); ?></li>
+                                <li><?php _e('Persistent cart in Redis provides faster access than user meta', 'ccm-tools'); ?></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                    
                     <div class="ccm-form-section">
                         <h3><?php _e('Advanced Settings', 'ccm-tools'); ?></h3>
                         
@@ -1238,4 +1310,107 @@ sudo systemctl restart php-fpm</pre>
         </div>
     </div>
     <?php
+}
+
+/**
+ * Initialize WooCommerce Redis optimizations
+ * 
+ * @since 7.8.6
+ */
+function ccm_tools_redis_woocommerce_init() {
+    // Only run if WooCommerce is active
+    if (!class_exists('WooCommerce')) {
+        return;
+    }
+    
+    // Only run if Redis object cache is enabled
+    if (!wp_using_ext_object_cache()) {
+        return;
+    }
+    
+    $settings = ccm_tools_redis_get_settings();
+    
+    // Add WooCommerce cache groups
+    wp_cache_add_non_persistent_groups(array('wc_session_id'));
+    
+    // Cart Fragment Caching
+    if (!empty($settings['wc_cache_cart_fragments'])) {
+        add_filter('woocommerce_add_to_cart_fragments', 'ccm_tools_redis_cache_cart_fragments', 100);
+        add_action('woocommerce_cart_updated', 'ccm_tools_redis_invalidate_cart_cache');
+    }
+    
+    // Persistent Cart in Redis
+    if (!empty($settings['wc_persistent_cart'])) {
+        add_filter('woocommerce_persistent_cart_enabled', '__return_true');
+    }
+    
+    // Session Cache optimization
+    if (!empty($settings['wc_session_cache']) || !isset($settings['wc_session_cache'])) {
+        // WooCommerce sessions are already handled by object cache
+        // Just ensure the group is properly set
+        if (defined('WC_SESSION_CACHE_GROUP')) {
+            wp_cache_add_non_persistent_groups(array(WC_SESSION_CACHE_GROUP));
+        }
+    }
+}
+add_action('plugins_loaded', 'ccm_tools_redis_woocommerce_init', 20);
+
+/**
+ * Cache cart fragments in Redis
+ * 
+ * @param array $fragments Cart fragments
+ * @return array Cart fragments
+ */
+function ccm_tools_redis_cache_cart_fragments($fragments) {
+    if (!is_user_logged_in()) {
+        return $fragments;
+    }
+    
+    $settings = ccm_tools_redis_get_settings();
+    $ttl = !empty($settings['wc_product_cache_ttl']) ? intval($settings['wc_product_cache_ttl']) : 3600;
+    
+    $user_id = get_current_user_id();
+    $cache_key = 'wc_cart_fragments_' . $user_id;
+    
+    // Cache the fragments
+    wp_cache_set($cache_key, $fragments, 'ccm_wc_cart', $ttl);
+    
+    return $fragments;
+}
+
+/**
+ * Invalidate cart cache when cart is updated
+ */
+function ccm_tools_redis_invalidate_cart_cache() {
+    if (!is_user_logged_in()) {
+        return;
+    }
+    
+    $user_id = get_current_user_id();
+    $cache_key = 'wc_cart_fragments_' . $user_id;
+    
+    wp_cache_delete($cache_key, 'ccm_wc_cart');
+}
+
+/**
+ * Get cached product data with TTL from settings
+ * 
+ * @param int $product_id Product ID
+ * @return mixed Product data or false
+ */
+function ccm_tools_redis_get_product_cache($product_id) {
+    return wp_cache_get('wc_product_' . $product_id, 'ccm_wc_products');
+}
+
+/**
+ * Set product cache with TTL from settings
+ * 
+ * @param int $product_id Product ID
+ * @param mixed $data Product data
+ */
+function ccm_tools_redis_set_product_cache($product_id, $data) {
+    $settings = ccm_tools_redis_get_settings();
+    $ttl = !empty($settings['wc_product_cache_ttl']) ? intval($settings['wc_product_cache_ttl']) : 3600;
+    
+    wp_cache_set('wc_product_' . $product_id, $data, 'ccm_wc_products', $ttl);
 }

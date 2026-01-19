@@ -2744,6 +2744,29 @@ function ccm_tools_ajax_redis_save_settings(): void {
         $settings['selective_flush'] = $_POST['selective_flush'] === 'true' || $_POST['selective_flush'] === '1';
     }
     
+    // WooCommerce specific settings
+    if (isset($_POST['wc_cache_cart_fragments'])) {
+        $settings['wc_cache_cart_fragments'] = $_POST['wc_cache_cart_fragments'] === 'true' || $_POST['wc_cache_cart_fragments'] === '1';
+    }
+    if (isset($_POST['wc_persistent_cart'])) {
+        $settings['wc_persistent_cart'] = $_POST['wc_persistent_cart'] === 'true' || $_POST['wc_persistent_cart'] === '1';
+    }
+    if (isset($_POST['wc_session_cache'])) {
+        $settings['wc_session_cache'] = $_POST['wc_session_cache'] === 'true' || $_POST['wc_session_cache'] === '1';
+    }
+    if (isset($_POST['wc_product_cache_ttl'])) {
+        $ttl = absint($_POST['wc_product_cache_ttl']);
+        if ($ttl >= 0 && $ttl <= 86400) { // Max 24 hours
+            $settings['wc_product_cache_ttl'] = $ttl;
+        }
+    }
+    if (isset($_POST['wc_session_cache_ttl'])) {
+        $ttl = absint($_POST['wc_session_cache_ttl']);
+        if ($ttl >= 0 && $ttl <= 604800) { // Max 7 days
+            $settings['wc_session_cache_ttl'] = $ttl;
+        }
+    }
+    
     $saved = ccm_tools_redis_save_settings($settings);
     
     if ($saved) {

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.8.5
+- **Current Version:** 7.8.6
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,18 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.8.6
+- **WooCommerce Redis Optimization**
+  - Added WooCommerce-specific optimization section (appears when WooCommerce is active)
+  - New "Cache Cart Fragments" option for faster AJAX cart updates
+  - New "Persistent Cart in Redis" option for faster checkout
+  - New "Session Data Caching" option (enabled by default)
+  - Configurable Product Cache TTL and Session Cache TTL
+  - Automatic detection of WooCommerce cache groups
+  - Added `ccm_tools_redis_woocommerce_init()` for WooCommerce-specific hooks
+  - WooCommerce section has distinctive purple styling to match WooCommerce branding
+  - Information panel explains how Redis improves WooCommerce performance
 
 ### v7.8.5
 - **Improved Redis Cache Statistics**

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.8.5
+ * Version: 7.8.6
  */
 
 /* ===================================
@@ -2383,6 +2383,42 @@ tr.ccm-front-page-row {
 
 .ccm-form-section > .ccm-note {
     margin-bottom: var(--ccm-space-md);
+}
+
+/* WooCommerce Section */
+.ccm-form-section-woocommerce {
+    background: linear-gradient(135deg, rgba(150, 88, 138, 0.05), rgba(150, 88, 138, 0.02));
+    border: 1px solid rgba(150, 88, 138, 0.2);
+    border-radius: var(--ccm-radius-lg);
+    padding: var(--ccm-space-lg);
+    margin: var(--ccm-space-lg) 0;
+}
+
+.ccm-form-section-woocommerce h3 {
+    color: #96588a;
+    display: flex;
+    align-items: center;
+}
+
+.ccm-wc-info {
+    background: var(--ccm-bg);
+    border-radius: var(--ccm-radius-md);
+    padding: var(--ccm-space-md);
+    margin-top: var(--ccm-space-md);
+}
+
+.ccm-wc-info p {
+    margin: 0 0 var(--ccm-space-sm) 0;
+}
+
+.ccm-wc-info ul {
+    margin: 0;
+    padding-left: var(--ccm-space-lg);
+    color: var(--ccm-text-muted);
+}
+
+.ccm-wc-info li {
+    margin-bottom: var(--ccm-space-xs);
 }
 
 .ccm-form-actions {
