@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.8.6
+ * Version: 7.9.0
  */
 
 (function() {
@@ -2112,6 +2112,10 @@
             { checkbox: '#perf-preconnect', detail: '#perf-preconnect' },
             { checkbox: '#perf-dns-prefetch', detail: '#perf-dns-prefetch' },
             { checkbox: '#perf-lcp-preload', detail: '#perf-lcp-preload' },
+            // New v7.9.0 settings
+            { checkbox: '#perf-critical-css', detail: '#perf-critical-css' },
+            { checkbox: '#perf-speculation-rules', detail: '#perf-speculation-rules' },
+            { checkbox: '#perf-reduce-heartbeat', detail: '#perf-reduce-heartbeat' },
         ];
         
         toggleSettings.forEach(({ checkbox }) => {
@@ -2414,6 +2418,22 @@
                 disable_dashicons: $('#perf-disable-dashicons')?.checked ? '1' : '',
                 lazy_load_iframes: $('#perf-lazy-load-iframes')?.checked ? '1' : '',
                 youtube_facade: $('#perf-youtube-facade')?.checked ? '1' : '',
+                // New v7.9.0 settings
+                font_display_swap: $('#perf-font-display-swap')?.checked ? '1' : '',
+                speculation_rules: $('#perf-speculation-rules')?.checked ? '1' : '',
+                speculation_eagerness: $('#perf-speculation-eagerness')?.value || 'moderate',
+                critical_css: $('#perf-critical-css')?.checked ? '1' : '',
+                critical_css_code: $('#perf-critical-css-code')?.value || '',
+                disable_jquery_migrate: $('#perf-disable-jquery-migrate')?.checked ? '1' : '',
+                disable_block_css: $('#perf-disable-block-css')?.checked ? '1' : '',
+                disable_woocommerce_cart_fragments: $('#perf-disable-woocommerce-cart-fragments')?.checked ? '1' : '',
+                reduce_heartbeat: $('#perf-reduce-heartbeat')?.checked ? '1' : '',
+                heartbeat_interval: $('#perf-heartbeat-interval')?.value || '60',
+                disable_xmlrpc: $('#perf-disable-xmlrpc')?.checked ? '1' : '',
+                disable_rsd_wlw: $('#perf-disable-rsd-wlw')?.checked ? '1' : '',
+                disable_shortlink: $('#perf-disable-shortlink')?.checked ? '1' : '',
+                disable_rest_api_links: $('#perf-disable-rest-api-links')?.checked ? '1' : '',
+                disable_oembed: $('#perf-disable-oembed')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);

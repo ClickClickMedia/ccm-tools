@@ -1720,6 +1720,24 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'disable_dashicons' => !empty($_POST['disable_dashicons']),
         'lazy_load_iframes' => !empty($_POST['lazy_load_iframes']),
         'youtube_facade' => !empty($_POST['youtube_facade']),
+        // New v7.9.0 settings
+        'font_display_swap' => !empty($_POST['font_display_swap']),
+        'speculation_rules' => !empty($_POST['speculation_rules']),
+        'speculation_eagerness' => in_array($_POST['speculation_eagerness'] ?? 'moderate', array('conservative', 'moderate', 'eager')) 
+            ? sanitize_text_field($_POST['speculation_eagerness']) 
+            : 'moderate',
+        'critical_css' => !empty($_POST['critical_css']),
+        'critical_css_code' => wp_strip_all_tags($_POST['critical_css_code'] ?? ''),
+        'disable_jquery_migrate' => !empty($_POST['disable_jquery_migrate']),
+        'disable_block_css' => !empty($_POST['disable_block_css']),
+        'disable_woocommerce_cart_fragments' => !empty($_POST['disable_woocommerce_cart_fragments']),
+        'reduce_heartbeat' => !empty($_POST['reduce_heartbeat']),
+        'heartbeat_interval' => max(15, min(120, absint($_POST['heartbeat_interval'] ?? 60))),
+        'disable_xmlrpc' => !empty($_POST['disable_xmlrpc']),
+        'disable_rsd_wlw' => !empty($_POST['disable_rsd_wlw']),
+        'disable_shortlink' => !empty($_POST['disable_shortlink']),
+        'disable_rest_api_links' => !empty($_POST['disable_rest_api_links']),
+        'disable_oembed' => !empty($_POST['disable_oembed']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists

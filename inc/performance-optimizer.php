@@ -43,6 +43,22 @@ function ccm_tools_perf_get_settings() {
         'lcp_fetchpriority' => false,
         'lcp_preload' => false,
         'lcp_preload_url' => '',
+        // New optimizations for v7.9.0
+        'font_display_swap' => false,
+        'speculation_rules' => false,
+        'speculation_eagerness' => 'moderate', // conservative, moderate, eager
+        'critical_css' => false,
+        'critical_css_code' => '',
+        'disable_jquery_migrate' => false,
+        'disable_block_css' => false,
+        'disable_woocommerce_cart_fragments' => false,
+        'reduce_heartbeat' => false,
+        'heartbeat_interval' => 60,
+        'disable_xmlrpc' => false,
+        'disable_rsd_wlw' => false,
+        'disable_shortlink' => false,
+        'disable_rest_api_links' => false,
+        'disable_oembed' => false,
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -150,6 +166,72 @@ function ccm_tools_perf_init() {
     // LCP preload
     if (!empty($settings['lcp_preload']) && !empty($settings['lcp_preload_url'])) {
         add_action('wp_head', 'ccm_tools_perf_lcp_preload', 1);
+    }
+    
+    // Font display: swap
+    if (!empty($settings['font_display_swap'])) {
+        add_filter('style_loader_tag', 'ccm_tools_perf_font_display_swap', 10, 4);
+        add_action('wp_head', 'ccm_tools_perf_font_display_preload', 2);
+    }
+    
+    // Speculation Rules API (instant page navigation)
+    if (!empty($settings['speculation_rules'])) {
+        add_action('wp_footer', 'ccm_tools_perf_speculation_rules', 99);
+    }
+    
+    // Critical CSS
+    if (!empty($settings['critical_css']) && !empty($settings['critical_css_code'])) {
+        add_action('wp_head', 'ccm_tools_perf_inline_critical_css', 1);
+    }
+    
+    // Disable jQuery Migrate
+    if (!empty($settings['disable_jquery_migrate'])) {
+        add_action('wp_default_scripts', 'ccm_tools_perf_disable_jquery_migrate');
+    }
+    
+    // Disable WordPress Block Library CSS
+    if (!empty($settings['disable_block_css'])) {
+        add_action('wp_enqueue_scripts', 'ccm_tools_perf_disable_block_css', 100);
+    }
+    
+    // Disable WooCommerce cart fragments
+    if (!empty($settings['disable_woocommerce_cart_fragments'])) {
+        add_action('wp_enqueue_scripts', 'ccm_tools_perf_disable_cart_fragments', 99);
+    }
+    
+    // Reduce Heartbeat API frequency
+    if (!empty($settings['reduce_heartbeat'])) {
+        add_filter('heartbeat_settings', 'ccm_tools_perf_reduce_heartbeat');
+    }
+    
+    // Disable XML-RPC
+    if (!empty($settings['disable_xmlrpc'])) {
+        add_filter('xmlrpc_enabled', '__return_false');
+        add_filter('wp_headers', 'ccm_tools_perf_remove_x_pingback');
+    }
+    
+    // Disable RSD and WLW Manifest links
+    if (!empty($settings['disable_rsd_wlw'])) {
+        remove_action('wp_head', 'rsd_link');
+        remove_action('wp_head', 'wlwmanifest_link');
+    }
+    
+    // Disable shortlink
+    if (!empty($settings['disable_shortlink'])) {
+        remove_action('wp_head', 'wp_shortlink_wp_head');
+        remove_action('template_redirect', 'wp_shortlink_header', 11);
+    }
+    
+    // Disable REST API link in head
+    if (!empty($settings['disable_rest_api_links'])) {
+        remove_action('wp_head', 'rest_output_link_wp_head', 10);
+        remove_action('template_redirect', 'rest_output_link_header', 11);
+    }
+    
+    // Disable oEmbed discovery
+    if (!empty($settings['disable_oembed'])) {
+        remove_action('wp_head', 'wp_oembed_add_discovery_links');
+        remove_action('wp_head', 'wp_oembed_add_host_js');
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -664,6 +746,167 @@ function ccm_tools_perf_lcp_preload() {
 }
 
 /**
+ * Add font-display: swap to Google Fonts and other font stylesheets
+ * Fixes "Ensure text remains visible during webfont load" warning
+ * 
+ * @param string $tag Stylesheet HTML tag
+ * @param string $handle Stylesheet handle
+ * @param string $href Stylesheet URL
+ * @param string $media Media attribute
+ * @return string Modified stylesheet tag
+ */
+function ccm_tools_perf_font_display_swap($tag, $handle, $href, $media) {
+    // Only modify Google Fonts URLs
+    if (strpos($href, 'fonts.googleapis.com') !== false) {
+        // Add display=swap parameter if not already present
+        if (strpos($href, 'display=') === false) {
+            $href_with_swap = add_query_arg('display', 'swap', $href);
+            $tag = str_replace($href, $href_with_swap, $tag);
+        }
+    }
+    
+    return $tag;
+}
+
+/**
+ * Add preload hints for Google Fonts
+ */
+function ccm_tools_perf_font_display_preload() {
+    // Add preconnect for fonts.gstatic.com (actual font files)
+    echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
+}
+
+/**
+ * Output Speculation Rules for instant page navigation
+ * Uses the Speculation Rules API for prerendering pages on hover
+ * @see https://developer.chrome.com/docs/web-platform/prerender-pages
+ */
+function ccm_tools_perf_speculation_rules() {
+    $settings = ccm_tools_perf_get_settings();
+    $eagerness = isset($settings['speculation_eagerness']) ? $settings['speculation_eagerness'] : 'moderate';
+    
+    // Validate eagerness value
+    $valid_eagerness = array('conservative', 'moderate', 'eager');
+    if (!in_array($eagerness, $valid_eagerness)) {
+        $eagerness = 'moderate';
+    }
+    
+    // Build speculation rules
+    $rules = array(
+        'prerender' => array(
+            array(
+                'source' => 'document',
+                'where' => array(
+                    'and' => array(
+                        // Only same-origin links
+                        array('href_matches' => '/*'),
+                        // Exclude common non-navigational patterns
+                        array('not' => array('href_matches' => '/*\\?*')), // URLs with query strings
+                        array('not' => array('href_matches' => '/*#*')), // Anchor links  
+                        array('not' => array('href_matches' => '/wp-admin/*')),
+                        array('not' => array('href_matches' => '/wp-login.php')),
+                        array('not' => array('href_matches' => '/cart/*')),
+                        array('not' => array('href_matches' => '/checkout/*')),
+                        array('not' => array('href_matches' => '/my-account/*')),
+                        array('not' => array('selector_matches' => '[target="_blank"]')),
+                        array('not' => array('selector_matches' => '[download]')),
+                        array('not' => array('selector_matches' => '.no-prerender')),
+                    ),
+                ),
+                'eagerness' => $eagerness,
+            ),
+        ),
+    );
+    
+    // Output the speculation rules
+    echo '<script type="speculationrules">' . "\n";
+    echo wp_json_encode($rules, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    echo "\n</script>\n";
+}
+
+/**
+ * Inline critical CSS in the head
+ */
+function ccm_tools_perf_inline_critical_css() {
+    $settings = ccm_tools_perf_get_settings();
+    
+    if (empty($settings['critical_css_code'])) {
+        return;
+    }
+    
+    // Sanitize and output the critical CSS
+    $css = wp_strip_all_tags($settings['critical_css_code']);
+    
+    echo '<style id="ccm-critical-css">' . $css . '</style>' . "\n";
+}
+
+/**
+ * Disable jQuery Migrate
+ * jQuery Migrate is often unnecessary for modern themes/plugins
+ */
+function ccm_tools_perf_disable_jquery_migrate($scripts) {
+    if (!is_admin() && isset($scripts->registered['jquery'])) {
+        $jquery = $scripts->registered['jquery'];
+        
+        if ($jquery->deps) {
+            $jquery->deps = array_diff($jquery->deps, array('jquery-migrate'));
+        }
+    }
+}
+
+/**
+ * Disable WordPress Block Library CSS (Gutenberg)
+ * Useful if not using the block editor on frontend
+ */
+function ccm_tools_perf_disable_block_css() {
+    wp_dequeue_style('wp-block-library');
+    wp_dequeue_style('wp-block-library-theme');
+    wp_dequeue_style('wc-blocks-style'); // WooCommerce Blocks
+    wp_dequeue_style('global-styles'); // Global styles
+}
+
+/**
+ * Disable WooCommerce cart fragments AJAX
+ * Cart fragments can slow down pages significantly
+ */
+function ccm_tools_perf_disable_cart_fragments() {
+    if (class_exists('WooCommerce')) {
+        // Only disable on non-cart/checkout pages
+        if (function_exists('is_cart') && !is_cart() && !is_checkout()) {
+            wp_dequeue_script('wc-cart-fragments');
+        }
+    }
+}
+
+/**
+ * Reduce Heartbeat API frequency
+ * 
+ * @param array $settings Heartbeat settings
+ * @return array Modified settings
+ */
+function ccm_tools_perf_reduce_heartbeat($settings) {
+    $perf_settings = ccm_tools_perf_get_settings();
+    $interval = isset($perf_settings['heartbeat_interval']) ? intval($perf_settings['heartbeat_interval']) : 60;
+    
+    // Ensure minimum of 15 seconds, maximum of 120 seconds
+    $interval = max(15, min(120, $interval));
+    
+    $settings['interval'] = $interval;
+    return $settings;
+}
+
+/**
+ * Remove X-Pingback header
+ * 
+ * @param array $headers HTTP headers
+ * @return array Modified headers
+ */
+function ccm_tools_perf_remove_x_pingback($headers) {
+    unset($headers['X-Pingback']);
+    return $headers;
+}
+
+/**
  * Get list of registered scripts for the exclude list UI
  * 
  * @return array Script handles and info
@@ -812,7 +1055,7 @@ function ccm_tools_render_perf_page() {
                 <p class="ccm-text-muted"><?php _e('Optimize CSS delivery to improve First Contentful Paint.', 'ccm-tools'); ?></p>
                 
                 <!-- Preload CSS -->
-                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
                     <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
                         <div style="flex: 1;">
                             <strong><?php _e('Preload CSS', 'ccm-tools'); ?></strong>
@@ -821,6 +1064,65 @@ function ccm_tools_render_perf_page() {
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-preload-css" <?php checked(!empty($settings['preload_css'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Critical CSS -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Inline Critical CSS', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Inlines critical above-the-fold CSS directly in the HTML head. Eliminates render-blocking for initial content.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);"><span class="ccm-icon">ℹ</span> <?php _e('Use tools like critical.js or Penthouse to generate critical CSS.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-critical-css" <?php checked(!empty($settings['critical_css'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="ccm-setting-detail" style="margin-top: var(--ccm-space-md); <?php echo !empty($settings['critical_css']) ? '' : 'display:none;'; ?>">
+                        <label><strong><?php _e('Critical CSS Code:', 'ccm-tools'); ?></strong></label>
+                        <textarea id="perf-critical-css-code" class="ccm-textarea" rows="8" placeholder="/* Paste your critical CSS here */
+body { margin: 0; }
+.header { ... }
+.hero { ... }"><?php echo esc_textarea(isset($settings['critical_css_code']) ? $settings['critical_css_code'] : ''); ?></textarea>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('CSS that renders above-the-fold content. Keep it minimal (<14KB ideally).', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+                
+                <!-- Disable Block Library CSS -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Disable Block Library CSS', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes WordPress Gutenberg block styles if you\'re not using the block editor. Saves ~36KB.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-warning);"><span class="ccm-icon">⚠</span> <?php _e('Only enable if your theme doesn\'t use Gutenberg blocks.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-block-css" <?php checked(!empty($settings['disable_block_css'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Font Optimization -->
+            <div class="ccm-card" id="font-optimization">
+                <h2><?php _e('Font Optimization', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Optimize web font loading to reduce render-blocking and improve text visibility.', 'ccm-tools'); ?></p>
+                
+                <!-- Font Display Swap -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Font Display: Swap', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds font-display: swap to Google Fonts URLs. Shows fallback text immediately while custom fonts load. Fixes "Ensure text remains visible during webfont load" warning.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-success);"><span class="ccm-icon">✓</span> <?php _e('Safe optimization. Est. savings of 500ms+', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-font-display-swap" <?php checked(!empty($settings['font_display_swap'])); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </div>
@@ -995,6 +1297,163 @@ function ccm_tools_render_perf_page() {
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-youtube-facade" <?php checked($settings['youtube_facade']); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Disable jQuery Migrate -->
+                <div class="ccm-setting-row" style="border-top: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Disable jQuery Migrate', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes jQuery Migrate script (~10KB). Only needed for legacy plugins using deprecated jQuery functions.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-warning);"><span class="ccm-icon">⚠</span> <?php _e('May break older plugins. Test thoroughly.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-jquery-migrate" <?php checked(!empty($settings['disable_jquery_migrate'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Disable WooCommerce Cart Fragments -->
+                <?php if (class_exists('WooCommerce')) : ?>
+                <div class="ccm-setting-row" style="border-top: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Disable WooCommerce Cart Fragments', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Disables the AJAX cart fragments script on non-cart pages. Can reduce page load time significantly on WooCommerce sites.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);"><span class="ccm-icon">ℹ</span> <?php _e('Cart/Checkout pages are not affected.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-woocommerce-cart-fragments" <?php checked(!empty($settings['disable_woocommerce_cart_fragments'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+            
+            <!-- Instant Page Navigation (Speculation Rules) -->
+            <div class="ccm-card" id="speculation-rules">
+                <h2><?php _e('Instant Page Navigation', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Uses the modern Speculation Rules API to prerender pages, making navigation feel instant.', 'ccm-tools'); ?></p>
+                
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Enable Speculation Rules', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Prerenders same-origin links in the background. When users click a link, the page loads instantly. Supported in Chrome 109+, Edge 109+.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-success);"><span class="ccm-icon">✓</span> <?php _e('Safe - browsers without support simply ignore it.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-speculation-rules" <?php checked(!empty($settings['speculation_rules'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="ccm-setting-detail" style="margin-top: var(--ccm-space-md); <?php echo !empty($settings['speculation_rules']) ? '' : 'display:none;'; ?>">
+                        <label><strong><?php _e('Eagerness Level:', 'ccm-tools'); ?></strong></label>
+                        <select id="perf-speculation-eagerness" class="ccm-select" style="margin-top: var(--ccm-space-xs);">
+                            <option value="conservative" <?php selected($settings['speculation_eagerness'], 'conservative'); ?>><?php _e('Conservative - Only on strong intent (e.g., pointer down)', 'ccm-tools'); ?></option>
+                            <option value="moderate" <?php selected($settings['speculation_eagerness'], 'moderate'); ?>><?php _e('Moderate - On hover for 200ms (Recommended)', 'ccm-tools'); ?></option>
+                            <option value="eager" <?php selected($settings['speculation_eagerness'], 'eager'); ?>><?php _e('Eager - Immediately on link visibility', 'ccm-tools'); ?></option>
+                        </select>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin-top: var(--ccm-space-xs);"><?php _e('Higher eagerness = faster navigation but more bandwidth. Moderate is a good balance.', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Head Cleanup & Bloat Removal -->
+            <div class="ccm-card" id="head-cleanup">
+                <h2><?php _e('Head Cleanup & Bloat Removal', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Remove unnecessary elements from wp_head that add to page weight without providing value.', 'ccm-tools'); ?></p>
+                
+                <!-- Reduce Heartbeat -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Reduce Heartbeat Frequency', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('WordPress Heartbeat API sends AJAX requests every 15-60 seconds. Reducing frequency saves server resources.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-reduce-heartbeat" <?php checked(!empty($settings['reduce_heartbeat'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="ccm-setting-detail" style="margin-top: var(--ccm-space-md); <?php echo !empty($settings['reduce_heartbeat']) ? '' : 'display:none;'; ?>">
+                        <label><strong><?php _e('Heartbeat Interval (seconds):', 'ccm-tools'); ?></strong></label>
+                        <input type="number" id="perf-heartbeat-interval" class="ccm-input" style="width: 100px;" value="<?php echo esc_attr($settings['heartbeat_interval']); ?>" min="15" max="120" step="5">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('Default is 15-60s. Recommended: 60s for frontend, affects auto-save frequency.', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+                
+                <!-- Disable XML-RPC -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Disable XML-RPC', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Disables XML-RPC functionality. Removes X-Pingback header and blocks xmlrpc.php requests.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-warning);"><span class="ccm-icon">⚠</span> <?php _e('Required for Jetpack, WordPress mobile app, and some third-party services.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-xmlrpc" <?php checked(!empty($settings['disable_xmlrpc'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Disable RSD/WLW Links -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Remove RSD & WLW Links', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes Really Simple Discovery and Windows Live Writer manifest links from head. Rarely needed.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-rsd-wlw" <?php checked(!empty($settings['disable_rsd_wlw'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Disable Shortlink -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Remove Shortlink', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes the shortlink tag from head and HTTP headers. WordPress shortlinks (?p=123) are rarely used.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-shortlink" <?php checked(!empty($settings['disable_shortlink'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Disable REST API Links -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Remove REST API Link', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes the REST API discovery link from head. API still works, just not advertised.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-rest-api-links" <?php checked(!empty($settings['disable_rest_api_links'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Disable oEmbed -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Disable oEmbed Discovery', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes oEmbed discovery links and JavaScript. Others won\'t be able to embed your posts.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-oembed" <?php checked(!empty($settings['disable_oembed'])); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </div>
