@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.9.2
+- **Current Version:** 7.9.3
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,17 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.9.3
+- **Fixed WebP Not Working on Page Builder/Theme Images**
+  - WebP conversion and picture tags now work on ALL images site-wide
+  - Previous versions only processed images through `the_content` filter
+  - Images in page builders (Elementor, Beaver Builder, etc.) and theme templates were missed
+  - Now uses output buffering to process entire HTML output
+  - Output buffering enabled when `serve_webp`, `use_picture_tags`, or `convert_bg_images` is active
+  - New function: `ccm_tools_webp_process_img_tags()` for src replacement in full HTML
+  - Modified `ccm_tools_webp_process_output_buffer()` to handle all conversion types
+  - Fixes images like `<img src="...jpg">` not being converted to WebP or `<picture>` tags
 
 ### v7.9.2
 - **Font Display: Swap for Self-Hosted Fonts**

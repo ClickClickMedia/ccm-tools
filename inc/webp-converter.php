@@ -593,41 +593,99 @@ function ccm_tools_webp_end_output_buffer() {
 }
 
 /**
- * Process the output buffer to convert background-image URLs to WebP
+ * Process the output buffer to convert images to WebP
+ * Handles: background-image URLs, <img> tags (picture tag conversion or src replacement)
  * 
  * @param string $html The entire HTML output
- * @return string Modified HTML with WebP background images
+ * @return string Modified HTML with WebP images
  */
 function ccm_tools_webp_process_output_buffer($html) {
-    // Quick check - if no url( in the HTML, return early
-    if (stripos($html, 'url(') === false) {
-        return $html;
-    }
-    
+    $settings = ccm_tools_webp_get_settings();
     $upload_dir = wp_upload_dir();
     
-    // Pattern matches url() with the full URL structure, preserving original quote style
-    // Captures: 1=opening quote (if any), 2=URL, 3=closing quote (if any)
-    $pattern = '/url\s*\(\s*(["\']?)(https?:\/\/[^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
+    // Process background-image URLs if enabled
+    if (!empty($settings['convert_bg_images']) && stripos($html, 'url(') !== false) {
+        // Pattern matches url() with the full URL structure, preserving original quote style
+        // Captures: 1=opening quote (if any), 2=URL, 3=closing quote (if any)
+        $pattern = '/url\s*\(\s*(["\']?)(https?:\/\/[^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
+        
+        $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
+            $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
+            $original_url = $matches[2];
+            
+            // Check if this is a local upload
+            if (strpos($original_url, '/wp-content/uploads/') === false) {
+                return $matches[0]; // Return unchanged
+            }
+            
+            // Try to get WebP version
+            $webp_url = ccm_tools_webp_get_or_create($original_url);
+            
+            if ($webp_url && $webp_url !== $original_url) {
+                // Return with same quote style as original
+                return 'url(' . $quote . $webp_url . $quote . ')';
+            }
+            
+            return $matches[0]; // Return unchanged if no WebP available
+        }, $html);
+    }
+    
+    // Process <img> tags for picture tag conversion or src replacement
+    // This catches images in theme templates, page builders, etc. that bypass the_content filter
+    if (!empty($settings['use_picture_tags'])) {
+        // Use picture tag conversion for all img tags in the HTML
+        $html = ccm_tools_webp_convert_to_picture_tags($html);
+    } elseif (!empty($settings['serve_webp'])) {
+        // Convert img src URLs to WebP (without picture tags)
+        $html = ccm_tools_webp_process_img_tags($html, $upload_dir);
+    }
+    
+    return $html;
+}
+
+/**
+ * Process img tags in HTML to replace src with WebP URLs
+ * Used when picture tags are disabled but serve_webp is enabled
+ * 
+ * @param string $html The HTML content
+ * @param array $upload_dir The WordPress upload directory info
+ * @return string Modified HTML with WebP src URLs
+ */
+function ccm_tools_webp_process_img_tags($html, $upload_dir) {
+    // Pattern to match img tags
+    $pattern = '/<img\s+([^>]*?)>/i';
     
     $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-        $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
-        $original_url = $matches[2];
+        $img_tag = $matches[0];
+        $attrs = $matches[1];
+        
+        // Extract src
+        if (!preg_match('/src=["\']([^"\']+)["\']/', $attrs, $src_match)) {
+            return $img_tag;
+        }
+        
+        $original_src = $src_match[1];
+        
+        // Skip if already WebP
+        if (preg_match('/\.webp$/i', $original_src)) {
+            return $img_tag;
+        }
         
         // Check if this is a local upload
-        if (strpos($original_url, '/wp-content/uploads/') === false) {
-            return $matches[0]; // Return unchanged
+        if (strpos($original_src, $upload_dir['baseurl']) === false && 
+            strpos($original_src, '/wp-content/uploads/') === false) {
+            return $img_tag;
         }
         
         // Try to get WebP version
-        $webp_url = ccm_tools_webp_get_or_create($original_url);
+        $webp_src = ccm_tools_webp_get_or_create($original_src);
         
-        if ($webp_url && $webp_url !== $original_url) {
-            // Return with same quote style as original
-            return 'url(' . $quote . $webp_url . $quote . ')';
+        if ($webp_src && $webp_src !== $original_src) {
+            // Replace src
+            $img_tag = str_replace($original_src, $webp_src, $img_tag);
         }
         
-        return $matches[0]; // Return unchanged if no WebP available
+        return $img_tag;
     }, $html);
     
     return $html;
@@ -1269,10 +1327,10 @@ function ccm_tools_webp_init() {
         add_filter('widget_block_content', 'ccm_tools_webp_filter_content_src', 1000);
     }
     
-    // Hook into content for background image conversion
-    if (!empty($settings['convert_bg_images'])) {
-        // Use output buffering to catch ALL HTML including theme templates
-        // This is necessary because background images in themes don't go through the_content
+    // Use output buffering to catch ALL HTML including theme templates
+    // This is necessary because images in page builders, custom themes, etc. don't go through the_content filter
+    // Enable when any of: serve_webp, use_picture_tags, or convert_bg_images is enabled
+    if (!empty($settings['serve_webp']) || !empty($settings['use_picture_tags']) || !empty($settings['convert_bg_images'])) {
         add_action('template_redirect', 'ccm_tools_webp_start_output_buffer', 1);
         add_action('shutdown', 'ccm_tools_webp_end_output_buffer', 0);
     }
