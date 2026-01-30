@@ -964,6 +964,137 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
 }
 
 /**
+ * Get attachment ID from image URL
+ * 
+ * @param string $url The image URL
+ * @return int|false Attachment ID or false if not found
+ */
+function ccm_tools_webp_get_attachment_id_from_url($url) {
+    global $wpdb;
+    
+    // Remove size suffix to get original URL (e.g., image-300x200.jpg -> image.jpg)
+    $url_without_size = preg_replace('/-\d+x\d+(\.[a-z]+)$/i', '$1', $url);
+    
+    // Try to find by guid first
+    $attachment_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT ID FROM {$wpdb->posts} WHERE guid = %s AND post_type = 'attachment'",
+        $url_without_size
+    ));
+    
+    if ($attachment_id) {
+        return (int) $attachment_id;
+    }
+    
+    // Try with the original URL (might be a sized version)
+    $attachment_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT ID FROM {$wpdb->posts} WHERE guid = %s AND post_type = 'attachment'",
+        $url
+    ));
+    
+    if ($attachment_id) {
+        return (int) $attachment_id;
+    }
+    
+    // Try to find by file path in metadata
+    $upload_dir = wp_upload_dir();
+    $file_path = str_replace($upload_dir['baseurl'] . '/', '', $url_without_size);
+    
+    $attachment_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_wp_attached_file' AND meta_value = %s",
+        $file_path
+    ));
+    
+    return $attachment_id ? (int) $attachment_id : false;
+}
+
+/**
+ * Build responsive srcset with WebP versions for an image
+ * 
+ * @param string $img_url The image URL
+ * @param bool $webp Whether to return WebP URLs
+ * @return array Array with 'srcset' and 'sizes' keys, or empty if not available
+ */
+function ccm_tools_webp_build_responsive_srcset($img_url, $webp = true) {
+    $result = array('srcset' => '', 'sizes' => '');
+    
+    // Try to get attachment ID
+    $attachment_id = ccm_tools_webp_get_attachment_id_from_url($img_url);
+    
+    if (!$attachment_id) {
+        return $result;
+    }
+    
+    // Get attachment metadata
+    $metadata = wp_get_attachment_metadata($attachment_id);
+    
+    if (!$metadata || empty($metadata['sizes'])) {
+        return $result;
+    }
+    
+    $upload_dir = wp_upload_dir();
+    $base_url = trailingslashit(dirname($img_url));
+    
+    // Get the directory from metadata file path
+    if (!empty($metadata['file'])) {
+        $base_url = trailingslashit($upload_dir['baseurl']) . trailingslashit(dirname($metadata['file']));
+    }
+    
+    $srcset_parts = array();
+    
+    // Add all available sizes
+    foreach ($metadata['sizes'] as $size_name => $size_data) {
+        if (empty($size_data['file']) || empty($size_data['width'])) {
+            continue;
+        }
+        
+        $size_url = $base_url . $size_data['file'];
+        
+        if ($webp) {
+            // Convert to WebP URL
+            $webp_url = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $size_url);
+            // Check if WebP exists or can be created
+            $webp_check = ccm_tools_webp_get_or_create($size_url, false);
+            if ($webp_check) {
+                $srcset_parts[] = esc_url($webp_check) . ' ' . $size_data['width'] . 'w';
+            }
+        } else {
+            $srcset_parts[] = esc_url($size_url) . ' ' . $size_data['width'] . 'w';
+        }
+    }
+    
+    // Add full size
+    if (!empty($metadata['width'])) {
+        $full_url = trailingslashit($upload_dir['baseurl']) . $metadata['file'];
+        
+        if ($webp) {
+            $webp_full = ccm_tools_webp_get_or_create($full_url, false);
+            if ($webp_full) {
+                $srcset_parts[] = esc_url($webp_full) . ' ' . $metadata['width'] . 'w';
+            }
+        } else {
+            $srcset_parts[] = esc_url($full_url) . ' ' . $metadata['width'] . 'w';
+        }
+    }
+    
+    if (!empty($srcset_parts)) {
+        // Sort by width (smallest first for better browser selection)
+        usort($srcset_parts, function($a, $b) {
+            preg_match('/(\d+)w$/', $a, $ma);
+            preg_match('/(\d+)w$/', $b, $mb);
+            return intval($ma[1] ?? 0) - intval($mb[1] ?? 0);
+        });
+        
+        $result['srcset'] = implode(', ', $srcset_parts);
+        
+        // Generate a sensible default sizes attribute
+        // This tells the browser: on mobile use 100vw, on larger screens use a reasonable size
+        $result['sizes'] = '(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 800px';
+    }
+    
+    return $result;
+}
+
+/**
  * Convert img tags to picture tags with WebP sources
  * 
  * @param string $content The post content
@@ -1025,27 +1156,53 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
             
             // Extract srcset from img tag if present
             $srcset_webp = '';
+            $sizes_attr = '';
+            
             if (preg_match('/srcset=["\']([^"\']+)["\']/', $picture_content, $srcset_match)) {
                 $original_srcset = $srcset_match[1];
                 // Convert srcset URLs to WebP
                 $srcset_webp = preg_replace('/\.(jpe?g|png|gif)(\s+\d+[wx])/i', '.webp$2', $original_srcset);
-            }
-            
-            // Extract sizes attribute
-            $sizes_attr = '';
-            if (preg_match('/sizes=["\']([^"\']+)["\']/', $picture_content, $sizes_match)) {
-                $sizes_attr = ' sizes="' . $sizes_match[1] . '"';
+                
+                // Extract sizes attribute if present
+                if (preg_match('/sizes=["\']([^"\']+)["\']/', $picture_content, $sizes_match)) {
+                    $sizes_attr = ' sizes="' . esc_attr($sizes_match[1]) . '"';
+                }
+            } else {
+                // No srcset present - try to build responsive srcset from WordPress metadata
+                // This is critical for PageSpeed optimization - serves appropriately sized images
+                $responsive = ccm_tools_webp_build_responsive_srcset($img_url, true);
+                
+                if (!empty($responsive['srcset'])) {
+                    $srcset_webp = $responsive['srcset'];
+                    $sizes_attr = ' sizes="' . esc_attr($responsive['sizes']) . '"';
+                }
             }
             
             // Build the WebP source element
             if (!empty($srcset_webp)) {
                 $webp_source = '<source type="image/webp" srcset="' . esc_attr($srcset_webp) . '"' . $sizes_attr . '>';
             } else {
-                $webp_source = '<source type="image/webp" srcset="' . esc_attr($webp_url) . '"' . $sizes_attr . '>';
+                // Fallback to single image if no responsive srcset available
+                $webp_source = '<source type="image/webp" srcset="' . esc_attr($webp_url) . '">';
+            }
+            
+            // Also add responsive srcset to the original img tag for non-WebP fallback
+            $new_picture_content = $picture_content;
+            if (!empty($srcset_webp) && !preg_match('/srcset=["\']/', $picture_content)) {
+                // Build original format srcset
+                $responsive_original = ccm_tools_webp_build_responsive_srcset($img_url, false);
+                if (!empty($responsive_original['srcset'])) {
+                    // Add srcset and sizes to the img tag
+                    $new_picture_content = preg_replace(
+                        '/(<img\s+[^>]*?)(\s*\/?>)/i',
+                        '$1 srcset="' . esc_attr($responsive_original['srcset']) . '" sizes="' . esc_attr($responsive_original['sizes']) . '"$2',
+                        $picture_content
+                    );
+                }
             }
             
             // Insert WebP source at the beginning of picture content
-            return '<picture' . $picture_attrs . '>' . $webp_source . $picture_content . '</picture>';
+            return '<picture' . $picture_attrs . '>' . $webp_source . $new_picture_content . '</picture>';
         },
         $content
     );
