@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.9.3
+- **Current Version:** 7.9.4
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.9.4
+- **Fixed WebP Picture Tag Conversion URL Matching**
+  - Added `/wp-content/uploads/` fallback check in picture tag conversion function
+  - Previous version only checked `$upload_dir['baseurl']` which could fail with CDNs or domain mismatches
+  - Fixed path construction for WebP-to-original fallback (when source is already WebP)
+  - Now properly handles both full baseurl matches and `/wp-content/uploads/` path patterns
+  - Ensures images are correctly identified as local uploads regardless of URL format
 
 ### v7.9.3
 - **Fixed WebP Not Working on Page Builder/Theme Images**
