@@ -1562,10 +1562,19 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
         $reset_count++;
     }
     
-    // Also clear the failed conversion cache
+    // Also clear the failed conversion cache (legacy meta key)
     $wpdb->query(
         "DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_ccm_webp_conversion_failed'"
     );
+    
+    // Clear all failed conversion transients
+    // These are stored as ccm_webp_failed_{md5hash} transients
+    $wpdb->query(
+        "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_ccm_webp_failed_%' OR option_name LIKE '_transient_timeout_ccm_webp_failed_%'"
+    );
+    
+    // Also clear the conversion queue transient
+    delete_transient('ccm_webp_conversion_queue');
     
     wp_send_json_success(array(
         'message' => sprintf(

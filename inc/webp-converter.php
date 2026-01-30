@@ -546,8 +546,9 @@ function ccm_tools_webp_filter_content_src($content) {
             return $img_tag;
         }
         
-        // Check if this is a local upload
-        if (strpos($original_src, $upload_dir['baseurl']) === false) {
+        // Check if this is a local upload - support both full URL and /wp-content/uploads/ path
+        if (strpos($original_src, $upload_dir['baseurl']) === false && 
+            strpos($original_src, '/wp-content/uploads/') === false) {
             return $img_tag;
         }
         
@@ -838,13 +839,22 @@ function ccm_tools_webp_queue_for_conversion($original_url) {
     
     $upload_dir = wp_upload_dir();
     
-    // Check if this is a local upload
-    if (strpos($original_url, $upload_dir['baseurl']) === false) {
+    // Check if this is a local upload - support both full URL and /wp-content/uploads/ path
+    $original_path = '';
+    if (strpos($original_url, $upload_dir['baseurl']) !== false) {
+        $original_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $original_url);
+    } elseif (strpos($original_url, '/wp-content/uploads/') !== false) {
+        // Extract path after /wp-content/uploads/
+        if (preg_match('#/wp-content/uploads/(.+)$#', $original_url, $path_match)) {
+            $original_path = $upload_dir['basedir'] . '/' . $path_match[1];
+        }
+    }
+    
+    if (empty($original_path)) {
         return;
     }
     
-    // Generate paths
-    $original_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $original_url);
+    // Generate WebP path
     $webp_path = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_path);
     
     // Skip if WebP already exists

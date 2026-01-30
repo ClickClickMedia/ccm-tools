@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.9.4
+- **Current Version:** 7.9.5
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -272,6 +272,15 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.9.5
+- **Fixed WebP Conversion Not Working After Reset**
+  - Fixed critical bug where failed conversion transients were not cleared during reset/regenerate
+  - Previous fix only cleared `_ccm_webp_conversion_failed` post meta but actual failures use transients
+  - Now clears all `ccm_webp_failed_*` transients and the conversion queue during reset
+  - Added `/wp-content/uploads/` fallback check to `ccm_tools_webp_queue_for_conversion()` function
+  - Added `/wp-content/uploads/` fallback check to `ccm_tools_webp_filter_content_src()` function
+  - Ensures URL matching works regardless of site URL configuration or CDN setup
 
 ### v7.9.4
 - **Fixed WebP Picture Tag Conversion URL Matching**
