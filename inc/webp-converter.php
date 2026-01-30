@@ -577,24 +577,10 @@ function ccm_tools_webp_start_output_buffer() {
     }
     
     // Check if browser supports WebP
-    $browser_supports = ccm_tools_webp_browser_supports_webp();
-    $settings = ccm_tools_webp_get_settings();
-    
-    // Store debug info globally for later output
-    $GLOBALS['ccm_webp_buffer_debug'] = array(
-        'buffer_started' => false,
-        'browser_supports_webp' => $browser_supports,
-        'http_accept' => isset($_SERVER['HTTP_ACCEPT']) ? substr($_SERVER['HTTP_ACCEPT'], 0, 200) : '(not set)',
-        'settings_enabled' => !empty($settings['enabled']),
-        'serve_webp' => !empty($settings['serve_webp']),
-        'use_picture_tags' => !empty($settings['use_picture_tags']),
-    );
-    
-    if (!$browser_supports) {
+    if (!ccm_tools_webp_browser_supports_webp()) {
         return;
     }
     
-    $GLOBALS['ccm_webp_buffer_debug']['buffer_started'] = true;
     ob_start('ccm_tools_webp_process_output_buffer');
 }
 
@@ -617,18 +603,6 @@ function ccm_tools_webp_end_output_buffer() {
 function ccm_tools_webp_process_output_buffer($html) {
     $settings = ccm_tools_webp_get_settings();
     $upload_dir = wp_upload_dir();
-    
-    // Debug: Add HTML comment showing settings
-    $debug_info = array(
-        'enabled' => !empty($settings['enabled']),
-        'serve_webp' => !empty($settings['serve_webp']),
-        'use_picture_tags' => !empty($settings['use_picture_tags']),
-        'convert_on_demand' => !empty($settings['convert_on_demand']),
-        'convert_bg_images' => !empty($settings['convert_bg_images']),
-        'baseurl' => $upload_dir['baseurl'],
-        'basedir' => $upload_dir['basedir'],
-    );
-    $html = str_replace('</head>', '<!-- CCM WebP Debug: ' . esc_attr(json_encode($debug_info)) . ' --></head>', $html);
     
     // Process background-image URLs if enabled
     if (!empty($settings['convert_bg_images']) && stripos($html, 'url(') !== false) {
@@ -665,12 +639,6 @@ function ccm_tools_webp_process_output_buffer($html) {
     } elseif (!empty($settings['serve_webp'])) {
         // Convert img src URLs to WebP (without picture tags)
         $html = ccm_tools_webp_process_img_tags($html, $upload_dir);
-    }
-    
-    // Add conversion debug log to HTML if available
-    if (!empty($GLOBALS['ccm_webp_debug_log'])) {
-        $debug_html = '<!-- CCM WebP Conversion Log: ' . esc_attr(json_encode($GLOBALS['ccm_webp_debug_log'])) . ' -->';
-        $html = str_replace('</body>', $debug_html . '</body>', $html);
     }
     
     return $html;
@@ -925,11 +893,6 @@ function ccm_tools_webp_queue_for_conversion($original_url) {
  * @return string|false WebP URL or false if not available
  */
 function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
-    // Initialize debug log if not exists
-    if (!isset($GLOBALS['ccm_webp_debug_log'])) {
-        $GLOBALS['ccm_webp_debug_log'] = array();
-    }
-    
     // Skip if already WebP
     if (preg_match('/\.webp$/i', $original_url)) {
         return $original_url;
@@ -937,7 +900,6 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     
     // Only process JPG, PNG, GIF
     if (!preg_match('/\.(jpe?g|png|gif)$/i', $original_url)) {
-        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (not jpg/png/gif): " . basename($original_url);
         return false;
     }
     
@@ -962,7 +924,6 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     }
     
     if (!$is_local || empty($original_path)) {
-        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (not local): " . basename($original_url);
         return false;
     }
     
@@ -972,7 +933,6 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     
     // Check if WebP exists
     if (file_exists($webp_path)) {
-        $GLOBALS['ccm_webp_debug_log'][] = "EXISTS: " . basename($webp_url);
         return $webp_url;
     }
     
@@ -984,25 +944,15 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
             $quality = intval($settings['quality']);
             $extension = $settings['preferred_extension'];
             
-            $GLOBALS['ccm_webp_debug_log'][] = "CONVERTING: " . basename($original_path);
-            
             $result = ccm_tools_webp_convert_image($original_path, $webp_path, $quality, $extension);
             
             if ($result['success']) {
-                $GLOBALS['ccm_webp_debug_log'][] = "SUCCESS: " . basename($webp_url);
                 return $webp_url;
             } else {
-                $GLOBALS['ccm_webp_debug_log'][] = "FAILED: " . $result['message'];
                 // Mark as failed to avoid repeated attempts (cache for 1 hour)
                 set_transient($failed_key, true, HOUR_IN_SECONDS);
             }
-        } else {
-            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (prev failed): " . basename($original_url);
         }
-    } elseif (empty($settings['convert_on_demand'])) {
-        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (on-demand off): " . basename($original_url);
-    } elseif (!file_exists($original_path)) {
-        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (no source): " . basename($original_path);
     }
     
     // Queue for background conversion if still not converted
@@ -1021,11 +971,6 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
  */
 function ccm_tools_webp_convert_to_picture_tags($content) {
     $settings = ccm_tools_webp_get_settings();
-    
-    // Initialize debug log if not exists
-    if (!isset($GLOBALS['ccm_webp_debug_log'])) {
-        $GLOBALS['ccm_webp_debug_log'] = array();
-    }
     
     // Check if feature is enabled
     if (empty($settings['enabled']) || empty($settings['use_picture_tags'])) {
@@ -1068,7 +1013,6 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
             // Check if this is a local upload
             if (strpos($img_url, $upload_dir['baseurl']) === false && 
                 strpos($img_url, '/wp-content/uploads/') === false) {
-                $GLOBALS['ccm_webp_debug_log'][] = "SKIP (external): $img_basename";
                 return $matches[0];
             }
             
@@ -1076,7 +1020,6 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
             $webp_url = ccm_tools_webp_get_or_create($img_url);
             
             if (!$webp_url || $webp_url === $img_url) {
-                $GLOBALS['ccm_webp_debug_log'][] = "NO_WEBP: $img_basename";
                 return $matches[0];
             }
             
@@ -1100,8 +1043,6 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
             } else {
                 $webp_source = '<source type="image/webp" srcset="' . esc_attr($webp_url) . '"' . $sizes_attr . '>';
             }
-            
-            $GLOBALS['ccm_webp_debug_log'][] = "ENHANCED: $img_basename";
             
             // Insert WebP source at the beginning of picture content
             return '<picture' . $picture_attrs . '>' . $webp_source . $picture_content . '</picture>';
@@ -1138,13 +1079,11 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         
         // Skip if already has data-no-picture marker (was already processed)
         if (strpos($before_src, 'data-no-picture') !== false || strpos($after_src, 'data-no-picture') !== false) {
-            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (no-picture): " . basename($img_url);
             return $full_match;
         }
         
         // Skip if marked as inside a picture element (from Pass 1)
         if (strpos($before_src, 'data-inside-picture') !== false || strpos($after_src, 'data-inside-picture') !== false) {
-            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (in picture): " . basename($img_url);
             return $full_match;
         }
         
@@ -1152,7 +1091,6 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         if (strpos($img_url, $upload_dir['baseurl']) === false && 
             strpos($img_url, '/wp-content/uploads/') === false) {
             // External image, skip conversion
-            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (external): " . basename($img_url);
             return $full_match;
         }
         
@@ -1502,20 +1440,8 @@ function ccm_tools_webp_init() {
     if (!empty($settings['convert_on_demand']) && !is_admin()) {
         add_action('wp_footer', 'ccm_tools_webp_background_queue_script', 999);
     }
-    
-    // Add debug output to footer (temporary for debugging)
-    add_action('wp_footer', 'ccm_tools_webp_debug_footer_output', 1000);
 }
 add_action('init', 'ccm_tools_webp_init');
-
-/**
- * Output debug information about WebP processing in footer (temporary)
- */
-function ccm_tools_webp_debug_footer_output() {
-    if (!empty($GLOBALS['ccm_webp_buffer_debug'])) {
-        echo '<!-- CCM WebP Buffer Debug: ' . esc_attr(json_encode($GLOBALS['ccm_webp_buffer_debug'])) . ' -->';
-    }
-}
 
 /**
  * Output JavaScript for background WebP queue processing
