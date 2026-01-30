@@ -1531,34 +1531,53 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
     
     $delete_files = !empty($_POST['delete_files']);
     
-    // Get all attachments with WebP conversions
-    $attachments = $wpdb->get_results(
-        "SELECT p.ID, pm.meta_value 
-         FROM {$wpdb->posts} p
-         INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ccm_webp_converted'
-         WHERE p.post_type = 'attachment'"
-    );
-    
     $deleted_files = 0;
     $reset_count = 0;
     
-    foreach ($attachments as $attachment) {
-        // Optionally delete WebP files
-        if ($delete_files) {
-            $conversion_data = maybe_unserialize($attachment->meta_value);
-            if (is_array($conversion_data)) {
-                foreach ($conversion_data as $size => $data) {
-                    if (!empty($data['dest_path']) && file_exists($data['dest_path'])) {
-                        if (unlink($data['dest_path'])) {
+    // If delete_files is true, scan the uploads directory for ALL WebP files
+    // This catches WebP files created externally (not tracked in metadata)
+    if ($delete_files) {
+        $upload_dir = wp_upload_dir();
+        $base_dir = $upload_dir['basedir'];
+        
+        // Use RecursiveDirectoryIterator to find all WebP files
+        try {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($base_dir, RecursiveDirectoryIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::SELF_FIRST
+            );
+            
+            foreach ($iterator as $file) {
+                if ($file->isFile() && strtolower($file->getExtension()) === 'webp') {
+                    $webp_path = $file->getPathname();
+                    
+                    // Check if there's a corresponding original image (jpg/png/gif)
+                    // Only delete WebP files that have an original - don't delete native WebP uploads
+                    $original_jpg = preg_replace('/\.webp$/i', '.jpg', $webp_path);
+                    $original_jpeg = preg_replace('/\.webp$/i', '.jpeg', $webp_path);
+                    $original_png = preg_replace('/\.webp$/i', '.png', $webp_path);
+                    $original_gif = preg_replace('/\.webp$/i', '.gif', $webp_path);
+                    
+                    if (file_exists($original_jpg) || file_exists($original_jpeg) || 
+                        file_exists($original_png) || file_exists($original_gif)) {
+                        if (@unlink($webp_path)) {
                             $deleted_files++;
                         }
                     }
                 }
             }
+        } catch (Exception $e) {
+            // Fallback: just clear metadata if directory iteration fails
         }
-        
-        // Remove the conversion meta
-        delete_post_meta($attachment->ID, '_ccm_webp_converted');
+    }
+    
+    // Get all attachments with WebP conversion metadata and clear it
+    $attachments = $wpdb->get_col(
+        "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_ccm_webp_converted'"
+    );
+    
+    foreach ($attachments as $attachment_id) {
+        delete_post_meta($attachment_id, '_ccm_webp_converted');
         $reset_count++;
     }
     
@@ -1568,7 +1587,6 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
     );
     
     // Clear all failed conversion transients
-    // These are stored as ccm_webp_failed_{md5hash} transients
     $wpdb->query(
         "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_ccm_webp_failed_%' OR option_name LIKE '_transient_timeout_ccm_webp_failed_%'"
     );
@@ -1578,7 +1596,7 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
     
     wp_send_json_success(array(
         'message' => sprintf(
-            __('Reset %d images for re-conversion. %d WebP files deleted.', 'ccm-tools'),
+            __('Reset %d images. %d WebP files deleted from disk.', 'ccm-tools'),
             $reset_count,
             $deleted_files
         ),

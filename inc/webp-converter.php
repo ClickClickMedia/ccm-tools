@@ -1478,7 +1478,7 @@ function ccm_tools_webp_allowed_mimes($mimes) {
 /**
  * Get conversion statistics
  * 
- * Checks actual WebP files on disk, not just metadata.
+ * Checks actual WebP files on disk for all image sizes (full + thumbnails).
  * This ensures accurate stats even if WebP files were created externally.
  * 
  * @return array Statistics
@@ -1496,33 +1496,61 @@ function ccm_tools_webp_get_statistics() {
     );
     
     // Get all images from media library (limit for performance)
-    $images = $wpdb->get_results(
-        "SELECT ID, guid FROM {$wpdb->posts} 
+    $attachments = $wpdb->get_results(
+        "SELECT ID FROM {$wpdb->posts} 
          WHERE post_type = 'attachment' 
          AND post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
          ORDER BY ID DESC
-         LIMIT 5000"
+         LIMIT 2000"
     );
     
-    $stats['total_images'] = count($images);
+    // Track all image files (full size + all thumbnails)
+    $all_images = array();
+    $converted_count = 0;
     
-    // Check each image for WebP version
-    foreach ($images as $image) {
-        $file_path = get_attached_file($image->ID);
+    foreach ($attachments as $attachment) {
+        $file_path = get_attached_file($attachment->ID);
         
         if (!$file_path || !file_exists($file_path)) {
             continue;
         }
         
-        // Generate WebP path
-        $webp_path = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $file_path);
+        $file_dir = dirname($file_path);
         
-        if (file_exists($webp_path)) {
-            $stats['converted_images']++;
+        // Add full-size image
+        $all_images[] = array(
+            'path' => $file_path,
+            'webp_path' => preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $file_path)
+        );
+        
+        // Get attachment metadata for thumbnails
+        $metadata = wp_get_attachment_metadata($attachment->ID);
+        
+        if (!empty($metadata['sizes'])) {
+            foreach ($metadata['sizes'] as $size_name => $size_data) {
+                if (!empty($size_data['file'])) {
+                    $thumb_path = $file_dir . '/' . $size_data['file'];
+                    if (file_exists($thumb_path)) {
+                        $all_images[] = array(
+                            'path' => $thumb_path,
+                            'webp_path' => preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $thumb_path)
+                        );
+                    }
+                }
+            }
+        }
+    }
+    
+    $stats['total_images'] = count($all_images);
+    
+    // Check each image for WebP version
+    foreach ($all_images as $image) {
+        if (file_exists($image['webp_path'])) {
+            $converted_count++;
             
             // Calculate sizes for savings
-            $original_size = filesize($file_path);
-            $webp_size = filesize($webp_path);
+            $original_size = @filesize($image['path']);
+            $webp_size = @filesize($image['webp_path']);
             
             if ($original_size && $webp_size) {
                 $stats['total_original_size'] += $original_size;
@@ -1530,6 +1558,8 @@ function ccm_tools_webp_get_statistics() {
             }
         }
     }
+    
+    $stats['converted_images'] = $converted_count;
     
     // Calculate pending
     $stats['pending_conversion'] = max(0, $stats['total_images'] - $stats['converted_images']);
