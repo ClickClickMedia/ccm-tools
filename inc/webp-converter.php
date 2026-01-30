@@ -1022,6 +1022,11 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
 function ccm_tools_webp_convert_to_picture_tags($content) {
     $settings = ccm_tools_webp_get_settings();
     
+    // Initialize debug log if not exists
+    if (!isset($GLOBALS['ccm_webp_debug_log'])) {
+        $GLOBALS['ccm_webp_debug_log'] = array();
+    }
+    
     // Check if feature is enabled
     if (empty($settings['enabled']) || empty($settings['use_picture_tags'])) {
         return $content;
@@ -1034,6 +1039,10 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
     
     // Get upload directory info
     $upload_dir = wp_upload_dir();
+    
+    // Count img tags for debug
+    preg_match_all('/<img\s+[^>]*>/i', $content, $all_imgs);
+    $GLOBALS['ccm_webp_debug_log'][] = "PICTURE_TAGS: Found " . count($all_imgs[0]) . " img tags total";
     
     // TWO-PASS APPROACH to handle nested picture tags correctly
     // Pass 1: Mark all img tags that are already inside <picture> elements
@@ -1065,11 +1074,13 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         
         // Skip if already has data-no-picture marker (was already processed)
         if (strpos($before_src, 'data-no-picture') !== false || strpos($after_src, 'data-no-picture') !== false) {
+            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (no-picture): " . basename($img_url);
             return $full_match;
         }
         
         // Skip if marked as inside a picture element (from Pass 1)
         if (strpos($before_src, 'data-inside-picture') !== false || strpos($after_src, 'data-inside-picture') !== false) {
+            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (in picture): " . basename($img_url);
             return $full_match;
         }
         
@@ -1077,6 +1088,7 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
         if (strpos($img_url, $upload_dir['baseurl']) === false && 
             strpos($img_url, '/wp-content/uploads/') === false) {
             // External image, skip conversion
+            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (external): " . basename($img_url);
             return $full_match;
         }
         
