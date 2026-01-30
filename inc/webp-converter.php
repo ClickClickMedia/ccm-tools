@@ -1040,12 +1040,76 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
     // Get upload directory info
     $upload_dir = wp_upload_dir();
     
-    // Count img tags for debug
-    preg_match_all('/<img\s+[^>]*>/i', $content, $all_imgs);
-    $GLOBALS['ccm_webp_debug_log'][] = "PICTURE_TAGS: Found " . count($all_imgs[0]) . " img tags total";
+    // APPROACH: Two-pass processing
+    // Pass 1: Process existing <picture> tags that don't have WebP sources - add WebP sources to them
+    // Pass 2: Convert standalone <img> tags to <picture> tags with WebP sources
     
-    // TWO-PASS APPROACH to handle nested picture tags correctly
-    // Pass 1: Mark all img tags that are already inside <picture> elements
+    // Pass 1: Find picture tags and add WebP sources if missing
+    $content = preg_replace_callback(
+        '/<picture([^>]*)>(.*?)<\/picture>/is',
+        function($matches) use ($upload_dir) {
+            $picture_attrs = $matches[1];
+            $picture_content = $matches[2];
+            
+            // Check if this picture already has a WebP source
+            if (preg_match('/<source[^>]+type=["\']image\/webp["\'][^>]*>/i', $picture_content)) {
+                // Already has WebP source, skip
+                return $matches[0];
+            }
+            
+            // Find the img tag inside
+            if (!preg_match('/<img\s+([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i', $picture_content, $img_match)) {
+                return $matches[0];
+            }
+            
+            $img_url = $img_match[2];
+            $img_basename = basename($img_url);
+            
+            // Check if this is a local upload
+            if (strpos($img_url, $upload_dir['baseurl']) === false && 
+                strpos($img_url, '/wp-content/uploads/') === false) {
+                $GLOBALS['ccm_webp_debug_log'][] = "SKIP (external): $img_basename";
+                return $matches[0];
+            }
+            
+            // Get WebP URL
+            $webp_url = ccm_tools_webp_get_or_create($img_url);
+            
+            if (!$webp_url || $webp_url === $img_url) {
+                $GLOBALS['ccm_webp_debug_log'][] = "NO_WEBP: $img_basename";
+                return $matches[0];
+            }
+            
+            // Extract srcset from img tag if present
+            $srcset_webp = '';
+            if (preg_match('/srcset=["\']([^"\']+)["\']/', $picture_content, $srcset_match)) {
+                $original_srcset = $srcset_match[1];
+                // Convert srcset URLs to WebP
+                $srcset_webp = preg_replace('/\.(jpe?g|png|gif)(\s+\d+[wx])/i', '.webp$2', $original_srcset);
+            }
+            
+            // Extract sizes attribute
+            $sizes_attr = '';
+            if (preg_match('/sizes=["\']([^"\']+)["\']/', $picture_content, $sizes_match)) {
+                $sizes_attr = ' sizes="' . $sizes_match[1] . '"';
+            }
+            
+            // Build the WebP source element
+            if (!empty($srcset_webp)) {
+                $webp_source = '<source type="image/webp" srcset="' . esc_attr($srcset_webp) . '"' . $sizes_attr . '>';
+            } else {
+                $webp_source = '<source type="image/webp" srcset="' . esc_attr($webp_url) . '"' . $sizes_attr . '>';
+            }
+            
+            $GLOBALS['ccm_webp_debug_log'][] = "ENHANCED: $img_basename";
+            
+            // Insert WebP source at the beginning of picture content
+            return '<picture' . $picture_attrs . '>' . $webp_source . $picture_content . '</picture>';
+        },
+        $content
+    );
+    
+    // Pass 2: Mark remaining img tags inside picture elements (to skip in pass 3)
     $content = preg_replace_callback(
         '/<picture[^>]*>(.*?)<\/picture>/is',
         function($matches) {
@@ -1064,7 +1128,7 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
     // Pattern to match img tags - including WebP images (for fallback to original format)
     $pattern = '/<img\s+([^>]*?)src=["\']([^"\']+\.(jpe?g|png|gif|webp))["\']([^>]*?)>/i';
     
-    // Pass 2: Convert img tags that are NOT marked
+    // Pass 3: Convert standalone img tags that are NOT inside picture elements
     $content = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
         $full_match = $matches[0];
         $before_src = $matches[1];
