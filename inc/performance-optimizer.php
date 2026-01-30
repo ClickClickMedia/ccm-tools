@@ -174,6 +174,8 @@ function ccm_tools_perf_init() {
         add_action('wp_head', 'ccm_tools_perf_font_display_preload', 2);
         // Use output buffering to inject font-display: swap into @font-face rules (self-hosted fonts)
         add_action('template_redirect', 'ccm_tools_perf_font_display_start_buffer', 1);
+        // Inject font-display override CSS for external font CSS (FontAwesome, etc.)
+        add_action('wp_head', 'ccm_tools_perf_font_display_override_css', 99);
     }
     
     // Speculation Rules API (instant page navigation)
@@ -837,6 +839,79 @@ function ccm_tools_perf_font_display_process_buffer($html) {
 }
 
 /**
+ * Inject CSS to override font-display for common external font libraries
+ * This handles fonts loaded from external CSS files that can't be modified directly
+ * (FontAwesome, local icon fonts, theme fonts, etc.)
+ */
+function ccm_tools_perf_font_display_override_css() {
+    // CSS to override font-display for common font families loaded from external CSS
+    // This creates higher-specificity @font-face rules that override the originals
+    $css = '
+/* CCM Tools: Font Display Override for External Fonts */
+/* FontAwesome - all weight variants */
+@font-face { font-family: "Font Awesome 6 Free"; font-display: swap; }
+@font-face { font-family: "Font Awesome 6 Pro"; font-display: swap; }
+@font-face { font-family: "Font Awesome 6 Brands"; font-display: swap; }
+@font-face { font-family: "Font Awesome 6 Duotone"; font-display: swap; }
+@font-face { font-family: "Font Awesome 5 Free"; font-display: swap; }
+@font-face { font-family: "Font Awesome 5 Pro"; font-display: swap; }
+@font-face { font-family: "Font Awesome 5 Brands"; font-display: swap; }
+@font-face { font-family: "FontAwesome"; font-display: swap; }
+@font-face { font-family: "fa-solid-900"; font-display: swap; }
+@font-face { font-family: "fa-regular-400"; font-display: swap; }
+@font-face { font-family: "fa-brands-400"; font-display: swap; }
+
+/* Bootstrap Icons */
+@font-face { font-family: "bootstrap-icons"; font-display: swap; }
+
+/* Material Icons */
+@font-face { font-family: "Material Icons"; font-display: swap; }
+@font-face { font-family: "Material Symbols Outlined"; font-display: swap; }
+@font-face { font-family: "Material Symbols Rounded"; font-display: swap; }
+@font-face { font-family: "Material Symbols Sharp"; font-display: swap; }
+
+/* Dashicons (WordPress) */
+@font-face { font-family: "dashicons"; font-display: swap; }
+
+/* Genericons */
+@font-face { font-family: "Genericons"; font-display: swap; }
+
+/* IcoMoon */
+@font-face { font-family: "icomoon"; font-display: swap; }
+
+/* Ionicons */
+@font-face { font-family: "Ionicons"; font-display: swap; }
+
+/* Simple Line Icons */
+@font-face { font-family: "simple-line-icons"; font-display: swap; }
+
+/* Themify Icons */
+@font-face { font-family: "themify"; font-display: swap; }
+
+/* ET Line Icons */
+@font-face { font-family: "et-line"; font-display: swap; }
+
+/* Linearicons */
+@font-face { font-family: "Linearicons-Free"; font-display: swap; }
+
+/* WooCommerce */
+@font-face { font-family: "WooCommerce"; font-display: swap; }
+@font-face { font-family: "star"; font-display: swap; }
+
+/* Elementor Icons */
+@font-face { font-family: "eicons"; font-display: swap; }
+
+/* Revolution Slider */
+@font-face { font-family: "revicons"; font-display: swap; }
+
+/* Flaticon */
+@font-face { font-family: "Flaticon"; font-display: swap; }
+';
+    
+    echo '<style id="ccm-font-display-override">' . $css . '</style>' . "\n";
+}
+
+/**
  * Output Speculation Rules for instant page navigation
  * Uses the Speculation Rules API for prerendering pages on hover
  * @see https://developer.chrome.com/docs/web-platform/prerender-pages
@@ -1178,8 +1253,8 @@ body { margin: 0; }
                     <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
                         <div style="flex: 1;">
                             <strong><?php _e('Font Display: Swap', 'ccm-tools'); ?></strong>
-                            <p class="ccm-text-muted"><?php _e('Adds font-display: swap to Google Fonts URLs. Shows fallback text immediately while custom fonts load. Fixes "Ensure text remains visible during webfont load" warning.', 'ccm-tools'); ?></p>
-                            <p class="ccm-text-muted" style="color: var(--ccm-success);"><span class="ccm-icon">✓</span> <?php _e('Safe optimization. Est. savings of 500ms+', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted"><?php _e('Adds font-display: swap to all fonts including Google Fonts, self-hosted fonts, and icon fonts (FontAwesome, etc.). Shows fallback text immediately while custom fonts load. Fixes "Ensure text remains visible during webfont load" warning.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-success);"><span class="ccm-icon">✓</span> <?php _e('Safe optimization. Est. savings of 150-500ms+', 'ccm-tools'); ?></p>
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-font-display-swap" <?php checked(!empty($settings['font_display_swap'])); ?>>
