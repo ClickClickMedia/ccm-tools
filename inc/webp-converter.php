@@ -1041,6 +1041,10 @@ function ccm_tools_webp_build_responsive_srcset($img_url, $webp = true) {
     
     $srcset_parts = array();
     
+    // Check if on-demand conversion is enabled
+    $settings = ccm_tools_webp_get_settings();
+    $enable_on_demand = !empty($settings['convert_on_demand']);
+    
     // Add all available sizes
     foreach ($metadata['sizes'] as $size_name => $size_data) {
         if (empty($size_data['file']) || empty($size_data['width'])) {
@@ -1050,10 +1054,8 @@ function ccm_tools_webp_build_responsive_srcset($img_url, $webp = true) {
         $size_url = $base_url . $size_data['file'];
         
         if ($webp) {
-            // Convert to WebP URL
-            $webp_url = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $size_url);
-            // Check if WebP exists or can be created
-            $webp_check = ccm_tools_webp_get_or_create($size_url, false);
+            // Check if WebP exists, or create on-demand if enabled
+            $webp_check = ccm_tools_webp_get_or_create($size_url, $enable_on_demand);
             if ($webp_check) {
                 $srcset_parts[] = esc_url($webp_check) . ' ' . $size_data['width'] . 'w';
             }
@@ -1067,7 +1069,7 @@ function ccm_tools_webp_build_responsive_srcset($img_url, $webp = true) {
         $full_url = trailingslashit($upload_dir['baseurl']) . $metadata['file'];
         
         if ($webp) {
-            $webp_full = ccm_tools_webp_get_or_create($full_url, false);
+            $webp_full = ccm_tools_webp_get_or_create($full_url, $enable_on_demand);
             if ($webp_full) {
                 $srcset_parts[] = esc_url($webp_full) . ' ' . $metadata['width'] . 'w';
             }
