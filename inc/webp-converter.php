@@ -584,7 +584,7 @@ function ccm_tools_webp_start_output_buffer() {
     $GLOBALS['ccm_webp_buffer_debug'] = array(
         'buffer_started' => false,
         'browser_supports_webp' => $browser_supports,
-        'http_accept' => isset($_SERVER['HTTP_ACCEPT']) ? $_SERVER['HTTP_ACCEPT'] : '(not set)',
+        'http_accept' => isset($_SERVER['HTTP_ACCEPT']) ? substr($_SERVER['HTTP_ACCEPT'], 0, 200) : '(not set)',
         'settings_enabled' => !empty($settings['enabled']),
         'serve_webp' => !empty($settings['serve_webp']),
         'use_picture_tags' => !empty($settings['use_picture_tags']),
@@ -628,13 +628,13 @@ function ccm_tools_webp_process_output_buffer($html) {
         'baseurl' => $upload_dir['baseurl'],
         'basedir' => $upload_dir['basedir'],
     );
-    $html = str_replace('</head>', '<!-- CCM WebP Debug: ' . json_encode($debug_info) . ' --></head>', $html);
+    $html = str_replace('</head>', '<!-- CCM WebP Debug: ' . esc_attr(json_encode($debug_info)) . ' --></head>', $html);
     
     // Process background-image URLs if enabled
     if (!empty($settings['convert_bg_images']) && stripos($html, 'url(') !== false) {
         // Pattern matches url() with the full URL structure, preserving original quote style
         // Captures: 1=opening quote (if any), 2=URL, 3=closing quote (if any)
-        $pattern = '/url\\s*\\(\\s*(["\']?)(https?:\\/\\/[^\"\\')\\s]+\\.(?:jpg|jpeg|png|gif))\\1\\s*\\)/i';
+        $pattern = '/url\s*\(\s*(["\']?)(https?:\/\/[^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
         
         $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
             $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
@@ -667,9 +667,9 @@ function ccm_tools_webp_process_output_buffer($html) {
         $html = ccm_tools_webp_process_img_tags($html, $upload_dir);
     }
     
-    // Add conversion debug log to HTML
+    // Add conversion debug log to HTML if available
     if (!empty($GLOBALS['ccm_webp_debug_log'])) {
-        $debug_html = '<!-- CCM WebP Conversion Log: ' . esc_html(json_encode($GLOBALS['ccm_webp_debug_log'])) . ' -->';
+        $debug_html = '<!-- CCM WebP Conversion Log: ' . esc_attr(json_encode($GLOBALS['ccm_webp_debug_log'])) . ' -->';
         $html = str_replace('</body>', $debug_html . '</body>', $html);
     }
     
@@ -925,16 +925,19 @@ function ccm_tools_webp_queue_for_conversion($original_url) {
  * @return string|false WebP URL or false if not available
  */
 function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
-    static $debug_log = array();
+    // Initialize debug log if not exists
+    if (!isset($GLOBALS['ccm_webp_debug_log'])) {
+        $GLOBALS['ccm_webp_debug_log'] = array();
+    }
     
     // Skip if already WebP
-    if (preg_match('/\\.webp$/i', $original_url)) {
+    if (preg_match('/\.webp$/i', $original_url)) {
         return $original_url;
     }
     
     // Only process JPG, PNG, GIF
-    if (!preg_match('/\\.(jpe?g|png|gif)$/i', $original_url)) {
-        $debug_log[] = "SKIP (not jpg/png/gif): $original_url";
+    if (!preg_match('/\.(jpe?g|png|gif)$/i', $original_url)) {
+        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (not jpg/png/gif): " . basename($original_url);
         return false;
     }
     
@@ -959,17 +962,17 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     }
     
     if (!$is_local || empty($original_path)) {
-        $debug_log[] = "SKIP (not local): $original_url | baseurl: {$upload_dir['baseurl']}";
+        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (not local): " . basename($original_url);
         return false;
     }
     
     // Generate WebP path
-    $webp_path = preg_replace('/\\.(jpe?g|png|gif)$/i', '.webp', $original_path);
-    $webp_url = preg_replace('/\\.(jpe?g|png|gif)$/i', '.webp', $original_url);
+    $webp_path = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_path);
+    $webp_url = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_url);
     
     // Check if WebP exists
     if (file_exists($webp_path)) {
-        $debug_log[] = "EXISTS: $webp_url";
+        $GLOBALS['ccm_webp_debug_log'][] = "EXISTS: " . basename($webp_url);
         return $webp_url;
     }
     
@@ -981,34 +984,31 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
             $quality = intval($settings['quality']);
             $extension = $settings['preferred_extension'];
             
-            $debug_log[] = "CONVERTING: $original_path -> $webp_path (quality: $quality, ext: $extension)";
+            $GLOBALS['ccm_webp_debug_log'][] = "CONVERTING: " . basename($original_path);
             
             $result = ccm_tools_webp_convert_image($original_path, $webp_path, $quality, $extension);
             
             if ($result['success']) {
-                $debug_log[] = "SUCCESS: $webp_url";
+                $GLOBALS['ccm_webp_debug_log'][] = "SUCCESS: " . basename($webp_url);
                 return $webp_url;
             } else {
-                $debug_log[] = "FAILED: {$result['message']}";
+                $GLOBALS['ccm_webp_debug_log'][] = "FAILED: " . $result['message'];
                 // Mark as failed to avoid repeated attempts (cache for 1 hour)
                 set_transient($failed_key, true, HOUR_IN_SECONDS);
             }
         } else {
-            $debug_log[] = "SKIP (previously failed): $original_url";
+            $GLOBALS['ccm_webp_debug_log'][] = "SKIP (prev failed): " . basename($original_url);
         }
     } elseif (empty($settings['convert_on_demand'])) {
-        $debug_log[] = "SKIP (on-demand disabled): $original_url";
+        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (on-demand off): " . basename($original_url);
     } elseif (!file_exists($original_path)) {
-        $debug_log[] = "SKIP (source not found): $original_path";
+        $GLOBALS['ccm_webp_debug_log'][] = "SKIP (no source): " . basename($original_path);
     }
     
     // Queue for background conversion if still not converted
     if ($queue_if_missing) {
         ccm_tools_webp_queue_for_conversion($original_url);
     }
-    
-    // Store debug log in a global for output
-    $GLOBALS['ccm_webp_debug_log'] = $debug_log;
     
     return false;
 }
@@ -1428,16 +1428,16 @@ function ccm_tools_webp_init() {
     }
     
     // Add debug output to footer (temporary for debugging)
-    add_action('wp_footer', 'ccm_tools_webp_debug_output', 1000);
+    add_action('wp_footer', 'ccm_tools_webp_debug_footer_output', 1000);
 }
 add_action('init', 'ccm_tools_webp_init');
 
 /**
- * Output debug information about WebP processing (temporary)
+ * Output debug information about WebP processing in footer (temporary)
  */
-function ccm_tools_webp_debug_output() {
+function ccm_tools_webp_debug_footer_output() {
     if (!empty($GLOBALS['ccm_webp_buffer_debug'])) {
-        echo '<!-- CCM WebP Buffer Debug: ' . esc_html(json_encode($GLOBALS['ccm_webp_buffer_debug'])) . ' -->';
+        echo '<!-- CCM WebP Buffer Debug: ' . esc_attr(json_encode($GLOBALS['ccm_webp_buffer_debug'])) . ' -->';
     }
 }
 
