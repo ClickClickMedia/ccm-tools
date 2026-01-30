@@ -1296,6 +1296,117 @@ function ccm_tools_ajax_get_webp_stats(): void {
     wp_send_json_success($stats);
 }
 
+/**
+ * Export WebP converter settings as JSON
+ */
+add_action('wp_ajax_ccm_tools_export_webp_settings', 'ccm_tools_ajax_export_webp_settings');
+function ccm_tools_ajax_export_webp_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    $settings = ccm_tools_webp_get_settings();
+    
+    // Add export metadata
+    $export_data = array(
+        'plugin' => 'ccm-tools',
+        'type' => 'webp-settings',
+        'version' => defined('CCM_HELPER_VERSION') ? CCM_HELPER_VERSION : '7.10.0',
+        'exported_at' => current_time('mysql'),
+        'site_url' => get_site_url(),
+        'settings' => $settings,
+    );
+    
+    wp_send_json_success($export_data);
+}
+
+/**
+ * Import WebP converter settings from JSON
+ */
+add_action('wp_ajax_ccm_tools_import_webp_settings', 'ccm_tools_ajax_import_webp_settings');
+function ccm_tools_ajax_import_webp_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
+    }
+    
+    // Get the JSON data from POST
+    $json_data = isset($_POST['settings_json']) ? wp_unslash($_POST['settings_json']) : '';
+    
+    if (empty($json_data)) {
+        wp_send_json_error(array('message' => __('No settings data provided.', 'ccm-tools')));
+    }
+    
+    // Decode JSON
+    $import_data = json_decode($json_data, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        wp_send_json_error(array('message' => __('Invalid JSON format: ', 'ccm-tools') . json_last_error_msg()));
+    }
+    
+    // Validate it's from CCM Tools WebP settings
+    if (!isset($import_data['plugin']) || $import_data['plugin'] !== 'ccm-tools') {
+        wp_send_json_error(array('message' => __('Invalid settings file. This does not appear to be a CCM Tools export.', 'ccm-tools')));
+    }
+    
+    if (!isset($import_data['type']) || $import_data['type'] !== 'webp-settings') {
+        wp_send_json_error(array('message' => __('Invalid settings file. This is not a WebP settings export.', 'ccm-tools')));
+    }
+    
+    // Check if settings exist
+    if (!isset($import_data['settings']) || !is_array($import_data['settings'])) {
+        wp_send_json_error(array('message' => __('No settings found in the import file.', 'ccm-tools')));
+    }
+    
+    $imported_settings = $import_data['settings'];
+    
+    // Get current defaults to merge with imported settings
+    $defaults = ccm_tools_webp_get_settings();
+    
+    // Sanitize each setting based on its type
+    $sanitized_settings = array();
+    
+    // Boolean settings
+    $boolean_keys = array(
+        'enabled', 'convert_on_upload', 'serve_webp', 'convert_on_demand',
+        'use_picture_tags', 'convert_bg_images', 'keep_original'
+    );
+    
+    foreach ($boolean_keys as $key) {
+        $sanitized_settings[$key] = isset($imported_settings[$key]) ? (bool) $imported_settings[$key] : $defaults[$key];
+    }
+    
+    // Integer settings
+    $sanitized_settings['quality'] = isset($imported_settings['quality']) 
+        ? max(1, min(100, intval($imported_settings['quality']))) 
+        : $defaults['quality'];
+    
+    // String settings
+    $sanitized_settings['preferred_extension'] = isset($imported_settings['preferred_extension']) 
+        ? sanitize_text_field($imported_settings['preferred_extension']) 
+        : $defaults['preferred_extension'];
+    
+    // Array settings
+    $sanitized_settings['exclude_sizes'] = isset($imported_settings['exclude_sizes']) && is_array($imported_settings['exclude_sizes'])
+        ? array_map('sanitize_text_field', $imported_settings['exclude_sizes'])
+        : $defaults['exclude_sizes'];
+    
+    // Save the imported settings
+    update_option('ccm_tools_webp_settings', $sanitized_settings);
+    
+    wp_send_json_success(array(
+        'message' => sprintf(
+            __('Settings imported successfully from %s (exported on %s).', 'ccm-tools'),
+            isset($import_data['site_url']) ? esc_html($import_data['site_url']) : 'unknown site',
+            isset($import_data['exported_at']) ? esc_html($import_data['exported_at']) : 'unknown date'
+        ),
+        'settings' => $sanitized_settings
+    ));
+}
+
 // Get unconverted images for bulk conversion
 add_action('wp_ajax_ccm_tools_get_unconverted_images', 'ccm_tools_ajax_get_unconverted_images');
 function ccm_tools_ajax_get_unconverted_images(): void {

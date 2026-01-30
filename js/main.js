@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.10.5
+ * Version: 7.10.6
  */
 
 (function() {
@@ -1850,6 +1850,115 @@
                     regenerateBtn.disabled = false;
                     regenerateBtn.textContent = 'Regenerate WebP Images';
                 }
+            });
+        }
+        
+        // Export WebP settings
+        const exportWebPBtn = $('#export-webp-settings');
+        if (exportWebPBtn) {
+            exportWebPBtn.addEventListener('click', async () => {
+                exportWebPBtn.disabled = true;
+                exportWebPBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Exporting...';
+                
+                try {
+                    const response = await ajax('ccm_tools_export_webp_settings', {});
+                    
+                    // Create blob and download
+                    const blob = new Blob([JSON.stringify(response, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    const siteName = window.location.hostname.replace(/[^a-z0-9]/gi, '-');
+                    const date = new Date().toISOString().split('T')[0];
+                    a.href = url;
+                    a.download = `ccm-tools-webp-settings-${siteName}-${date}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    showNotification('WebP settings exported successfully!', 'success');
+                } catch (error) {
+                    showNotification('Export failed: ' + error.message, 'error');
+                } finally {
+                    exportWebPBtn.disabled = false;
+                    exportWebPBtn.innerHTML = '📥 Export Settings';
+                }
+            });
+        }
+        
+        // Import WebP settings
+        const importWebPBtn = $('#import-webp-settings-btn');
+        const importWebPFile = $('#import-webp-settings-file');
+        const importWebPFileName = $('#import-webp-file-name');
+        const importWebPAction = $('#import-webp-settings');
+        
+        if (importWebPBtn && importWebPFile) {
+            importWebPBtn.addEventListener('click', () => {
+                importWebPFile.click();
+            });
+            
+            importWebPFile.addEventListener('change', () => {
+                if (importWebPFile.files.length > 0) {
+                    const file = importWebPFile.files[0];
+                    if (importWebPFileName) {
+                        importWebPFileName.textContent = file.name;
+                    }
+                    if (importWebPAction) {
+                        importWebPAction.style.display = 'inline-block';
+                    }
+                }
+            });
+        }
+        
+        if (importWebPAction) {
+            importWebPAction.addEventListener('click', async () => {
+                if (!importWebPFile?.files?.length) {
+                    showNotification('Please select a file first', 'warning');
+                    return;
+                }
+                
+                const file = importWebPFile.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = async (e) => {
+                    try {
+                        // Validate JSON first
+                        const jsonData = JSON.parse(e.target.result);
+                        
+                        // Show confirmation
+                        const sourceInfo = jsonData.site_url ? `from ${jsonData.site_url}` : '';
+                        const dateInfo = jsonData.exported_at ? ` (exported: ${jsonData.exported_at})` : '';
+                        
+                        if (!confirm(`Import WebP settings ${sourceInfo}${dateInfo}?\n\nThis will replace your current settings.`)) {
+                            return;
+                        }
+                        
+                        importWebPAction.disabled = true;
+                        importWebPAction.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Importing...';
+                        
+                        const response = await ajax('ccm_tools_import_webp_settings', {
+                            settings_json: e.target.result
+                        });
+                        
+                        showNotification(response.message || 'Settings imported successfully!', 'success');
+                        
+                        // Reload page to show new settings
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 1500);
+                        
+                    } catch (error) {
+                        showNotification('Import failed: ' + error.message, 'error');
+                        importWebPAction.disabled = false;
+                        importWebPAction.textContent = 'Import Settings';
+                    }
+                };
+                
+                reader.onerror = () => {
+                    showNotification('Failed to read file', 'error');
+                };
+                
+                reader.readAsText(file);
             });
         }
     }

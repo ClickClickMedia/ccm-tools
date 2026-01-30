@@ -1969,6 +1969,37 @@ function ccm_tools_render_webp_page() {
                 </div>
             </div>
             
+            <!-- Import/Export Settings -->
+            <div class="ccm-card">
+                <h2><?php _e('Import / Export Settings', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Export your WebP settings to a JSON file for backup or to import on another site.', 'ccm-tools'); ?></p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--ccm-space-lg);">
+                    <!-- Export -->
+                    <div>
+                        <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Export Settings', 'ccm-tools'); ?></h3>
+                        <p class="ccm-text-muted"><?php _e('Download your current WebP settings as a JSON file.', 'ccm-tools'); ?></p>
+                        <button type="button" id="export-webp-settings" class="ccm-button ccm-button-secondary" style="margin-top: var(--ccm-space-sm);">
+                            📥 <?php _e('Export Settings', 'ccm-tools'); ?>
+                        </button>
+                    </div>
+                    
+                    <!-- Import -->
+                    <div>
+                        <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Import Settings', 'ccm-tools'); ?></h3>
+                        <p class="ccm-text-muted"><?php _e('Import WebP settings from a previously exported JSON file.', 'ccm-tools'); ?></p>
+                        <input type="file" id="import-webp-settings-file" accept=".json" style="display: none;">
+                        <button type="button" id="import-webp-settings-btn" class="ccm-button ccm-button-secondary" style="margin-top: var(--ccm-space-sm);">
+                            📤 <?php _e('Choose File', 'ccm-tools'); ?>
+                        </button>
+                        <span id="import-webp-file-name" class="ccm-file-name" style="margin-left: var(--ccm-space-sm);"></span>
+                        <button type="button" id="import-webp-settings" class="ccm-button ccm-button-primary" style="margin-top: var(--ccm-space-sm); display: none;">
+                            <?php _e('Import Settings', 'ccm-tools'); ?>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Test Conversion -->
             <div class="ccm-card">
                 <h2><?php _e('Test Conversion', 'ccm-tools'); ?></h2>
