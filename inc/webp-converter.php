@@ -1012,23 +1012,6 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     
     return false;
 }
-            
-            if ($result['success']) {
-                return $webp_url;
-            } else {
-                // Mark as failed to avoid repeated attempts (cache for 1 hour)
-                set_transient($failed_key, true, HOUR_IN_SECONDS);
-            }
-        }
-    }
-    
-    // Queue for background conversion if still not converted
-    if ($queue_if_missing) {
-        ccm_tools_webp_queue_for_conversion($original_url);
-    }
-    
-    return false;
-}
 
 /**
  * Convert img tags to picture tags with WebP sources
