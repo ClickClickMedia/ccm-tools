@@ -409,6 +409,12 @@ function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
         return $tag;
     }
     
+    // Skip if media is anything other than 'all' (the default)
+    // Themes/plugins that already set media to 'print' or a media query are already optimized
+    if (!empty($media) && $media !== 'all') {
+        return $tag;
+    }
+    
     // Skip if already has preload or is already non-blocking
     // Check both single and double quote variants (WordPress uses single quotes, our tags use double)
     if (strpos($tag, 'rel="preload"') !== false || strpos($tag, "rel='preload'") !== false ||
