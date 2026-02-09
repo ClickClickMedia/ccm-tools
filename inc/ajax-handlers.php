@@ -1846,6 +1846,7 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'delay_js_timeout' => absint($_POST['delay_js_timeout'] ?? 0),
         'delay_js_excludes' => ccm_tools_perf_sanitize_list($_POST['delay_js_excludes'] ?? ''),
         'preload_css' => !empty($_POST['preload_css']),
+        'preload_css_excludes' => ccm_tools_perf_sanitize_list($_POST['preload_css_excludes'] ?? ''),
         'preconnect' => !empty($_POST['preconnect']),
         'preconnect_urls' => ccm_tools_perf_sanitize_urls($_POST['preconnect_urls'] ?? ''),
         'dns_prefetch' => !empty($_POST['dns_prefetch']),
@@ -2098,6 +2099,10 @@ function ccm_tools_ajax_detect_scripts(): void {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
+    // Get the detection target: 'defer' or 'delay'
+    $target = isset($_POST['target']) ? sanitize_text_field($_POST['target']) : 'defer';
+    $is_delay = ($target === 'delay');
+    
     // Get the site URL to fetch
     $site_url = home_url('/');
     $site_host = wp_parse_url($site_url, PHP_URL_HOST);
@@ -2146,17 +2151,20 @@ function ccm_tools_ajax_detect_scripts(): void {
     
     // Categorize scripts
     $categorized = array(
-        'wp_core' => array(),      // WordPress core - DO NOT defer
-        'jquery' => array(),       // jQuery family - DO NOT defer
-        'theme' => array(),        // Theme scripts - usually safe
-        'plugins' => array(),      // Plugin scripts - usually safe
-        'third_party' => array(),  // External CDN - usually safe
-        'other' => array(),        // Unknown - needs testing
+        'wp_core' => array(),      // WordPress core
+        'jquery' => array(),       // jQuery family
+        'theme' => array(),        // Theme scripts
+        'plugins' => array(),      // Plugin scripts
+        'third_party' => array(),  // External CDN
+        'other' => array(),        // Unknown
     );
     
     // Patterns for categorization
     $wp_core_patterns = array('wp-includes', 'wp-admin', 'wp-embed', 'wp-polyfill', 'wp-hooks', 'wp-i18n', 'wp-a11y', 'wp-dom-ready');
     $jquery_patterns = array('jquery', 'jquery-core', 'jquery-migrate', 'jquery-ui');
+    
+    // Additional patterns for delay mode - scripts that handle above-the-fold interactivity
+    $interaction_patterns = array('navigation', 'menu', 'header', 'slider', 'carousel', 'swiper', 'lightbox', 'modal', 'accordion', 'tabs', 'dropdown', 'offcanvas', 'sticky', 'fixed', 'scroll', 'lazyload', 'lazy-load', 'lazysizes', 'aos', 'wow', 'animate');
     
     foreach ($scripts as &$script) {
         $src = $script['src'];
@@ -2166,26 +2174,30 @@ function ccm_tools_ajax_detect_scripts(): void {
         
         // Determine category
         $category = 'other';
-        $safe_to_defer = true;
+        $safe = true;
         $reason = '';
         
-        // Check jQuery first (highest priority to exclude)
+        // Check jQuery first (highest priority to exclude for both modes)
         foreach ($jquery_patterns as $pattern) {
             if (strpos($src_lower, $pattern) !== false || strpos($handle_lower, $pattern) !== false) {
                 $category = 'jquery';
-                $safe_to_defer = false;
-                $reason = 'jQuery must load synchronously - many scripts depend on it';
+                $safe = false;
+                $reason = $is_delay
+                    ? 'jQuery must not be delayed - many scripts depend on it being available immediately'
+                    : 'jQuery must load synchronously - many scripts depend on it';
                 break;
             }
         }
         
-        // Check WordPress core
+        // Check WordPress core (exclude for both modes)
         if ($category === 'other') {
             foreach ($wp_core_patterns as $pattern) {
                 if (strpos($src_lower, $pattern) !== false) {
                     $category = 'wp_core';
-                    $safe_to_defer = false;
-                    $reason = 'WordPress core scripts have inline dependencies';
+                    $safe = false;
+                    $reason = $is_delay
+                        ? 'WordPress core scripts must not be delayed - they have inline dependencies'
+                        : 'WordPress core scripts have inline dependencies';
                     break;
                 }
             }
@@ -2196,8 +2208,10 @@ function ccm_tools_ajax_detect_scripts(): void {
             $script_host = wp_parse_url($src, PHP_URL_HOST);
             if ($script_host && $script_host !== $site_host) {
                 $category = 'third_party';
-                $safe_to_defer = true;
-                $reason = 'External script - usually safe to defer';
+                $safe = true;
+                $reason = $is_delay
+                    ? 'External script - ideal candidate for delaying until user interaction'
+                    : 'External script - usually safe to defer';
             }
         }
         
@@ -2205,8 +2219,28 @@ function ccm_tools_ajax_detect_scripts(): void {
         if ($category === 'other') {
             if (strpos($src_lower, '/themes/') !== false) {
                 $category = 'theme';
-                $safe_to_defer = true;
-                $reason = 'Theme script - test after deferring';
+                
+                if ($is_delay) {
+                    // For delay mode, theme scripts often handle navigation/interactivity
+                    // Check if this looks like an interaction script
+                    $is_interaction = false;
+                    foreach ($interaction_patterns as $pattern) {
+                        if (strpos($src_lower, $pattern) !== false || strpos($handle_lower, $pattern) !== false) {
+                            $is_interaction = true;
+                            break;
+                        }
+                    }
+                    if ($is_interaction) {
+                        $safe = false;
+                        $reason = 'Theme interaction script - delaying may break navigation/UI elements';
+                    } else {
+                        $safe = true;
+                        $reason = 'Theme script - test carefully after delaying, may affect above-the-fold content';
+                    }
+                } else {
+                    $safe = true;
+                    $reason = 'Theme script - test after deferring';
+                }
             }
         }
         
@@ -2214,19 +2248,40 @@ function ccm_tools_ajax_detect_scripts(): void {
         if ($category === 'other') {
             if (strpos($src_lower, '/plugins/') !== false) {
                 $category = 'plugins';
-                $safe_to_defer = true;
-                $reason = 'Plugin script - test after deferring';
+                
+                if ($is_delay) {
+                    // For delay mode, check if plugin handles above-the-fold interactivity
+                    $is_interaction = false;
+                    foreach ($interaction_patterns as $pattern) {
+                        if (strpos($src_lower, $pattern) !== false || strpos($handle_lower, $pattern) !== false) {
+                            $is_interaction = true;
+                            break;
+                        }
+                    }
+                    if ($is_interaction) {
+                        $safe = false;
+                        $reason = 'Plugin interaction script - delaying may break visible UI elements';
+                    } else {
+                        $safe = true;
+                        $reason = 'Plugin script - good candidate for delaying until user interaction';
+                    }
+                } else {
+                    $safe = true;
+                    $reason = 'Plugin script - test after deferring';
+                }
             }
         }
         
         // Default unknown
         if ($category === 'other') {
-            $safe_to_defer = true;
-            $reason = 'Unknown origin - test after deferring';
+            $safe = true;
+            $reason = $is_delay
+                ? 'Unknown origin - test carefully after delaying'
+                : 'Unknown origin - test after deferring';
         }
         
         $script['category'] = $category;
-        $script['safe_to_defer'] = $safe_to_defer;
+        $script['safe_to_defer'] = $safe;
         $script['reason'] = $reason;
         
         $categorized[$category][] = $script;
@@ -2241,6 +2296,7 @@ function ccm_tools_ajax_detect_scripts(): void {
     wp_send_json_success(array(
         'scripts' => $scripts,
         'categorized' => $categorized,
+        'target' => $target,
         'stats' => array(
             'total' => $total,
             'already_deferred' => $already_deferred,

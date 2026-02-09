@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.10.2
+- **Current Version:** 7.10.11
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -274,6 +274,45 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.10.11
+- **Cleaned Up Remaining libvips References in WebP Converter**
+  - Removed stale libvips mention from `ccm_tools_webp_convert_image()` doc comment
+  - Updated no-extensions-found help text to only reference GD and ImageMagick
+  - Ensures production sites receiving the update have no vips code paths
+  - Fixes PHP Fatal error on sites where vips extension returns unexpected array from `vips_image_new_from_file()`
+
+### v7.10.10
+- **Fixed Async CSS Loading (Preload CSS) Not Actually Eliminating Render-Blocking CSS**
+  - Previous implementation only added a `<link rel="preload">` hint before the original stylesheet — the original `<link rel="stylesheet">` remained fully render-blocking
+  - This was the primary reason performance optimizations had zero effect on PageSpeed scores
+  - Reimplemented using the **print media trick**: sets `media="print"` (non-blocking) with `onload="this.media='all'"` to apply styles once loaded
+  - Added `<noscript>` fallback for users without JavaScript
+  - Added **exclude list** (`preload_css_excludes`) to keep critical stylesheets render-blocking
+  - Renamed UI from "Preload CSS" to "Async CSS Loading" with accurate description
+  - Added FOUC (Flash of Unstyled Content) warning — recommends pairing with Critical CSS
+  - New exclude input field with comma-separated stylesheet handle names
+  - This fix addresses the **3,720ms render-blocking savings** identified by PageSpeed Insights
+
+### v7.10.9
+- **Fixed Detect Scripts Giving Identical Results for Defer and Delay**
+  - Both "Detect Scripts" buttons (Defer JS and Delay JS) were calling the same AJAX endpoint with no distinction
+  - The PHP handler now accepts a `target` parameter (`defer` or `delay`) and provides different categorization logic
+  - Delay mode flags theme/plugin scripts that handle above-the-fold interactivity (navigation, menus, sliders, modals, etc.) as unsafe to delay
+  - Third-party scripts are highlighted as ideal delay candidates in delay mode
+  - Reason text is now context-specific (e.g., "ideal candidate for delaying" vs "usually safe to defer")
+  - UI labels (summary stats, category headings, status tooltips) now reflect the selected mode
+  - JS now sends the `target` parameter to the AJAX handler
+
+### v7.10.8
+- **Removed libvips Support from WebP Converter**
+  - Removed libvips as a WebP conversion option due to causing 500 errors
+  - The PHP vips extension has complex API requirements that differ from standard implementations
+  - WebP converter now uses ImageMagick (preferred) or GD Library only
+  - These extensions are more widely available on WordPress hosting environments
+  - Removed `ccm_tools_webp_convert_with_vips()` function
+  - Removed vips extension detection from `ccm_tools_webp_get_available_extensions()`
+  - Removed vips case from conversion switch in `ccm_tools_webp_convert_image()`
 
 ### v7.9.5
 - **Fixed WebP Conversion Not Working After Reset**

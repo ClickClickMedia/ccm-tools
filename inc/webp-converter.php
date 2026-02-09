@@ -50,19 +50,6 @@ function ccm_tools_webp_get_available_extensions() {
         );
     }
     
-    // Check VIPS extension (if available)
-    if (extension_loaded('vips') || function_exists('vips_image_new_from_file')) {
-        $extensions['vips'] = array(
-            'name' => 'libvips',
-            'version' => defined('VIPS_VERSION') ? VIPS_VERSION : 'Unknown',
-            'webp_support' => true, // VIPS generally supports WebP
-            'jpeg_support' => true,
-            'png_support' => true,
-            'gif_support' => true,
-            'priority' => 0 // Highest priority - fastest
-        );
-    }
-    
     return $extensions;
 }
 
@@ -143,7 +130,7 @@ function ccm_tools_webp_save_settings($settings) {
  * @param string $source_path Path to source image
  * @param string $dest_path Path to destination WebP file (optional)
  * @param int $quality Compression quality (1-100)
- * @param string $extension Which extension to use (auto, gd, imagick, vips)
+ * @param string $extension Which extension to use (auto, gd, imagick)
  * @return array Result with success status, path, and file sizes
  */
 function ccm_tools_webp_convert_image($source_path, $dest_path = '', $quality = 82, $extension = 'auto') {
@@ -208,10 +195,6 @@ function ccm_tools_webp_convert_image($source_path, $dest_path = '', $quality = 
                 
             case 'gd':
                 $result = ccm_tools_webp_convert_with_gd($source_path, $dest_path, $quality, $result);
-                break;
-                
-            case 'vips':
-                $result = ccm_tools_webp_convert_with_vips($source_path, $dest_path, $quality, $result);
                 break;
                 
             default:
@@ -329,35 +312,7 @@ function ccm_tools_webp_convert_with_gd($source_path, $dest_path, $quality, $res
     return $result;
 }
 
-/**
- * Convert image using libvips
- */
-function ccm_tools_webp_convert_with_vips($source_path, $dest_path, $quality, $result) {
-    // VIPS conversion (if extension is available)
-    if (function_exists('vips_image_new_from_file')) {
-        $image = vips_image_new_from_file($source_path);
-        
-        if ($image) {
-            $save_result = vips_image_write_to_file($image, $dest_path, array(
-                'Q' => $quality,
-                'lossless' => false
-            ));
-            
-            if ($save_result) {
-                $result['success'] = true;
-                $result['message'] = __('Successfully converted with libvips.', 'ccm-tools');
-            } else {
-                $result['message'] = __('libvips failed to write the WebP file.', 'ccm-tools');
-            }
-        } else {
-            $result['message'] = __('libvips failed to load the source image.', 'ccm-tools');
-        }
-    } else {
-        $result['message'] = __('libvips extension is not properly loaded.', 'ccm-tools');
-    }
-    
-    return $result;
-}
+
 
 /**
  * Hook into WordPress upload to convert images automatically
@@ -1716,7 +1671,7 @@ function ccm_tools_render_webp_page() {
                         <span class="ccm-icon">✗</span>
                         <div>
                             <strong><?php _e('No Compatible Extensions Found', 'ccm-tools'); ?></strong>
-                            <p><?php _e('WebP conversion requires GD, ImageMagick, or libvips PHP extension with WebP support. Please contact your hosting provider to enable one of these extensions.', 'ccm-tools'); ?></p>
+                            <p><?php _e('WebP conversion requires GD or ImageMagick PHP extension with WebP support. Please contact your hosting provider to enable one of these extensions.', 'ccm-tools'); ?></p>
                         </div>
                     </div>
                 <?php else: ?>

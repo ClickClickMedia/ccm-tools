@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.10.7
+ * Version: 7.10.11
  */
 
 (function() {
@@ -2218,6 +2218,7 @@
         const toggleSettings = [
             { checkbox: '#perf-defer-js', detail: '#perf-defer-js' },
             { checkbox: '#perf-delay-js', detail: '#perf-delay-js' },
+            { checkbox: '#perf-preload-css', detail: '#perf-preload-css' },
             { checkbox: '#perf-preconnect', detail: '#perf-preconnect' },
             { checkbox: '#perf-dns-prefetch', detail: '#perf-dns-prefetch' },
             { checkbox: '#perf-lcp-preload', detail: '#perf-lcp-preload' },
@@ -2329,6 +2330,7 @@
         const resultDiv = isDefer ? $('#detected-scripts-result') : $('#detected-delay-scripts-result');
         const excludeInput = isDefer ? $('#perf-defer-js-excludes') : $('#perf-delay-js-excludes');
         const targetLabel = isDefer ? 'Defer' : 'Delay';
+        const actionVerb = isDefer ? 'defer' : 'delay';
         
         if (!detectBtn || !resultDiv) return;
         
@@ -2343,7 +2345,7 @@
         detectBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Scanning...';
         
         try {
-            const response = await ajax('ccm_tools_detect_scripts', {});
+            const response = await ajax('ccm_tools_detect_scripts', { target: target });
             
             if (!response.data || !response.data.scripts) {
                 throw new Error('Invalid response from server');
@@ -2366,22 +2368,29 @@
             // Build the results HTML
             let html = `
                 <p style="margin-bottom: var(--ccm-space-md);">
-                    <strong>Found ${stats.total} script${stats.total !== 1 ? 's' : ''}:</strong>
+                    <strong>Found ${stats.total} script${stats.total !== 1 ? 's' : ''} (${targetLabel} analysis):</strong>
                 </p>
                 <div style="display: flex; gap: var(--ccm-space-md); flex-wrap: wrap; margin-bottom: var(--ccm-space-md);">
                     <span class="ccm-error">❌ ${stats.should_exclude} to exclude</span>
-                    <span class="ccm-success">✓ ${stats.safe_to_defer} safe to defer</span>
-                    ${stats.already_deferred > 0 ? `<span class="ccm-info">↻ ${stats.already_deferred} already deferred</span>` : ''}
+                    <span class="ccm-success">✓ ${stats.safe_to_defer} safe to ${actionVerb}</span>
+                    ${stats.already_deferred > 0 ? `<span class="ccm-info">↻ ${stats.already_deferred} already deferred/async</span>` : ''}
                 </div>
             `;
             
-            // Category labels and icons
-            const categoryLabels = {
+            // Category labels and icons - context-aware for defer vs delay
+            const categoryLabels = isDefer ? {
                 jquery: '⚠️ jQuery (DO NOT defer)',
                 wp_core: '⚠️ WordPress Core (DO NOT defer)',
                 theme: '🎨 Theme Scripts',
                 plugins: '🔌 Plugin Scripts',
                 third_party: '🌐 Third-Party Scripts',
+                other: '📦 Other Scripts'
+            } : {
+                jquery: '⚠️ jQuery (DO NOT delay)',
+                wp_core: '⚠️ WordPress Core (DO NOT delay)',
+                theme: '🎨 Theme Scripts (check for above-the-fold interaction)',
+                plugins: '🔌 Plugin Scripts (check for visible UI elements)',
+                third_party: '🌐 Third-Party Scripts (ideal delay candidates)',
                 other: '📦 Other Scripts'
             };
             
@@ -2414,11 +2423,11 @@
                     if (script.has_defer || script.has_async) {
                         statusIcon = '<span class="ccm-info" title="Already deferred/async">↻</span>';
                     } else if (!script.safe_to_defer) {
-                        statusIcon = '<span class="ccm-error" title="Should exclude">❌</span>';
+                        statusIcon = `<span class="ccm-error" title="Should exclude from ${actionVerb}">❌</span>`;
                     } else if (isExcluded) {
                         statusIcon = '<span class="ccm-warning" title="Currently excluded">⊘</span>';
                     } else {
-                        statusIcon = '<span class="ccm-success" title="Safe to defer">✓</span>';
+                        statusIcon = `<span class="ccm-success" title="Safe to ${actionVerb}">✓</span>`;
                     }
                     
                     html += `
@@ -2544,6 +2553,7 @@
                 delay_js_timeout: $('#perf-delay-js-timeout')?.value || '0',
                 delay_js_excludes: $('#perf-delay-js-excludes')?.value || '',
                 preload_css: $('#perf-preload-css')?.checked ? '1' : '',
+                preload_css_excludes: $('#perf-preload-css-excludes')?.value || '',
                 preconnect: $('#perf-preconnect')?.checked ? '1' : '',
                 preconnect_urls: $('#perf-preconnect-urls')?.value || '',
                 dns_prefetch: $('#perf-dns-prefetch')?.checked ? '1' : '',

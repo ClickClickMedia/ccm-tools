@@ -28,6 +28,7 @@ function ccm_tools_perf_get_settings() {
         'delay_js_timeout' => 0, // 0 = wait for interaction, otherwise milliseconds
         'delay_js_excludes' => array(),
         'preload_css' => false,
+        'preload_css_excludes' => array(),
         'preconnect' => false,
         'preconnect_urls' => array(
             'https://fonts.googleapis.com',
@@ -393,14 +394,15 @@ function ccm_tools_perf_delay_js_script() {
 }
 
 /**
- * Preload CSS files
- * Adds preload link before the stylesheet for parallel downloading
+ * Make CSS non-render-blocking using the print media trick
+ * Changes media="all" to media="print" with onload handler to swap back
+ * This eliminates render-blocking CSS while still loading stylesheets
  * 
  * @param string $tag Stylesheet HTML tag
  * @param string $handle Stylesheet handle
  * @param string $href Stylesheet URL
  * @param string $media Media attribute
- * @return string Modified stylesheet tag with preload
+ * @return string Modified stylesheet tag
  */
 function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
     // Skip admin styles
@@ -408,18 +410,40 @@ function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
         return $tag;
     }
     
-    // Skip if already has preload
-    if (strpos($tag, 'rel="preload"') !== false) {
+    // Skip if already has preload or is already non-blocking
+    if (strpos($tag, 'rel="preload"') !== false || strpos($tag, 'media="print"') !== false) {
         return $tag;
     }
     
-    // Add preload hint before the stylesheet
-    $preload = sprintf(
-        '<link rel="preload" href="%s" as="style">',
+    // Skip if this is an inline style (no href)
+    if (empty($href)) {
+        return $tag;
+    }
+    
+    $settings = ccm_tools_perf_get_settings();
+    $excludes = isset($settings['preload_css_excludes']) ? (array) $settings['preload_css_excludes'] : array();
+    
+    // Check if handle is excluded
+    foreach ($excludes as $exclude) {
+        $exclude = trim($exclude);
+        if (!empty($exclude) && strpos($handle, $exclude) !== false) {
+            return $tag;
+        }
+    }
+    
+    // Use the print media trick:
+    // 1. Set media="print" so browser downloads but doesn't block render
+    // 2. onload switches media to "all" so styles apply once loaded
+    // 3. noscript fallback for users without JavaScript
+    $async_tag = sprintf(
+        '<link rel="stylesheet" id="%s-css" href="%s" media="print" onload="this.media=\'all\'">' . "\n" .
+        '<noscript><link rel="stylesheet" href="%s"></noscript>',
+        esc_attr($handle),
+        esc_url($href),
         esc_url($href)
     );
     
-    return $preload . "\n" . $tag;
+    return $async_tag . "\n";
 }
 
 /**
@@ -1189,18 +1213,25 @@ function ccm_tools_render_perf_page() {
                 <h2><?php _e('CSS Optimizations', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Optimize CSS delivery to improve First Contentful Paint.', 'ccm-tools'); ?></p>
                 
-                <!-- Preload CSS -->
+                <!-- Async CSS Loading -->
                 <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
                     <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
                         <div style="flex: 1;">
-                            <strong><?php _e('Preload CSS', 'ccm-tools'); ?></strong>
-                            <p class="ccm-text-muted"><?php _e('Preloads stylesheets in parallel with HTML parsing. Browser starts downloading CSS earlier without blocking render.', 'ccm-tools'); ?></p>
-                            <p class="ccm-text-muted" style="color: var(--ccm-success);"><span class="ccm-icon">✓</span> <?php _e('Safe optimization. No FOUC risk.', 'ccm-tools'); ?></p>
+                            <strong><?php _e('Async CSS Loading', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Makes stylesheets non-render-blocking using the print media technique. Browser downloads CSS without blocking page render, then applies styles once loaded.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-warning);"><span class="ccm-icon">⚠</span> <?php _e('May cause FOUC (Flash of Unstyled Content). Best paired with Critical CSS below to avoid visible style flash.', 'ccm-tools'); ?></p>
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-preload-css" <?php checked(!empty($settings['preload_css'])); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
+                    </div>
+                    <div class="ccm-setting-detail" style="margin-top: var(--ccm-space-sm); <?php echo !empty($settings['preload_css']) ? '' : 'display:none;'; ?>">
+                        <label><strong><?php _e('Exclude from Async:', 'ccm-tools'); ?></strong></label>
+                        <input type="text" id="perf-preload-css-excludes" class="ccm-input" 
+                               value="<?php echo esc_attr(implode(', ', isset($settings['preload_css_excludes']) ? (array) $settings['preload_css_excludes'] : array())); ?>"
+                               placeholder="e.g. theme-style, elementor-frontend">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"><?php _e('Comma-separated list of stylesheet handles to keep render-blocking. Use Inspect Element to find handle names.', 'ccm-tools'); ?></p>
                     </div>
                 </div>
                 
