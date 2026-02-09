@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.10.12
+- **Current Version:** 7.10.13
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -274,6 +274,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.10.13
+- **Fixed Async CSS Conflict Detection + ImageMagick /tmp/ Path Error**
+  - **Hardened Async CSS Loading against double-processing by other plugins**
+    - Previous check only looked for `media="print"` (double quotes) — WordPress and other optimization plugins (LiteSpeed Cache, WP Rocket, etc.) use single quotes `media='print'`
+    - Now checks both single and double quote variants of `media='print'` and `rel='preload'`
+    - Also checks for existing `onload=` attribute to prevent conflicts when another plugin has already made a stylesheet async
+    - Prevents our filter from re-processing tags that are already non-blocking
+  - **Fixed ImageMagick "Path is outside resolved document root" errors during WebP conversion**
+    - ImageMagick creates temp files during format conversion; defaults to system `/tmp/` directory
+    - Many hosting providers (especially shared hosting with CloudLinux/CageFS) restrict ImageMagick from accessing `/tmp/` via `open_basedir` or ImageMagick `policy.xml`
+    - Now sets `MAGICK_TMPDIR` and `MAGICK_TEMPORARY_PATH` to `wp-content/uploads/ccm-webp-temp/` before processing
+    - Temp directory is auto-created within the document root where ImageMagick has guaranteed access
+    - Fixes errors like: `Path is outside resolved document root. input:/tmp/image-XXXXXX.webp`
 
 ### v7.10.12
 - **Complete Performance Optimizer Audit — 4 Bug Fixes**

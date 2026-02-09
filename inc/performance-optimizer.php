@@ -410,7 +410,10 @@ function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
     }
     
     // Skip if already has preload or is already non-blocking
-    if (strpos($tag, 'rel="preload"') !== false || strpos($tag, 'media="print"') !== false) {
+    // Check both single and double quote variants (WordPress uses single quotes, our tags use double)
+    if (strpos($tag, 'rel="preload"') !== false || strpos($tag, "rel='preload'") !== false ||
+        strpos($tag, 'media="print"') !== false || strpos($tag, "media='print'") !== false ||
+        strpos($tag, 'onload=') !== false) {
         return $tag;
     }
     

@@ -221,6 +221,16 @@ function ccm_tools_webp_convert_image($source_path, $dest_path = '', $quality = 
  * Convert image using ImageMagick
  */
 function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality, $result) {
+    // Set ImageMagick temp directory to uploads to avoid /tmp/ access restrictions
+    // Many hosting providers restrict ImageMagick from using /tmp/ via open_basedir or policy.xml
+    $upload_dir = wp_upload_dir();
+    $magick_tmp = $upload_dir['basedir'] . '/ccm-webp-temp';
+    if (!file_exists($magick_tmp)) {
+        wp_mkdir_p($magick_tmp);
+    }
+    putenv('MAGICK_TMPDIR=' . $magick_tmp);
+    putenv('MAGICK_TEMPORARY_PATH=' . $magick_tmp);
+    
     $imagick = new Imagick($source_path);
     
     // Get source format to determine if it's lossless (PNG/GIF)
