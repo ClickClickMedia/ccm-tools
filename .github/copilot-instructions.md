@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.10.11
+- **Current Version:** 7.10.12
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -274,6 +274,28 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.10.12
+- **Complete Performance Optimizer Audit — 4 Bug Fixes**
+  - **Fixed Font Display Override CSS outputting ~2KB of dead CSS per page**
+    - The `ccm_tools_perf_font_display_override_css()` function outputted empty `@font-face` rules (e.g., `@font-face { font-family: "Font Awesome 6 Free"; font-display: swap; }`) for 25+ icon fonts
+    - CSS `@font-face` rules are **additive, not cascading** — a second `@font-face` with only `font-family` and `font-display` (no `src`) creates an incomplete entry the browser ignores
+    - These overrides **never actually added `font-display: swap`** to external font CSS files like FontAwesome
+    - Removed the entire function and its hook — saves ~2KB of useless CSS per page load
+    - Note: Google Fonts are handled by URL modification, and self-hosted inline fonts are handled by the output buffer — both continue to work correctly
+  - **Fixed Remove Query Strings only catching `?ver=` as first parameter**
+    - Previous check used `strpos($src, '?ver=')` which missed URLs like `script.js?id=1&ver=5.0` where `ver` isn't the first query parameter
+    - Changed to `strpos($src, 'ver=')` so `remove_query_arg()` is called for all URLs containing a `ver` parameter
+  - **Fixed LCP Fetchpriority not working on `wp_get_attachment_image()` calls**
+    - Only hooked `the_content` and `post_thumbnail_html` filters
+    - Images rendered via direct `wp_get_attachment_image()` calls (common in page builders and theme templates like `front-page.php`) never received `fetchpriority="high"`
+    - Added new `ccm_tools_perf_lcp_fetchpriority_attributes` filter on `wp_get_attachment_image_attributes` hook
+    - Also removes `loading="lazy"` from LCP candidate images (lazy-loading the LCP image hurts performance)
+    - Shares the same global `$ccm_lcp_priority_added` flag so only the first image on the page gets priority
+  - **Cleaned up orphaned dead code in LCP section**
+    - Lines 719–744 contained an abandoned function body trapped inside a doc comment
+    - Was meant to be the `wp_get_attachment_image_attributes` filter but was never properly implemented
+    - Replaced with the properly functioning `ccm_tools_perf_lcp_fetchpriority_attributes()` function
 
 ### v7.10.11
 - **Cleaned Up Remaining libvips References in WebP Converter**

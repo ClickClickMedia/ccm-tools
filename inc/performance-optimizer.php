@@ -162,6 +162,7 @@ function ccm_tools_perf_init() {
     if (!empty($settings['lcp_fetchpriority'])) {
         add_filter('the_content', 'ccm_tools_perf_lcp_fetchpriority', 5);
         add_filter('post_thumbnail_html', 'ccm_tools_perf_lcp_fetchpriority_thumbnail', 5, 5);
+        add_filter('wp_get_attachment_image_attributes', 'ccm_tools_perf_lcp_fetchpriority_attributes', 5, 3);
     }
     
     // LCP preload
@@ -175,8 +176,6 @@ function ccm_tools_perf_init() {
         add_action('wp_head', 'ccm_tools_perf_font_display_preload', 2);
         // Use output buffering to inject font-display: swap into @font-face rules (self-hosted fonts)
         add_action('template_redirect', 'ccm_tools_perf_font_display_start_buffer', 1);
-        // Inject font-display override CSS for external font CSS (FontAwesome, etc.)
-        add_action('wp_head', 'ccm_tools_perf_font_display_override_css', 99);
     }
     
     // Speculation Rules API (instant page navigation)
@@ -494,7 +493,7 @@ function ccm_tools_perf_dns_prefetch() {
  * @return string Modified URL
  */
 function ccm_tools_perf_remove_query_strings($src) {
-    if (strpos($src, '?ver=') !== false) {
+    if (strpos($src, 'ver=') !== false) {
         $src = remove_query_arg('ver', $src);
     }
     return $src;
@@ -715,28 +714,41 @@ function ccm_tools_perf_lcp_fetchpriority_thumbnail($html, $post_id, $thumbnail_
 }
 
 /**
- * Preload the LCP image if URL is specified
-    // Track if we've already added fetchpriority via attributes
-    static $attr_priority_added = false;
-    if ($attr_priority_added) {
+ * Add fetchpriority="high" to images rendered via wp_get_attachment_image()
+ * This catches images in page builders and theme templates that bypass the_content
+ *
+ * @param array $attr Image attributes array
+ * @param WP_Post $attachment Attachment post object
+ * @param string|int[] $size Image size
+ * @return array Modified attributes
+ */
+function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) {
+    // Only run once per page load (use same global as content/thumbnail filters)
+    global $ccm_lcp_priority_added;
+    if (!empty($ccm_lcp_priority_added)) {
         return $attr;
     }
-    
+
+    // Only on singular frontend pages
+    if (is_admin() || !function_exists('is_singular') || !is_singular()) {
+        return $attr;
+    }
+
     // Skip if already has fetchpriority
     if (isset($attr['fetchpriority'])) {
-        $attr_priority_added = true;
+        $ccm_lcp_priority_added = true;
         return $attr;
     }
-    
+
     // Add fetchpriority high to first image
     $attr['fetchpriority'] = 'high';
-    
+
     // Remove lazy loading from LCP candidate
     if (isset($attr['loading']) && $attr['loading'] === 'lazy') {
         unset($attr['loading']);
     }
-    
-    $attr_priority_added = true;
+
+    $ccm_lcp_priority_added = true;
     return $attr;
 }
 
@@ -860,79 +872,6 @@ function ccm_tools_perf_font_display_process_buffer($html) {
     );
     
     return $html;
-}
-
-/**
- * Inject CSS to override font-display for common external font libraries
- * This handles fonts loaded from external CSS files that can't be modified directly
- * (FontAwesome, local icon fonts, theme fonts, etc.)
- */
-function ccm_tools_perf_font_display_override_css() {
-    // CSS to override font-display for common font families loaded from external CSS
-    // This creates higher-specificity @font-face rules that override the originals
-    $css = '
-/* CCM Tools: Font Display Override for External Fonts */
-/* FontAwesome - all weight variants */
-@font-face { font-family: "Font Awesome 6 Free"; font-display: swap; }
-@font-face { font-family: "Font Awesome 6 Pro"; font-display: swap; }
-@font-face { font-family: "Font Awesome 6 Brands"; font-display: swap; }
-@font-face { font-family: "Font Awesome 6 Duotone"; font-display: swap; }
-@font-face { font-family: "Font Awesome 5 Free"; font-display: swap; }
-@font-face { font-family: "Font Awesome 5 Pro"; font-display: swap; }
-@font-face { font-family: "Font Awesome 5 Brands"; font-display: swap; }
-@font-face { font-family: "FontAwesome"; font-display: swap; }
-@font-face { font-family: "fa-solid-900"; font-display: swap; }
-@font-face { font-family: "fa-regular-400"; font-display: swap; }
-@font-face { font-family: "fa-brands-400"; font-display: swap; }
-
-/* Bootstrap Icons */
-@font-face { font-family: "bootstrap-icons"; font-display: swap; }
-
-/* Material Icons */
-@font-face { font-family: "Material Icons"; font-display: swap; }
-@font-face { font-family: "Material Symbols Outlined"; font-display: swap; }
-@font-face { font-family: "Material Symbols Rounded"; font-display: swap; }
-@font-face { font-family: "Material Symbols Sharp"; font-display: swap; }
-
-/* Dashicons (WordPress) */
-@font-face { font-family: "dashicons"; font-display: swap; }
-
-/* Genericons */
-@font-face { font-family: "Genericons"; font-display: swap; }
-
-/* IcoMoon */
-@font-face { font-family: "icomoon"; font-display: swap; }
-
-/* Ionicons */
-@font-face { font-family: "Ionicons"; font-display: swap; }
-
-/* Simple Line Icons */
-@font-face { font-family: "simple-line-icons"; font-display: swap; }
-
-/* Themify Icons */
-@font-face { font-family: "themify"; font-display: swap; }
-
-/* ET Line Icons */
-@font-face { font-family: "et-line"; font-display: swap; }
-
-/* Linearicons */
-@font-face { font-family: "Linearicons-Free"; font-display: swap; }
-
-/* WooCommerce */
-@font-face { font-family: "WooCommerce"; font-display: swap; }
-@font-face { font-family: "star"; font-display: swap; }
-
-/* Elementor Icons */
-@font-face { font-family: "eicons"; font-display: swap; }
-
-/* Revolution Slider */
-@font-face { font-family: "revicons"; font-display: swap; }
-
-/* Flaticon */
-@font-face { font-family: "Flaticon"; font-display: swap; }
-';
-    
-    echo '<style id="ccm-font-display-override">' . $css . '</style>' . "\n";
 }
 
 /**
