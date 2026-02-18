@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.10.13
+- **Current Version:** 7.10.15
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -274,6 +274,43 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.10.15
+- **Performance Optimizer Audit — 6 Bug Fixes**
+  - **Fixed Settings Import dropping Async CSS exclude list**
+    - `preload_css_excludes` was missing from the `$array_keys` import sanitization array
+    - Importing a settings backup would silently reset the CSS exclude list to empty
+    - Added `preload_css_excludes` to the import array sanitization alongside `defer_js_excludes` and `delay_js_excludes`
+  - **Fixed YouTube Lite Embeds not clickable on non-singular pages**
+    - The click handler script (`ccm_tools_perf_youtube_facade_script`) had an `is_singular()` guard
+    - YouTube facades on archive pages, home page, and category pages showed the thumbnail but clicking did nothing
+    - Removed the `is_singular()` check — click handler now outputs wherever facades are used
+  - **Fixed Reduce Heartbeat having no effect (only applied to frontend)**
+    - `ccm_tools_perf_init()` returned early for `is_admin()`, so the heartbeat filter was never added in the admin
+    - WordPress Heartbeat API primarily runs in the admin (post editor, dashboard), making this setting useless
+    - Heartbeat reduction now applies in admin too, even when other optimizations are frontend-only
+  - **Added admin test mode for Performance Optimizer**
+    - Administrators are bypassed from all frontend optimizations for safety
+    - This made it impossible for admins to test or verify optimizations were working
+    - Added `?ccm_test_perf=1` URL parameter support — append to any frontend URL to see optimizations as admin
+    - Added testing tip notice on the Performance Optimizer settings page
+  - **Added static caching to `ccm_tools_perf_get_settings()`**
+    - Settings function was called 14+ times per page load (once per filter/action handler)
+    - Each call ran `get_option()` + `wp_parse_args()` repeatedly
+    - Now uses a static variable cache that persists for the request lifetime
+    - Cache is automatically invalidated when settings are saved via `ccm_tools_perf_save_settings()`
+  - **Removed dead code in emoji disabling function**
+    - `remove_action('admin_print_scripts', ...)` and `remove_action('admin_print_styles', ...)` lines were dead code
+    - These never executed because the function is only called on the frontend (init returns early for admin)
+
+### v7.10.14
+- **Added AVIF MIME Type Support to .htaccess Rules**
+  - Added `AddType` block inside `mod_mime.c` to declare modern image MIME types
+  - Ensures `image/avif` (.avif) and `image/avif-sequence` (.avifs) are served with correct Content-Type on older Apache installations (pre-2.4.52)
+  - Also declares `image/webp`, `image/heic`, `image/heif`, `font/woff2`, and `application/wasm` for completeness
+  - Added `image/avif-sequence` to `ExpiresByType` caching rules (animated AVIF)
+  - Added `.avifs` extension to `FilesMatch` Cache-Control header pattern
+  - Without these declarations, AVIF files may be served as `application/octet-stream` on hosts with outdated MIME databases
 
 ### v7.10.13
 - **Fixed Async CSS Conflict Detection + ImageMagick /tmp/ Path Error**

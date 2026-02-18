@@ -1987,7 +1987,7 @@ function ccm_tools_ajax_import_perf_settings(): void {
     }
     
     // Array settings (comma-separated lists)
-    $array_keys = array('defer_js_excludes', 'delay_js_excludes');
+    $array_keys = array('defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes');
     foreach ($array_keys as $key) {
         if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
             $sanitized_settings[$key] = array_map('sanitize_key', $imported_settings[$key]);

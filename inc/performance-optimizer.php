@@ -20,6 +20,14 @@ if (!defined('ABSPATH')) {
  * @return array Current settings
  */
 function ccm_tools_perf_get_settings() {
+    static $cached = null;
+    global $ccm_tools_perf_settings_dirty;
+    
+    if ($cached !== null && empty($ccm_tools_perf_settings_dirty)) {
+        return $cached;
+    }
+    $ccm_tools_perf_settings_dirty = false;
+    
     $defaults = array(
         'enabled' => false,
         'defer_js' => false,
@@ -63,7 +71,8 @@ function ccm_tools_perf_get_settings() {
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
-    return wp_parse_args($settings, $defaults);
+    $cached = wp_parse_args($settings, $defaults);
+    return $cached;
 }
 /**
  * Save performance optimizer settings
@@ -72,7 +81,21 @@ function ccm_tools_perf_get_settings() {
  * @return bool Success
  */
 function ccm_tools_perf_save_settings($settings) {
+    // Clear static cache so next get_settings() call returns fresh data
+    ccm_tools_perf_clear_settings_cache();
     return update_option('ccm_tools_perf_settings', $settings);
+}
+
+/**
+ * Clear the static settings cache
+ * Called after saving settings to ensure fresh data
+ */
+function ccm_tools_perf_clear_settings_cache() {
+    // We need to reset the static variable in ccm_tools_perf_get_settings()
+    // Since PHP doesn't allow direct access to another function's static vars,
+    // we use a global flag that get_settings checks
+    global $ccm_tools_perf_settings_dirty;
+    $ccm_tools_perf_settings_dirty = true;
 }
 
 /**
@@ -89,13 +112,19 @@ function ccm_tools_perf_is_enabled() {
  * Initialize performance optimizer hooks
  */
 function ccm_tools_perf_init() {
-    // Only run on frontend
+    // Only run on frontend (except heartbeat which also helps in admin)
     if (is_admin()) {
+        // In admin, only apply heartbeat reduction
+        $settings = ccm_tools_perf_get_settings();
+        if (!empty($settings['enabled']) && !empty($settings['reduce_heartbeat'])) {
+            add_filter('heartbeat_settings', 'ccm_tools_perf_reduce_heartbeat');
+        }
         return;
     }
     
     // Safety: Skip for logged-in administrators so they can always fix issues
-    if (current_user_can('manage_options')) {
+    // Unless ?ccm_test_perf=1 is in the URL (allows admin testing)
+    if (current_user_can('manage_options') && empty($_GET['ccm_test_perf'])) {
         return;
     }
     
@@ -513,9 +542,7 @@ function ccm_tools_perf_remove_query_strings($src) {
  */
 function ccm_tools_perf_disable_emojis() {
     remove_action('wp_head', 'print_emoji_detection_script', 7);
-    remove_action('admin_print_scripts', 'print_emoji_detection_script');
     remove_action('wp_print_styles', 'print_emoji_styles');
-    remove_action('admin_print_styles', 'print_emoji_styles');
     remove_filter('the_content_feed', 'wp_staticize_emoji');
     remove_filter('comment_text_rss', 'wp_staticize_emoji');
     remove_filter('wp_mail', 'wp_staticize_emoji_for_email');
@@ -610,9 +637,6 @@ function ccm_tools_perf_youtube_facade($content) {
  * Output YouTube facade click handler script
  */
 function ccm_tools_perf_youtube_facade_script() {
-    if (!is_singular()) {
-        return;
-    }
     ?>
     <script>
     document.addEventListener('click', function(e) {
@@ -1093,6 +1117,16 @@ function ccm_tools_render_perf_page() {
                 <div id="perf-status" class="<?php echo $settings['enabled'] ? 'ccm-success' : 'ccm-warning'; ?>">
                     <?php echo $settings['enabled'] ? __('Performance optimizations are ACTIVE', 'ccm-tools') : __('Performance optimizations are INACTIVE', 'ccm-tools'); ?>
                 </div>
+                <?php if ($settings['enabled']) : ?>
+                <div style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); border-left: 3px solid var(--ccm-info);">
+                    <p class="ccm-text-muted" style="margin: 0; font-size: var(--ccm-text-sm);">
+                        <strong><?php _e('Testing Tip:', 'ccm-tools'); ?></strong>
+                        <?php _e('Optimizations are bypassed for logged-in administrators for safety. To test as admin, add', 'ccm-tools'); ?>
+                        <code>?ccm_test_perf=1</code>
+                        <?php _e('to any frontend URL.', 'ccm-tools'); ?>
+                    </p>
+                </div>
+                <?php endif; ?>
             </div>
             
             <!-- JavaScript Optimizations -->
