@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.10.15
+ * Version: 7.11.0
  */
 
 (function() {
@@ -3034,6 +3034,11 @@
             initRedisObjectCacheHandlers();
         }
         
+        // Initialize AI Hub page handlers
+        if ($('#ai-hub-save-btn')) {
+            initAiHubHandlers();
+        }
+        
         // Mark front page rows
         const frontPageIndicators = $$('.ccm-front-page-indicator');
         frontPageIndicators.forEach(indicator => {
@@ -3547,6 +3552,511 @@
         }
     }
     
+    // ===================================
+    // AI Hub Functions
+    // ===================================
+
+    /** State for the current AI session */
+    let aiHubState = {
+        lastResultId: null,
+        sessionId: null,
+        sessionActive: false,
+        iteration: 0,
+    };
+
+    /**
+     * Initialize AI Hub page event handlers
+     */
+    function initAiHubHandlers() {
+        const saveBtn = $('#ai-hub-save-btn');
+        const testBtn = $('#ai-hub-test-btn');
+        const runPsBtn = $('#ai-ps-run-btn');
+        const analyzeBtn = $('#ai-analyze-btn');
+        const optimizeBtn = $('#ai-optimize-btn');
+        const refreshBtn = $('#ai-history-refresh-btn');
+
+        if (saveBtn) saveBtn.addEventListener('click', aiHubSaveSettings);
+        if (testBtn) testBtn.addEventListener('click', aiHubTestConnection);
+        if (runPsBtn) runPsBtn.addEventListener('click', aiHubRunPageSpeed);
+        if (analyzeBtn) analyzeBtn.addEventListener('click', aiHubAnalyze);
+        if (optimizeBtn) optimizeBtn.addEventListener('click', aiHubOptimize);
+        if (refreshBtn) refreshBtn.addEventListener('click', aiHubLoadHistory);
+
+        // Load history on init
+        aiHubLoadHistory();
+    }
+
+    /**
+     * Save AI Hub connection settings
+     */
+    async function aiHubSaveSettings() {
+        const btn = $('#ai-hub-save-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+        try {
+            const hubUrl = ($('#ai-hub-url') || {}).value || '';
+            const apiKey = ($('#ai-hub-key') || {}).value || '';
+
+            await ajax('ccm_tools_ai_hub_save_settings', {
+                enabled: 1,
+                hub_url: hubUrl,
+                api_key: apiKey,
+            });
+
+            showNotification('Settings saved.', 'success');
+        } catch (err) {
+            showNotification(err.message || 'Failed to save settings.', 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Save Settings'; }
+        }
+    }
+
+    /**
+     * Test connection to the AI Hub
+     */
+    async function aiHubTestConnection() {
+        const btn = $('#ai-hub-test-btn');
+        const resultEl = $('#ai-hub-test-result');
+        const statusBadge = $('#ai-hub-status');
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
+        if (resultEl) resultEl.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div>';
+
+        try {
+            const res = await ajax('ccm_tools_ai_hub_test_connection', {}, { timeout: 15000 });
+            const d = res.data;
+
+            if (statusBadge) {
+                statusBadge.textContent = 'Connected';
+                statusBadge.className = 'ccm-badge ccm-badge-success';
+            }
+
+            let html = `<div class="ccm-success" style="padding: 0.5rem 0;">✅ ${d.message || 'Connected'}`;
+            if (d.version) html += ` — Hub v${d.version}`;
+            html += '</div>';
+
+            if (d.features) {
+                const feats = Object.entries(d.features)
+                    .filter(([, v]) => v)
+                    .map(([k]) => k)
+                    .join(', ');
+                if (feats) html += `<small>Features: ${feats}</small>`;
+            }
+
+            if (resultEl) resultEl.innerHTML = html;
+        } catch (err) {
+            if (statusBadge) {
+                statusBadge.textContent = 'Disconnected';
+                statusBadge.className = 'ccm-badge ccm-badge-error';
+            }
+            if (resultEl) resultEl.innerHTML = `<div class="ccm-error">❌ ${err.message || 'Connection failed'}</div>`;
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Test Connection'; }
+        }
+    }
+
+    /**
+     * Run a PageSpeed test via the hub
+     */
+    async function aiHubRunPageSpeed() {
+        const btn = $('#ai-ps-run-btn');
+        const resultsEl = $('#ai-ps-results');
+        const loadingEl = $('#ai-ps-loading');
+        const analyzeBtn = $('#ai-analyze-btn');
+        const optimizeBtn = $('#ai-optimize-btn');
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+        if (resultsEl) resultsEl.style.display = 'none';
+        if (loadingEl) loadingEl.style.display = 'block';
+
+        try {
+            const url = ($('#ai-ps-url') || {}).value || '';
+            const strategy = ($('#ai-ps-strategy') || {}).value || 'mobile';
+
+            const res = await ajax('ccm_tools_ai_hub_run_pagespeed', {
+                url: url,
+                strategy: strategy,
+                force: 1,
+            }, { timeout: 120000 });
+
+            const data = res.data;
+            aiHubState.lastResultId = data.result_id || data.id || null;
+
+            // Render scores
+            aiHubRenderScores(data.scores || {});
+
+            // Render metrics
+            aiHubRenderMetrics(data.metrics || {});
+
+            // Render opportunities
+            aiHubRenderOpportunities(data.opportunities || []);
+
+            if (resultsEl) resultsEl.style.display = 'block';
+
+            // Enable AI buttons
+            if (analyzeBtn && aiHubState.lastResultId) analyzeBtn.disabled = false;
+            if (optimizeBtn && aiHubState.lastResultId) optimizeBtn.disabled = false;
+
+            showNotification('PageSpeed test complete!', 'success');
+        } catch (err) {
+            showNotification(err.message || 'PageSpeed test failed.', 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = 'Run Test'; }
+            if (loadingEl) loadingEl.style.display = 'none';
+        }
+    }
+
+    /**
+     * Render PageSpeed score circles
+     */
+    function aiHubRenderScores(scores) {
+        const container = $('#ai-ps-scores');
+        if (!container) return;
+
+        const categories = [
+            { key: 'performance', label: 'Performance' },
+            { key: 'accessibility', label: 'Accessibility' },
+            { key: 'best_practices', label: 'Best Practices' },
+            { key: 'seo', label: 'SEO' },
+        ];
+
+        container.innerHTML = categories.map(cat => {
+            const score = scores[cat.key] ?? '—';
+            const num = parseInt(score, 10);
+            let colorClass = 'ccm-error';
+            if (num >= 90) colorClass = 'ccm-success';
+            else if (num >= 50) colorClass = 'ccm-warning';
+
+            return `
+                <div style="text-align: center;">
+                    <div class="${colorClass}" style="font-size: 2rem; font-weight: 700;">${score}</div>
+                    <div style="font-size: 0.8rem; opacity: 0.7;">${cat.label}</div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Render PageSpeed metrics table
+     */
+    function aiHubRenderMetrics(metrics) {
+        const container = $('#ai-ps-metrics');
+        if (!container) return;
+
+        const metricDefs = [
+            { key: 'fcp', label: 'First Contentful Paint', unit: 'ms' },
+            { key: 'lcp', label: 'Largest Contentful Paint', unit: 'ms' },
+            { key: 'cls', label: 'Cumulative Layout Shift', unit: '' },
+            { key: 'tbt', label: 'Total Blocking Time', unit: 'ms' },
+            { key: 'si', label: 'Speed Index', unit: 'ms' },
+            { key: 'tti', label: 'Time To Interactive', unit: 'ms' },
+        ];
+
+        let html = '<table class="ccm-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
+        metricDefs.forEach(m => {
+            const val = metrics[m.key];
+            if (val !== undefined && val !== null) {
+                const display = m.unit === 'ms' ? `${Number(val).toLocaleString()} ms` : val;
+                html += `<tr><td>${m.label}</td><td>${display}</td></tr>`;
+            }
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    /**
+     * Render PageSpeed opportunities list
+     */
+    function aiHubRenderOpportunities(opportunities) {
+        const container = $('#ai-ps-opportunities');
+        if (!container) return;
+
+        if (!opportunities.length) {
+            container.innerHTML = '<p class="ccm-success">No significant opportunities found — great job!</p>';
+            return;
+        }
+
+        let html = '<h4 style="margin-bottom: 0.5rem;">Opportunities</h4>';
+        html += '<table class="ccm-table"><thead><tr><th>Issue</th><th>Savings</th></tr></thead><tbody>';
+        opportunities.forEach(opp => {
+            const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms` : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '—');
+            html += `<tr><td>${opp.title || opp.id || 'Unknown'}</td><td>${savings}</td></tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    /**
+     * Request AI analysis of the last PageSpeed result
+     */
+    async function aiHubAnalyze() {
+        if (!aiHubState.lastResultId) {
+            showNotification('Run a PageSpeed test first.', 'warning');
+            return;
+        }
+
+        const btn = $('#ai-analyze-btn');
+        const loadingEl = $('#ai-analysis-loading');
+        const resultsEl = $('#ai-analysis-results');
+
+        if (btn) { btn.disabled = true; btn.textContent = '🤖 Analyzing…'; }
+        if (loadingEl) loadingEl.style.display = 'block';
+        if (resultsEl) resultsEl.style.display = 'none';
+
+        try {
+            const res = await ajax('ccm_tools_ai_hub_ai_analyze', {
+                result_id: aiHubState.lastResultId,
+            }, { timeout: 120000 });
+
+            const data = res.data;
+            aiHubRenderAnalysis(data);
+
+            if (resultsEl) resultsEl.style.display = 'block';
+            showNotification('AI analysis complete!', 'success');
+        } catch (err) {
+            showNotification(err.message || 'AI analysis failed.', 'error');
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = '🤖 Analyze with AI'; }
+            if (loadingEl) loadingEl.style.display = 'none';
+        }
+    }
+
+    /**
+     * Render AI analysis results
+     */
+    function aiHubRenderAnalysis(data) {
+        const container = $('#ai-analysis-results');
+        if (!container) return;
+
+        const analysis = data.analysis || data;
+        let html = '';
+
+        // Summary
+        if (analysis.summary) {
+            html += `<div class="ccm-card-body" style="background: var(--ccm-bg-light, #f9fafb); border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
+                <strong>Summary</strong><p style="margin: 0.5rem 0 0;">${analysis.summary}</p></div>`;
+        }
+
+        // Recommendations
+        if (analysis.recommendations && analysis.recommendations.length) {
+            html += '<h4 style="margin: 1rem 0 0.5rem;">Recommendations</h4>';
+            html += '<div class="ccm-table-container"><table class="ccm-table"><thead><tr><th>Setting</th><th>Current</th><th>Recommended</th><th>Impact</th><th>Reason</th></tr></thead><tbody>';
+            analysis.recommendations.forEach(rec => {
+                const impact = rec.impact || 'medium';
+                const impactClass = impact === 'high' ? 'ccm-error' : (impact === 'medium' ? 'ccm-warning' : 'ccm-info');
+                html += `<tr>
+                    <td><code>${rec.setting_key || '—'}</code></td>
+                    <td>${rec.current_value !== undefined ? String(rec.current_value) : '—'}</td>
+                    <td><strong>${rec.recommended_value !== undefined ? String(rec.recommended_value) : '—'}</strong></td>
+                    <td><span class="${impactClass}">${impact}</span></td>
+                    <td>${rec.reason || ''}</td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+        }
+
+        // Warnings
+        if (analysis.warnings && analysis.warnings.length) {
+            html += '<h4 style="margin: 1rem 0 0.5rem;">⚠️ Warnings</h4><ul>';
+            analysis.warnings.forEach(w => { html += `<li>${w}</li>`; });
+            html += '</ul>';
+        }
+
+        // Token usage
+        if (data.tokens_used) {
+            html += `<p style="margin-top: 1rem; font-size: 0.8rem; opacity: 0.6;">Tokens: ${Number(data.tokens_used).toLocaleString()} | Model: ${data.model || '?'} | Cost: ~$${data.estimated_cost || '?'}</p>`;
+        }
+
+        container.innerHTML = html;
+    }
+
+    /**
+     * Start a full auto-optimization session
+     */
+    async function aiHubOptimize() {
+        if (!aiHubState.lastResultId) {
+            showNotification('Run a PageSpeed test first.', 'warning');
+            return;
+        }
+
+        const btn = $('#ai-optimize-btn');
+        const sessionCard = $('#ai-session-card');
+        const statusBadge = $('#ai-session-status');
+        const logEl = $('#ai-session-log');
+
+        if (btn) { btn.disabled = true; btn.textContent = '⚡ Optimizing…'; }
+        if (sessionCard) sessionCard.style.display = 'block';
+        if (statusBadge) { statusBadge.textContent = 'Starting'; statusBadge.className = 'ccm-badge ccm-badge-warning'; }
+        if (logEl) logEl.innerHTML = '';
+
+        aiHubState.sessionActive = true;
+        aiHubState.iteration = 0;
+
+        aiHubSessionLog('Starting optimization session…');
+
+        try {
+            const url = ($('#ai-ps-url') || {}).value || '';
+            const strategy = ($('#ai-ps-strategy') || {}).value || 'mobile';
+
+            // Step 1: Start session
+            aiHubSessionLog('Running initial PageSpeed test and AI analysis…');
+            const startRes = await ajax('ccm_tools_ai_hub_ai_optimize', {
+                optimize_action: 'start',
+                url: url,
+                strategy: strategy,
+                auto_apply: 1,
+            }, { timeout: 180000 });
+
+            const startData = startRes.data;
+            aiHubState.sessionId = startData.session_id || null;
+            aiHubState.iteration = 1;
+
+            if (startData.scores) {
+                aiHubSessionLog(`Initial scores — Performance: ${startData.scores.performance}, LCP: ${startData.metrics?.lcp || '?'}ms`);
+            }
+
+            if (startData.auto_applied) {
+                aiHubSessionLog('✅ AI recommendations auto-applied to Performance Optimizer.');
+            }
+
+            if (startData.analysis?.recommendations?.length) {
+                aiHubSessionLog(`${startData.analysis.recommendations.length} recommendation(s) from AI.`);
+                aiHubRenderAnalysis(startData);
+                const resultsEl = $('#ai-analysis-results');
+                if (resultsEl) resultsEl.style.display = 'block';
+            }
+
+            if (statusBadge) { statusBadge.textContent = 'Iteration 1'; statusBadge.className = 'ccm-badge ccm-badge-info'; }
+            aiHubSessionLog('Waiting 10s for cache to clear before re-test…');
+            await aiHubSleep(10000);
+
+            // Step 2: Retest loop (up to 3 iterations)
+            const maxIterations = 3;
+            while (aiHubState.sessionActive && aiHubState.iteration < maxIterations && aiHubState.sessionId) {
+                aiHubState.iteration++;
+                aiHubSessionLog(`Iteration ${aiHubState.iteration}: Re-testing…`);
+                if (statusBadge) statusBadge.textContent = `Iteration ${aiHubState.iteration}`;
+
+                const retestRes = await ajax('ccm_tools_ai_hub_ai_optimize', {
+                    optimize_action: 'retest',
+                    session_id: aiHubState.sessionId,
+                    url: url,
+                    strategy: strategy,
+                }, { timeout: 180000 });
+
+                const retestData = retestRes.data;
+
+                if (retestData.scores) {
+                    aiHubSessionLog(`Scores — Performance: ${retestData.scores.performance}`);
+                }
+
+                if (retestData.score_change !== undefined) {
+                    const dir = retestData.score_change > 0 ? '📈' : (retestData.score_change < 0 ? '📉' : '➡️');
+                    aiHubSessionLog(`${dir} Score change: ${retestData.score_change > 0 ? '+' : ''}${retestData.score_change}`);
+                }
+
+                if (retestData.status === 'completed' || retestData.completed) {
+                    aiHubSessionLog('🎉 Optimization session complete!');
+                    break;
+                }
+
+                if (retestData.analysis?.recommendations?.length) {
+                    aiHubSessionLog(`${retestData.analysis.recommendations.length} additional recommendation(s). Applying…`);
+                }
+
+                aiHubSessionLog('Waiting 10s before next iteration…');
+                await aiHubSleep(10000);
+            }
+
+            // Complete
+            if (aiHubState.sessionId) {
+                await ajax('ccm_tools_ai_hub_ai_optimize', {
+                    optimize_action: 'complete',
+                    session_id: aiHubState.sessionId,
+                }, { timeout: 30000 }).catch(() => {});
+            }
+
+            if (statusBadge) { statusBadge.textContent = 'Complete'; statusBadge.className = 'ccm-badge ccm-badge-success'; }
+            aiHubSessionLog('Session finished. Refresh the page to see updated settings.');
+            showNotification('AI optimization session complete!', 'success');
+            aiHubLoadHistory();
+        } catch (err) {
+            aiHubSessionLog(`❌ Error: ${err.message || 'Unknown error'}`);
+            showNotification(err.message || 'Optimization failed.', 'error');
+            if (statusBadge) { statusBadge.textContent = 'Error'; statusBadge.className = 'ccm-badge ccm-badge-error'; }
+        } finally {
+            aiHubState.sessionActive = false;
+            if (btn) { btn.disabled = false; btn.textContent = '⚡ Auto-Optimize'; }
+        }
+    }
+
+    /**
+     * Append a message to the session log
+     */
+    function aiHubSessionLog(message) {
+        const logEl = $('#ai-session-log');
+        if (!logEl) return;
+        const time = new Date().toLocaleTimeString();
+        logEl.innerHTML += `<div>[${time}] ${message}</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    /**
+     * Promise-based sleep helper
+     */
+    function aiHubSleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Load PageSpeed results history
+     */
+    async function aiHubLoadHistory() {
+        const container = $('#ai-history-table');
+        if (!container) return;
+
+        container.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div>';
+
+        try {
+            const strategy = ($('#ai-ps-strategy') || {}).value || 'mobile';
+            const res = await ajax('ccm_tools_ai_hub_get_results', {
+                strategy: strategy,
+                limit: 10,
+            }, { timeout: 15000 });
+
+            const results = res.data?.results || res.data || [];
+
+            if (!results.length) {
+                container.innerHTML = '<p style="opacity: 0.6;">No results yet. Run a PageSpeed test to get started.</p>';
+                return;
+            }
+
+            let html = '<table class="ccm-table"><thead><tr><th>Date</th><th>Strategy</th><th>Perf</th><th>Access</th><th>BP</th><th>SEO</th><th>LCP</th><th>AI</th></tr></thead><tbody>';
+            results.forEach(r => {
+                const scores = r.scores || {};
+                const metrics = r.metrics || {};
+                const date = r.tested_at ? new Date(r.tested_at).toLocaleString() : '—';
+                const aiStatus = r.ai_analysis ? '✅' : '—';
+                const perfClass = (scores.performance >= 90) ? 'ccm-success' : ((scores.performance >= 50) ? 'ccm-warning' : 'ccm-error');
+
+                html += `<tr>
+                    <td>${date}</td>
+                    <td>${r.strategy || '—'}</td>
+                    <td class="${perfClass}"><strong>${scores.performance ?? '—'}</strong></td>
+                    <td>${scores.accessibility ?? '—'}</td>
+                    <td>${scores.best_practices ?? '—'}</td>
+                    <td>${scores.seo ?? '—'}</td>
+                    <td>${metrics.lcp ? metrics.lcp + 'ms' : '—'}</td>
+                    <td>${aiStatus}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch (err) {
+            container.innerHTML = `<p class="ccm-error">${err.message || 'Failed to load history.'}</p>`;
+        }
+    }
+
     /**
      * Download backup file
      */

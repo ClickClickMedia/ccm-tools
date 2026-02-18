@@ -1,0 +1,5 @@
+RewriteEngine On
+
+# Route all API v1 requests through the router
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^v1/(.*)$ v1/index.php [QSA,L]

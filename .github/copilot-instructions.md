@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.10.15
+- **Current Version:** 7.11.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -28,6 +28,7 @@ ccm-tools/
 ├── js/
 │   └── main.js            # Vanilla JavaScript, event handlers, AJAX
 ├── inc/
+│   ├── ai-hub.php         # AI Performance Hub plugin-side integration
 │   ├── ajax-handlers.php  # All WordPress AJAX action handlers
 │   ├── error-log.php      # Error log viewer and management
 │   ├── htaccess.php       # .htaccess optimization functions
@@ -39,6 +40,14 @@ ccm-tools/
 │   ├── update.php         # Plugin update checker
 │   ├── webp-converter.php # WebP image converter
 │   └── woocommerce-tools.php # WooCommerce-specific utilities
+├── hub/                    # Standalone API Hub app (api.tools.clickclick.media)
+│   ├── admin/             # Admin dashboard pages
+│   ├── api/v1/            # REST API endpoints (health, pagespeed, ai)
+│   ├── assets/            # Hub CSS/JS assets
+│   ├── auth/              # Google OAuth login/callback
+│   ├── config/            # Config, env parser, database, settings
+│   ├── database/          # Schema SQL
+│   └── includes/          # Core libraries (auth, encryption, functions, api-auth, settings)
 ├── img/                   # Image assets
 └── assets/
     └── object-cache.php   # WordPress object cache drop-in for Redis
@@ -183,6 +192,12 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_test_webp_conversion` | `ccm_tools_ajax_test_webp_conversion()` | Test WebP conversion with upload |
 | `ccm_tools_save_perf_settings` | `ccm_tools_ajax_save_perf_settings()` | Save performance optimizer settings |
 | `ccm_tools_get_perf_settings` | `ccm_tools_ajax_get_perf_settings()` | Get performance optimizer settings |
+| `ccm_tools_ai_hub_save_settings` | `ccm_tools_ajax_ai_hub_save_settings()` | Save AI Hub connection settings |
+| `ccm_tools_ai_hub_test_connection` | `ccm_tools_ajax_ai_hub_test_connection()` | Test connection to AI Hub |
+| `ccm_tools_ai_hub_run_pagespeed` | `ccm_tools_ajax_ai_hub_run_pagespeed()` | Run PageSpeed test via hub |
+| `ccm_tools_ai_hub_get_results` | `ccm_tools_ajax_ai_hub_get_results()` | Get cached PageSpeed results |
+| `ccm_tools_ai_hub_ai_analyze` | `ccm_tools_ajax_ai_hub_ai_analyze()` | AI analysis of PageSpeed result |
+| `ccm_tools_ai_hub_ai_optimize` | `ccm_tools_ajax_ai_hub_ai_optimize()` | Full AI optimization session |
 
 ## Performance Considerations
 
@@ -274,6 +289,35 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.11.0
+- **AI Performance Hub — Centralized API Management + Plugin Integration**
+  - **New `hub/` subfolder:** Standalone PHP application for api.tools.clickclick.media
+    - Google SSO restricted to @clickclickmedia.com.au domain
+    - AES-256-CBC encrypted settings stored in MySQL (`.env` holds only DB credentials + encryption key)
+    - 4-step setup wizard with super-admin bootstrapping (rik@clickclickmedia.com.au)
+    - Admin dashboard with overview stats (sites, AI calls, PageSpeed tests, cost)
+    - Sites management with full CRUD, API key generation (Argon2ID hashed), feature toggles
+    - Usage analytics with filters (period, site, type), per-site breakdown, recent API calls
+    - Tabbed settings page (General, OAuth, AI, PageSpeed, Limits, Session, Logging, Maintenance)
+    - Dark theme CSS derived from WebWatch (--brand-primary: #94c83e)
+    - Vanilla JS: toast notifications, modals, AJAX utilities, table sorting
+  - **API v1 endpoints** proxying Claude and Google PageSpeed APIs:
+    - `health` — connection test with feature/limit info
+    - `pagespeed/test` — run PageSpeed Insights (with caching, force refresh)
+    - `pagespeed/results` — retrieve cached results with filters
+    - `ai/analyze` — Claude analysis of PageSpeed results with CCM Tools context
+    - `ai/optimize` — full optimization session loop (start → retest → complete)
+    - Per-site API key authentication, rate limiting, feature access control, usage logging
+  - **Plugin-side integration** (`inc/ai-hub.php`):
+    - Hub connection settings stored in `wp_options`
+    - AJAX handlers: save settings, test connection, run PageSpeed, get results, AI analyze, auto-optimize
+    - Auto-apply AI recommendations to Performance Optimizer settings (type-matched)
+    - Admin page with score circles, metrics table, opportunities, AI analysis, session log, history
+  - **Wired into ccm.php:** `require_once`, submenu page (🤖 AI Performance), nav tab
+  - **JS handlers in main.js:** `initAiHubHandlers()` with save, test, PageSpeed, analyze, optimize session, history
+  - New files: 35 files in `hub/`, 1 file `inc/ai-hub.php`
+  - Git branch: `feature/ai-performance`
 
 ### v7.10.15
 - **Performance Optimizer Audit — 6 Bug Fixes**
