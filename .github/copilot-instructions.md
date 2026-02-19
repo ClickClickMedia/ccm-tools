@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.11.1
+- **Current Version:** 7.11.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,22 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.11.2
+- **Fixed "Hub vunknown" After Test Connection**
+  - Root cause: Hub's `jsonSuccess()` merges data flat into the response (no nested `data` wrapper), but `ccm_tools_ajax_ai_hub_test_connection` read `$result['data']['hub_version']` which doesn't exist
+  - Fixed all AJAX handlers to read directly from `$result['hub_version']`, `$result['site_name']`, `$result['features']`, `$result['limits']`
+  - Now correctly displays "Hub v1.0.0" after successful connection test
+- **Fixed "Cannot read properties of undefined (reading 'result_id')" on PageSpeed Test**
+  - Added null/non-array guard in `ccm_tools_ai_hub_request()` — returns `WP_Error` if hub response is not valid JSON
+  - Previously, a non-JSON hub response (e.g., PHP error page) would return null, causing `wp_send_json_success(null)` which omits the `data` key entirely
+  - JS then accessed `res.data.result_id` where `res.data` was `undefined` → TypeError
+- **Defensive JS null checks** across all AI Hub AJAX response handlers
+  - `res.data || {}` pattern in PageSpeed test, AI analyze, and AI optimize handlers
+  - Prevents TypeErrors if response data is unexpectedly null or undefined
+- **Cleaned up `$result['data'] ?? $result` pattern** in all AJAX handlers
+  - Since hub responses are always flat, removed unnecessary `['data']` accessor with `??` fallback
+  - Handlers now pass `$result` directly to `wp_send_json_success()`
 
 ### v7.11.1
 - **Fixed AI Performance Page Buttons Not Working**

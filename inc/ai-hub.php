@@ -94,6 +94,10 @@ function ccm_tools_ai_hub_request(string $endpoint, array $body = [], string $me
         return new WP_Error('hub_error', $message, ['status' => $code]);
     }
 
+    if (!is_array($data)) {
+        return new WP_Error('hub_invalid_response', 'Invalid response from hub (non-JSON or empty)');
+    }
+
     return $data;
 }
 
@@ -149,10 +153,10 @@ function ccm_tools_ajax_ai_hub_test_connection(): void {
     }
 
     wp_send_json_success([
-        'message'  => 'Connected to ' . ($result['data']['site_name'] ?? 'AI Hub'),
-        'features' => $result['data']['features'] ?? [],
-        'limits'   => $result['data']['limits'] ?? [],
-        'version'  => $result['data']['hub_version'] ?? 'unknown',
+        'message'  => 'Connected to ' . ($result['site_name'] ?? 'AI Hub'),
+        'features' => $result['features'] ?? [],
+        'limits'   => $result['limits'] ?? [],
+        'version'  => $result['hub_version'] ?? 'unknown',
     ]);
 }
 
@@ -180,7 +184,7 @@ function ccm_tools_ajax_ai_hub_run_pagespeed(): void {
         wp_send_json_error(['message' => $result->get_error_message()]);
     }
 
-    wp_send_json_success($result['data'] ?? $result);
+    wp_send_json_success($result);
 }
 
 /**
@@ -205,7 +209,7 @@ function ccm_tools_ajax_ai_hub_get_results(): void {
         wp_send_json_error(['message' => $result->get_error_message()]);
     }
 
-    wp_send_json_success($result['data'] ?? $result);
+    wp_send_json_success($result);
 }
 
 /**
@@ -241,7 +245,7 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
         wp_send_json_error(['message' => $result->get_error_message()]);
     }
 
-    wp_send_json_success($result['data'] ?? $result);
+    wp_send_json_success($result);
 }
 
 /**
@@ -286,7 +290,7 @@ function ccm_tools_ajax_ai_hub_ai_optimize(): void {
     }
 
     // If hub returned recommended settings, apply them automatically if auto_apply enabled
-    $data = $result['data'] ?? $result;
+    $data = $result;
 
     if ($action === 'start' && !empty($data['analysis']['recommendations'])) {
         $data['auto_applied'] = false;

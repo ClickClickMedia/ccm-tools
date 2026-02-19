@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.11.1
+ * Version: 7.11.2
  */
 
 (function() {
@@ -3691,7 +3691,7 @@
                 force: 1,
             }, { timeout: 120000 });
 
-            const data = res.data;
+            const data = res.data || {};
             aiHubState.lastResultId = data.result_id || data.id || null;
 
             // Render scores
@@ -3820,7 +3820,7 @@
                 result_id: aiHubState.lastResultId,
             }, { timeout: 120000 });
 
-            const data = res.data;
+            const data = res.data || {};
             aiHubRenderAnalysis(data);
 
             if (resultsEl) resultsEl.style.display = 'block';
@@ -3919,7 +3919,7 @@
                 auto_apply: 1,
             }, { timeout: 180000 });
 
-            const startData = startRes.data;
+            const startData = startRes.data || {};
             aiHubState.sessionId = startData.session_id || null;
             aiHubState.iteration = 1;
 
@@ -3956,7 +3956,7 @@
                     strategy: strategy,
                 }, { timeout: 180000 });
 
-                const retestData = retestRes.data;
+                const retestData = retestRes.data || {};
 
                 if (retestData.scores) {
                     aiHubSessionLog(`Scores — Performance: ${retestData.scores.performance}`);
