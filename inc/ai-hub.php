@@ -109,6 +109,8 @@ add_action('wp_ajax_ccm_tools_ai_hub_run_pagespeed', 'ccm_tools_ajax_ai_hub_run_
 add_action('wp_ajax_ccm_tools_ai_hub_get_results', 'ccm_tools_ajax_ai_hub_get_results');
 add_action('wp_ajax_ccm_tools_ai_hub_ai_analyze', 'ccm_tools_ajax_ai_hub_ai_analyze');
 add_action('wp_ajax_ccm_tools_ai_hub_ai_optimize', 'ccm_tools_ajax_ai_hub_ai_optimize');
+add_action('wp_ajax_ccm_tools_ai_preflight', 'ccm_tools_ajax_ai_preflight');
+add_action('wp_ajax_ccm_tools_ai_enable_tool', 'ccm_tools_ajax_ai_enable_tool');
 
 /**
  * Save AI Hub connection settings
@@ -254,6 +256,21 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
 
     if (class_exists('WooCommerce')) {
         $context .= 'WooCommerce site. ';
+    }
+
+    // Add server-side tool status for AI context
+    $toolStatus = ccm_tools_get_optimization_status();
+    if (!$toolStatus['htaccess']['applied']) {
+        $context .= 'WARNING: .htaccess optimizations NOT applied (no browser caching, no gzip/brotli compression). ';
+    }
+    if (!empty($toolStatus['webp']['available']) && empty($toolStatus['webp']['enabled'])) {
+        $context .= 'WARNING: WebP image conversion NOT enabled (images served as JPG/PNG). ';
+    }
+    if (!empty($toolStatus['redis']['extension']) && empty($toolStatus['redis']['dropin'])) {
+        $context .= 'Redis PHP extension available but object cache NOT installed. ';
+    }
+    if (!empty($toolStatus['database']['needs_optimization'])) {
+        $context .= 'Database has ' . $toolStatus['database']['tables_needing_optimization'] . ' tables needing optimization. ';
     }
 
     $result = ccm_tools_ai_hub_request('ai/analyze', [
@@ -575,6 +592,179 @@ function ccm_tools_ajax_ai_rollback_settings(): void {
         'message'  => 'Settings rolled back to snapshot',
         'settings' => $snapshot,
     ]);
+}
+
+// ─── Preflight: Tool Status & Auto-Enable ────────────────────────
+
+/**
+ * Get optimization status of all server-side tools
+ */
+function ccm_tools_get_optimization_status(): array {
+    $status = [];
+
+    // .htaccess
+    $htaccess_file = ABSPATH . '.htaccess';
+    $htaccess_content = file_exists($htaccess_file) ? file_get_contents($htaccess_file) : '';
+    $status['htaccess'] = [
+        'applied' => strpos($htaccess_content, '# BEGIN CCM Optimise') !== false,
+        'writable' => file_exists($htaccess_file) ? is_writable($htaccess_file) : is_writable(ABSPATH),
+    ];
+    if ($status['htaccess']['applied'] && function_exists('ccm_tools_detect_htaccess_options')) {
+        $status['htaccess']['options'] = ccm_tools_detect_htaccess_options($htaccess_content);
+    }
+
+    // WebP
+    if (function_exists('ccm_tools_webp_get_settings')) {
+        $webp = ccm_tools_webp_get_settings();
+        $extensions = function_exists('ccm_tools_webp_get_available_extensions')
+            ? ccm_tools_webp_get_available_extensions() : [];
+        $status['webp'] = [
+            'available'      => !empty($extensions),
+            'enabled'        => !empty($webp['enabled']),
+            'serve_webp'     => !empty($webp['serve_webp']),
+            'picture_tags'   => !empty($webp['use_picture_tags']),
+            'on_demand'      => !empty($webp['convert_on_demand']),
+            'bg_images'      => !empty($webp['convert_bg_images']),
+        ];
+    } else {
+        $status['webp'] = ['available' => false, 'enabled' => false];
+    }
+
+    // Redis
+    $status['redis'] = [
+        'extension' => extension_loaded('redis'),
+        'dropin'    => false,
+        'connected' => false,
+    ];
+    if (function_exists('ccm_tools_redis_dropin_status')) {
+        $redis_status = ccm_tools_redis_dropin_status();
+        $status['redis']['dropin'] = !empty($redis_status['is_ccm']);
+    }
+    if ($status['redis']['extension'] && function_exists('ccm_tools_redis_check_connection')) {
+        $conn = ccm_tools_redis_check_connection();
+        $status['redis']['connected'] = !empty($conn['connected']);
+    }
+
+    // Database
+    global $wpdb;
+    $tables_needing = 0;
+    try {
+        $tables = $wpdb->get_results("SHOW TABLE STATUS WHERE Engine != 'InnoDB' OR Collation != 'utf8mb4_unicode_ci'");
+        $tables_needing = $tables ? count($tables) : 0;
+    } catch (\Exception $e) {
+        // ignore
+    }
+    $status['database'] = [
+        'needs_optimization' => $tables_needing > 0,
+        'tables_needing_optimization' => $tables_needing,
+    ];
+
+    // Performance Optimizer
+    if (function_exists('ccm_tools_perf_get_settings')) {
+        $perf = ccm_tools_perf_get_settings();
+        $status['performance'] = [
+            'enabled' => !empty($perf['enabled']),
+        ];
+    }
+
+    return $status;
+}
+
+/**
+ * AJAX: Get tool status for preflight check
+ */
+function ccm_tools_ajax_ai_preflight(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    wp_send_json_success(ccm_tools_get_optimization_status());
+}
+
+/**
+ * AJAX: Enable a specific server-side tool
+ */
+function ccm_tools_ajax_ai_enable_tool(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $tool = sanitize_text_field($_POST['tool'] ?? '');
+    $result = ['tool' => $tool, 'success' => false, 'message' => 'Unknown tool'];
+
+    switch ($tool) {
+        case 'htaccess':
+            if (function_exists('ccm_tools_update_htaccess')) {
+                $options = [
+                    'caching'          => true,
+                    'compression'      => true,
+                    'security_headers' => true,
+                    'etag_removal'     => true,
+                    'disable_indexes'  => true,
+                    'hsts_basic'       => true,
+                ];
+                $r = ccm_tools_update_htaccess('add', $options);
+                $result['success'] = !empty($r['success']);
+                $result['message'] = $r['message'] ?? 'Unknown error';
+            }
+            break;
+
+        case 'webp':
+            if (function_exists('ccm_tools_webp_get_settings') && function_exists('ccm_tools_webp_save_settings')) {
+                $settings = ccm_tools_webp_get_settings();
+                $settings['enabled']           = true;
+                $settings['serve_webp']        = true;
+                $settings['convert_on_demand'] = true;
+                $settings['use_picture_tags']  = true;
+                $settings['convert_bg_images'] = true;
+                ccm_tools_webp_save_settings($settings);
+                $result['success'] = true;
+                $result['message'] = 'WebP enabled (on-demand, picture tags, BG images)';
+            } else {
+                $result['message'] = 'WebP converter not available (no image extension)';
+            }
+            break;
+
+        case 'redis':
+            if (!extension_loaded('redis')) {
+                $result['message'] = 'PHP Redis extension not installed';
+            } elseif (function_exists('ccm_tools_redis_dropin_status') && function_exists('ccm_tools_redis_install_dropin')) {
+                $status = ccm_tools_redis_dropin_status();
+                if (!empty($status['is_ccm'])) {
+                    $result['success'] = true;
+                    $result['message'] = 'Redis drop-in already installed';
+                } else {
+                    // Test connection first
+                    if (function_exists('ccm_tools_redis_check_connection')) {
+                        $conn = ccm_tools_redis_check_connection();
+                        if (empty($conn['connected'])) {
+                            $result['message'] = 'Redis server not reachable';
+                            break;
+                        }
+                    }
+                    $r = ccm_tools_redis_install_dropin();
+                    $result['success'] = !is_wp_error($r) && $r !== false;
+                    $result['message'] = $result['success'] ? 'Redis drop-in installed' : 'Failed to install Redis drop-in';
+                }
+            }
+            break;
+
+        case 'performance':
+            if (function_exists('ccm_tools_perf_get_settings') && function_exists('ccm_tools_perf_save_settings')) {
+                $settings = ccm_tools_perf_get_settings();
+                $settings['enabled'] = true;
+                ccm_tools_perf_save_settings($settings);
+                $result['success'] = true;
+                $result['message'] = 'Performance optimizer enabled';
+            }
+            break;
+    }
+
+    wp_send_json_success($result);
 }
 
 /**

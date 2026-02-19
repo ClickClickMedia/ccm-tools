@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.9
+ * Version: 7.13.0
  */
 
 (function() {
@@ -3878,6 +3878,7 @@
     // ─── Step Progress UI ────────────
 
     const AI_STEPS = [
+        { id: 'preflight',      label: 'Pre-flight Check' },
         { id: 'snapshot',       label: 'Save Snapshot' },
         { id: 'test-mobile',    label: 'Test Mobile' },
         { id: 'test-desktop',   label: 'Test Desktop' },
@@ -4123,6 +4124,7 @@
     // ─── One-Click Optimize (iterative improvement loop with rollback) ────────────
 
     const AI_MAX_ITERATIONS = 10;
+    const PSI_NOISE = 3; // PageSpeed variance tolerance (±3 points is normal)
 
     async function aiOneClickOptimize() {
         const btn = $('#ai-one-click-btn');
@@ -4157,6 +4159,96 @@
         let wasRolledBack = false;
 
         try {
+            // ── Step 0: Pre-flight — Check & enable server-side tools ──
+            aiUpdateStep('preflight', 'active', 'Checking tools…');
+            aiLog('Running pre-flight tool checks…', 'step');
+            try {
+                const preflightRes = await ajax('ccm_tools_ai_preflight', {}, { timeout: 15000 });
+                const tools = preflightRes.data || {};
+                let toolsEnabled = 0;
+
+                // .htaccess
+                if (tools.htaccess && !tools.htaccess.applied && tools.htaccess.writable) {
+                    aiLog('.htaccess optimizations not applied — enabling caching, compression & security…', 'warn');
+                    try {
+                        const htRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'htaccess' }, { timeout: 15000 });
+                        if (htRes.data?.success) {
+                            aiLog(`.htaccess: ${htRes.data.message}`, 'success');
+                            toolsEnabled++;
+                        } else {
+                            aiLog(`.htaccess: ${htRes.data?.message || 'Failed'}`, 'warn');
+                        }
+                    } catch (e) { aiLog(`.htaccess enable failed: ${e.message}`, 'warn'); }
+                } else if (tools.htaccess?.applied) {
+                    aiLog('.htaccess optimizations already applied ✓', 'info');
+                }
+
+                // WebP
+                if (tools.webp?.available && !tools.webp?.enabled) {
+                    aiLog('WebP converter not enabled — enabling with on-demand conversion & picture tags…', 'warn');
+                    try {
+                        const wpRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'webp' }, { timeout: 15000 });
+                        if (wpRes.data?.success) {
+                            aiLog(`WebP: ${wpRes.data.message}`, 'success');
+                            toolsEnabled++;
+                        } else {
+                            aiLog(`WebP: ${wpRes.data?.message || 'Failed'}`, 'warn');
+                        }
+                    } catch (e) { aiLog(`WebP enable failed: ${e.message}`, 'warn'); }
+                } else if (tools.webp?.enabled) {
+                    aiLog('WebP conversion already enabled ✓', 'info');
+                } else if (!tools.webp?.available) {
+                    aiLog('WebP not available (no GD/ImageMagick with WebP support)', 'info');
+                }
+
+                // Redis
+                if (tools.redis?.extension && !tools.redis?.dropin) {
+                    aiLog('Redis extension available but drop-in not installed — enabling…', 'warn');
+                    try {
+                        const rdRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'redis' }, { timeout: 15000 });
+                        if (rdRes.data?.success) {
+                            aiLog(`Redis: ${rdRes.data.message}`, 'success');
+                            toolsEnabled++;
+                        } else {
+                            aiLog(`Redis: ${rdRes.data?.message || 'Failed'}`, 'warn');
+                        }
+                    } catch (e) { aiLog(`Redis enable failed: ${e.message}`, 'warn'); }
+                } else if (tools.redis?.dropin) {
+                    aiLog('Redis object cache active ✓', 'info');
+                } else {
+                    aiLog('Redis not available on this server', 'info');
+                }
+
+                // Performance optimizer master toggle
+                if (tools.performance && !tools.performance.enabled) {
+                    aiLog('Performance Optimizer disabled — enabling…', 'warn');
+                    try {
+                        await ajax('ccm_tools_ai_enable_tool', { tool: 'performance' }, { timeout: 10000 });
+                        aiLog('Performance Optimizer enabled.', 'success');
+                        toolsEnabled++;
+                    } catch (e) { aiLog(`Perf enable failed: ${e.message}`, 'warn'); }
+                }
+
+                // Database status note
+                if (tools.database?.needs_optimization) {
+                    aiLog(`Database: ${tools.database.tables_needing_optimization} table(s) need optimization (InnoDB/utf8mb4) — consider running Database tools.`, 'warn');
+                }
+
+                const msg = toolsEnabled > 0
+                    ? `Enabled ${toolsEnabled} tool(s) for better baseline`
+                    : 'All tools OK';
+                aiUpdateStep('preflight', 'done', msg);
+                if (toolsEnabled > 0) {
+                    aiLog(`Pre-flight: enabled ${toolsEnabled} server-side tool(s). Waiting 3s for changes to take effect…`, 'info');
+                    await aiSleep(3000);
+                } else {
+                    aiLog('Pre-flight: all server-side tools already configured ✓', 'success');
+                }
+            } catch (e) {
+                aiLog(`Pre-flight check failed: ${e.message} — continuing anyway`, 'warn');
+                aiUpdateStep('preflight', 'done', 'Skipped');
+            }
+
             // ── Step 1: Save Settings Snapshot (for rollback) ──
             aiUpdateStep('snapshot', 'active', 'Saving…');
             aiLog('Saving settings snapshot for rollback safety…', 'step');
@@ -4193,12 +4285,11 @@
                 p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
             });
 
-            const baselineMobilePerf = mobileData.scores?.performance ?? 0;
-            const baselineDesktopPerf = desktopData.scores?.performance ?? 0;
+            // Track snapshot scores (updated after each successful keep)
+            let snapshotMobilePerf = mobileData.scores?.performance ?? 0;
+            let snapshotDesktopPerf = desktopData.scores?.performance ?? 0;
             let iteration = 0;
             let hasApplied = false;
-            let bestMobilePerf = baselineMobilePerf;
-            let bestDesktopPerf = baselineDesktopPerf;
 
             // ── Iterative improvement loop ──
             while (iteration < AI_MAX_ITERATIONS) {
@@ -4303,17 +4394,23 @@
                 aiUpdateStep('retest-desktop', 'done', `Perf: ${retestDesktopPerf}${iterLabel}`);
                 aiLog(`Desktop re-test — Performance: <strong>${retestDesktopPerf}</strong>, LCP: ${desktopRetest.metrics?.lcp_ms ?? '—'}ms`, 'info');
 
-                // ── Evaluate results ──
-                const mobileChange = retestMobilePerf - baselineMobilePerf;
-                const desktopChange = retestDesktopPerf - baselineDesktopPerf;
-                const scoreDropped = mobileChange < 0 || desktopChange < 0;
-                const scoreImproved = mobileChange > 0 || desktopChange > 0;
+                // ── Evaluate results (smart rollback with net-gain logic) ──
+                const mobileChange = retestMobilePerf - snapshotMobilePerf;
+                const desktopChange = retestDesktopPerf - snapshotDesktopPerf;
+                const netChange = mobileChange + desktopChange;
 
-                if (scoreDropped) {
-                    // ── ROLLBACK — scores got worse ──
-                    aiLog(`Scores DROPPED — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange}. Rolling back…`, 'error');
+                // KEEP changes if:
+                // 1. Both scores within noise tolerance (neither dropped meaningfully)
+                // 2. Net positive AND neither dropped catastrophically (>15 points)
+                const bothStable = mobileChange >= -PSI_NOISE && desktopChange >= -PSI_NOISE;
+                const netPositive = netChange > 0 && mobileChange > -15 && desktopChange > -15;
+                const keepChanges = bothStable || netPositive;
+
+                if (!keepChanges) {
+                    // ── ROLLBACK — net negative or catastrophic drop ──
+                    aiLog(`Scores regressed — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange} (net: ${netChange >= 0 ? '+' : ''}${netChange}). Rolling back…`, 'error');
                     showNotification(
-                        `Scores dropped (Mobile ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop ${desktopChange >= 0 ? '+' : ''}${desktopChange}). Rolling back…`,
+                        `Net negative (${netChange >= 0 ? '+' : ''}${netChange}). Rolling back…`,
                         'warning'
                     );
                     aiUpdateStep('compare', 'active', 'Rolling back…');
@@ -4348,6 +4445,11 @@
                     }
                 }
 
+                // ── KEEP — scores improved or stable ──
+                aiLog(`Scores OK — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange} (net: ${netChange >= 0 ? '+' : ''}${netChange}). Keeping changes!`, 'success');
+                showNotification(`Changes kept (net ${netChange >= 0 ? '+' : ''}${netChange}).`, 'success');
+                wasRolledBack = false;
+
                 // Show before/after comparison
                 aiUpdateStep('compare', 'active', 'Comparing…');
                 aiRenderBeforeAfter(aiHubState.beforeScores, aiHubState.afterScores);
@@ -4357,32 +4459,25 @@
                 // Check if we should keep iterating
                 const bothAbove90 = retestMobilePerf >= 90 && retestDesktopPerf >= 90;
                 if (bothAbove90 || iteration >= AI_MAX_ITERATIONS) {
-                    const resultMsg = scoreImproved
-                        ? `Improved! M:${mobileChange >= 0 ? '+' : ''}${mobileChange} D:${desktopChange >= 0 ? '+' : ''}${desktopChange}`
-                        : 'No change detected';
+                    const resultMsg = `M:${retestMobilePerf} D:${retestDesktopPerf}`;
                     aiUpdateStep('compare', 'done', resultMsg);
                     if (bothAbove90) {
-                        aiLog(`Both scores above 90! Mobile: ${retestMobilePerf}, Desktop: ${retestDesktopPerf}`, 'success');
+                        aiLog(`Both scores above 90! Mobile: ${retestMobilePerf}, Desktop: ${retestDesktopPerf} 🎉`, 'success');
                     } else {
                         aiLog(`Max iterations reached. Mobile: ${retestMobilePerf}, Desktop: ${retestDesktopPerf}`, 'info');
                     }
                     break;
                 }
 
-                // Scores improved but below 90 — iterate for more gains
-                aiLog(`Improved (M:${mobileChange >= 0 ? '+' : ''}${mobileChange}, D:${desktopChange >= 0 ? '+' : ''}${desktopChange}) but still below 90. Iterating…`, 'info');
-                showNotification(
-                    `Improved (M:${mobileChange >= 0 ? '+' : ''}${mobileChange}, D:${desktopChange >= 0 ? '+' : ''}${desktopChange}) but still below 90. Trying for more…`,
-                    'info'
-                );
-                aiUpdateStep('compare', 'done', `+${Math.max(mobileChange, desktopChange)}pts — iterating…`);
+                // Scores improved but below 90 — update snapshot and iterate for more gains
+                aiLog(`Improved but still below 90 (M:${retestMobilePerf}, D:${retestDesktopPerf}). Saving checkpoint and iterating…`, 'info');
+                showNotification('Improved — trying for more gains…', 'info');
+                aiUpdateStep('compare', 'done', `Net +${netChange}pts — iterating…`);
 
-                // Save snapshot of current (improved) state
+                // Save snapshot of current (improved) state and update baseline
                 await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
-
-                // Update baseline to current best for rollback comparison
-                bestMobilePerf = Math.max(bestMobilePerf, retestMobilePerf);
-                bestDesktopPerf = Math.max(bestDesktopPerf, retestDesktopPerf);
+                snapshotMobilePerf = retestMobilePerf;
+                snapshotDesktopPerf = retestDesktopPerf;
 
                 // Clear fix summary for next iteration
                 if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
@@ -4428,7 +4523,7 @@
                         changes: allChanges,
                         iterations: iteration,
                         rolled_back: wasRolledBack,
-                        outcome: hasApplied ? 'completed' : 'no_changes',
+                        outcome: !hasApplied ? 'no_changes' : wasRolledBack ? 'rolled_back' : 'improved',
                     }),
                 }, { timeout: 10000 });
             } catch (_) { /* best effort */ }

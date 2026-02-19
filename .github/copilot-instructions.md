@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.9
+- **Current Version:** 7.13.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -192,6 +192,8 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_hub_ai_optimize` | `ccm_tools_ajax_ai_hub_ai_optimize()` | Full AI optimization session |
 | `ccm_tools_ai_apply_changes` | `ccm_tools_ajax_ai_apply_changes()` | Apply selected AI recommendations to perf settings |
 | `ccm_tools_ai_save_run` | `ccm_tools_ajax_ai_save_run()` | Save optimization run summary to wp_options |
+| `ccm_tools_ai_preflight` | `ccm_tools_ajax_ai_preflight()` | Pre-flight check of server-side tool status |
+| `ccm_tools_ai_enable_tool` | `ccm_tools_ajax_ai_enable_tool()` | Enable a server-side tool (htaccess, webp, redis, performance) |
 
 ## Performance Considerations
 
@@ -283,6 +285,42 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.13.0
+- **Smart Rollback Algorithm — Net-Positive Score Evaluation**
+  - Replaced aggressive rollback logic that reverted any iteration where EITHER Mobile or Desktop dropped
+  - Old logic: `scoreDropped = mobileChange < 0 || desktopChange < 0` — rolled back even when net gain was +18 (e.g., Mobile +29, Desktop -11)
+  - New logic uses **net-positive evaluation**: keeps changes if both within PSI noise tolerance (±3pts) OR net positive AND neither dropped >15pts
+  - `PSI_NOISE` constant (3 points) accounts for normal PageSpeed measurement variance
+  - **Snapshot-based comparison**: compares against snapshot scores (updated after each successful keep), not the original baseline
+  - After KEEP: saves new snapshot, updates snapshot scores, and continues iterating toward 90+ on both strategies
+  - After ROLLBACK: snapshot scores unchanged, retries with conservative approach
+  - Fixes core issue where excellent results (Mobile 94 from baseline 65) were thrown away due to minor Desktop fluctuation
+- **Pre-flight Tool Check — Auto-Enable Server-Side Optimizations**
+  - New "Pre-flight Check" step runs before the optimization loop
+  - Automatically detects and enables missing server-side tools:
+    - **.htaccess**: Applies caching headers, Gzip/Brotli compression, security headers, ETag removal, directory index protection, HSTS
+    - **WebP**: Enables with on-demand conversion, picture tags, and background image conversion
+    - **Redis**: Tests connection and installs object-cache.php drop-in (if PHP Redis extension available)
+    - **Performance Optimizer**: Enables master toggle if disabled
+    - **Database**: Reports tables needing InnoDB/utf8mb4 optimization (informational)
+  - New AJAX handler: `ccm_tools_ai_preflight` — returns status of all tools
+  - New AJAX handler: `ccm_tools_ai_enable_tool` — enables individual tools with appropriate defaults
+  - New PHP function: `ccm_tools_get_optimization_status()` — checks htaccess (applied, writable, detected options), WebP (available, enabled, settings), Redis (extension, drop-in, connected), database (tables needing optimization), performance (enabled)
+  - 3-second settling delay after enabling tools for server-side changes to take effect before baseline test
+- **AI Context Enhancement — Tool Status Awareness**
+  - AI analysis handler now includes tool status warnings in the context sent to hub
+  - WARNING messages appended for: .htaccess not applied, WebP not enabled, Redis available but inactive, database tables needing optimization
+  - Helps AI provide contextual recommendations about server-side improvements
+- **Hub AI Prompt Updates — Server-Side Tools & Strategy Awareness**
+  - Both `ai-analyze.php` and `ai-optimize.php` system prompts updated with:
+    - "Server-Side Optimisation Tools" section explaining .htaccess, WebP, Redis, Database impact
+    - "Strategy Awareness" section explaining Mobile vs Desktop scoring differences
+    - Guidance that mobile is harder (throttled 4G), CSS/JS optimisations affect mobile more, server-side improvements benefit both equally
+    - Instruction to note missing tools in `additional_notes`
+    - Instruction to prioritise safe changes that help BOTH strategies
+- **Improved Run Outcome Tracking**
+  - Save run `outcome` now distinguishes between `improved`, `rolled_back`, and `no_changes` (was just `completed` or `no_changes`)
 
 ### v7.12.9
 - **Updated Hub Claude AI Models to Latest Versions**
