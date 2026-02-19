@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.8
+- **Current Version:** 7.12.9
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -284,6 +284,14 @@ After completing changes:
 
 ## Change Log (Recent)
 
+### v7.12.9
+- **Updated Hub Claude AI Models to Latest Versions**
+  - Sonnet 4 → Sonnet 4.6 (`claude-sonnet-4-6`), $3/$15 per MTok
+  - Opus 4 → Opus 4.6 (`claude-opus-4-6`), $5/$25 per MTok (was $15/$75)
+  - Haiku 3.5 → Haiku 4.5 (`claude-haiku-4-5-20251001`), $1/$5 per MTok (was $0.80/$4)
+  - Legacy model IDs preserved in pricing table for historical cost calculations
+  - Updated model descriptions and recommendation text in hub admin settings
+
 ### v7.12.8
 - **Increased AI Optimization Max Iterations from 3 to 10**
   - Allows the optimizer to keep retrying after rollbacks until the hub API rate limit is reached
@@ -445,7 +453,7 @@ After completing changes:
   - `PERF_SETTING_KEYS` expanded with data keys: `critical_css_code`, `preconnect_urls`, `dns_prefetch_urls`, `lcp_preload_url`, exclude lists, etc.
   - New `aiFormatValue()` for displaying arrays and long strings in fix summaries
   - `aiUpdatePageToggles()` handles textarea, select, text/url/number inputs (not just checkboxes)
-- **Model**: Claude Sonnet 4 (`claude-sonnet-4-20250514`) as default
+- **Model**: Claude Sonnet 4.6 (`claude-sonnet-4-6`) as default
 - **Both ai-analyze.php and ai-optimize.php** use shared page-analyzer.php utilities
 
 ### v7.12.0
