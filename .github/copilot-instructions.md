@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.11.0
+- **Current Version:** 7.11.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,15 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.11.1
+- **Fixed AI Performance Page Buttons Not Working**
+  - Root cause: AI Hub page wrapper used `class="wrap ccm-wrap"` instead of `class="wrap ccm-tools"`
+  - The JS DOMContentLoaded guard `document.querySelector('.ccm-tools')` returned null, causing early return before any handlers were initialized
+  - Fixed wrapper class to match all other plugin pages
+  - Wrapped all page-specific JS initializers in try/catch to prevent cascading failures
+- **Removed robot emoji** from nav tab, submenu label, page title, and Analyze button
+- **Hidden Hub URL field** — now stored as hidden input (not user-editable)
 
 ### v7.11.0
 - **AI Performance Hub — Centralized API Management + Plugin Integration**

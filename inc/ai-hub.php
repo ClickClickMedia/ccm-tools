@@ -353,13 +353,13 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
 function ccm_tools_render_ai_hub_page(): void {
     $settings = ccm_tools_ai_hub_get_settings();
     ?>
-    <div class="wrap ccm-wrap">
+    <div class="wrap ccm-tools">
         <?php ccm_tools_render_header_nav('ccm-tools-ai'); ?>
         
         <div class="ccm-content">
             <div class="ccm-page-header">
                 <div class="ccm-page-title">
-                    <h2>🤖 AI Performance</h2>
+                    <h2>AI Performance</h2>
                     <p class="ccm-subtitle">AI-powered PageSpeed analysis and automatic optimization via the CCM API Hub</p>
                 </div>
             </div>
@@ -371,15 +371,10 @@ function ccm_tools_render_ai_hub_page(): void {
                     <span id="ai-hub-status" class="ccm-badge">—</span>
                 </div>
                 <div class="ccm-card-body">
-                    <div class="ccm-form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                        <div class="ccm-form-field">
-                            <label for="ai-hub-url">Hub URL</label>
-                            <input type="url" id="ai-hub-url" value="<?php echo esc_attr($settings['hub_url']); ?>" placeholder="https://api.tools.clickclick.media">
-                        </div>
-                        <div class="ccm-form-field">
-                            <label for="ai-hub-key">API Key</label>
-                            <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key']); ?>" placeholder="ccm_xxxx...">
-                        </div>
+                    <input type="hidden" id="ai-hub-url" value="<?php echo esc_attr($settings['hub_url']); ?>">
+                    <div class="ccm-form-field">
+                        <label for="ai-hub-key">API Key</label>
+                        <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key']); ?>" placeholder="ccm_xxxx...">
                     </div>
                     <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
                         <button type="button" id="ai-hub-save-btn" class="ccm-button ccm-button-primary">Save Settings</button>
@@ -431,7 +426,7 @@ function ccm_tools_render_ai_hub_page(): void {
                 <div class="ccm-card-body">
                     <p class="ccm-subtitle">Run a PageSpeed test first, then use AI to analyze the results and get optimization recommendations.</p>
                     <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-                        <button type="button" id="ai-analyze-btn" class="ccm-button ccm-button-primary" disabled>🤖 Analyze with AI</button>
+                        <button type="button" id="ai-analyze-btn" class="ccm-button ccm-button-primary" disabled>Analyze with AI</button>
                         <button type="button" id="ai-optimize-btn" class="ccm-button ccm-button-success" disabled>⚡ Auto-Optimize</button>
                     </div>
                     <div id="ai-analysis-loading" style="display: none; text-align: center; padding: 2rem;">

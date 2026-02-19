@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.11.0
+ * Version: 7.11.1
  */
 
 (function() {
@@ -3012,32 +3012,44 @@
         if (!document.querySelector('.ccm-tools')) return;
         
         // Initialize event handlers
-        initEventHandlers();
+        try {
+            initEventHandlers();
+        } catch (e) { console.error('CCM: Event handlers init error', e); }
         
         // Initialize WebP converter handlers if on WebP page
-        if ($('#webp-settings-form') || $('#start-bulk-conversion')) {
-            initWebPConverterHandlers();
-        }
+        try {
+            if ($('#webp-settings-form') || $('#start-bulk-conversion')) {
+                initWebPConverterHandlers();
+            }
+        } catch (e) { console.error('CCM: WebP init error', e); }
         
         // Initialize Performance Optimizer handlers if on perf page
-        if ($('#save-perf-settings')) {
-            initPerfOptimizerHandlers();
-        }
+        try {
+            if ($('#save-perf-settings')) {
+                initPerfOptimizerHandlers();
+            }
+        } catch (e) { console.error('CCM: Perf init error', e); }
         
         // Initialize uploads backup handlers
-        if ($('#start-uploads-backup')) {
-            initUploadsBackupHandlers();
-        }
+        try {
+            if ($('#start-uploads-backup')) {
+                initUploadsBackupHandlers();
+            }
+        } catch (e) { console.error('CCM: Backup init error', e); }
         
         // Initialize Redis Object Cache page handlers
-        if ($('#redis-settings-form') || $('#redis-enable') || $('#redis-disable')) {
-            initRedisObjectCacheHandlers();
-        }
+        try {
+            if ($('#redis-settings-form') || $('#redis-enable') || $('#redis-disable')) {
+                initRedisObjectCacheHandlers();
+            }
+        } catch (e) { console.error('CCM: Redis init error', e); }
         
         // Initialize AI Hub page handlers
-        if ($('#ai-hub-save-btn')) {
-            initAiHubHandlers();
-        }
+        try {
+            if ($('#ai-hub-save-btn')) {
+                initAiHubHandlers();
+            }
+        } catch (e) { console.error('CCM: AI Hub init error', e); }
         
         // Mark front page rows
         const frontPageIndicators = $$('.ccm-front-page-indicator');
@@ -3799,7 +3811,7 @@
         const loadingEl = $('#ai-analysis-loading');
         const resultsEl = $('#ai-analysis-results');
 
-        if (btn) { btn.disabled = true; btn.textContent = '🤖 Analyzing…'; }
+        if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
         if (loadingEl) loadingEl.style.display = 'block';
         if (resultsEl) resultsEl.style.display = 'none';
 
@@ -3816,7 +3828,7 @@
         } catch (err) {
             showNotification(err.message || 'AI analysis failed.', 'error');
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = '🤖 Analyze with AI'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Analyze with AI'; }
             if (loadingEl) loadingEl.style.display = 'none';
         }
     }
