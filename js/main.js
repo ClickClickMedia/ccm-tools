@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.3
+ * Version: 7.12.4
  */
 
 (function() {
@@ -3811,7 +3811,6 @@
         { id: 'test-mobile',    label: 'Test Mobile' },
         { id: 'test-desktop',   label: 'Test Desktop' },
         { id: 'analyze',        label: 'AI Analysis' },
-        { id: 'review',         label: 'Review Fixes' },
         { id: 'apply',          label: 'Apply Changes' },
         { id: 'retest-mobile',  label: 'Re-test Mobile' },
         { id: 'retest-desktop', label: 'Re-test Desktop' },
@@ -3872,7 +3871,7 @@
 
     function aiRenderFixSummary(recommendations, manualActions) {
         const container = $('#ai-fix-summary');
-        if (!container) return;
+        if (!container) return [];
 
         const autoFixes = (recommendations || []).filter(r => PERF_SETTING_KEYS.has(r.setting_key));
         const manualFixes = (recommendations || []).filter(r => !PERF_SETTING_KEYS.has(r.setting_key));
@@ -3880,27 +3879,26 @@
 
         let html = '';
 
-        // Auto-fixable
+        // Auto-fixable (informational — no checkboxes, auto-applied)
         if (autoFixes.length) {
             html += `<div class="ccm-ai-fix-section ccm-ai-fix-auto">
-                <h4>✅ Auto-Fixable (${autoFixes.length})</h4>
-                <p class="ccm-text-muted" style="margin:0 0 0.75rem;">These will be applied to your Performance Optimizer settings automatically.</p>`;
-            autoFixes.forEach((fix, i) => {
+                <h4>⚡ Auto-Applying (${autoFixes.length})</h4>
+                <p class="ccm-text-muted" style="margin:0 0 0.75rem;">These changes are being applied automatically.</p>`;
+            autoFixes.forEach(fix => {
                 const displayValue = aiFormatValue(fix.recommended_value);
-                html += `<label class="ccm-ai-fix-item">
-                    <input type="checkbox" checked data-fix-index="${i}" class="ai-auto-fix-cb">
+                const impact = fix.impact || fix.estimated_impact || 'medium';
+                const risk = fix.risk || 'low';
+                html += `<div class="ccm-ai-fix-item">
                     <div class="ccm-ai-fix-details">
                         <strong>${aiSettingLabel(fix.setting_key)}</strong>
-                        <span class="ccm-badge ccm-badge-${fix.impact === 'high' ? 'error' : (fix.impact === 'medium' ? 'warning' : 'info')}">${fix.impact || fix.estimated_impact || 'medium'}</span>
+                        <span class="ccm-badge ccm-badge-${impact === 'high' ? 'error' : (impact === 'medium' ? 'warning' : 'info')}">${impact} impact</span>
+                        <span class="ccm-badge ccm-badge-${risk === 'high' ? 'error' : (risk === 'medium' ? 'warning' : 'info')}">${risk} risk</span>
                         <p class="ccm-text-muted" style="margin:0.25rem 0 0;">${fix.reason || ''}</p>
                         <code style="word-break:break-all;">${fix.setting_key} → ${displayValue}</code>
                     </div>
-                </label>`;
+                </div>`;
             });
-            html += `<div style="margin-top:1rem;display:flex;gap:0.5rem;">
-                <button type="button" id="ai-confirm-apply" class="ccm-button ccm-button-primary">Apply Selected Changes</button>
-                <button type="button" id="ai-skip-apply" class="ccm-button ccm-button-secondary">Skip</button>
-            </div></div>`;
+            html += '</div>';
         }
 
         // Manual items
@@ -3926,7 +3924,7 @@
         container.innerHTML = html;
         container.style.display = 'block';
 
-        // Return auto fixes reference for apply step
+        // Return auto fixes for automatic application
         return autoFixes;
     }
 
@@ -3967,35 +3965,7 @@
         return String(value);
     }
 
-    // ─── Wait for user confirmation (returns selected recommendations) ────────────
 
-    function aiWaitForConfirmation(autoFixes) {
-        return new Promise(resolve => {
-            const applyBtn = $('#ai-confirm-apply');
-            const skipBtn = $('#ai-skip-apply');
-
-            if (!applyBtn) { resolve([]); return; }
-
-            applyBtn.addEventListener('click', () => {
-                // Collect checked fixes
-                const selected = [];
-                $$('.ai-auto-fix-cb').forEach((cb, i) => {
-                    if (cb.checked && autoFixes[i]) selected.push(autoFixes[i]);
-                });
-                applyBtn.disabled = true;
-                if (skipBtn) skipBtn.disabled = true;
-                resolve(selected);
-            });
-
-            if (skipBtn) {
-                skipBtn.addEventListener('click', () => {
-                    applyBtn.disabled = true;
-                    skipBtn.disabled = true;
-                    resolve([]);
-                });
-            }
-        });
-    }
 
     // ─── Update page toggles in real time ────────────
 
@@ -4153,17 +4123,12 @@
                     break;
                 }
 
-                // ── Review Fixes ──
-                aiUpdateStep('review', 'active', `Review${iterLabel}…`);
+                // ── Auto-select all applicable fixes (no user interaction) ──
                 const autoFixes = aiRenderFixSummary(analysis.recommendations || [], analysis.manual_actions || []);
-
-                let selectedFixes = [];
-                if (autoFixes && autoFixes.length) {
-                    selectedFixes = await aiWaitForConfirmation(autoFixes);
-                }
-                aiUpdateStep('review', 'done', selectedFixes.length ? `${selectedFixes.length} selected${iterLabel}` : 'Skipped');
+                const selectedFixes = autoFixes || [];
 
                 if (!selectedFixes.length) {
+                    showNotification('No auto-fixable recommendations found.', 'info');
                     break;
                 }
 
@@ -4276,7 +4241,6 @@
 
                 // Update steps UI for next iteration
                 aiUpdateStep('analyze', 'pending', '');
-                aiUpdateStep('review', 'pending', '');
                 aiUpdateStep('apply', 'pending', '');
                 aiUpdateStep('retest-mobile', 'pending', '');
                 aiUpdateStep('retest-desktop', 'pending', '');

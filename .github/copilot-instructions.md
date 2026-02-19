@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.3
+- **Current Version:** 7.12.4
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -282,6 +282,15 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.4
+- **Fully Automated One-Click Optimize**
+  - Removed manual review/confirmation step — all AI recommendations are applied automatically
+  - Removed "Review Fixes" step from progress indicator (now 8 steps: Snapshot → Test → Analyze → Apply → Retest → Compare)
+  - Fix summary now shows informational cards (impact + risk badges) instead of checkboxes
+  - Removed `aiWaitForConfirmation()` function (dead code)
+  - Entire flow runs hands-free: snapshot → baseline test → AI analysis → auto-apply → retest → evaluate → iterate if needed
+  - Manual fixes still displayed as informational items for user reference
 
 ### v7.12.3
 - **Iterative AI Optimization with Rollback**
