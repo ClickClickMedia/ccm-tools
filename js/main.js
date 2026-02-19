@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.14.1
+ * Version: 7.14.2
  */
 
 (function() {
@@ -4439,8 +4439,13 @@
                         aiUpdateStep('compare', 'done', `Rolled back — retrying (${iteration + 1}/${AI_MAX_ITERATIONS})`);
                         aiLog(`Retrying with conservative approach (iteration ${iteration + 1})…`, 'step');
                         showNotification(`Attempting conservative approach (iteration ${iteration + 1})…`, 'info');
-                        // Clear fix summary for next iteration
+                        // Clear fix summary and reset remaining steps for next iteration
                         if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
+                        aiUpdateStep('analyze', 'pending', '');
+                        aiUpdateStep('apply', 'pending', '');
+                        aiUpdateStep('retest-mobile', 'pending', '');
+                        aiUpdateStep('retest-desktop', 'pending', '');
+                        aiUpdateStep('compare', 'pending', '');
                         continue; // next iteration
                     } else {
                         aiUpdateStep('compare', 'done', 'Rolled back — max iterations');
