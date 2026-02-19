@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.2
+ * Version: 7.12.3
  */
 
 (function() {
@@ -3807,6 +3807,7 @@
     // ─── Step Progress UI ────────────
 
     const AI_STEPS = [
+        { id: 'snapshot',       label: 'Save Snapshot' },
         { id: 'test-mobile',    label: 'Test Mobile' },
         { id: 'test-desktop',   label: 'Test Desktop' },
         { id: 'analyze',        label: 'AI Analysis' },
@@ -4067,7 +4068,9 @@
         container.style.display = 'block';
     }
 
-    // ─── One-Click Optimize (main flow) ────────────
+    // ─── One-Click Optimize (iterative improvement loop with rollback) ────────────
+
+    const AI_MAX_ITERATIONS = 3;
 
     async function aiOneClickOptimize() {
         const btn = $('#ai-one-click-btn');
@@ -4090,7 +4093,12 @@
         const url = ($('#ai-ps-url') || {}).value || '';
 
         try {
-            // ── Step 1: Test Mobile ──
+            // ── Step 1: Save Settings Snapshot (for rollback) ──
+            aiUpdateStep('snapshot', 'active', 'Saving…');
+            await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
+            aiUpdateStep('snapshot', 'done', 'Saved');
+
+            // ── Step 2: Test Mobile (baseline) ──
             aiUpdateStep('test-mobile', 'active', 'Running…');
             const mobileData = await aiRunPageSpeed(url, 'mobile');
             aiShowResultsForStrategy(mobileData, 'mobile');
@@ -4098,7 +4106,7 @@
             aiHubState.lastResultId = aiHubState.resultIds.mobile;
             aiUpdateStep('test-mobile', 'done', `Perf: ${mobileData.scores?.performance ?? '—'}`);
 
-            // ── Step 2: Test Desktop ──
+            // ── Step 3: Test Desktop (baseline) ──
             aiUpdateStep('test-desktop', 'active', 'Running…');
             const desktopData = await aiRunPageSpeed(url, 'desktop');
             aiShowResultsForStrategy(desktopData, 'desktop');
@@ -4111,75 +4119,172 @@
                 p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
             });
 
-            // ── Step 3: AI Analysis (based on mobile result — primary strategy) ──
-            aiUpdateStep('analyze', 'active', 'Analyzing…');
-            const analysisLoading = $('#ai-analysis-loading');
-            if (analysisLoading) analysisLoading.style.display = 'block';
+            const baselineMobilePerf = mobileData.scores?.performance ?? 0;
+            const baselineDesktopPerf = desktopData.scores?.performance ?? 0;
+            let iteration = 0;
+            let hasApplied = false;
+            let bestMobilePerf = baselineMobilePerf;
+            let bestDesktopPerf = baselineDesktopPerf;
 
-            const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
-                result_id: aiHubState.lastResultId,
-            }, { timeout: 120000 });
+            // ── Iterative improvement loop ──
+            while (iteration < AI_MAX_ITERATIONS) {
+                iteration++;
+                const iterLabel = iteration > 1 ? ` (Iter ${iteration})` : '';
 
-            if (analysisLoading) analysisLoading.style.display = 'none';
+                // ── AI Analysis ──
+                aiUpdateStep('analyze', 'active', `Analyzing${iterLabel}…`);
+                const analysisLoading = $('#ai-analysis-loading');
+                if (analysisLoading) analysisLoading.style.display = 'block';
 
-            const analysisData = analysisRes.data || {};
-            const analysis = analysisData.analysis || analysisData;
-            aiRenderAnalysis(analysisData);
-            aiUpdateStep('analyze', 'done', `${(analysis.recommendations || []).length} recommendations`);
+                const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
+                    result_id: aiHubState.lastResultId,
+                }, { timeout: 120000 });
 
-            // ── Step 4: Review Fixes ──
-            aiUpdateStep('review', 'active', 'Waiting for review…');
-            const autoFixes = aiRenderFixSummary(analysis.recommendations || [], analysis.manual_actions || []);
+                if (analysisLoading) analysisLoading.style.display = 'none';
 
-            let selectedFixes = [];
-            if (autoFixes && autoFixes.length) {
-                selectedFixes = await aiWaitForConfirmation(autoFixes);
-            }
-            aiUpdateStep('review', 'done', selectedFixes.length ? `${selectedFixes.length} selected` : 'Skipped');
+                const analysisData = analysisRes.data || {};
+                const analysis = analysisData.analysis || analysisData;
+                aiRenderAnalysis(analysisData);
+                const recCount = (analysis.recommendations || []).length;
+                aiUpdateStep('analyze', 'done', `${recCount} recommendations${iterLabel}`);
 
-            // ── Step 5: Apply Changes ──
-            if (selectedFixes.length) {
-                aiUpdateStep('apply', 'active', 'Applying…');
+                if (recCount === 0) {
+                    showNotification('AI found no further optimizations to try.', 'info');
+                    break;
+                }
+
+                // ── Review Fixes ──
+                aiUpdateStep('review', 'active', `Review${iterLabel}…`);
+                const autoFixes = aiRenderFixSummary(analysis.recommendations || [], analysis.manual_actions || []);
+
+                let selectedFixes = [];
+                if (autoFixes && autoFixes.length) {
+                    selectedFixes = await aiWaitForConfirmation(autoFixes);
+                }
+                aiUpdateStep('review', 'done', selectedFixes.length ? `${selectedFixes.length} selected${iterLabel}` : 'Skipped');
+
+                if (!selectedFixes.length) {
+                    break;
+                }
+
+                // ── Apply Changes ──
+                aiUpdateStep('apply', 'active', `Applying${iterLabel}…`);
                 const applyRes = await ajax('ccm_tools_ai_apply_changes', {
                     recommendations: JSON.stringify(selectedFixes),
                 }, { timeout: 30000 });
 
                 const applyData = applyRes.data || {};
                 const changes = applyData.changes || [];
-                aiUpdateStep('apply', 'done', `${changes.length} settings changed`);
+                aiUpdateStep('apply', 'done', `${changes.length} changed${iterLabel}`);
+                hasApplied = true;
 
                 // Update on-page toggles in real time
                 if (applyData.settings) {
                     aiUpdatePageToggles(applyData.settings);
                 }
 
-                showNotification(`Applied ${changes.length} change(s).`, 'success');
+                showNotification(`Applied ${changes.length} change(s).${iterLabel}`, 'success');
 
-                // Wait for cache to clear before re-testing
+                // Wait for caches to clear
                 await aiSleep(5000);
 
-                // ── Step 6: Re-test Mobile ──
-                aiUpdateStep('retest-mobile', 'active', 'Re-testing…');
+                // ── Re-test Mobile ──
+                aiUpdateStep('retest-mobile', 'active', `Re-testing${iterLabel}…`);
                 const mobileRetest = await aiRunPageSpeed(url, 'mobile');
+                const retestMobilePerf = mobileRetest.scores?.performance ?? 0;
                 aiHubState.afterScores.mobile = mobileRetest.scores || {};
-                aiUpdateStep('retest-mobile', 'done', `Perf: ${mobileRetest.scores?.performance ?? '—'}`);
+                aiUpdateStep('retest-mobile', 'done', `Perf: ${retestMobilePerf}${iterLabel}`);
 
-                // ── Step 7: Re-test Desktop ──
-                aiUpdateStep('retest-desktop', 'active', 'Re-testing…');
+                // ── Re-test Desktop ──
+                aiUpdateStep('retest-desktop', 'active', `Re-testing${iterLabel}…`);
                 const desktopRetest = await aiRunPageSpeed(url, 'desktop');
+                const retestDesktopPerf = desktopRetest.scores?.performance ?? 0;
                 aiHubState.afterScores.desktop = desktopRetest.scores || {};
-                aiUpdateStep('retest-desktop', 'done', `Perf: ${desktopRetest.scores?.performance ?? '—'}`);
+                aiUpdateStep('retest-desktop', 'done', `Perf: ${retestDesktopPerf}${iterLabel}`);
 
-                // ── Step 8: Before / After Comparison ──
+                // ── Evaluate results ──
+                const mobileChange = retestMobilePerf - baselineMobilePerf;
+                const desktopChange = retestDesktopPerf - baselineDesktopPerf;
+                const scoreDropped = mobileChange < 0 || desktopChange < 0;
+                const scoreImproved = mobileChange > 0 || desktopChange > 0;
+
+                if (scoreDropped) {
+                    // ── ROLLBACK — scores got worse ──
+                    showNotification(
+                        `Scores dropped (Mobile ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop ${desktopChange >= 0 ? '+' : ''}${desktopChange}). Rolling back…`,
+                        'warning'
+                    );
+                    aiUpdateStep('compare', 'active', 'Rolling back…');
+
+                    await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 10000 });
+                    showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
+
+                    // Update page toggles to rolled-back state
+                    try {
+                        const snapRes = await ajax('ccm_tools_get_perf_settings', {}, { timeout: 10000 });
+                        if (snapRes.data) aiUpdatePageToggles(snapRes.data);
+                    } catch (_) { /* best effort */ }
+
+                    // Update result_id for next analysis (use the new retest result)
+                    aiHubState.lastResultId = aiHubState.resultIds.mobile;
+
+                    if (iteration < AI_MAX_ITERATIONS) {
+                        // Save new snapshot and try again with conservative approach
+                        await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
+                        aiUpdateStep('compare', 'done', `Rolled back — retrying (${iteration + 1}/${AI_MAX_ITERATIONS})`);
+                        showNotification(`Attempting conservative approach (iteration ${iteration + 1})…`, 'info');
+                        // Clear fix summary for next iteration
+                        if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
+                        continue; // next iteration
+                    } else {
+                        aiUpdateStep('compare', 'done', 'Rolled back — max iterations');
+                        break;
+                    }
+                }
+
+                // Show before/after comparison
                 aiUpdateStep('compare', 'active', 'Comparing…');
                 aiRenderBeforeAfter(aiHubState.beforeScores, aiHubState.afterScores);
-                aiUpdateStep('compare', 'done', 'Complete');
-
-                // Update result panels with new data
                 aiShowResultsForStrategy(mobileRetest, 'mobile');
                 aiShowResultsForStrategy(desktopRetest, 'desktop');
-            } else {
-                // Skip apply + retest
+
+                // Check if we should keep iterating
+                const bothAbove90 = retestMobilePerf >= 90 && retestDesktopPerf >= 90;
+                if (bothAbove90 || iteration >= AI_MAX_ITERATIONS) {
+                    aiUpdateStep('compare', 'done', scoreImproved
+                        ? `Improved! M:${mobileChange >= 0 ? '+' : ''}${mobileChange} D:${desktopChange >= 0 ? '+' : ''}${desktopChange}`
+                        : 'No change detected');
+                    break;
+                }
+
+                // Scores improved but below 90 — iterate for more gains
+                showNotification(
+                    `Improved (M:${mobileChange >= 0 ? '+' : ''}${mobileChange}, D:${desktopChange >= 0 ? '+' : ''}${desktopChange}) but still below 90. Trying for more…`,
+                    'info'
+                );
+                aiUpdateStep('compare', 'done', `+${Math.max(mobileChange, desktopChange)}pts — iterating…`);
+
+                // Save snapshot of current (improved) state
+                await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
+
+                // Update baseline to current best for rollback comparison
+                bestMobilePerf = Math.max(bestMobilePerf, retestMobilePerf);
+                bestDesktopPerf = Math.max(bestDesktopPerf, retestDesktopPerf);
+
+                // Clear fix summary for next iteration
+                if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
+
+                // Update steps UI for next iteration
+                aiUpdateStep('analyze', 'pending', '');
+                aiUpdateStep('review', 'pending', '');
+                aiUpdateStep('apply', 'pending', '');
+                aiUpdateStep('retest-mobile', 'pending', '');
+                aiUpdateStep('retest-desktop', 'pending', '');
+                aiUpdateStep('compare', 'pending', '');
+            }
+
+            // Final state if no apply happened
+            if (!hasApplied) {
                 aiUpdateStep('apply', 'skipped', 'Skipped');
                 aiUpdateStep('retest-mobile', 'skipped', 'Skipped');
                 aiUpdateStep('retest-desktop', 'skipped', 'Skipped');

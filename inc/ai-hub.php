@@ -450,6 +450,55 @@ function ccm_tools_ajax_ai_apply_changes(): void {
     ]);
 }
 
+// ─── Snapshot & Rollback ─────────────────────────────────────────
+
+add_action('wp_ajax_ccm_tools_ai_snapshot_settings', 'ccm_tools_ajax_ai_snapshot_settings');
+
+/**
+ * Save a snapshot of current performance settings (for rollback)
+ */
+function ccm_tools_ajax_ai_snapshot_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $settings = ccm_tools_perf_get_settings();
+    set_transient('ccm_tools_perf_snapshot', $settings, HOUR_IN_SECONDS);
+
+    wp_send_json_success([
+        'message'  => 'Settings snapshot saved',
+        'settings' => $settings,
+    ]);
+}
+
+add_action('wp_ajax_ccm_tools_ai_rollback_settings', 'ccm_tools_ajax_ai_rollback_settings');
+
+/**
+ * Rollback performance settings to the saved snapshot
+ */
+function ccm_tools_ajax_ai_rollback_settings(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $snapshot = get_transient('ccm_tools_perf_snapshot');
+
+    if (!is_array($snapshot) || empty($snapshot)) {
+        wp_send_json_error(['message' => 'No snapshot found to rollback to']);
+    }
+
+    ccm_tools_perf_save_settings($snapshot);
+
+    wp_send_json_success([
+        'message'  => 'Settings rolled back to snapshot',
+        'settings' => $snapshot,
+    ]);
+}
+
 /**
  * Render the AI Optimizer section (embedded in the Performance page)
  */

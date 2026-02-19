@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.2
+- **Current Version:** 7.12.3
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -282,6 +282,36 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.3
+- **Iterative AI Optimization with Rollback**
+  - **Hub `ai-optimize.php` — Deep Analysis Rewrite**
+    - `runAiAnalysis()` completely rewritten to match the quality of `ai-analyze.php`
+    - Now extracts full PSI audit data from stored `full_response`: render-blocking resources, LCP element, third-party summary, unused JS (top 15), unused CSS (top 15), diagnostics
+    - Fetches live page resources via `fetchPageResources()`: scripts, stylesheets, images, third-party domains, above-fold HTML, CSS content, inline styles
+    - Full detailed system prompt with all 30+ CCM Tools setting keys, CSS generation rules, script analysis rules, preconnect rules
+    - Critical CSS generation rules: above-fold only, actual selectors, minified, under 15KB
+    - Explicit safety rules: never enable `preload_css` without `critical_css_code`, never enable `delay_js` without confidence
+    - Response format includes `risk` field per recommendation and `score_assessment`
+  - **Hub `ai-optimize.php` — Score-Drop Aware Retest Logic**
+    - Retest now detects score regressions and sends `score_dropped: true` + `rollback: true` flags
+    - When scores drop: sends detailed context to AI about WHAT was applied and WHAT happened, instructs conservative approach
+    - AI told to NOT re-recommend settings that caused the regression
+    - Separate paths for: score dropped (rollback + conservative retry), improved but <90 (iterate for more), good enough (complete)
+    - Continuation iterations include full current settings and score change history
+  - **Plugin `ai-hub.php` — Snapshot & Rollback**
+    - New AJAX handler: `ccm_tools_ai_snapshot_settings` — saves current perf settings to a transient (1 hour TTL) before optimisation
+    - New AJAX handler: `ccm_tools_ai_rollback_settings` — restores settings from the saved snapshot
+    - Snapshot is taken before any changes are applied and updated after each successful iteration
+  - **JS One-Click Flow — Iterative Improvement Loop**
+    - New step: "Save Snapshot" before testing (9 steps total)
+    - After applying and re-testing, compares scores against original baseline
+    - If scores dropped: automatically rolls back to snapshot, notifies user, and retries with a fresh AI analysis (up to 3 iterations)
+    - If scores improved but below 90: saves new snapshot as checkpoint, clears fix summary, re-runs AI analysis for additional gains
+    - If scores ≥90 or max iterations reached: completes with before/after comparison
+    - Step progress UI resets between iterations (analyze → review → apply → retest → compare cycle)
+    - Page toggles updated to rolled-back state on rollback
+    - `AI_MAX_ITERATIONS` constant (default: 3) controls maximum retry attempts
 
 ### v7.12.2
 - **AI Performance Optimizer — Button Uniformity & Layout Fixes**
