@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.14.2
+- **Current Version:** 7.15.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -195,6 +195,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_preflight` | `ccm_tools_ajax_ai_preflight()` | Pre-flight check of server-side tool status |
 | `ccm_tools_ai_enable_tool` | `ccm_tools_ajax_ai_enable_tool()` | Enable a server-side tool (htaccess, webp, redis, performance) |
 | `ccm_tools_ai_chat` | `ccm_tools_ajax_ai_chat()` | Send message to AI troubleshooting assistant |
+| `ccm_tools_ai_hub_get_latest_scores` | `ccm_tools_ajax_ai_hub_get_latest_scores()` | Get latest PageSpeed scores for dashboard widget |
 
 ## Performance Considerations
 
@@ -286,6 +287,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.15.0
+- **PageSpeed Scores on Dashboard**
+  - Latest Mobile and Desktop PageSpeed scores displayed on the System Info dashboard
+  - Card only renders when AI Hub API key is configured
+  - Shows all 4 scores (Performance, Accessibility, Best Practices, SEO) with Google-standard color coding
+  - Scores loaded asynchronously via new `ccm_tools_ai_hub_get_latest_scores` AJAX handler
+  - Shows tested URL and relative time ("2h ago", "1d ago")
+  - "Performance →" button links directly to the Performance Optimizer page
+  - Fallback message with "Run a test" link when no results exist
+  - Responsive grid: side-by-side on desktop, stacked on mobile
+  - Smaller score circles (56px) to fit dashboard card layout
+  - New CSS: `.ccm-dashboard-ps-grid`, `.ccm-dashboard-ps-strategy`, `.ccm-dashboard-ps-scores-row`, `.ccm-dashboard-ps-meta`
+  - New JS: `loadDashboardPageSpeedScores()` with standalone scoring utilities
 
 ### v7.14.2
 - **Reset Step Indicators on Rollback Iteration**

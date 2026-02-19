@@ -111,6 +111,65 @@ add_action('wp_ajax_ccm_tools_ai_hub_ai_analyze', 'ccm_tools_ajax_ai_hub_ai_anal
 add_action('wp_ajax_ccm_tools_ai_hub_ai_optimize', 'ccm_tools_ajax_ai_hub_ai_optimize');
 add_action('wp_ajax_ccm_tools_ai_preflight', 'ccm_tools_ajax_ai_preflight');
 add_action('wp_ajax_ccm_tools_ai_enable_tool', 'ccm_tools_ajax_ai_enable_tool');
+add_action('wp_ajax_ccm_tools_ai_hub_get_latest_scores', 'ccm_tools_ajax_ai_hub_get_latest_scores');
+
+/**
+ * Get latest PageSpeed scores for dashboard widget (lightweight)
+ */
+function ccm_tools_ajax_ai_hub_get_latest_scores(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    // Fetch latest 1 result for each strategy
+    $mobile = ccm_tools_ai_hub_request('pagespeed/results', [
+        'strategy' => 'mobile',
+        'limit'    => 1,
+    ]);
+
+    $desktop = ccm_tools_ai_hub_request('pagespeed/results', [
+        'strategy' => 'desktop',
+        'limit'    => 1,
+    ]);
+
+    $mobile_scores = null;
+    $desktop_scores = null;
+    $mobile_url = '';
+    $desktop_url = '';
+    $mobile_date = '';
+    $desktop_date = '';
+
+    if (!is_wp_error($mobile)) {
+        $mobile_results = $mobile['results'] ?? $mobile;
+        if (is_array($mobile_results) && !empty($mobile_results)) {
+            $latest = $mobile_results[0];
+            $mobile_scores = $latest['scores'] ?? null;
+            $mobile_url = $latest['url'] ?? '';
+            $mobile_date = $latest['tested_at'] ?? $latest['created_at'] ?? '';
+        }
+    }
+
+    if (!is_wp_error($desktop)) {
+        $desktop_results = $desktop['results'] ?? $desktop;
+        if (is_array($desktop_results) && !empty($desktop_results)) {
+            $latest = $desktop_results[0];
+            $desktop_scores = $latest['scores'] ?? null;
+            $desktop_url = $latest['url'] ?? '';
+            $desktop_date = $latest['tested_at'] ?? $latest['created_at'] ?? '';
+        }
+    }
+
+    wp_send_json_success([
+        'mobile'       => $mobile_scores,
+        'desktop'      => $desktop_scores,
+        'mobile_url'   => $mobile_url,
+        'desktop_url'  => $desktop_url,
+        'mobile_date'  => $mobile_date,
+        'desktop_date' => $desktop_date,
+    ]);
+}
 
 /**
  * Save AI Hub connection settings

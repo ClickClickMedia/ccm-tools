@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.14.2
+ * Version: 7.15.0
  */
 
 (function() {
@@ -3053,8 +3053,113 @@
             const row = indicator.closest('tr');
             if (row) row.classList.add('ccm-front-page-row');
         });
+
+        // Load PageSpeed scores on dashboard
+        try {
+            if ($('#dashboard-pagespeed-scores')) {
+                loadDashboardPageSpeedScores();
+            }
+        } catch (e) { console.error('CCM: Dashboard PageSpeed init error', e); }
     });
     
+    // ===================================
+    // Dashboard PageSpeed Scores
+    // ===================================
+
+    /**
+     * Load latest PageSpeed scores for the dashboard card
+     */
+    async function loadDashboardPageSpeedScores() {
+        const container = $('#dashboard-pagespeed-scores');
+        if (!container) return;
+
+        function scoreColor(score) {
+            const n = parseInt(score, 10);
+            if (isNaN(n)) return '';
+            if (n >= 90) return 'ccm-score-green';
+            if (n >= 50) return 'ccm-score-orange';
+            return 'ccm-score-red';
+        }
+
+        function scoreCircle(score, label) {
+            const n = parseInt(score, 10);
+            if (isNaN(n)) return `<div class="ccm-ai-score-circle-wrap"><div class="ccm-ai-score-circle">—</div><div class="ccm-ai-score-label">${escapeHtml(label)}</div></div>`;
+            const cls = scoreColor(n);
+            return `<div class="ccm-ai-score-circle-wrap"><div class="ccm-ai-score-circle ${cls}">${n}</div><div class="ccm-ai-score-label">${escapeHtml(label)}</div></div>`;
+        }
+
+        function timeAgo(dateStr) {
+            if (!dateStr) return '';
+            const d = new Date(dateStr);
+            const now = new Date();
+            const diff = Math.floor((now - d) / 1000);
+            if (diff < 60) return 'just now';
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+            return `${Math.floor(diff / 86400)}d ago`;
+        }
+
+        try {
+            const res = await ajax('ccm_tools_ai_hub_get_latest_scores', {}, { timeout: 30000 });
+            const data = res.data || {};
+
+            if (!data.mobile && !data.desktop) {
+                const adminUrl = ccmToolsData.ajax_url.replace('admin-ajax.php', '');
+                container.innerHTML = '<p class="ccm-text-muted">No PageSpeed results yet. <a href="' + adminUrl + 'admin.php?page=ccm-tools-performance">Run a test</a></p>';
+                return;
+            }
+
+            let html = '<div class="ccm-dashboard-ps-grid">';
+
+            // Mobile column
+            html += '<div class="ccm-dashboard-ps-strategy">';
+            html += '<h4>📱 Mobile</h4>';
+            if (data.mobile) {
+                html += '<div class="ccm-dashboard-ps-scores-row">';
+                html += scoreCircle(data.mobile.performance, 'Performance');
+                html += scoreCircle(data.mobile.accessibility, 'Accessibility');
+                html += scoreCircle(data.mobile.best_practices, 'Best Practices');
+                html += scoreCircle(data.mobile.seo, 'SEO');
+                html += '</div>';
+            } else {
+                html += '<p class="ccm-text-muted">No mobile results</p>';
+            }
+            html += '</div>';
+
+            // Desktop column
+            html += '<div class="ccm-dashboard-ps-strategy">';
+            html += '<h4>🖥️ Desktop</h4>';
+            if (data.desktop) {
+                html += '<div class="ccm-dashboard-ps-scores-row">';
+                html += scoreCircle(data.desktop.performance, 'Performance');
+                html += scoreCircle(data.desktop.accessibility, 'Accessibility');
+                html += scoreCircle(data.desktop.best_practices, 'Best Practices');
+                html += scoreCircle(data.desktop.seo, 'SEO');
+                html += '</div>';
+            } else {
+                html += '<p class="ccm-text-muted">No desktop results</p>';
+            }
+            html += '</div>';
+
+            html += '</div>';
+
+            // Tested URL and time
+            const testedUrl = data.mobile_url || data.desktop_url || '';
+            const testedDate = data.mobile_date || data.desktop_date || '';
+            if (testedUrl || testedDate) {
+                html += '<div class="ccm-dashboard-ps-meta">';
+                if (testedUrl) html += `<span title="${escapeHtml(testedUrl)}">${escapeHtml(testedUrl.length > 50 ? testedUrl.slice(0, 50) + '…' : testedUrl)}</span>`;
+                if (testedDate) html += `<span>${timeAgo(testedDate)}</span>`;
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        } catch (err) {
+            container.innerHTML = '<p class="ccm-text-muted">Could not load PageSpeed scores.</p>';
+            console.error('CCM: Dashboard PageSpeed error', err);
+        }
+    }
+
     // ===================================
     // Redis Object Cache Functions
     // ===================================

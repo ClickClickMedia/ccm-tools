@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.14.2
+ * Version: 7.15.0
  */
 
 /* ===================================
@@ -1056,6 +1056,55 @@
 }
 
 /* ===================================
+   Dashboard PageSpeed Scores
+   =================================== */
+.ccm-dashboard-ps-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 0;
+}
+
+.ccm-dashboard-ps-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.ccm-dashboard-ps-strategy h4 {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+    color: var(--ccm-text-muted);
+}
+
+.ccm-dashboard-ps-scores-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.ccm-dashboard-ps-scores-row .ccm-ai-score-circle {
+    width: 56px;
+    height: 56px;
+    font-size: 1.25rem;
+}
+
+.ccm-dashboard-ps-scores-row .ccm-ai-score-label {
+    font-size: 0.65rem;
+}
+
+.ccm-dashboard-ps-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--ccm-border);
+    font-size: 0.75rem;
+    color: var(--ccm-text-muted);
+}
+
+/* ===================================
    PHP Extensions Grid
    =================================== */
 .ccm-extensions-grid {
@@ -1475,6 +1524,10 @@ tr.ccm-front-page-row {
     }
     
     .ccm-disk-info {
+        grid-template-columns: 1fr;
+    }
+
+    .ccm-dashboard-ps-grid {
         grid-template-columns: 1fr;
     }
     
