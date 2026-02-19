@@ -3692,6 +3692,7 @@
             }, { timeout: 120000 });
 
             const data = res.data || {};
+            console.log('[CCM AI Hub] PageSpeed response:', JSON.stringify(data, null, 2));
             aiHubState.lastResultId = data.result_id || data.id || null;
 
             // Render scores
