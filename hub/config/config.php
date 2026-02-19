@@ -56,6 +56,7 @@ require_once APP_ROOT . '/includes/encryption.php';
 require_once APP_ROOT . '/includes/functions.php';
 require_once APP_ROOT . '/includes/settings.php';
 require_once APP_ROOT . '/includes/auth.php';
+require_once APP_ROOT . '/includes/api-auth.php';
 
 // ─── Load all settings from database ────────────────────────────
 // Settings class caches everything in memory for the request lifetime.
@@ -103,7 +104,7 @@ $sessionSecure = Settings::get('session_secure', '1');
 $sessionLifetime = (int)Settings::get('session_lifetime', '7200');
 
 // ─── Session configuration ──────────────────────────────────────
-if (session_status() === PHP_SESSION_NONE) {
+if (!defined('API_REQUEST') && session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_secure', $sessionSecure ? '1' : '0');
     ini_set('session.cookie_samesite', 'Lax');

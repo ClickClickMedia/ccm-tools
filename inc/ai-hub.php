@@ -95,8 +95,7 @@ function ccm_tools_ai_hub_request(string $endpoint, array $body = [], string $me
     }
 
     if (!is_array($data)) {
-        $snippet = substr(trim($responseBody), 0, 200);
-        return new WP_Error('hub_invalid_response', "Invalid response from hub (HTTP {$code}): {$snippet}");
+        return new WP_Error('hub_invalid_response', 'Invalid response from hub (non-JSON or empty)');
     }
 
     return $data;
