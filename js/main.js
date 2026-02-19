@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.4
+ * Version: 7.12.5
  */
 
 (function() {
@@ -3971,16 +3971,25 @@
 
     function aiUpdatePageToggles(settings) {
         if (!settings) return;
+
+        // Special ID mappings where key → DOM id doesn't follow the standard pattern
+        const idOverrides = {
+            enabled: 'perf-master-enable',
+        };
+
         Object.entries(settings).forEach(([key, value]) => {
-            const id = `#perf-${key.replace(/_/g, '-')}`;
-            const el = $(id);
+            const domId = idOverrides[key] || `perf-${key.replace(/_/g, '-')}`;
+            const el = $(`#${domId}`);
             if (!el) return;
 
             if (el.type === 'checkbox') {
-                el.checked = !!value;
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+                const newChecked = !!value;
+                if (el.checked !== newChecked) {
+                    el.checked = newChecked;
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             } else if (el.tagName === 'TEXTAREA') {
-                // Critical CSS code or other textarea content
+                // Critical CSS code, URL lists (newline-separated)
                 el.value = Array.isArray(value) ? value.join('\n') : String(value || '');
             } else if (el.tagName === 'SELECT') {
                 el.value = String(value || '');
