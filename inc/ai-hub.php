@@ -188,7 +188,7 @@ function ccm_tools_ajax_ai_hub_run_pagespeed(): void {
 }
 
 /**
- * Get cached PageSpeed results from hub
+ * Get cached PageSpeed results from hub (fetches both strategies)
  */
 function ccm_tools_ajax_ai_hub_get_results(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -197,19 +197,40 @@ function ccm_tools_ajax_ai_hub_get_results(): void {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
 
-    $strategy = in_array($_POST['strategy'] ?? '', ['mobile', 'desktop']) ? $_POST['strategy'] : 'mobile';
     $limit = min(max((int)($_POST['limit'] ?? 10), 1), 50);
 
-    $result = ccm_tools_ai_hub_request('pagespeed/results', [
-        'strategy' => $strategy,
+    // Fetch both strategies
+    $mobile = ccm_tools_ai_hub_request('pagespeed/results', [
+        'strategy' => 'mobile',
         'limit'    => $limit,
     ]);
 
-    if (is_wp_error($result)) {
-        wp_send_json_error(['message' => $result->get_error_message()]);
+    $desktop = ccm_tools_ai_hub_request('pagespeed/results', [
+        'strategy' => 'desktop',
+        'limit'    => $limit,
+    ]);
+
+    $mobile_results = [];
+    $desktop_results = [];
+
+    if (!is_wp_error($mobile)) {
+        $mobile_results = $mobile['results'] ?? $mobile;
+        if (!is_array($mobile_results)) $mobile_results = [];
     }
 
-    wp_send_json_success($result);
+    if (!is_wp_error($desktop)) {
+        $desktop_results = $desktop['results'] ?? $desktop;
+        if (!is_array($desktop_results)) $desktop_results = [];
+    }
+
+    // Get stored optimization run log
+    $runs = get_option('ccm_tools_ai_optimization_runs', []);
+
+    wp_send_json_success([
+        'mobile'  => $mobile_results,
+        'desktop' => $desktop_results,
+        'runs'    => array_slice($runs, 0, $limit),
+    ]);
 }
 
 /**
@@ -404,6 +425,63 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
     }
 
     return false;
+}
+
+// ─── Optimization Run History ────────────────────────────────────
+
+add_action('wp_ajax_ccm_tools_ai_save_run', 'ccm_tools_ajax_ai_save_run');
+
+/**
+ * Save an optimization run summary to the local log.
+ * Stored as a capped array in wp_options.
+ */
+function ccm_tools_ajax_ai_save_run(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $run_data = json_decode(wp_unslash($_POST['run_data'] ?? ''), true);
+    if (!is_array($run_data) || empty($run_data)) {
+        wp_send_json_error(['message' => 'No run data provided']);
+    }
+
+    // Sanitize
+    $run = [
+        'date'            => current_time('mysql'),
+        'url'             => esc_url_raw($run_data['url'] ?? ''),
+        'before_mobile'   => intval($run_data['before_mobile'] ?? 0),
+        'before_desktop'  => intval($run_data['before_desktop'] ?? 0),
+        'after_mobile'    => intval($run_data['after_mobile'] ?? 0),
+        'after_desktop'   => intval($run_data['after_desktop'] ?? 0),
+        'changes_count'   => intval($run_data['changes_count'] ?? 0),
+        'changes'         => [],
+        'iterations'      => intval($run_data['iterations'] ?? 1),
+        'rolled_back'     => !empty($run_data['rolled_back']),
+        'outcome'         => sanitize_text_field($run_data['outcome'] ?? 'completed'),
+    ];
+
+    // Store up to 5 change keys (sanitized)
+    if (!empty($run_data['changes']) && is_array($run_data['changes'])) {
+        foreach (array_slice($run_data['changes'], 0, 30) as $change) {
+            if (is_array($change) && !empty($change['key'])) {
+                $run['changes'][] = sanitize_text_field($change['key']);
+            } elseif (is_string($change)) {
+                $run['changes'][] = sanitize_text_field($change);
+            }
+        }
+    }
+
+    $runs = get_option('ccm_tools_ai_optimization_runs', []);
+    if (!is_array($runs)) $runs = [];
+
+    array_unshift($runs, $run);
+    $runs = array_slice($runs, 0, 20); // Keep last 20 runs
+
+    update_option('ccm_tools_ai_optimization_runs', $runs, false);
+
+    wp_send_json_success(['message' => 'Run saved', 'run' => $run]);
 }
 
 // ─── Admin Page Section ─────────────────────────────────────────

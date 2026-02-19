@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.6
+ * Version: 7.12.7
  */
 
 (function() {
@@ -4153,6 +4153,8 @@
         let lastMobileOpportunities = [];
         let lastDesktopOpportunities = [];
         let lastManualActions = [];
+        let allChanges = []; // accumulate across iterations
+        let wasRolledBack = false;
 
         try {
             // ── Step 1: Save Settings Snapshot (for rollback) ──
@@ -4265,6 +4267,7 @@
 
                 const applyData = applyRes.data || {};
                 const changes = applyData.changes || [];
+                allChanges = allChanges.concat(changes);
                 aiUpdateStep('apply', 'done', `${changes.length} changed${iterLabel}`);
                 hasApplied = true;
                 aiLog(`<strong>${changes.length}</strong> settings changed successfully.`, 'success');
@@ -4318,6 +4321,7 @@
                     await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 10000 });
                     aiLog('Settings rolled back to snapshot.', 'warn');
                     showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
+                    wasRolledBack = true;
 
                     // Update page toggles to rolled-back state
                     try {
@@ -4410,6 +4414,25 @@
 
             aiLog('One-Click Optimize complete!', 'success');
             showNotification('One-Click Optimize complete!', 'success');
+
+            // Save optimization run summary
+            try {
+                await ajax('ccm_tools_ai_save_run', {
+                    run_data: JSON.stringify({
+                        url: url,
+                        before_mobile: aiHubState.beforeScores?.mobile?.performance ?? 0,
+                        before_desktop: aiHubState.beforeScores?.desktop?.performance ?? 0,
+                        after_mobile: aiHubState.afterScores?.mobile?.performance ?? aiHubState.beforeScores?.mobile?.performance ?? 0,
+                        after_desktop: aiHubState.afterScores?.desktop?.performance ?? aiHubState.beforeScores?.desktop?.performance ?? 0,
+                        changes_count: allChanges.length,
+                        changes: allChanges,
+                        iterations: iteration,
+                        rolled_back: wasRolledBack,
+                        outcome: hasApplied ? 'completed' : 'no_changes',
+                    }),
+                }, { timeout: 10000 });
+            } catch (_) { /* best effort */ }
+
             aiHubLoadHistory();
         } catch (err) {
             console.error('[CCM AI] One-click error:', err);
@@ -4574,26 +4597,164 @@
                 limit: 10,
             }, { timeout: 15000 });
 
-            const results = res.data?.results || res.data || [];
+            const data = res.data || {};
+            const mobileResults = data.mobile || [];
+            const desktopResults = data.desktop || [];
+            const runs = data.runs || [];
 
-            if (!results.length) {
-                container.innerHTML = '<p style="opacity:0.6;">No results yet. Run a test to get started.</p>';
-                return;
+            let html = '';
+
+            // ── Optimization Runs ──
+            if (runs.length) {
+                html += '<h4 style="margin:0 0 0.75rem;">Optimization Runs</h4>';
+                html += '<div class="ccm-ai-history-runs">';
+                runs.forEach(run => {
+                    const date = run.date ? new Date(run.date).toLocaleString() : '—';
+                    const mobileChange = run.after_mobile - run.before_mobile;
+                    const desktopChange = run.after_desktop - run.before_desktop;
+                    const mobileChangeStr = mobileChange !== 0 ? `(${mobileChange > 0 ? '+' : ''}${mobileChange})` : '';
+                    const desktopChangeStr = desktopChange !== 0 ? `(${desktopChange > 0 ? '+' : ''}${desktopChange})` : '';
+                    const mobileChangeClass = mobileChange > 0 ? 'ccm-score-green' : (mobileChange < 0 ? 'ccm-score-red' : '');
+                    const desktopChangeClass = desktopChange > 0 ? 'ccm-score-green' : (desktopChange < 0 ? 'ccm-score-red' : '');
+
+                    let outcomeLabel = '';
+                    if (run.rolled_back) outcomeLabel = '<span class="ccm-badge ccm-badge-warning">Rolled Back</span>';
+                    else if (run.outcome === 'no_changes') outcomeLabel = '<span class="ccm-badge ccm-badge-info">No Changes</span>';
+                    else if (mobileChange > 0 || desktopChange > 0) outcomeLabel = '<span class="ccm-badge ccm-badge-success">Improved</span>';
+                    else outcomeLabel = '<span class="ccm-badge ccm-badge-info">Complete</span>';
+
+                    // Build changes summary
+                    let changesList = '';
+                    if (run.changes && run.changes.length) {
+                        const labels = run.changes.map(key => aiSettingLabel(key));
+                        changesList = `<div class="ccm-ai-run-changes">${labels.map(l => `<span class="ccm-ai-run-change-tag">${l}</span>`).join('')}</div>`;
+                    }
+
+                    html += `<div class="ccm-ai-run-card">
+                        <div class="ccm-ai-run-header">
+                            <span class="ccm-ai-run-date">${date}</span>
+                            ${outcomeLabel}
+                            ${run.iterations > 1 ? `<span class="ccm-badge ccm-badge-info">${run.iterations} iterations</span>` : ''}
+                        </div>
+                        <div class="ccm-ai-run-scores">
+                            <div class="ccm-ai-run-strategy">
+                                <span class="ccm-ai-run-strategy-label">Mobile</span>
+                                <span class="${aiScoreColorClass(run.before_mobile)}">${run.before_mobile}</span>
+                                <span class="ccm-ai-run-arrow">→</span>
+                                <strong class="${aiScoreColorClass(run.after_mobile)}">${run.after_mobile}</strong>
+                                <span class="${mobileChangeClass}" style="font-size:0.8rem;">${mobileChangeStr}</span>
+                            </div>
+                            <div class="ccm-ai-run-strategy">
+                                <span class="ccm-ai-run-strategy-label">Desktop</span>
+                                <span class="${aiScoreColorClass(run.before_desktop)}">${run.before_desktop}</span>
+                                <span class="ccm-ai-run-arrow">→</span>
+                                <strong class="${aiScoreColorClass(run.after_desktop)}">${run.after_desktop}</strong>
+                                <span class="${desktopChangeClass}" style="font-size:0.8rem;">${desktopChangeStr}</span>
+                            </div>
+                        </div>
+                        ${run.changes_count ? `<div class="ccm-ai-run-meta">${run.changes_count} setting${run.changes_count !== 1 ? 's' : ''} changed</div>` : ''}
+                        ${changesList}
+                    </div>`;
+                });
+                html += '</div>';
             }
 
-            let html = '<table class="ccm-table"><thead><tr><th>Date</th><th>Strategy</th><th>Perf</th><th>Access</th><th>BP</th><th>SEO</th><th>LCP</th></tr></thead><tbody>';
-            results.forEach(r => {
-                const scores = r.scores || {};
-                const metrics = r.metrics || {};
-                const date = r.tested_at ? new Date(r.tested_at).toLocaleString() : '—';
-                const perfClass = aiScoreColorClass(scores.performance);
-                html += `<tr><td>${date}</td><td>${r.strategy || '—'}</td><td class="${perfClass}"><strong>${scores.performance ?? '—'}</strong></td><td>${scores.accessibility ?? '—'}</td><td>${scores.best_practices ?? '—'}</td><td>${scores.seo ?? '—'}</td><td>${metrics.lcp_ms ? metrics.lcp_ms + 'ms' : '—'}</td></tr>`;
-            });
-            html += '</tbody></table>';
+            // ── PageSpeed Test Results (paired mobile + desktop) ──
+            if (mobileResults.length || desktopResults.length) {
+                html += '<h4 style="margin:1.25rem 0 0.75rem;">PageSpeed Test Results</h4>';
+
+                // Pair mobile and desktop by matching timestamps (within 5 min)
+                const paired = aiPairResults(mobileResults, desktopResults);
+
+                html += '<div class="ccm-ai-history-results">';
+                paired.forEach(pair => {
+                    const date = pair.date ? new Date(pair.date).toLocaleString() : '—';
+                    const m = pair.mobile;
+                    const d = pair.desktop;
+
+                    html += `<div class="ccm-ai-result-card">
+                        <div class="ccm-ai-result-date">${date}</div>
+                        <div class="ccm-ai-result-scores">`;
+
+                    if (m) {
+                        html += `<div class="ccm-ai-result-strategy">
+                            <span class="ccm-ai-result-strategy-label">Mobile</span>
+                            <div class="ccm-ai-result-score-row">
+                                <span class="ccm-ai-result-score ${aiScoreColorClass(m.scores?.performance)}">${m.scores?.performance ?? '—'}</span>
+                                <span class="ccm-ai-result-metrics">A:${m.scores?.accessibility ?? '—'} BP:${m.scores?.best_practices ?? '—'} SEO:${m.scores?.seo ?? '—'}</span>
+                            </div>
+                            <span class="ccm-ai-result-lcp">${m.metrics?.lcp_ms ? `LCP ${Number(m.metrics.lcp_ms).toLocaleString()}ms` : ''}</span>
+                        </div>`;
+                    }
+
+                    if (d) {
+                        html += `<div class="ccm-ai-result-strategy">
+                            <span class="ccm-ai-result-strategy-label">Desktop</span>
+                            <div class="ccm-ai-result-score-row">
+                                <span class="ccm-ai-result-score ${aiScoreColorClass(d.scores?.performance)}">${d.scores?.performance ?? '—'}</span>
+                                <span class="ccm-ai-result-metrics">A:${d.scores?.accessibility ?? '—'} BP:${d.scores?.best_practices ?? '—'} SEO:${d.scores?.seo ?? '—'}</span>
+                            </div>
+                            <span class="ccm-ai-result-lcp">${d.metrics?.lcp_ms ? `LCP ${Number(d.metrics.lcp_ms).toLocaleString()}ms` : ''}</span>
+                        </div>`;
+                    }
+
+                    html += '</div></div>';
+                });
+                html += '</div>';
+            }
+
+            if (!html) {
+                html = '<p style="opacity:0.6;">No results yet. Run a test to get started.</p>';
+            }
+
             container.innerHTML = html;
         } catch (err) {
             container.innerHTML = `<p class="ccm-error">${err.message || 'Failed to load history.'}</p>`;
         }
+    }
+
+    /**
+     * Pair mobile and desktop results by timestamp proximity (within 5 minutes).
+     * Returns an array of { date, mobile, desktop } objects.
+     */
+    function aiPairResults(mobileResults, desktopResults) {
+        const paired = [];
+        const usedDesktop = new Set();
+        const THRESHOLD = 5 * 60 * 1000; // 5 minutes
+
+        mobileResults.forEach(m => {
+            const mTime = m.tested_at ? new Date(m.tested_at).getTime() : 0;
+            let bestMatch = null;
+            let bestDiff = Infinity;
+
+            desktopResults.forEach((d, idx) => {
+                if (usedDesktop.has(idx)) return;
+                const dTime = d.tested_at ? new Date(d.tested_at).getTime() : 0;
+                const diff = Math.abs(mTime - dTime);
+                if (diff < THRESHOLD && diff < bestDiff) {
+                    bestMatch = idx;
+                    bestDiff = diff;
+                }
+            });
+
+            const entry = { date: m.tested_at, mobile: m, desktop: null };
+            if (bestMatch !== null) {
+                entry.desktop = desktopResults[bestMatch];
+                usedDesktop.add(bestMatch);
+            }
+            paired.push(entry);
+        });
+
+        // Add unmatched desktop results
+        desktopResults.forEach((d, idx) => {
+            if (!usedDesktop.has(idx)) {
+                paired.push({ date: d.tested_at, mobile: null, desktop: d });
+            }
+        });
+
+        // Sort by date descending
+        paired.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        return paired;
     }
 
     /**

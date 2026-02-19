@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.12.6
+ * Version: 7.12.7
  */
 
 /* ===================================
@@ -3018,6 +3018,150 @@ tr.ccm-front-page-row {
     line-height: 1.5;
 }
 
+/* ─── History — Optimization Runs ─── */
+.ccm-ai-history-runs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.ccm-ai-run-card {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    padding: 0.75rem 1rem;
+    background: var(--ccm-bg);
+    transition: box-shadow 0.15s;
+}
+
+.ccm-ai-run-card:hover {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.ccm-ai-run-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+}
+
+.ccm-ai-run-date {
+    font-size: 0.8rem;
+    color: var(--ccm-text-muted);
+    margin-right: auto;
+}
+
+.ccm-ai-run-scores {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.ccm-ai-run-strategy {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9rem;
+}
+
+.ccm-ai-run-strategy-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--ccm-text-muted);
+    min-width: 4rem;
+}
+
+.ccm-ai-run-arrow {
+    color: var(--ccm-text-muted);
+    font-size: 0.8rem;
+}
+
+.ccm-ai-run-meta {
+    font-size: 0.78rem;
+    color: var(--ccm-text-muted);
+    margin-top: 0.4rem;
+}
+
+.ccm-ai-run-changes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.4rem;
+}
+
+.ccm-ai-run-change-tag {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.7rem;
+    background: var(--ccm-bg-secondary, #f1f5f9);
+    border: 1px solid var(--ccm-border);
+    border-radius: 3px;
+    color: var(--ccm-text-muted);
+    white-space: nowrap;
+}
+
+/* ─── History — PageSpeed Test Results ─── */
+.ccm-ai-history-results {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.ccm-ai-result-card {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    padding: 0.75rem 1rem;
+    background: var(--ccm-bg);
+}
+
+.ccm-ai-result-date {
+    font-size: 0.8rem;
+    color: var(--ccm-text-muted);
+    margin-bottom: 0.4rem;
+}
+
+.ccm-ai-result-scores {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.ccm-ai-result-strategy {
+    flex: 1;
+    min-width: 200px;
+}
+
+.ccm-ai-result-strategy-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--ccm-text-muted);
+    display: block;
+    margin-bottom: 0.15rem;
+}
+
+.ccm-ai-result-score-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.ccm-ai-result-score {
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+.ccm-ai-result-metrics {
+    font-size: 0.78rem;
+    color: var(--ccm-text-muted);
+}
+
+.ccm-ai-result-lcp {
+    font-size: 0.75rem;
+    color: var(--ccm-text-muted);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .ccm-ai-controls {
@@ -3067,6 +3211,17 @@ tr.ccm-front-page-row {
         max-height: 200px;
     }
     .ccm-ai-remaining-header strong {
+        min-width: 0;
+    }
+    .ccm-ai-run-scores {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .ccm-ai-result-scores {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .ccm-ai-result-strategy {
         min-width: 0;
     }
 }

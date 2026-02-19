@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.6
+- **Current Version:** 7.12.7
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -191,6 +191,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_hub_ai_analyze` | `ccm_tools_ajax_ai_hub_ai_analyze()` | AI analysis of PageSpeed result |
 | `ccm_tools_ai_hub_ai_optimize` | `ccm_tools_ajax_ai_hub_ai_optimize()` | Full AI optimization session |
 | `ccm_tools_ai_apply_changes` | `ccm_tools_ajax_ai_apply_changes()` | Apply selected AI recommendations to perf settings |
+| `ccm_tools_ai_save_run` | `ccm_tools_ajax_ai_save_run()` | Save optimization run summary to wp_options |
 
 ## Performance Considerations
 
@@ -282,6 +283,32 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.7
+- **Redesigned Recent Results History**
+  - Optimization Runs section shows before→after scores for both Mobile and Desktop on the same line
+  - Color-coded score changes with delta indicators (+5, -3, etc.)
+  - Outcome badges: Improved, Rolled Back, No Changes, Complete
+  - Shows iteration count when multiple iterations were used
+  - Lists all changed settings as compact tags (e.g., "Defer JavaScript", "Async CSS Loading")
+  - Card-based layout with hover effects
+- **PageSpeed Test Results — Paired Mobile + Desktop**
+  - Mobile and Desktop results from the same test run are paired by timestamp proximity (within 5 minutes)
+  - Each card shows both strategies side-by-side with performance score, secondary scores, and LCP
+  - `aiPairResults()` pairs and deduplicates from separate strategy API responses
+- **Optimization Run Persistence**
+  - New AJAX handler `ccm_tools_ai_save_run` stores optimization run summaries in `wp_options`
+  - Tracks: URL, before/after scores (both strategies), changes made, iteration count, rollback status, outcome
+  - Stores up to 20 runs, shown alongside PageSpeed test history
+  - Run saved automatically at the end of each One-Click Optimize session
+- **PHP Changes**
+  - `ccm_tools_ajax_ai_hub_get_results` now fetches both mobile and desktop results from hub in parallel
+  - Returns `{ mobile: [...], desktop: [...], runs: [...] }` instead of single-strategy results
+  - New `ccm_tools_ajax_ai_save_run` handler with sanitized run data storage
+- **New CSS Components**
+  - `.ccm-ai-run-card`, `.ccm-ai-run-scores`, `.ccm-ai-run-strategy`, `.ccm-ai-run-change-tag` — optimization run cards
+  - `.ccm-ai-result-card`, `.ccm-ai-result-scores`, `.ccm-ai-result-score` — paired PageSpeed result cards
+  - Responsive rules for mobile layout at 768px breakpoint
 
 ### v7.12.6
 - **Live Activity Log (Terminal-Style Output)**
