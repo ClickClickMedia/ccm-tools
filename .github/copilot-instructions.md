@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.13.1
+- **Current Version:** 7.14.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -194,6 +194,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_save_run` | `ccm_tools_ajax_ai_save_run()` | Save optimization run summary to wp_options |
 | `ccm_tools_ai_preflight` | `ccm_tools_ajax_ai_preflight()` | Pre-flight check of server-side tool status |
 | `ccm_tools_ai_enable_tool` | `ccm_tools_ajax_ai_enable_tool()` | Enable a server-side tool (htaccess, webp, redis, performance) |
+| `ccm_tools_ai_chat` | `ccm_tools_ajax_ai_chat()` | Send message to AI troubleshooting assistant |
 
 ## Performance Considerations
 
@@ -285,6 +286,26 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.14.0
+- **AI Troubleshooter Chat — Diagnose Optimization Issues in Real-Time**
+  - New floating chat widget on the Performance Optimizer page
+  - Conversational AI assistant specialized in diagnosing issues caused by performance optimizations
+  - Click the "AI Help" button to open a slide-up chat panel
+  - Describe broken functionality (e.g., "progress bar animations stopped working") and AI identifies the likely culprit setting
+  - Full conversation history maintained within the session (up to 20 messages)
+  - AI receives current performance settings, optimization history, and site context automatically
+  - Markdown rendering in AI responses (code blocks, bold, lists, headers)
+  - Typing indicator with animated dots while AI processes
+  - Clear chat and close buttons in header
+  - Auto-resizing textarea input with Enter-to-send (Shift+Enter for newline)
+  - Responsive design — full-width on mobile, 420px panel on desktop
+  - **Hub endpoint**: New `api/v1/ai/chat` endpoint with dedicated troubleshooting system prompt
+  - System prompt includes all 30+ setting descriptions, common breakage patterns, and diagnostic methodology
+  - Uses conversation history for multi-turn context (asks follow-up questions when needed)
+  - New AJAX handler: `ccm_tools_ai_chat` with conversation history and settings context
+  - New CSS: `.ccm-ai-chat-widget`, `.ccm-ai-chat-panel`, `.ccm-ai-chat-messages`, typing animation, markdown styles
+  - New JS: `initAiChat()`, `aiChatSend()`, `aiChatFormatMarkdown()`, `aiChatAppendMessage()`, `aiChatClear()`
 
 ### v7.13.1
 - **AI Learning Memory — Persistent Optimization History for Smarter AI Decisions**

@@ -611,6 +611,62 @@ function ccm_tools_ajax_ai_rollback_settings(): void {
     ]);
 }
 
+// ─── AI Chat — Troubleshooting Assistant ─────────────────────────
+
+add_action('wp_ajax_ccm_tools_ai_chat', 'ccm_tools_ajax_ai_chat');
+
+/**
+ * Send a chat message to the AI troubleshooting assistant via Hub
+ */
+function ccm_tools_ajax_ai_chat(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $message = sanitize_textarea_field($_POST['message'] ?? '');
+    if (empty($message)) {
+        wp_send_json_error(['message' => 'Message is required']);
+    }
+
+    // Parse conversation history from JSON string
+    $conversationRaw = $_POST['conversation'] ?? '[]';
+    $conversation = json_decode(wp_unslash($conversationRaw), true);
+    if (!is_array($conversation)) {
+        $conversation = [];
+    }
+
+    // Build context with current settings and optimization status
+    $currentSettings = ccm_tools_perf_get_settings();
+    $siteUrl = esc_url_raw(sanitize_text_field($_POST['site_url'] ?? site_url()));
+
+    $context = '';
+    if (class_exists('WooCommerce')) {
+        $context .= 'This is a WooCommerce site. ';
+    }
+
+    // Add recent optimization history
+    $learnings = ccm_tools_build_learnings_context($siteUrl);
+    if (!empty($learnings)) {
+        $context .= "\n" . $learnings;
+    }
+
+    $result = ccm_tools_ai_hub_request('ai/chat', [
+        'message'          => $message,
+        'conversation'     => $conversation,
+        'current_settings' => $currentSettings,
+        'context'          => $context,
+        'site_url'         => $siteUrl,
+    ], 'POST', 60);
+
+    if (is_wp_error($result)) {
+        wp_send_json_error(['message' => $result->get_error_message()]);
+    }
+
+    wp_send_json_success($result);
+}
+
 // ─── Preflight: Tool Status & Auto-Enable ────────────────────────
 
 /**
@@ -1073,6 +1129,43 @@ function ccm_tools_render_ai_section(): void {
                 <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;"><?php _e('Recent Results History', 'ccm-tools'); ?></summary>
                 <div id="ai-history-table" style="padding-top: 0.75rem;"></div>
             </details>
+        </div>
+    </div>
+
+    <!-- AI Chat Widget (floating) -->
+    <div id="ai-chat-widget" class="ccm-ai-chat-widget">
+        <button id="ai-chat-toggle" class="ccm-ai-chat-toggle" type="button" title="<?php esc_attr_e('AI Troubleshooter', 'ccm-tools'); ?>">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            <span class="ccm-ai-chat-toggle-label"><?php _e('AI Help', 'ccm-tools'); ?></span>
+        </button>
+        <div id="ai-chat-panel" class="ccm-ai-chat-panel" style="display: none;">
+            <div class="ccm-ai-chat-header">
+                <div class="ccm-ai-chat-header-info">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    <span><?php _e('AI Troubleshooter', 'ccm-tools'); ?></span>
+                </div>
+                <div class="ccm-ai-chat-header-actions">
+                    <button id="ai-chat-clear" class="ccm-ai-chat-header-btn" type="button" title="<?php esc_attr_e('Clear chat', 'ccm-tools'); ?>">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                    <button id="ai-chat-close" class="ccm-ai-chat-header-btn" type="button" title="<?php esc_attr_e('Close', 'ccm-tools'); ?>">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
+            </div>
+            <div id="ai-chat-messages" class="ccm-ai-chat-messages">
+                <div class="ccm-ai-chat-msg ccm-ai-chat-msg-assistant">
+                    <div class="ccm-ai-chat-msg-content">
+                        <?php _e("Hi! I'm the AI Troubleshooter. If your site has issues after optimization (broken animations, missing elements, non-working features), describe the problem and I'll help identify which setting to adjust.", 'ccm-tools'); ?>
+                    </div>
+                </div>
+            </div>
+            <div class="ccm-ai-chat-input-area">
+                <textarea id="ai-chat-input" class="ccm-ai-chat-input" rows="1" placeholder="<?php esc_attr_e('Describe the issue...', 'ccm-tools'); ?>"></textarea>
+                <button id="ai-chat-send" class="ccm-ai-chat-send" type="button" title="<?php esc_attr_e('Send', 'ccm-tools'); ?>">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
+            </div>
         </div>
     </div>
     <?php

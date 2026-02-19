@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.13.1
+ * Version: 7.14.0
  */
 
 (function() {
@@ -3657,6 +3657,9 @@
 
         // Load history on init
         aiHubLoadHistory();
+
+        // AI Chat widget
+        initAiChat();
     }
 
     // ─── Hub Connection ────────────
@@ -4677,6 +4680,198 @@
     }
 
     // ─── Helpers ────────────
+
+    // ─── AI Chat — Troubleshooting Assistant ────────────
+
+    const aiChatState = {
+        conversation: [],
+        isOpen: false,
+        isSending: false,
+    };
+
+    function initAiChat() {
+        const toggle = $('#ai-chat-toggle');
+        const close = $('#ai-chat-close');
+        const clear = $('#ai-chat-clear');
+        const send = $('#ai-chat-send');
+        const input = $('#ai-chat-input');
+
+        if (!toggle) return;
+
+        toggle.addEventListener('click', () => {
+            aiChatState.isOpen = !aiChatState.isOpen;
+            const panel = $('#ai-chat-panel');
+            if (panel) {
+                panel.style.display = aiChatState.isOpen ? 'flex' : 'none';
+                if (aiChatState.isOpen && input) {
+                    setTimeout(() => input.focus(), 100);
+                }
+            }
+            toggle.classList.toggle('active', aiChatState.isOpen);
+        });
+
+        if (close) close.addEventListener('click', () => {
+            aiChatState.isOpen = false;
+            const panel = $('#ai-chat-panel');
+            if (panel) panel.style.display = 'none';
+            const toggleBtn = $('#ai-chat-toggle');
+            if (toggleBtn) toggleBtn.classList.remove('active');
+        });
+
+        if (clear) clear.addEventListener('click', aiChatClear);
+
+        if (send) send.addEventListener('click', aiChatSend);
+
+        if (input) {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    aiChatSend();
+                }
+            });
+            // Auto-resize textarea
+            input.addEventListener('input', () => {
+                input.style.height = 'auto';
+                input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+            });
+        }
+    }
+
+    function aiChatClear() {
+        aiChatState.conversation = [];
+        const messages = $('#ai-chat-messages');
+        if (messages) {
+            messages.innerHTML = `<div class="ccm-ai-chat-msg ccm-ai-chat-msg-assistant">
+                <div class="ccm-ai-chat-msg-content">Hi! I'm the AI Troubleshooter. If your site has issues after optimization (broken animations, missing elements, non-working features), describe the problem and I'll help identify which setting to adjust.</div>
+            </div>`;
+        }
+    }
+
+    function aiChatAppendMessage(role, content) {
+        const messages = $('#ai-chat-messages');
+        if (!messages) return;
+
+        const msg = document.createElement('div');
+        msg.className = `ccm-ai-chat-msg ccm-ai-chat-msg-${role}`;
+
+        const contentEl = document.createElement('div');
+        contentEl.className = 'ccm-ai-chat-msg-content';
+
+        if (role === 'assistant') {
+            // Render markdown-like formatting for AI responses
+            contentEl.innerHTML = aiChatFormatMarkdown(content);
+        } else {
+            contentEl.textContent = content;
+        }
+
+        msg.appendChild(contentEl);
+        messages.appendChild(msg);
+        messages.scrollTop = messages.scrollHeight;
+
+        return msg;
+    }
+
+    function aiChatFormatMarkdown(text) {
+        // Simple markdown → HTML for chat responses
+        let html = text
+            // Code blocks
+            .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+            // Inline code
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            // Bold
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            // Italic
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            // Headers
+            .replace(/^### (.+)$/gm, '<strong style="display:block;margin-top:0.5em;">$1</strong>')
+            .replace(/^## (.+)$/gm, '<strong style="display:block;font-size:1.05em;margin-top:0.5em;">$1</strong>')
+            // Lists
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+
+        // Wrap consecutive <li> items in <ul>
+        html = html.replace(/(<li>[\s\S]*?<\/li>)/g, (match) => {
+            if (!match.startsWith('<ul>')) {
+                return '<ul>' + match + '</ul>';
+            }
+            return match;
+        });
+        // Clean up nested ul tags from consecutive items
+        html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+        // Paragraphs — split on double newlines
+        html = html.split(/\n\n+/).map(p => {
+            p = p.trim();
+            if (!p) return '';
+            if (p.startsWith('<pre>') || p.startsWith('<ul>') || p.startsWith('<strong style=')) return p;
+            return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+        }).join('');
+
+        return html;
+    }
+
+    async function aiChatSend() {
+        if (aiChatState.isSending) return;
+
+        const input = $('#ai-chat-input');
+        const sendBtn = $('#ai-chat-send');
+        if (!input) return;
+
+        const message = input.value.trim();
+        if (!message) return;
+
+        aiChatState.isSending = true;
+        input.value = '';
+        input.style.height = 'auto';
+        if (sendBtn) sendBtn.disabled = true;
+
+        // Add user message
+        aiChatAppendMessage('user', message);
+
+        // Show typing indicator
+        const messages = $('#ai-chat-messages');
+        const typing = document.createElement('div');
+        typing.className = 'ccm-ai-chat-msg ccm-ai-chat-msg-assistant ccm-ai-chat-typing';
+        typing.innerHTML = '<div class="ccm-ai-chat-msg-content"><span class="ccm-ai-chat-dots"><span></span><span></span><span></span></span></div>';
+        if (messages) {
+            messages.appendChild(typing);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        try {
+            const siteUrl = ($('#ai-ps-url') || {}).value || '';
+
+            const res = await ajax('ccm_tools_ai_chat', {
+                message: message,
+                conversation: JSON.stringify(aiChatState.conversation),
+                site_url: siteUrl,
+            }, { timeout: 60000 });
+
+            // Remove typing indicator
+            if (typing.parentElement) typing.remove();
+
+            const reply = res.data?.reply || 'Sorry, I could not generate a response.';
+
+            // Update conversation history
+            aiChatState.conversation.push({ role: 'user', content: message });
+            aiChatState.conversation.push({ role: 'assistant', content: reply });
+
+            // Keep conversation manageable (last 20 messages)
+            if (aiChatState.conversation.length > 20) {
+                aiChatState.conversation = aiChatState.conversation.slice(-20);
+            }
+
+            aiChatAppendMessage('assistant', reply);
+
+        } catch (err) {
+            if (typing.parentElement) typing.remove();
+            aiChatAppendMessage('assistant', `Sorry, there was an error: ${err.message}. Please try again.`);
+        } finally {
+            aiChatState.isSending = false;
+            if (sendBtn) sendBtn.disabled = false;
+            if (input) input.focus();
+        }
+    }
 
     function aiSleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
