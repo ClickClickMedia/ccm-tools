@@ -3756,12 +3756,12 @@
         if (!container) return;
 
         const metricDefs = [
-            { key: 'fcp', label: 'First Contentful Paint', unit: 'ms' },
-            { key: 'lcp', label: 'Largest Contentful Paint', unit: 'ms' },
+            { key: 'fcp_ms', label: 'First Contentful Paint', unit: 'ms' },
+            { key: 'lcp_ms', label: 'Largest Contentful Paint', unit: 'ms' },
             { key: 'cls', label: 'Cumulative Layout Shift', unit: '' },
-            { key: 'tbt', label: 'Total Blocking Time', unit: 'ms' },
-            { key: 'si', label: 'Speed Index', unit: 'ms' },
-            { key: 'tti', label: 'Time To Interactive', unit: 'ms' },
+            { key: 'tbt_ms', label: 'Total Blocking Time', unit: 'ms' },
+            { key: 'si_ms', label: 'Speed Index', unit: 'ms' },
+            { key: 'tti_ms', label: 'Time To Interactive', unit: 'ms' },
         ];
 
         let html = '<table class="ccm-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
@@ -4058,7 +4058,7 @@
                     <td>${scores.accessibility ?? '—'}</td>
                     <td>${scores.best_practices ?? '—'}</td>
                     <td>${scores.seo ?? '—'}</td>
-                    <td>${metrics.lcp ? metrics.lcp + 'ms' : '—'}</td>
+                    <td>${metrics.lcp_ms ? metrics.lcp_ms + 'ms' : '—'}</td>
                     <td>${aiStatus}</td>
                 </tr>`;
             });
