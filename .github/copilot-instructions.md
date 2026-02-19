@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.15.1
+- **Current Version:** 7.16.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -287,6 +287,38 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.16.0
+- **Video Optimization Settings for PageSpeed Performance**
+  - New **Video Lazy Load** setting: replaces below-fold `<video>` elements with lightweight poster placeholder + play button facade
+    - On click, restores the original `<video>` element and auto-plays
+    - First video on page excluded automatically (likely above-fold/LCP)
+    - Autoplay+muted background videos excluded (must play immediately)
+    - Uses base64-encoded data attribute to store original HTML safely
+  - New **Video Preload: None** setting: sets `preload="none"` on non-autoplay `<video>` elements
+    - Prevents browser from downloading video data until user clicks play
+    - Reduces initial page weight significantly on video-heavy pages
+    - Autoplay videos untouched (they need preload to play)
+  - UI toggles added to Performance Optimizer page (after YouTube Lite Embeds section)
+  - Settings saved/loaded via existing save handler with proper sanitization
+  - Import/export support for both new boolean keys
+  - JS: Added to `PERF_SETTING_KEYS` set and `aiSettingLabel()` labels
+- **AI Video Awareness (Hub-Side)**
+  - Page analyzer now extracts `<video>` tags: src, poster, autoplay, muted, loop, preload, class, id, dimensions, nested `<source>` elements
+  - Third-party video domains tracked alongside existing resource domains
+  - AI Analyze prompt: comprehensive "Video LCP & Optimisation Rules" (7 rules) covering video as LCP problem, poster image importance, preload attributes, lazy loading strategy, poster preloading, compression advice
+  - AI Optimize prompt: same video rules (6 condensed) + video settings in available settings list
+  - Both prompts include video elements in user message with `poster=MISSING` detection and `⚠ VIDEO LCP WARNING`
+  - AI Chat prompt: video settings descriptions added for troubleshooting context
+  - `video_lazy_load` and `video_preload_none` registered as recommendable settings in both analyze and optimize endpoints
+- **Dashboard PageSpeed UI Redesign**
+  - Prominent Performance hero circle (72px, 4px colored border) as focal point
+  - Clean 50/50 Mobile/Desktop split with vertical separator
+  - Secondary scores (Accessibility, Best Practices, SEO) as compact colored dot + label rows
+  - Meta footer with background color showing tested URL and relative time
+  - Google-standard color coding (green 90+, orange 50-89, red 0-49)
+  - Responsive: switches from side-by-side to stacked on mobile
+  - New CSS classes: `.ccm-card-ps`, `.ccm-dashboard-ps-hero-circle`, `.ccm-dashboard-ps-secondary-dot`
 
 ### v7.15.1
 - **Fixed "key.replace is not a function" Error in Recent Results History**

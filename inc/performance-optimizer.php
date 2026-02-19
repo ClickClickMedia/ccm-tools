@@ -68,6 +68,9 @@ function ccm_tools_perf_get_settings() {
         'disable_shortlink' => false,
         'disable_rest_api_links' => false,
         'disable_oembed' => false,
+        // Video optimizations for v7.16.0
+        'video_lazy_load' => false,
+        'video_preload_none' => false,
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -265,6 +268,17 @@ function ccm_tools_perf_init() {
     if (!empty($settings['disable_oembed'])) {
         remove_action('wp_head', 'wp_oembed_add_discovery_links');
         remove_action('wp_head', 'wp_oembed_add_host_js');
+    }
+    
+    // Video lazy load (replace below-fold videos with poster placeholder)
+    if (!empty($settings['video_lazy_load'])) {
+        add_filter('the_content', 'ccm_tools_perf_video_lazy_load', 98);
+        add_action('wp_footer', 'ccm_tools_perf_video_lazy_load_script', 99);
+    }
+    
+    // Video preload none (set preload="none" on non-autoplay videos)
+    if (!empty($settings['video_preload_none'])) {
+        add_filter('the_content', 'ccm_tools_perf_video_preload_none', 97);
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -661,6 +675,149 @@ function ccm_tools_perf_youtube_facade_script() {
     });
     </script>
     <?php
+}
+
+/**
+ * Video Lazy Load — replace below-fold <video> tags with a lightweight poster placeholder.
+ * On user interaction (click/tap) the real video element is restored.
+ * Autoplay videos with muted attribute are skipped (they are likely hero/background videos that
+ * must play immediately). The FIRST video on the page is also left untouched since it's most
+ * likely above the fold and may be the LCP element.
+ *
+ * @param string $content Post content
+ * @return string Modified content
+ */
+function ccm_tools_perf_video_lazy_load($content) {
+    if (empty($content) || stripos($content, '<video') === false) {
+        return $content;
+    }
+    
+    $count = 0;
+    $content = preg_replace_callback(
+        '/<video\b([^>]*)>(.*?)<\/video>/is',
+        function ($m) use (&$count) {
+            $count++;
+            $attrs = $m[1];
+            $inner = $m[2];
+            
+            // Skip the first video (likely above-fold / hero)
+            if ($count === 1) {
+                return $m[0];
+            }
+            
+            // Skip autoplay+muted (background video that must play immediately)
+            if (preg_match('/\bautoplay\b/i', $attrs) && preg_match('/\bmuted\b/i', $attrs)) {
+                return $m[0];
+            }
+            
+            // Extract poster for the placeholder image
+            $poster = '';
+            if (preg_match('/\bposter\s*=\s*["\']([^"\']+)["\']/i', $attrs, $pm)) {
+                $poster = $pm[1];
+            }
+            
+            // Extract width/height for sizing
+            $style_parts = array('position:relative', 'cursor:pointer', 'background:#000');
+            if (preg_match('/\bwidth\s*=\s*["\']?(\d+)/i', $attrs, $wm)) {
+                $style_parts[] = 'width:' . $wm[1] . 'px';
+            }
+            if (preg_match('/\bheight\s*=\s*["\']?(\d+)/i', $attrs, $hm)) {
+                $style_parts[] = 'height:' . $hm[1] . 'px';
+            }
+            // Default aspect-ratio if no explicit dimensions
+            if (!preg_match('/\bwidth\s*=/i', $attrs) && !preg_match('/\bheight\s*=/i', $attrs)) {
+                $style_parts[] = 'aspect-ratio:16/9';
+                $style_parts[] = 'width:100%';
+            }
+            
+            // Build placeholder
+            $poster_img = $poster
+                ? sprintf('<img src="%s" alt="" style="width:100%%;height:100%%;object-fit:cover;display:block;" loading="lazy">', esc_url($poster))
+                : '';
+            
+            $play_btn = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:68px;height:48px;background:rgba(0,0,0,0.65);border-radius:14px;display:flex;align-items:center;justify-content:center;"><svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>';
+            
+            // Store the original video HTML inside a data attribute (base64 to avoid quote issues)
+            $original_html = base64_encode($m[0]);
+            
+            return sprintf(
+                '<div class="ccm-video-facade" data-ccm-video="%s" style="%s">%s%s</div>',
+                esc_attr($original_html),
+                esc_attr(implode(';', $style_parts)),
+                $poster_img,
+                $play_btn
+            );
+        },
+        $content
+    );
+    
+    return $content;
+}
+
+/**
+ * Output the click handler script for video lazy-load facades
+ */
+function ccm_tools_perf_video_lazy_load_script() {
+    ?>
+    <script>
+    document.addEventListener('click', function(e) {
+        var facade = e.target.closest('.ccm-video-facade');
+        if (!facade) return;
+        var encoded = facade.getAttribute('data-ccm-video');
+        if (!encoded) return;
+        try {
+            var html = atob(encoded);
+            var tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            var video = tmp.querySelector('video');
+            if (video) {
+                video.setAttribute('preload', 'auto');
+                facade.replaceWith(video);
+                video.play().catch(function(){});
+            }
+        } catch(err) {}
+    });
+    </script>
+    <?php
+}
+
+/**
+ * Video Preload None — set preload="none" on non-autoplay <video> elements.
+ * This prevents the browser from downloading video data until the user clicks play,
+ * which reduces initial page weight and improves LCP / load metrics.
+ * Autoplay videos are left untouched because they need to preload to play immediately.
+ *
+ * @param string $content Post content
+ * @return string Modified content
+ */
+function ccm_tools_perf_video_preload_none($content) {
+    if (empty($content) || stripos($content, '<video') === false) {
+        return $content;
+    }
+    
+    $content = preg_replace_callback(
+        '/<video\b([^>]*)>/i',
+        function ($m) {
+            $attrs = $m[1];
+            
+            // Skip autoplay videos — they need preload to play immediately
+            if (preg_match('/\bautoplay\b/i', $attrs)) {
+                return $m[0];
+            }
+            
+            // Replace existing preload attribute or add preload="none"
+            if (preg_match('/\bpreload\s*=\s*["\']?[^"\'\s]*/i', $attrs)) {
+                $attrs = preg_replace('/\bpreload\s*=\s*["\']?[^"\'\s]*["\']?/i', 'preload="none"', $attrs);
+            } else {
+                $attrs .= ' preload="none"';
+            }
+            
+            return '<video' . $attrs . '>';
+        },
+        $content
+    );
+    
+    return $content;
 }
 
 /**
@@ -1452,6 +1609,36 @@ body { margin: 0; }
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-youtube-facade" <?php checked($settings['youtube_facade']); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Video Lazy Load -->
+                <div class="ccm-setting-row" style="border-top: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Video Lazy Load', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Replaces below-fold &lt;video&gt; elements with a lightweight poster placeholder. The real video loads only when the user clicks play. Reduces initial page weight significantly on pages with multiple videos.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);"><span class="ccm-icon">ℹ</span> <?php _e('Autoplay/muted background videos and the first video on the page are excluded automatically.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-video-lazy-load" <?php checked($settings['video_lazy_load']); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Video Preload None -->
+                <div class="ccm-setting-row" style="border-top: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Video Preload: None', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Sets <code>preload="none"</code> on non-autoplay &lt;video&gt; elements. Prevents the browser from downloading video data until the user clicks play, reducing initial page weight and improving load metrics.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);"><span class="ccm-icon">ℹ</span> <?php _e('Autoplay videos are not affected. There may be a brief delay when the user presses play.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-video-preload-none" <?php checked($settings['video_preload_none']); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </div>

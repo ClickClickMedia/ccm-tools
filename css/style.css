@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.15.1
+ * Version: 7.16.0
  */
 
 /* ===================================
@@ -1058,6 +1058,21 @@
 /* ===================================
    Dashboard PageSpeed Scores
    =================================== */
+.ccm-card-ps {
+    overflow: hidden;
+}
+
+.ccm-card-ps-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--ccm-space-md);
+}
+
+.ccm-card-ps-header h2 {
+    margin: 0;
+}
+
 .ccm-dashboard-ps-loading {
     display: flex;
     align-items: center;
@@ -1068,40 +1083,122 @@
 .ccm-dashboard-ps-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
+    gap: 0;
 }
 
-.ccm-dashboard-ps-strategy h4 {
-    margin: 0 0 0.75rem;
-    font-size: 0.9rem;
+.ccm-dashboard-ps-col {
+    padding: 1.25rem 1.5rem;
+}
+
+.ccm-dashboard-ps-col:first-child {
+    border-right: 1px solid var(--ccm-border);
+}
+
+.ccm-dashboard-ps-col-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ccm-text-muted);
+    margin-bottom: 1rem;
+}
+
+/* Hero performance score */
+.ccm-dashboard-ps-hero {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.ccm-dashboard-ps-hero-circle {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 4px solid var(--ccm-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.75rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    transition: border-color 0.3s, color 0.3s;
+}
+
+.ccm-dashboard-ps-hero-circle.ccm-score-green {
+    border-color: #0cce6b;
+    color: #0cce6b;
+}
+
+.ccm-dashboard-ps-hero-circle.ccm-score-orange {
+    border-color: #ffa400;
+    color: #ffa400;
+}
+
+.ccm-dashboard-ps-hero-circle.ccm-score-red {
+    border-color: #ff4e42;
+    color: #ff4e42;
+}
+
+.ccm-dashboard-ps-hero-text {
+    font-size: 0.8rem;
+    color: var(--ccm-text-muted);
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.ccm-dashboard-ps-hero-text strong {
+    display: block;
+    font-size: 0.95rem;
+    color: var(--ccm-text);
+    font-weight: 700;
+    margin-bottom: 0.1rem;
+}
+
+/* Secondary scores row */
+.ccm-dashboard-ps-secondary {
+    display: flex;
+    gap: 0.9rem;
+}
+
+.ccm-dashboard-ps-secondary-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
     color: var(--ccm-text-muted);
 }
 
-.ccm-dashboard-ps-scores-row {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
+.ccm-dashboard-ps-secondary-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--ccm-border);
 }
 
-.ccm-dashboard-ps-scores-row .ccm-ai-score-circle {
-    width: 56px;
-    height: 56px;
-    font-size: 1.25rem;
+.ccm-dashboard-ps-secondary-dot.ccm-dot-green { background: #0cce6b; }
+.ccm-dashboard-ps-secondary-dot.ccm-dot-orange { background: #ffa400; }
+.ccm-dashboard-ps-secondary-dot.ccm-dot-red { background: #ff4e42; }
+
+.ccm-dashboard-ps-secondary-val {
+    font-weight: 700;
+    color: var(--ccm-text);
 }
 
-.ccm-dashboard-ps-scores-row .ccm-ai-score-label {
-    font-size: 0.65rem;
-}
-
+/* Meta footer */
 .ccm-dashboard-ps-meta {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
+    padding: 0.6rem 1.5rem;
+    background: var(--ccm-bg);
     border-top: 1px solid var(--ccm-border);
-    font-size: 0.75rem;
-    color: var(--ccm-text-muted);
+    font-size: 0.7rem;
+    color: var(--ccm-text-light);
 }
 
 /* ===================================
@@ -1529,6 +1626,11 @@ tr.ccm-front-page-row {
 
     .ccm-dashboard-ps-grid {
         grid-template-columns: 1fr;
+    }
+
+    .ccm-dashboard-ps-col:first-child {
+        border-right: none;
+        border-bottom: 1px solid var(--ccm-border);
     }
     
     .ccm-extensions-grid {

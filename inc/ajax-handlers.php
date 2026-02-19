@@ -1877,6 +1877,9 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'disable_shortlink' => !empty($_POST['disable_shortlink']),
         'disable_rest_api_links' => !empty($_POST['disable_rest_api_links']),
         'disable_oembed' => !empty($_POST['disable_oembed']),
+        // Video optimizations
+        'video_lazy_load' => !empty($_POST['video_lazy_load']),
+        'video_preload_none' => !empty($_POST['video_preload_none']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -1979,7 +1982,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'disable_dashicons', 'lazy_load_iframes', 'youtube_facade', 'font_display_swap',
         'speculation_rules', 'critical_css', 'disable_jquery_migrate', 'disable_block_css',
         'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
-        'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed'
+        'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
+        'video_lazy_load', 'video_preload_none'
     );
     
     foreach ($boolean_keys as $key) {

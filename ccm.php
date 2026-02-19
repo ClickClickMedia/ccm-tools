@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.15.1
+ * Version: 7.16.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.15.1');
+    define('CCM_HELPER_VERSION', '7.16.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -685,11 +685,11 @@ class CCMSettings {
                 $ai_settings = function_exists('ccm_tools_ai_hub_get_settings') ? ccm_tools_ai_hub_get_settings() : [];
                 if (!empty($ai_settings['api_key'])): ?>
                 <!-- PageSpeed Scores Card -->
-                <div class="ccm-card" id="dashboard-pagespeed-card">
-                    <h2>
-                        <?php _e('PageSpeed Scores', 'ccm-tools'); ?>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-performance')); ?>" class="ccm-button ccm-button-small" style="float:right;margin-top:-2px;"><?php _e('Performance', 'ccm-tools'); ?> →</a>
-                    </h2>
+                <div class="ccm-card ccm-card-ps" id="dashboard-pagespeed-card">
+                    <div class="ccm-card-ps-header">
+                        <h2><?php _e('PageSpeed Scores', 'ccm-tools'); ?></h2>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-performance')); ?>" class="ccm-button ccm-button-small"><?php _e('Performance →', 'ccm-tools'); ?></a>
+                    </div>
                     <div id="dashboard-pagespeed-scores" class="ccm-dashboard-ps-loading">
                         <div class="ccm-spinner ccm-spinner-small"></div>
                         <span class="ccm-text-muted"><?php _e('Loading latest scores…', 'ccm-tools'); ?></span>

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.15.1
+ * Version: 7.16.0
  */
 
 (function() {
@@ -2585,6 +2585,9 @@
                 disable_shortlink: $('#perf-disable-shortlink')?.checked ? '1' : '',
                 disable_rest_api_links: $('#perf-disable-rest-api-links')?.checked ? '1' : '',
                 disable_oembed: $('#perf-disable-oembed')?.checked ? '1' : '',
+                // Video optimizations
+                video_lazy_load: $('#perf-video-lazy-load')?.checked ? '1' : '',
+                video_preload_none: $('#perf-video-preload-none')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -3076,16 +3079,9 @@
         function scoreColor(score) {
             const n = parseInt(score, 10);
             if (isNaN(n)) return '';
-            if (n >= 90) return 'ccm-score-green';
-            if (n >= 50) return 'ccm-score-orange';
-            return 'ccm-score-red';
-        }
-
-        function scoreCircle(score, label) {
-            const n = parseInt(score, 10);
-            if (isNaN(n)) return `<div class="ccm-ai-score-circle-wrap"><div class="ccm-ai-score-circle">—</div><div class="ccm-ai-score-label">${escapeHtml(label)}</div></div>`;
-            const cls = scoreColor(n);
-            return `<div class="ccm-ai-score-circle-wrap"><div class="ccm-ai-score-circle ${cls}">${n}</div><div class="ccm-ai-score-label">${escapeHtml(label)}</div></div>`;
+            if (n >= 90) return 'green';
+            if (n >= 50) return 'orange';
+            return 'red';
         }
 
         function timeAgo(dateStr) {
@@ -3099,6 +3095,35 @@
             return `${Math.floor(diff / 86400)}d ago`;
         }
 
+        function renderColumn(data, label, icon) {
+            if (!data) return `<div class="ccm-dashboard-ps-col"><div class="ccm-dashboard-ps-col-label">${icon} ${escapeHtml(label)}</div><p class="ccm-text-muted" style="margin:0;">No results</p></div>`;
+
+            const perf = parseInt(data.performance, 10);
+            const perfColor = scoreColor(perf);
+            const perfDisplay = isNaN(perf) ? '—' : perf;
+
+            const secondaryScores = [
+                { label: 'Accessibility', value: data.accessibility },
+                { label: 'Best Practices', value: data.best_practices },
+                { label: 'SEO', value: data.seo },
+            ];
+
+            let secondaryHtml = secondaryScores.map(s => {
+                const v = parseInt(s.value, 10);
+                const c = scoreColor(v);
+                return `<div class="ccm-dashboard-ps-secondary-item"><span class="ccm-dashboard-ps-secondary-dot ccm-dot-${c || ''}"></span>${escapeHtml(s.label)} <span class="ccm-dashboard-ps-secondary-val">${isNaN(v) ? '—' : v}</span></div>`;
+            }).join('');
+
+            return `<div class="ccm-dashboard-ps-col">
+                <div class="ccm-dashboard-ps-col-label">${icon} ${escapeHtml(label)}</div>
+                <div class="ccm-dashboard-ps-hero">
+                    <div class="ccm-dashboard-ps-hero-circle ccm-score-${perfColor}">${perfDisplay}</div>
+                    <div class="ccm-dashboard-ps-hero-text"><strong>Performance</strong>Core Web Vitals score</div>
+                </div>
+                <div class="ccm-dashboard-ps-secondary">${secondaryHtml}</div>
+            </div>`;
+        }
+
         try {
             const res = await ajax('ccm_tools_ai_hub_get_latest_scores', {}, { timeout: 30000 });
             const data = res.data || {};
@@ -3110,45 +3135,16 @@
             }
 
             let html = '<div class="ccm-dashboard-ps-grid">';
-
-            // Mobile column
-            html += '<div class="ccm-dashboard-ps-strategy">';
-            html += '<h4>📱 Mobile</h4>';
-            if (data.mobile) {
-                html += '<div class="ccm-dashboard-ps-scores-row">';
-                html += scoreCircle(data.mobile.performance, 'Performance');
-                html += scoreCircle(data.mobile.accessibility, 'Accessibility');
-                html += scoreCircle(data.mobile.best_practices, 'Best Practices');
-                html += scoreCircle(data.mobile.seo, 'SEO');
-                html += '</div>';
-            } else {
-                html += '<p class="ccm-text-muted">No mobile results</p>';
-            }
+            html += renderColumn(data.mobile, 'Mobile', '📱');
+            html += renderColumn(data.desktop, 'Desktop', '🖥️');
             html += '</div>';
 
-            // Desktop column
-            html += '<div class="ccm-dashboard-ps-strategy">';
-            html += '<h4>🖥️ Desktop</h4>';
-            if (data.desktop) {
-                html += '<div class="ccm-dashboard-ps-scores-row">';
-                html += scoreCircle(data.desktop.performance, 'Performance');
-                html += scoreCircle(data.desktop.accessibility, 'Accessibility');
-                html += scoreCircle(data.desktop.best_practices, 'Best Practices');
-                html += scoreCircle(data.desktop.seo, 'SEO');
-                html += '</div>';
-            } else {
-                html += '<p class="ccm-text-muted">No desktop results</p>';
-            }
-            html += '</div>';
-
-            html += '</div>';
-
-            // Tested URL and time
+            // Meta footer with URL and time
             const testedUrl = data.mobile_url || data.desktop_url || '';
             const testedDate = data.mobile_date || data.desktop_date || '';
             if (testedUrl || testedDate) {
                 html += '<div class="ccm-dashboard-ps-meta">';
-                if (testedUrl) html += `<span title="${escapeHtml(testedUrl)}">${escapeHtml(testedUrl.length > 50 ? testedUrl.slice(0, 50) + '…' : testedUrl)}</span>`;
+                if (testedUrl) html += `<span>${escapeHtml(testedUrl)}</span>`;
                 if (testedDate) html += `<span>${timeAgo(testedDate)}</span>`;
                 html += '</div>';
             }
@@ -3725,6 +3721,7 @@
         'speculation_rules', 'critical_css', 'disable_jquery_migrate', 'disable_block_css',
         'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
         'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
+        'video_lazy_load', 'video_preload_none',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4128,6 +4125,7 @@
             disable_xmlrpc: 'Disable XML-RPC', disable_rsd_wlw: 'Remove RSD/WLW Links',
             disable_shortlink: 'Remove Shortlink', disable_rest_api_links: 'Remove REST API Link',
             disable_oembed: 'Disable oEmbed', enabled: 'Performance Optimizer',
+            video_lazy_load: 'Video Lazy Load', video_preload_none: 'Video Preload: None',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
