@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.5
+ * Version: 7.12.6
  */
 
 (function() {
@@ -3574,6 +3574,42 @@
         afterScores: null,
     };
 
+    // ─── Activity Log (terminal-style) ────────────
+
+    /**
+     * Append a timestamped entry to the activity log.
+     * @param {string} message - Text to log
+     * @param {'info'|'success'|'warn'|'error'|'step'|'ai'} type - Log entry type
+     */
+    function aiLog(message, type = 'info') {
+        const wrapper = $('#ai-activity-log-wrapper');
+        const log = $('#ai-activity-log');
+        if (!log) return;
+        if (wrapper) wrapper.style.display = 'block';
+
+        const now = new Date();
+        const ts = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const prefixes = {
+            info: '<span class="ccm-log-prefix ccm-log-info">INFO</span>',
+            success: '<span class="ccm-log-prefix ccm-log-success">DONE</span>',
+            warn: '<span class="ccm-log-prefix ccm-log-warn">WARN</span>',
+            error: '<span class="ccm-log-prefix ccm-log-error">FAIL</span>',
+            step: '<span class="ccm-log-prefix ccm-log-step">STEP</span>',
+            ai: '<span class="ccm-log-prefix ccm-log-ai"> AI </span>',
+        };
+        const prefix = prefixes[type] || prefixes.info;
+        const entry = document.createElement('div');
+        entry.className = 'ccm-log-entry';
+        entry.innerHTML = `<span class="ccm-log-ts">${ts}</span> ${prefix} ${message}`;
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function aiLogClear() {
+        const log = $('#ai-activity-log');
+        if (log) log.innerHTML = '';
+    }
+
     /**
      * Known perf-optimizer setting keys (for auto-fix detection)
      */
@@ -3603,6 +3639,9 @@
         if (testBtn) testBtn.addEventListener('click', aiHubTestConnection);
         if (runBtn) runBtn.addEventListener('click', aiTestOnly);
         if (oneClickBtn) oneClickBtn.addEventListener('click', aiOneClickOptimize);
+
+        const logClearBtn = $('#ai-log-clear-btn');
+        if (logClearBtn) logClearBtn.addEventListener('click', aiLogClear);
 
         // Strategy tab switching
         document.addEventListener('click', (e) => {
@@ -3682,6 +3721,18 @@
 
     // ─── PageSpeed render helpers ────────────
 
+    /**
+     * Return the Google-standard score color class:
+     * 90-100 = green, 50-89 = orange, 0-49 = red
+     */
+    function aiScoreColorClass(score) {
+        const num = parseInt(score, 10);
+        if (isNaN(num)) return '';
+        if (num >= 90) return 'ccm-score-green';
+        if (num >= 50) return 'ccm-score-orange';
+        return 'ccm-score-red';
+    }
+
     function aiRenderScores(scores, suffix) {
         const container = $(`#ai-ps-scores-${suffix}`);
         if (!container) return;
@@ -3695,11 +3746,11 @@
 
         container.innerHTML = categories.map(cat => {
             const score = scores[cat.key] ?? '—';
-            const num = parseInt(score, 10);
-            let colorClass = 'ccm-error';
-            if (num >= 90) colorClass = 'ccm-success';
-            else if (num >= 50) colorClass = 'ccm-warning';
-            return `<div style="text-align:center;"><div class="${colorClass}" style="font-size:2rem;font-weight:700;">${score}</div><div style="font-size:0.8rem;opacity:0.7;">${cat.label}</div></div>`;
+            const colorClass = aiScoreColorClass(score);
+            return `<div class="ccm-ai-score-circle-wrap">
+                <div class="ccm-ai-score-circle ${colorClass}"><span>${score}</span></div>
+                <div class="ccm-ai-score-label">${cat.label}</div>
+            </div>`;
         }).join('');
     }
 
@@ -3708,20 +3759,27 @@
         if (!container) return;
 
         const defs = [
-            { key: 'fcp_ms', label: 'First Contentful Paint', unit: 'ms' },
-            { key: 'lcp_ms', label: 'Largest Contentful Paint', unit: 'ms' },
-            { key: 'cls', label: 'Cumulative Layout Shift', unit: '' },
-            { key: 'tbt_ms', label: 'Total Blocking Time', unit: 'ms' },
-            { key: 'si_ms', label: 'Speed Index', unit: 'ms' },
-            { key: 'tti_ms', label: 'Time To Interactive', unit: 'ms' },
+            { key: 'fcp_ms', label: 'First Contentful Paint', unit: 'ms', good: 1800, poor: 3000 },
+            { key: 'lcp_ms', label: 'Largest Contentful Paint', unit: 'ms', good: 2500, poor: 4000 },
+            { key: 'cls', label: 'Cumulative Layout Shift', unit: '', good: 0.1, poor: 0.25 },
+            { key: 'tbt_ms', label: 'Total Blocking Time', unit: 'ms', good: 200, poor: 600 },
+            { key: 'si_ms', label: 'Speed Index', unit: 'ms', good: 3400, poor: 5800 },
+            { key: 'tti_ms', label: 'Time To Interactive', unit: 'ms', good: 3800, poor: 7300 },
         ];
 
         let html = '<table class="ccm-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
         defs.forEach(m => {
             const val = metrics[m.key];
             if (val !== undefined && val !== null) {
+                const numVal = parseFloat(val);
                 const display = m.unit === 'ms' ? `${Number(val).toLocaleString()} ms` : val;
-                html += `<tr><td>${m.label}</td><td>${display}</td></tr>`;
+                let colorClass = '';
+                if (!isNaN(numVal)) {
+                    if (numVal <= m.good) colorClass = 'ccm-score-green';
+                    else if (numVal <= m.poor) colorClass = 'ccm-score-orange';
+                    else colorClass = 'ccm-score-red';
+                }
+                html += `<tr><td>${m.label}</td><td class="${colorClass}" style="font-weight:600;">${display}</td></tr>`;
             }
         });
         html += '</tbody></table>';
@@ -3733,12 +3791,11 @@
         if (!container) return;
 
         if (!opportunities.length) {
-            container.innerHTML = '<p class="ccm-success">No significant opportunities found — great job!</p>';
+            container.innerHTML = '<p class="ccm-success" style="padding: 0.5rem 0;">No significant opportunities found — great job!</p>';
             return;
         }
 
-        let html = '<h4 style="margin-bottom:0.5rem;">Opportunities</h4>';
-        html += '<table class="ccm-table"><thead><tr><th>Issue</th><th>Savings</th></tr></thead><tbody>';
+        let html = '<table class="ccm-table"><thead><tr><th>Issue</th><th>Savings</th></tr></thead><tbody>';
         opportunities.forEach(opp => {
             const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms`
                           : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '—');
@@ -3746,6 +3803,10 @@
         });
         html += '</tbody></table>';
         container.innerHTML = html;
+
+        // Auto-open the accordion if there are opportunities
+        const accordion = container.closest('.ccm-ai-accordion');
+        if (accordion && opportunities.length) accordion.open = true;
     }
 
     /**
@@ -3779,16 +3840,24 @@
         const btn = $('#ai-ps-run-btn');
         if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
 
+        aiLogClear();
+        aiLog('Starting PageSpeed test (both strategies)…', 'step');
+
         try {
             const url = ($('#ai-ps-url') || {}).value || '';
+            aiLog(`Target URL: <strong>${url}</strong>`, 'info');
 
             // Run mobile
+            aiLog('Testing Mobile…', 'step');
             const mobileData = await aiRunPageSpeed(url, 'mobile');
             aiShowResultsForStrategy(mobileData, 'mobile');
+            aiLog(`Mobile Performance: <strong>${mobileData.scores?.performance ?? '—'}</strong>`, 'info');
 
             // Run desktop
+            aiLog('Testing Desktop…', 'step');
             const desktopData = await aiRunPageSpeed(url, 'desktop');
             aiShowResultsForStrategy(desktopData, 'desktop');
+            aiLog(`Desktop Performance: <strong>${desktopData.scores?.performance ?? '—'}</strong>`, 'info');
 
             // Default to mobile tab
             $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === 'mobile'));
@@ -3796,8 +3865,10 @@
                 p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
             });
 
+            aiLog('PageSpeed tests complete!', 'success');
             showNotification('PageSpeed tests complete (Mobile + Desktop)!', 'success');
         } catch (err) {
+            aiLog(`Error: ${err.message || 'PageSpeed test failed.'}`, 'error');
             showNotification(err.message || 'PageSpeed test failed.', 'error');
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = 'Test Only'; }
@@ -4033,10 +4104,12 @@
                 if (!isNaN(bNum) && !isNaN(aNum)) {
                     const diff = aNum - bNum;
                     change = (diff > 0 ? '+' : '') + diff;
-                    changeClass = diff > 0 ? 'ccm-success' : (diff < 0 ? 'ccm-error' : '');
+                    changeClass = diff > 0 ? 'ccm-score-green' : (diff < 0 ? 'ccm-score-red' : '');
                 }
                 const label = cat === 'best_practices' ? 'Best Practices' : cat.charAt(0).toUpperCase() + cat.slice(1);
-                html += `<tr><td>${label}</td><td>${bv}</td><td><strong>${av}</strong></td><td class="${changeClass}"><strong>${change}</strong></td></tr>`;
+                const beforeColor = aiScoreColorClass(bv);
+                const afterColor = aiScoreColorClass(av);
+                html += `<tr><td>${label}</td><td class="${beforeColor}">${bv}</td><td class="${afterColor}"><strong>${av}</strong></td><td class="${changeClass}"><strong>${change}</strong></td></tr>`;
             });
 
             html += '</tbody></table></div>';
@@ -4062,35 +4135,55 @@
         const fixSummary = $('#ai-fix-summary');
         const beforeAfter = $('#ai-before-after');
         const analysisResults = $('#ai-analysis-results');
+        const remainingRecs = $('#ai-remaining-recommendations');
         if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
         if (beforeAfter) { beforeAfter.style.display = 'none'; beforeAfter.innerHTML = ''; }
         if (analysisResults) { analysisResults.style.display = 'none'; analysisResults.innerHTML = ''; }
+        if (remainingRecs) { remainingRecs.style.display = 'none'; remainingRecs.innerHTML = ''; }
 
-        // Render step indicators
+        // Render step indicators & clear log
         aiRenderSteps();
+        aiLogClear();
+        aiLog('Starting One-Click Optimize…', 'step');
 
         const url = ($('#ai-ps-url') || {}).value || '';
+        aiLog(`Target URL: <strong>${url}</strong>`, 'info');
+
+        // Track final opportunities for remaining recommendations
+        let lastMobileOpportunities = [];
+        let lastDesktopOpportunities = [];
+        let lastManualActions = [];
 
         try {
             // ── Step 1: Save Settings Snapshot (for rollback) ──
             aiUpdateStep('snapshot', 'active', 'Saving…');
+            aiLog('Saving settings snapshot for rollback safety…', 'step');
             await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
             aiUpdateStep('snapshot', 'done', 'Saved');
+            aiLog('Snapshot saved.', 'success');
 
             // ── Step 2: Test Mobile (baseline) ──
             aiUpdateStep('test-mobile', 'active', 'Running…');
+            aiLog('Running Mobile PageSpeed test…', 'step');
             const mobileData = await aiRunPageSpeed(url, 'mobile');
             aiShowResultsForStrategy(mobileData, 'mobile');
             aiHubState.beforeScores.mobile = mobileData.scores || {};
             aiHubState.lastResultId = aiHubState.resultIds.mobile;
-            aiUpdateStep('test-mobile', 'done', `Perf: ${mobileData.scores?.performance ?? '—'}`);
+            lastMobileOpportunities = mobileData.opportunities || [];
+            const mobilePerf = mobileData.scores?.performance ?? '—';
+            aiUpdateStep('test-mobile', 'done', `Perf: ${mobilePerf}`);
+            aiLog(`Mobile scores — Performance: <strong>${mobilePerf}</strong>, LCP: ${mobileData.metrics?.lcp_ms ?? '—'}ms, CLS: ${mobileData.metrics?.cls ?? '—'}`, 'info');
 
             // ── Step 3: Test Desktop (baseline) ──
             aiUpdateStep('test-desktop', 'active', 'Running…');
+            aiLog('Running Desktop PageSpeed test…', 'step');
             const desktopData = await aiRunPageSpeed(url, 'desktop');
             aiShowResultsForStrategy(desktopData, 'desktop');
             aiHubState.beforeScores.desktop = desktopData.scores || {};
-            aiUpdateStep('test-desktop', 'done', `Perf: ${desktopData.scores?.performance ?? '—'}`);
+            lastDesktopOpportunities = desktopData.opportunities || [];
+            const desktopPerf = desktopData.scores?.performance ?? '—';
+            aiUpdateStep('test-desktop', 'done', `Perf: ${desktopPerf}`);
+            aiLog(`Desktop scores — Performance: <strong>${desktopPerf}</strong>, LCP: ${desktopData.metrics?.lcp_ms ?? '—'}ms, CLS: ${desktopData.metrics?.cls ?? '—'}`, 'info');
 
             // Show results (default mobile tab)
             $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === 'mobile'));
@@ -4109,9 +4202,13 @@
             while (iteration < AI_MAX_ITERATIONS) {
                 iteration++;
                 const iterLabel = iteration > 1 ? ` (Iter ${iteration})` : '';
+                if (iteration > 1) {
+                    aiLog(`── Iteration ${iteration}/${AI_MAX_ITERATIONS} ──`, 'step');
+                }
 
                 // ── AI Analysis ──
                 aiUpdateStep('analyze', 'active', `Analyzing${iterLabel}…`);
+                aiLog(`Sending results to AI for analysis${iterLabel}…`, 'ai');
                 const analysisLoading = $('#ai-analysis-loading');
                 if (analysisLoading) analysisLoading.style.display = 'block';
 
@@ -4125,9 +4222,21 @@
                 const analysis = analysisData.analysis || analysisData;
                 aiRenderAnalysis(analysisData);
                 const recCount = (analysis.recommendations || []).length;
+                const manualCount = (analysis.manual_actions || []).length;
+                lastManualActions = analysis.manual_actions || [];
                 aiUpdateStep('analyze', 'done', `${recCount} recommendations${iterLabel}`);
+                aiLog(`AI returned <strong>${recCount}</strong> auto-fixable + <strong>${manualCount}</strong> manual recommendations.`, 'ai');
+
+                if (analysis.summary) {
+                    aiLog(`Summary: ${analysis.summary}`, 'ai');
+                }
+
+                if (analysis.tokens_used) {
+                    aiLog(`Tokens: ${Number(analysis.tokens_used).toLocaleString()} | Model: ${analysis.model || analysisData.model || '?'} | Cost: ~$${analysis.estimated_cost || analysisData.estimated_cost || '?'}`, 'info');
+                }
 
                 if (recCount === 0) {
+                    aiLog('AI found no further optimizations to apply.', 'info');
                     showNotification('AI found no further optimizations to try.', 'info');
                     break;
                 }
@@ -4137,12 +4246,19 @@
                 const selectedFixes = autoFixes || [];
 
                 if (!selectedFixes.length) {
+                    aiLog('No auto-fixable recommendations found — only manual fixes.', 'warn');
                     showNotification('No auto-fixable recommendations found.', 'info');
                     break;
                 }
 
+                // Log each fix being applied
+                selectedFixes.forEach(fix => {
+                    aiLog(`Queuing: <code>${fix.setting_key}</code> → <code>${aiFormatValue(fix.recommended_value)}</code>`, 'info');
+                });
+
                 // ── Apply Changes ──
                 aiUpdateStep('apply', 'active', `Applying${iterLabel}…`);
+                aiLog(`Applying <strong>${selectedFixes.length}</strong> changes${iterLabel}…`, 'step');
                 const applyRes = await ajax('ccm_tools_ai_apply_changes', {
                     recommendations: JSON.stringify(selectedFixes),
                 }, { timeout: 30000 });
@@ -4151,6 +4267,7 @@
                 const changes = applyData.changes || [];
                 aiUpdateStep('apply', 'done', `${changes.length} changed${iterLabel}`);
                 hasApplied = true;
+                aiLog(`<strong>${changes.length}</strong> settings changed successfully.`, 'success');
 
                 // Update on-page toggles in real time
                 if (applyData.settings) {
@@ -4160,21 +4277,28 @@
                 showNotification(`Applied ${changes.length} change(s).${iterLabel}`, 'success');
 
                 // Wait for caches to clear
+                aiLog('Waiting 5s for caches to clear…', 'info');
                 await aiSleep(5000);
 
                 // ── Re-test Mobile ──
                 aiUpdateStep('retest-mobile', 'active', `Re-testing${iterLabel}…`);
+                aiLog(`Re-testing Mobile PageSpeed${iterLabel}…`, 'step');
                 const mobileRetest = await aiRunPageSpeed(url, 'mobile');
                 const retestMobilePerf = mobileRetest.scores?.performance ?? 0;
                 aiHubState.afterScores.mobile = mobileRetest.scores || {};
+                lastMobileOpportunities = mobileRetest.opportunities || [];
                 aiUpdateStep('retest-mobile', 'done', `Perf: ${retestMobilePerf}${iterLabel}`);
+                aiLog(`Mobile re-test — Performance: <strong>${retestMobilePerf}</strong>, LCP: ${mobileRetest.metrics?.lcp_ms ?? '—'}ms`, 'info');
 
                 // ── Re-test Desktop ──
                 aiUpdateStep('retest-desktop', 'active', `Re-testing${iterLabel}…`);
+                aiLog(`Re-testing Desktop PageSpeed${iterLabel}…`, 'step');
                 const desktopRetest = await aiRunPageSpeed(url, 'desktop');
                 const retestDesktopPerf = desktopRetest.scores?.performance ?? 0;
                 aiHubState.afterScores.desktop = desktopRetest.scores || {};
+                lastDesktopOpportunities = desktopRetest.opportunities || [];
                 aiUpdateStep('retest-desktop', 'done', `Perf: ${retestDesktopPerf}${iterLabel}`);
+                aiLog(`Desktop re-test — Performance: <strong>${retestDesktopPerf}</strong>, LCP: ${desktopRetest.metrics?.lcp_ms ?? '—'}ms`, 'info');
 
                 // ── Evaluate results ──
                 const mobileChange = retestMobilePerf - baselineMobilePerf;
@@ -4184,6 +4308,7 @@
 
                 if (scoreDropped) {
                     // ── ROLLBACK — scores got worse ──
+                    aiLog(`Scores DROPPED — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange}. Rolling back…`, 'error');
                     showNotification(
                         `Scores dropped (Mobile ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop ${desktopChange >= 0 ? '+' : ''}${desktopChange}). Rolling back…`,
                         'warning'
@@ -4191,6 +4316,7 @@
                     aiUpdateStep('compare', 'active', 'Rolling back…');
 
                     await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 10000 });
+                    aiLog('Settings rolled back to snapshot.', 'warn');
                     showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
 
                     // Update page toggles to rolled-back state
@@ -4206,12 +4332,14 @@
                         // Save new snapshot and try again with conservative approach
                         await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
                         aiUpdateStep('compare', 'done', `Rolled back — retrying (${iteration + 1}/${AI_MAX_ITERATIONS})`);
+                        aiLog(`Retrying with conservative approach (iteration ${iteration + 1})…`, 'step');
                         showNotification(`Attempting conservative approach (iteration ${iteration + 1})…`, 'info');
                         // Clear fix summary for next iteration
                         if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
                         continue; // next iteration
                     } else {
                         aiUpdateStep('compare', 'done', 'Rolled back — max iterations');
+                        aiLog('Max iterations reached after rollback.', 'warn');
                         break;
                     }
                 }
@@ -4225,13 +4353,20 @@
                 // Check if we should keep iterating
                 const bothAbove90 = retestMobilePerf >= 90 && retestDesktopPerf >= 90;
                 if (bothAbove90 || iteration >= AI_MAX_ITERATIONS) {
-                    aiUpdateStep('compare', 'done', scoreImproved
+                    const resultMsg = scoreImproved
                         ? `Improved! M:${mobileChange >= 0 ? '+' : ''}${mobileChange} D:${desktopChange >= 0 ? '+' : ''}${desktopChange}`
-                        : 'No change detected');
+                        : 'No change detected';
+                    aiUpdateStep('compare', 'done', resultMsg);
+                    if (bothAbove90) {
+                        aiLog(`Both scores above 90! Mobile: ${retestMobilePerf}, Desktop: ${retestDesktopPerf}`, 'success');
+                    } else {
+                        aiLog(`Max iterations reached. Mobile: ${retestMobilePerf}, Desktop: ${retestDesktopPerf}`, 'info');
+                    }
                     break;
                 }
 
                 // Scores improved but below 90 — iterate for more gains
+                aiLog(`Improved (M:${mobileChange >= 0 ? '+' : ''}${mobileChange}, D:${desktopChange >= 0 ? '+' : ''}${desktopChange}) but still below 90. Iterating…`, 'info');
                 showNotification(
                     `Improved (M:${mobileChange >= 0 ? '+' : ''}${mobileChange}, D:${desktopChange >= 0 ? '+' : ''}${desktopChange}) but still below 90. Trying for more…`,
                     'info'
@@ -4264,10 +4399,21 @@
                 aiUpdateStep('compare', 'skipped', 'Skipped');
             }
 
+            // ── Remaining Recommendations (when not at 90+) ──
+            const finalMobilePerf = aiHubState.afterScores?.mobile?.performance ?? aiHubState.beforeScores?.mobile?.performance ?? 0;
+            const finalDesktopPerf = aiHubState.afterScores?.desktop?.performance ?? aiHubState.beforeScores?.desktop?.performance ?? 0;
+            aiRenderRemainingRecommendations(
+                finalMobilePerf, finalDesktopPerf,
+                lastMobileOpportunities, lastDesktopOpportunities,
+                lastManualActions
+            );
+
+            aiLog('One-Click Optimize complete!', 'success');
             showNotification('One-Click Optimize complete!', 'success');
             aiHubLoadHistory();
         } catch (err) {
             console.error('[CCM AI] One-click error:', err);
+            aiLog(`Error: ${err.message || 'Optimization failed.'}`, 'error');
             showNotification(err.message || 'Optimization failed.', 'error');
             // Mark current active step as error
             AI_STEPS.forEach(s => {
@@ -4277,6 +4423,138 @@
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = '🚀 One-Click Optimize'; }
         }
+    }
+
+    // ─── Remaining Recommendations Panel (when score < 90) ────────────
+
+    /**
+     * Render actionable remaining recommendations when scores are still below 90.
+     * Combines PSI opportunities with AI manual actions.
+     */
+    function aiRenderRemainingRecommendations(mobilePerf, desktopPerf, mobileOpps, desktopOpps, manualActions) {
+        const container = $('#ai-remaining-recommendations');
+        if (!container) return;
+
+        const below90 = mobilePerf < 90 || desktopPerf < 90;
+        if (!below90) {
+            container.style.display = 'none';
+            return;
+        }
+
+        const hasOpps = (mobileOpps && mobileOpps.length) || (desktopOpps && desktopOpps.length);
+        const hasManual = manualActions && manualActions.length;
+        if (!hasOpps && !hasManual) {
+            container.style.display = 'none';
+            return;
+        }
+
+        let html = `<div class="ccm-ai-remaining-panel">
+            <h3>🎯 Remaining Recommendations to Reach 90+</h3>
+            <p class="ccm-text-muted" style="margin:0.25rem 0 1rem;">These issues require changes outside the Performance Optimizer — server configuration, theme/plugin modifications, or content optimization.</p>`;
+
+        // Merge and deduplicate opportunities from both strategies
+        const allOpps = new Map();
+        const mergeOpps = (opps, strategy) => {
+            (opps || []).forEach(opp => {
+                const key = opp.title || opp.id || 'Unknown';
+                if (allOpps.has(key)) {
+                    const existing = allOpps.get(key);
+                    existing.strategies.push(strategy);
+                    if (opp.savings_ms && (!existing.savings_ms || opp.savings_ms > existing.savings_ms)) {
+                        existing.savings_ms = opp.savings_ms;
+                    }
+                    if (opp.savings_bytes && (!existing.savings_bytes || opp.savings_bytes > existing.savings_bytes)) {
+                        existing.savings_bytes = opp.savings_bytes;
+                    }
+                } else {
+                    allOpps.set(key, { ...opp, title: key, strategies: [strategy] });
+                }
+            });
+        };
+        mergeOpps(mobileOpps, 'Mobile');
+        mergeOpps(desktopOpps, 'Desktop');
+
+        // Show PageSpeed opportunities
+        if (allOpps.size) {
+            html += `<h4 style="margin:0 0 0.5rem;">PageSpeed Opportunities</h4>`;
+            html += '<div class="ccm-ai-remaining-list">';
+            allOpps.forEach(opp => {
+                const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms`
+                              : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '');
+                const strategyBadges = opp.strategies.map(s =>
+                    `<span class="ccm-badge ccm-badge-info">${s}</span>`
+                ).join(' ');
+                const guidance = aiGetOpportunityGuidance(opp.id || opp.title);
+                html += `<div class="ccm-ai-remaining-item">
+                    <div class="ccm-ai-remaining-header">
+                        <strong>${opp.title}</strong>
+                        ${savings ? `<span class="ccm-badge ccm-badge-warning">${savings}</span>` : ''}
+                        ${strategyBadges}
+                    </div>
+                    ${guidance ? `<p class="ccm-ai-remaining-guidance">${guidance}</p>` : ''}
+                </div>`;
+            });
+            html += '</div>';
+        }
+
+        // Show manual actions from AI
+        if (hasManual) {
+            html += `<h4 style="margin:1rem 0 0.5rem;">AI-Recommended Manual Actions</h4>`;
+            html += '<div class="ccm-ai-remaining-list">';
+            manualActions.forEach(action => {
+                const text = typeof action === 'string' ? action : (action.reason || action.description || JSON.stringify(action));
+                html += `<div class="ccm-ai-remaining-item ccm-ai-remaining-item-manual">
+                    <p>${text}</p>
+                </div>`;
+            });
+            html += '</div>';
+        }
+
+        html += '</div>';
+        container.innerHTML = html;
+        container.style.display = 'block';
+
+        aiLog(`Showing ${allOpps.size + (manualActions || []).length} remaining recommendations for reaching 90+.`, 'info');
+    }
+
+    /**
+     * Return actionable guidance for common PageSpeed opportunities.
+     */
+    function aiGetOpportunityGuidance(idOrTitle) {
+        const key = (idOrTitle || '').toLowerCase();
+        const guidance = {
+            'render-blocking-resources': 'Defer non-critical CSS/JS. Check theme for inline critical CSS support, or use the Critical CSS + Async CSS features in Performance Optimizer.',
+            'unused-css-rules': 'Remove unused CSS from your theme or page builder. Consider a CSS clean-up tool or loading CSS conditionally per page.',
+            'unused-javascript': 'Remove or defer unused JS. Check if plugins load scripts on pages where they aren\'t needed. Use asset clean-up plugins.',
+            'uses-responsive-images': 'Ensure images use srcset/sizes for responsive loading. Regenerate thumbnails if using an older theme.',
+            'offscreen-images': 'Enable lazy loading for below-the-fold images. WordPress native lazy loading should handle most cases.',
+            'unminified-css': 'Minify CSS files. This typically requires a server-level build step or a minification plugin.',
+            'unminified-javascript': 'Minify JS files. Use a build tool or minification plugin. Some hosts provide this automatically.',
+            'uses-text-compression': 'Enable Gzip/Brotli compression on your server. Check .htaccess or contact your hosting provider.',
+            'uses-long-cache-ttl': 'Set longer Cache-Control headers for static assets. The .htaccess Optimizer in CCM Tools can help with this.',
+            'server-response-time': 'Improve TTFB — consider server-side caching (Redis, page cache), upgrading hosting, or optimizing slow database queries.',
+            'total-byte-weight': 'Reduce total page weight — compress images, remove unused plugins/scripts, and audit third-party resources.',
+            'dom-size': 'Simplify your HTML structure. Page builders often create deeply nested DOM trees — consider simplifying layouts.',
+            'uses-optimized-images': 'Compress images further. Use WebP/AVIF formats via the WebP Converter in CCM Tools.',
+            'modern-image-formats': 'Convert images to WebP or AVIF. Use the WebP Converter tool in CCM Tools.',
+            'third-party-summary': 'Audit third-party scripts (analytics, ads, widgets). Consider delaying non-essential third-party scripts.',
+            'largest-contentful-paint-element': 'Optimize the LCP element — preload hero images, use fetchpriority="high", and ensure the LCP image isn\'t lazy-loaded.',
+            'layout-shift-elements': 'Add explicit width/height to images and embeds. Avoid inserting content above the fold after page load.',
+            'font-display': 'Use font-display: swap for all fonts. Enable this in Performance Optimizer settings.',
+            'efficient-animated-content': 'Replace animated GIFs with video (MP4/WebM). Videos are dramatically smaller and faster.',
+            'duplicated-javascript': 'Check if multiple plugins load the same library (e.g., multiple jQuery versions). Dequeue duplicates.',
+            'legacy-javascript': 'Some plugins serve ES5 bundles unnecessarily. Check for plugin updates or modern replacements.',
+            'mainthread-work-breakdown': 'Reduce main thread work — minimize JS execution, CSS parsing, and layout recalculations. Simplify page complexity.',
+            'bootup-time': 'Reduce JS execution time — delay non-critical scripts and remove unused JavaScript.',
+            'uses-rel-preconnect': 'Add preconnect hints for critical third-party origins. Enable Preconnect in Performance Optimizer.',
+            'redirects': 'Minimize redirects. Each redirect adds a round-trip. Check for unnecessary http→https or www→non-www redirects.',
+            'critical-request-chains': 'Break long request chains by inlining critical resources and preloading key assets.',
+        };
+
+        for (const [k, v] of Object.entries(guidance)) {
+            if (key.includes(k)) return v;
+        }
+        return '';
     }
 
     // ─── Helpers ────────────
@@ -4308,7 +4586,7 @@
                 const scores = r.scores || {};
                 const metrics = r.metrics || {};
                 const date = r.tested_at ? new Date(r.tested_at).toLocaleString() : '—';
-                const perfClass = (scores.performance >= 90) ? 'ccm-success' : ((scores.performance >= 50) ? 'ccm-warning' : 'ccm-error');
+                const perfClass = aiScoreColorClass(scores.performance);
                 html += `<tr><td>${date}</td><td>${r.strategy || '—'}</td><td class="${perfClass}"><strong>${scores.performance ?? '—'}</strong></td><td>${scores.accessibility ?? '—'}</td><td>${scores.best_practices ?? '—'}</td><td>${scores.seo ?? '—'}</td><td>${metrics.lcp_ms ? metrics.lcp_ms + 'ms' : '—'}</td></tr>`;
             });
             html += '</tbody></table>';

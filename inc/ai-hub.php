@@ -552,6 +552,15 @@ function ccm_tools_render_ai_section(): void {
                 <div id="ai-steps" class="ccm-ai-steps"></div>
             </div>
 
+            <!-- Activity Log (terminal-style) -->
+            <div id="ai-activity-log-wrapper" style="display: none; margin-top: 1rem;">
+                <div class="ccm-ai-log-header">
+                    <span><?php _e('Activity Log', 'ccm-tools'); ?></span>
+                    <button type="button" id="ai-log-clear-btn" class="ccm-ai-log-btn" title="<?php esc_attr_e('Clear log', 'ccm-tools'); ?>">Clear</button>
+                </div>
+                <div id="ai-activity-log" class="ccm-ai-log"></div>
+            </div>
+
             <!-- Results Area — dual strategy tabs -->
             <div id="ai-results-area" style="display: none; margin-top: 1.5rem;">
                 <div class="ccm-ai-strategy-tabs">
@@ -560,13 +569,25 @@ function ccm_tools_render_ai_section(): void {
                 </div>
                 <div id="ai-results-mobile" class="ccm-ai-strategy-panel active">
                     <div id="ai-ps-scores-mobile" class="ccm-ai-scores-grid"></div>
-                    <div id="ai-ps-metrics-mobile" style="margin-bottom: 1rem;"></div>
-                    <div id="ai-ps-opportunities-mobile"></div>
+                    <details class="ccm-ai-accordion">
+                        <summary class="ccm-ai-accordion-summary"><?php _e('Metrics', 'ccm-tools'); ?></summary>
+                        <div id="ai-ps-metrics-mobile" class="ccm-ai-accordion-body"></div>
+                    </details>
+                    <details class="ccm-ai-accordion">
+                        <summary class="ccm-ai-accordion-summary"><?php _e('Opportunities', 'ccm-tools'); ?></summary>
+                        <div id="ai-ps-opportunities-mobile" class="ccm-ai-accordion-body"></div>
+                    </details>
                 </div>
                 <div id="ai-results-desktop" class="ccm-ai-strategy-panel" style="display: none;">
                     <div id="ai-ps-scores-desktop" class="ccm-ai-scores-grid"></div>
-                    <div id="ai-ps-metrics-desktop" style="margin-bottom: 1rem;"></div>
-                    <div id="ai-ps-opportunities-desktop"></div>
+                    <details class="ccm-ai-accordion">
+                        <summary class="ccm-ai-accordion-summary"><?php _e('Metrics', 'ccm-tools'); ?></summary>
+                        <div id="ai-ps-metrics-desktop" class="ccm-ai-accordion-body"></div>
+                    </details>
+                    <details class="ccm-ai-accordion">
+                        <summary class="ccm-ai-accordion-summary"><?php _e('Opportunities', 'ccm-tools'); ?></summary>
+                        <div id="ai-ps-opportunities-desktop" class="ccm-ai-accordion-body"></div>
+                    </details>
                 </div>
             </div>
 
@@ -575,6 +596,9 @@ function ccm_tools_render_ai_section(): void {
 
             <!-- Before/After Comparison -->
             <div id="ai-before-after" style="display: none; margin-top: 1.5rem;"></div>
+
+            <!-- Remaining Recommendations (when score < 90) -->
+            <div id="ai-remaining-recommendations" style="display: none; margin-top: 1.5rem;"></div>
 
             <!-- AI Analysis (for standalone analyze) -->
             <div id="ai-analysis-loading" style="display: none; text-align: center; padding: 2rem;">

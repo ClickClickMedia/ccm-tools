@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.12.5
+ * Version: 7.12.6
  */
 
 /* ===================================
@@ -2757,6 +2757,267 @@ tr.ccm-front-page-row {
     margin: 0 0 0.5rem;
 }
 
+/* ─── Google-standard score colors ─── */
+.ccm-score-green { color: #0cce6b; }
+.ccm-score-orange { color: #ffa400; }
+.ccm-score-red { color: #ff4e42; }
+
+/* Score circle display */
+.ccm-ai-score-circle-wrap {
+    text-align: center;
+}
+
+.ccm-ai-score-circle {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 3px solid var(--ccm-border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin: 0 auto 0.35rem;
+    transition: border-color 0.3s, color 0.3s;
+}
+
+.ccm-ai-score-circle.ccm-score-green {
+    border-color: #0cce6b;
+    color: #0cce6b;
+}
+
+.ccm-ai-score-circle.ccm-score-orange {
+    border-color: #ffa400;
+    color: #ffa400;
+}
+
+.ccm-ai-score-circle.ccm-score-red {
+    border-color: #ff4e42;
+    color: #ff4e42;
+}
+
+.ccm-ai-score-label {
+    font-size: 0.8rem;
+    color: var(--ccm-text-muted);
+    font-weight: 500;
+}
+
+/* ─── Activity Log (terminal-style) ─── */
+.ccm-ai-log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0.75rem;
+    background: #1e1e2e;
+    border-radius: var(--ccm-radius-md) var(--ccm-radius-md) 0 0;
+    border: 1px solid #313244;
+    border-bottom: none;
+}
+
+.ccm-ai-log-header span {
+    color: #cdd6f4;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.ccm-ai-log-btn {
+    background: transparent;
+    border: 1px solid #45475a;
+    color: #a6adc8;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.ccm-ai-log-btn:hover {
+    background: #313244;
+    color: #cdd6f4;
+}
+
+.ccm-ai-log {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    padding: 0.75rem;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #313244;
+    border-radius: 0 0 var(--ccm-radius-md) var(--ccm-radius-md);
+}
+
+/* Custom terminal scrollbar */
+.ccm-ai-log::-webkit-scrollbar {
+    width: 6px;
+}
+
+.ccm-ai-log::-webkit-scrollbar-track {
+    background: #1e1e2e;
+}
+
+.ccm-ai-log::-webkit-scrollbar-thumb {
+    background: #45475a;
+    border-radius: 3px;
+}
+
+.ccm-ai-log::-webkit-scrollbar-thumb:hover {
+    background: #585b70;
+}
+
+.ccm-log-entry {
+    padding: 0.15rem 0;
+    border-bottom: 1px solid rgba(69, 71, 90, 0.3);
+}
+
+.ccm-log-entry:last-child {
+    border-bottom: none;
+}
+
+.ccm-log-ts {
+    color: #6c7086;
+    margin-right: 0.5rem;
+    font-size: 0.72rem;
+}
+
+.ccm-log-prefix {
+    display: inline-block;
+    min-width: 3.2em;
+    text-align: center;
+    padding: 0.05rem 0.35rem;
+    border-radius: 2px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    margin-right: 0.5rem;
+}
+
+.ccm-log-info { background: #313244; color: #89b4fa; }
+.ccm-log-success { background: #1e3a2f; color: #a6e3a1; }
+.ccm-log-warn { background: #3a3520; color: #f9e2af; }
+.ccm-log-error { background: #3a1e1e; color: #f38ba8; }
+.ccm-log-step { background: #1e2a3a; color: #89dceb; }
+.ccm-log-ai { background: #2a1e3a; color: #cba6f7; }
+
+.ccm-log-entry code {
+    background: #313244;
+    color: #f5c2e7;
+    padding: 0.1rem 0.3rem;
+    border-radius: 2px;
+    font-size: 0.75rem;
+}
+
+.ccm-log-entry strong {
+    color: #f5e0dc;
+}
+
+/* ─── Accordion for PageSpeed details ─── */
+.ccm-ai-accordion {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.ccm-ai-accordion-summary {
+    padding: 0.6rem 1rem;
+    font-weight: 600;
+    font-size: var(--ccm-text-sm);
+    cursor: pointer;
+    background: var(--ccm-bg);
+    transition: background 0.15s;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ccm-ai-accordion-summary::-webkit-details-marker {
+    display: none;
+}
+
+.ccm-ai-accordion-summary::before {
+    content: '▶';
+    font-size: 0.6rem;
+    color: var(--ccm-text-muted);
+    transition: transform 0.2s;
+    display: inline-block;
+}
+
+.ccm-ai-accordion[open] > .ccm-ai-accordion-summary::before {
+    transform: rotate(90deg);
+}
+
+.ccm-ai-accordion-summary:hover {
+    background: var(--ccm-bg-secondary, #f1f5f9);
+}
+
+.ccm-ai-accordion-body {
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--ccm-border);
+}
+
+/* ─── Remaining Recommendations Panel ─── */
+.ccm-ai-remaining-panel {
+    border: 1px solid var(--ccm-border);
+    border-left: 4px solid #ffa400;
+    border-radius: var(--ccm-radius-md);
+    padding: 1.25rem;
+    background: var(--ccm-bg);
+}
+
+.ccm-ai-remaining-panel h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1.1rem;
+}
+
+.ccm-ai-remaining-panel h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--ccm-text);
+}
+
+.ccm-ai-remaining-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.ccm-ai-remaining-item {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    padding: 0.75rem 1rem;
+    background: var(--ccm-bg-light, #f9fafb);
+}
+
+.ccm-ai-remaining-item-manual {
+    border-left: 3px solid var(--ccm-info, #3b82f6);
+}
+
+.ccm-ai-remaining-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ccm-ai-remaining-header strong {
+    flex: 1;
+    min-width: 200px;
+}
+
+.ccm-ai-remaining-guidance {
+    margin: 0.4rem 0 0;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text-muted);
+    line-height: 1.5;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .ccm-ai-controls {
@@ -2795,5 +3056,17 @@ tr.ccm-front-page-row {
     }
     .ccm-ai-comparison {
         grid-template-columns: 1fr;
+    }
+    .ccm-ai-score-circle {
+        width: 60px;
+        height: 60px;
+        font-size: 1.3rem;
+    }
+    .ccm-ai-log {
+        font-size: 0.72rem;
+        max-height: 200px;
+    }
+    .ccm-ai-remaining-header strong {
+        min-width: 0;
     }
 }

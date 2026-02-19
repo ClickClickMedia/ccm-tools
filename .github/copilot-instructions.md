@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.5
+- **Current Version:** 7.12.6
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -282,6 +282,40 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.6
+- **Live Activity Log (Terminal-Style Output)**
+  - New dark terminal-style scrollable log panel shows real-time updates during optimization
+  - `aiLog(message, type)` function with timestamped entries and color-coded prefixes (INFO, DONE, WARN, FAIL, STEP, AI)
+  - Logs every step: snapshot, PageSpeed tests, AI analysis details, each setting change, rollback events, retries
+  - Styled with Catppuccin Mocha theme — dark background, monospace font, custom scrollbar
+  - Clear button to reset the log
+  - Also enabled during "Test Only" flow
+- **Accordion PageSpeed Results**
+  - Scores remain always visible in the results area
+  - Metrics and Opportunities sections wrapped in collapsible `<details>` accordions
+  - Custom accordion styling with animated triangle marker
+  - Opportunities accordion auto-opens when issues are found
+- **Google-Standard Color-Coded Scores**
+  - New `aiScoreColorClass()` utility following Google's PSI thresholds: green (90-100), orange (50-89), red (0-49)
+  - Score circles rendered as bordered circular elements with matching color
+  - Metrics table values color-coded using per-metric good/poor thresholds (e.g., LCP: green ≤2500ms, orange ≤4000ms, red >4000ms)
+  - Before/After comparison table scores color-coded individually
+  - History table uses same color scheme
+  - New CSS classes: `.ccm-score-green`, `.ccm-score-orange`, `.ccm-score-red`
+  - New CSS: `.ccm-ai-score-circle`, `.ccm-ai-score-circle-wrap`, `.ccm-ai-score-label`
+- **Remaining Recommendations Panel (Push for 90+)**
+  - When final scores are below 90, shows a "Remaining Recommendations to Reach 90+" panel
+  - Merges and deduplicates PageSpeed opportunities from both Mobile and Desktop strategies
+  - Shows strategy badges per opportunity (Mobile, Desktop, or both)
+  - `aiGetOpportunityGuidance()` provides actionable how-to-fix text for 25+ common PSI audits
+  - AI manual actions displayed separately with distinct styling
+  - Panel styling: orange left border, collated list with savings badges
+- **New CSS Components**
+  - `.ccm-ai-log`, `.ccm-ai-log-header`, `.ccm-log-entry`, `.ccm-log-prefix` — terminal log styling
+  - `.ccm-ai-accordion`, `.ccm-ai-accordion-summary`, `.ccm-ai-accordion-body` — accordion styling
+  - `.ccm-ai-remaining-panel`, `.ccm-ai-remaining-item`, `.ccm-ai-remaining-guidance` — recommendations panel
+  - Responsive rules for all new components at 768px breakpoint
 
 ### v7.12.5
 - **Live Settings Update After AI Apply**
