@@ -252,10 +252,17 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
 
     // Send current Performance Optimizer settings for context
     $currentSettings = ccm_tools_perf_get_settings();
+    $url = esc_url_raw(sanitize_text_field($_POST['url'] ?? site_url()));
     $context = '';
 
     if (class_exists('WooCommerce')) {
         $context .= 'WooCommerce site. ';
+    }
+
+    // Add learnings from previous optimization runs
+    $learnings = ccm_tools_build_learnings_context($url);
+    if (!empty($learnings)) {
+        $context .= "\n" . $learnings;
     }
 
     // Add server-side tool status for AI context
@@ -313,6 +320,13 @@ function ccm_tools_ajax_ai_hub_ai_optimize(): void {
 
         $context = '';
         if (class_exists('WooCommerce')) $context .= 'WooCommerce site. ';
+
+        // Add learnings from previous optimization runs
+        $learnings = ccm_tools_build_learnings_context($url);
+        if (!empty($learnings)) {
+            $context .= "\n" . $learnings;
+        }
+
         $body['context'] = $context;
     }
 
@@ -479,13 +493,16 @@ function ccm_tools_ajax_ai_save_run(): void {
         'outcome'         => sanitize_text_field($run_data['outcome'] ?? 'completed'),
     ];
 
-    // Store up to 5 change keys (sanitized)
+    // Store changes with from/to values for learning
     if (!empty($run_data['changes']) && is_array($run_data['changes'])) {
         foreach (array_slice($run_data['changes'], 0, 30) as $change) {
             if (is_array($change) && !empty($change['key'])) {
-                $run['changes'][] = sanitize_text_field($change['key']);
+                $entry = ['key' => sanitize_text_field($change['key'])];
+                if (isset($change['from'])) $entry['from'] = $change['from'];
+                if (isset($change['to']))   $entry['to']   = $change['to'];
+                $run['changes'][] = $entry;
             } elseif (is_string($change)) {
-                $run['changes'][] = sanitize_text_field($change);
+                $run['changes'][] = ['key' => sanitize_text_field($change)];
             }
         }
     }
@@ -595,6 +612,182 @@ function ccm_tools_ajax_ai_rollback_settings(): void {
 }
 
 // ─── Preflight: Tool Status & Auto-Enable ────────────────────────
+
+/**
+ * Build learnings context from previous optimization runs for the same URL.
+ *
+ * Creates a structured summary the AI can use to avoid repeating mistakes and
+ * build on successful strategies. Includes score deltas, which settings helped
+ * or hurt, and overall patterns.
+ *
+ * @param string $url The URL being optimized (for matching past runs)
+ * @return string Formatted context string, or empty if no relevant history
+ */
+function ccm_tools_build_learnings_context(string $url = ''): string {
+    $runs = get_option('ccm_tools_ai_optimization_runs', []);
+    if (!is_array($runs) || empty($runs)) {
+        return '';
+    }
+
+    // Filter to runs for this URL (or all runs if URL is empty/different)
+    $relevant = [];
+    $normalized_url = rtrim(strtolower($url), '/');
+    foreach ($runs as $run) {
+        $run_url = rtrim(strtolower($run['url'] ?? ''), '/');
+        // Match exact URL or same domain (allow path variation)
+        if (empty($normalized_url) || $run_url === $normalized_url || parse_url($run_url, PHP_URL_HOST) === parse_url($normalized_url, PHP_URL_HOST)) {
+            $relevant[] = $run;
+        }
+    }
+
+    if (empty($relevant)) {
+        return '';
+    }
+
+    // Limit to last 10 runs
+    $relevant = array_slice($relevant, 0, 10);
+
+    // Build wins and losses
+    $wins = [];   // settings that improved scores
+    $losses = []; // settings that caused rollbacks
+    $patterns = ['improved' => 0, 'rolled_back' => 0, 'no_changes' => 0];
+
+    foreach ($relevant as $run) {
+        $outcome = $run['outcome'] ?? 'completed';
+        if (isset($patterns[$outcome])) {
+            $patterns[$outcome]++;
+        }
+
+        $m_delta = ($run['after_mobile'] ?? 0) - ($run['before_mobile'] ?? 0);
+        $d_delta = ($run['after_desktop'] ?? 0) - ($run['before_desktop'] ?? 0);
+        $changes = $run['changes'] ?? [];
+
+        if ($outcome === 'improved' && !empty($changes)) {
+            foreach ($changes as $change) {
+                $key = is_array($change) ? ($change['key'] ?? '') : $change;
+                if (empty($key)) continue;
+                if (!isset($wins[$key])) {
+                    $wins[$key] = ['count' => 0, 'total_m_delta' => 0, 'total_d_delta' => 0, 'values' => []];
+                }
+                $wins[$key]['count']++;
+                $wins[$key]['total_m_delta'] += $m_delta;
+                $wins[$key]['total_d_delta'] += $d_delta;
+                if (is_array($change) && isset($change['to'])) {
+                    $wins[$key]['values'][] = $change['to'];
+                }
+            }
+        } elseif ($outcome === 'rolled_back' && !empty($changes)) {
+            foreach ($changes as $change) {
+                $key = is_array($change) ? ($change['key'] ?? '') : $change;
+                if (empty($key)) continue;
+                if (!isset($losses[$key])) {
+                    $losses[$key] = ['count' => 0, 'total_m_delta' => 0, 'total_d_delta' => 0, 'values' => []];
+                }
+                $losses[$key]['count']++;
+                $losses[$key]['total_m_delta'] += $m_delta;
+                $losses[$key]['total_d_delta'] += $d_delta;
+                if (is_array($change) && isset($change['to'])) {
+                    $losses[$key]['values'][] = $change['to'];
+                }
+            }
+        }
+    }
+
+    // Build the context string
+    $out = "## Previous Optimization History (AI Memory)\n";
+    $out .= "The following is data from previous optimization runs on this site. Use it to make better decisions.\n\n";
+
+    // Overview
+    $total = count($relevant);
+    $out .= "**Runs:** {$total} total — {$patterns['improved']} improved, {$patterns['rolled_back']} rolled back, {$patterns['no_changes']} no changes\n";
+
+    // Best scores achieved
+    $best_m = 0;
+    $best_d = 0;
+    foreach ($relevant as $r) {
+        $best_m = max($best_m, $r['after_mobile'] ?? 0, $r['before_mobile'] ?? 0);
+        $best_d = max($best_d, $r['after_desktop'] ?? 0, $r['before_desktop'] ?? 0);
+    }
+    if ($best_m > 0 || $best_d > 0) {
+        $out .= "**Best scores achieved:** Mobile {$best_m}, Desktop {$best_d}\n\n";
+    }
+
+    // Settings that helped
+    if (!empty($wins)) {
+        $out .= "### Settings That IMPROVED Scores (REPEAT these)\n";
+        // Sort by count desc
+        uasort($wins, function ($a, $b) { return $b['count'] - $a['count']; });
+        foreach ($wins as $key => $data) {
+            $avg_m = $data['count'] > 0 ? round($data['total_m_delta'] / $data['count']) : 0;
+            $avg_d = $data['count'] > 0 ? round($data['total_d_delta'] / $data['count']) : 0;
+            $m_fmt = sprintf('%+d', $avg_m);
+            $d_fmt = sprintf('%+d', $avg_d);
+            $out .= "- `{$key}`: helped {$data['count']}x (avg Mobile {$m_fmt}, Desktop {$d_fmt})";
+            // Show most recent value used
+            if (!empty($data['values'])) {
+                $last_val = end($data['values']);
+                if (is_bool($last_val)) {
+                    $out .= " → " . ($last_val ? 'true' : 'false');
+                } elseif (is_scalar($last_val) && strlen((string)$last_val) < 60) {
+                    $out .= " → " . (string)$last_val;
+                }
+            }
+            $out .= "\n";
+        }
+        $out .= "\n";
+    }
+
+    // Settings that hurt
+    if (!empty($losses)) {
+        $out .= "### Settings That CAUSED ROLLBACKS (AVOID these)\n";
+        uasort($losses, function ($a, $b) { return $b['count'] - $a['count']; });
+        foreach ($losses as $key => $data) {
+            $avg_m = $data['count'] > 0 ? round($data['total_m_delta'] / $data['count']) : 0;
+            $avg_d = $data['count'] > 0 ? round($data['total_d_delta'] / $data['count']) : 0;
+            $m_fmt = sprintf('%+d', $avg_m);
+            $d_fmt = sprintf('%+d', $avg_d);
+            $out .= "- `{$key}`: caused rollback {$data['count']}x (avg Mobile {$m_fmt}, Desktop {$d_fmt})";
+            if (!empty($data['values'])) {
+                $last_val = end($data['values']);
+                if (is_bool($last_val)) {
+                    $out .= " → " . ($last_val ? 'true' : 'false');
+                } elseif (is_scalar($last_val) && strlen((string)$last_val) < 60) {
+                    $out .= " → " . (string)$last_val;
+                }
+            }
+            $out .= "\n";
+        }
+        $out .= "\n";
+    }
+
+    // Recent run details (last 3)
+    $out .= "### Recent Runs (newest first)\n";
+    foreach (array_slice($relevant, 0, 3) as $run) {
+        $date = $run['date'] ?? '?';
+        $m_before = $run['before_mobile'] ?? 0;
+        $d_before = $run['before_desktop'] ?? 0;
+        $m_after = $run['after_mobile'] ?? 0;
+        $d_after = $run['after_desktop'] ?? 0;
+        $outcome = $run['outcome'] ?? '?';
+        $iters = $run['iterations'] ?? 1;
+        $m_delta = $m_after - $m_before;
+        $d_delta = $d_after - $d_before;
+
+        $m_delta_fmt = sprintf('%+d', $m_delta);
+        $d_delta_fmt = sprintf('%+d', $d_delta);
+        $out .= "- [{$date}] {$outcome} in {$iters} iter(s): Mobile {$m_before}→{$m_after} ({$m_delta_fmt}), Desktop {$d_before}→{$d_after} ({$d_delta_fmt})";
+        $change_keys = [];
+        foreach (($run['changes'] ?? []) as $c) {
+            $change_keys[] = is_array($c) ? ($c['key'] ?? '?') : $c;
+        }
+        if (!empty($change_keys)) {
+            $out .= " | Changed: " . implode(', ', array_slice($change_keys, 0, 10));
+        }
+        $out .= "\n";
+    }
+
+    return $out;
+}
 
 /**
  * Get optimization status of all server-side tools

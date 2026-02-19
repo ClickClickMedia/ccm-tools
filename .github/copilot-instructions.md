@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.13.0
+- **Current Version:** 7.13.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -285,6 +285,18 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.13.1
+- **AI Learning Memory — Persistent Optimization History for Smarter AI Decisions**
+  - New `ccm_tools_build_learnings_context()` function reads past optimization runs from `wp_options` and builds a structured summary
+  - Categorizes settings into "IMPROVED scores" (repeat) and "CAUSED ROLLBACKS" (avoid) with per-setting score deltas
+  - Includes best scores achieved, run count stats (improved/rolled back/no changes), and last 3 run details
+  - Learnings context automatically injected into both AI analyze and optimize handlers
+  - URL-based filtering: matches runs by exact URL or same domain for cross-page learning
+  - **Enriched run data**: `save_run` handler now stores `from`/`to` values per changed setting (not just keys)
+  - JS now passes target URL to the analyze AJAX call for accurate learnings lookup
+  - **Hub AI prompt updates**: Both `ai-analyze.php` and `ai-optimize.php` system prompts include new "Previous Optimization History (AI Memory)" section
+  - AI instructed to: repeat proven winners, avoid repeated rollback causes, use score deltas for impact assessment, avoid redundant recommendations
 
 ### v7.13.0
 - **Smart Rollback Algorithm — Net-Positive Score Evaluation**

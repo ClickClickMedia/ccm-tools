@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.13.0
+ * Version: 7.13.1
  */
 
 (function() {
@@ -4307,6 +4307,7 @@
 
                 const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
                     result_id: aiHubState.lastResultId,
+                    url: url,
                 }, { timeout: 120000 });
 
                 if (analysisLoading) analysisLoading.style.display = 'none';
