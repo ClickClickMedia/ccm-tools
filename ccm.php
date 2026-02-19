@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.11.2
+ * Version: 7.12.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.11.2');
+    define('CCM_HELPER_VERSION', '7.12.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -185,7 +185,6 @@ function ccm_tools_render_header_nav($active_page = '') {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-webp' ? 'active' : ''; ?>"><?php _e('WebP', 'ccm-tools'); ?></a>
                 <?php endif; ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-perf')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-perf' ? 'active' : ''; ?>"><?php _e('Performance', 'ccm-tools'); ?></a>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-ai')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-ai' ? 'active' : ''; ?>"><?php _e('AI', 'ccm-tools'); ?></a>
                 <?php if ($woocommerce_active): ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-woocommerce' ? 'active' : ''; ?>"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                 <?php endif; ?>
@@ -289,15 +288,8 @@ class CCMSettings {
             'ccm_tools_render_perf_page'
         );
         
-        // Add AI Performance submenu
-        add_submenu_page(
-            'ccm-tools',
-            'AI Performance',
-            'AI Performance',
-            'manage_options',
-            'ccm-tools-ai',
-            'ccm_tools_render_ai_hub_page'
-        );
+        // AI Performance is now integrated into the Performance page
+        // (see ccm_tools_render_ai_section in inc/ai-hub.php)
         
         // Add WooCommerce Tools submenu (only if WooCommerce is active)
         if (class_exists('WooCommerce')) {

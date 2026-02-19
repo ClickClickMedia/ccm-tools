@@ -349,120 +349,139 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
     return false;
 }
 
-// ─── Admin Page Rendering ───────────────────────────────────────
+// ─── Admin Page Section ─────────────────────────────────────────
+
+add_action('wp_ajax_ccm_tools_ai_apply_changes', 'ccm_tools_ajax_ai_apply_changes');
 
 /**
- * Render the AI Performance page
+ * Apply AI-recommended changes to Performance Optimizer settings
  */
-function ccm_tools_render_ai_hub_page(): void {
+function ccm_tools_ajax_ai_apply_changes(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $recommendations_raw = wp_unslash($_POST['recommendations'] ?? '');
+    $recommendations = json_decode($recommendations_raw, true);
+
+    if (!is_array($recommendations) || empty($recommendations)) {
+        wp_send_json_error(['message' => 'No recommendations to apply']);
+    }
+
+    $before = ccm_tools_perf_get_settings();
+    $applied = ccm_tools_ai_hub_apply_recommendations($recommendations);
+    $after = ccm_tools_perf_get_settings();
+
+    // Calculate what changed
+    $changes = [];
+    foreach ($after as $key => $value) {
+        if (isset($before[$key]) && $before[$key] !== $value) {
+            $changes[] = [
+                'key'  => $key,
+                'from' => $before[$key],
+                'to'   => $value,
+            ];
+        }
+    }
+
+    wp_send_json_success([
+        'applied'  => $applied,
+        'changes'  => $changes,
+        'settings' => $after,
+    ]);
+}
+
+/**
+ * Render the AI Optimizer section (embedded in the Performance page)
+ */
+function ccm_tools_render_ai_section(): void {
     $settings = ccm_tools_ai_hub_get_settings();
+    $hasKey = !empty($settings['api_key']);
     ?>
-    <div class="wrap ccm-tools">
-        <?php ccm_tools_render_header_nav('ccm-tools-ai'); ?>
-        
-        <div class="ccm-content">
-            <div class="ccm-page-header">
-                <div class="ccm-page-title">
-                    <h2>AI Performance</h2>
-                    <p class="ccm-subtitle">AI-powered PageSpeed analysis and automatic optimization via the CCM API Hub</p>
-                </div>
+    <div class="ccm-card ccm-ai-hero-card">
+        <div class="ccm-card-header" style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+                <h2 style="margin: 0;">AI Performance Optimizer</h2>
+                <p class="ccm-subtitle" style="margin: 0.25rem 0 0;">One-click AI-powered analysis and automatic optimization</p>
             </div>
-
-            <!-- Connection Settings Card -->
-            <div class="ccm-card">
-                <div class="ccm-card-header">
-                    <h3>Hub Connection</h3>
-                    <span id="ai-hub-status" class="ccm-badge">—</span>
-                </div>
-                <div class="ccm-card-body">
+            <span id="ai-hub-status" class="ccm-badge <?php echo $hasKey ? 'ccm-badge-info' : 'ccm-badge-warning'; ?>"><?php echo $hasKey ? 'Configured' : 'Not Connected'; ?></span>
+        </div>
+        <div class="ccm-card-body">
+            <!-- Connection Settings (collapsible) -->
+            <details id="ai-connection-details"<?php echo $hasKey ? '' : ' open'; ?>>
+                <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;"><?php _e('Hub Connection', 'ccm-tools'); ?></summary>
+                <div style="padding: 0.75rem 0;">
                     <input type="hidden" id="ai-hub-url" value="<?php echo esc_attr($settings['hub_url']); ?>">
-                    <div class="ccm-form-field">
-                        <label for="ai-hub-key">API Key</label>
-                        <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key']); ?>" placeholder="ccm_xxxx...">
-                    </div>
-                    <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                        <button type="button" id="ai-hub-save-btn" class="ccm-button ccm-button-primary">Save Settings</button>
-                        <button type="button" id="ai-hub-test-btn" class="ccm-button ccm-button-secondary">Test Connection</button>
-                    </div>
-                    <div id="ai-hub-test-result" style="margin-top: 0.75rem;"></div>
-                </div>
-            </div>
-
-            <!-- PageSpeed Test Card -->
-            <div class="ccm-card" style="margin-top: 1.5rem;">
-                <div class="ccm-card-header">
-                    <h3>PageSpeed Test</h3>
-                </div>
-                <div class="ccm-card-body">
-                    <div class="ccm-form-grid" style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 1rem; align-items: end;">
+                    <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: end;">
                         <div class="ccm-form-field">
-                            <label for="ai-ps-url">URL to Test</label>
-                            <input type="url" id="ai-ps-url" value="<?php echo esc_attr(site_url()); ?>" placeholder="<?php echo esc_attr(site_url()); ?>">
+                            <label for="ai-hub-key"><?php _e('API Key', 'ccm-tools'); ?></label>
+                            <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key']); ?>" placeholder="ccm_xxxx..." class="ccm-input">
                         </div>
-                        <div class="ccm-form-field">
-                            <label for="ai-ps-strategy">Strategy</label>
-                            <select id="ai-ps-strategy">
-                                <option value="mobile">Mobile</option>
-                                <option value="desktop">Desktop</option>
-                            </select>
-                        </div>
-                        <div class="ccm-form-field">
-                            <button type="button" id="ai-ps-run-btn" class="ccm-button ccm-button-primary">Run Test</button>
-                        </div>
+                        <button type="button" id="ai-hub-save-btn" class="ccm-button ccm-button-secondary"><?php _e('Save', 'ccm-tools'); ?></button>
+                        <button type="button" id="ai-hub-test-btn" class="ccm-button ccm-button-secondary"><?php _e('Test', 'ccm-tools'); ?></button>
                     </div>
-                    <div id="ai-ps-results" style="margin-top: 1rem; display: none;">
-                        <div id="ai-ps-scores" class="ccm-stats-row" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem;"></div>
-                        <div id="ai-ps-metrics" style="margin-bottom: 1rem;"></div>
-                        <div id="ai-ps-opportunities"></div>
-                    </div>
-                    <div id="ai-ps-loading" style="display: none; text-align: center; padding: 2rem;">
-                        <div class="ccm-spinner"></div>
-                        <p style="margin-top: 0.5rem;">Running PageSpeed test... This may take up to 60 seconds.</p>
-                    </div>
+                    <div id="ai-hub-test-result" style="margin-top: 0.5rem;"></div>
+                </div>
+            </details>
+
+            <!-- URL & Action Controls -->
+            <div class="ccm-ai-controls">
+                <div class="ccm-form-field" style="flex: 1; min-width: 200px;">
+                    <label for="ai-ps-url"><?php _e('URL to Test', 'ccm-tools'); ?></label>
+                    <input type="url" id="ai-ps-url" value="<?php echo esc_url(site_url()); ?>" class="ccm-input">
+                </div>
+                <button type="button" id="ai-one-click-btn" class="ccm-button ccm-button-primary ccm-ai-cta" <?php echo $hasKey ? '' : 'disabled'; ?>>
+                    🚀 <?php _e('One-Click Optimize', 'ccm-tools'); ?>
+                </button>
+                <button type="button" id="ai-ps-run-btn" class="ccm-button ccm-button-secondary">
+                    <?php _e('Test Only', 'ccm-tools'); ?>
+                </button>
+            </div>
+            <p class="ccm-text-muted" style="margin-top: 0.25rem; font-size: var(--ccm-text-sm);"><?php _e('One-Click Optimize tests both Mobile &amp; Desktop, analyses results with AI, and applies fixes automatically.', 'ccm-tools'); ?></p>
+
+            <!-- Step Progress -->
+            <div id="ai-progress" style="display: none; margin-top: 1.5rem;">
+                <div id="ai-steps" class="ccm-ai-steps"></div>
+            </div>
+
+            <!-- Results Area — dual strategy tabs -->
+            <div id="ai-results-area" style="display: none; margin-top: 1.5rem;">
+                <div class="ccm-ai-strategy-tabs">
+                    <button type="button" class="ccm-ai-tab active" data-strategy="mobile"><?php _e('Mobile', 'ccm-tools'); ?></button>
+                    <button type="button" class="ccm-ai-tab" data-strategy="desktop"><?php _e('Desktop', 'ccm-tools'); ?></button>
+                </div>
+                <div id="ai-results-mobile" class="ccm-ai-strategy-panel active">
+                    <div id="ai-ps-scores-mobile" class="ccm-ai-scores-grid"></div>
+                    <div id="ai-ps-metrics-mobile" style="margin-bottom: 1rem;"></div>
+                    <div id="ai-ps-opportunities-mobile"></div>
+                </div>
+                <div id="ai-results-desktop" class="ccm-ai-strategy-panel" style="display: none;">
+                    <div id="ai-ps-scores-desktop" class="ccm-ai-scores-grid"></div>
+                    <div id="ai-ps-metrics-desktop" style="margin-bottom: 1rem;"></div>
+                    <div id="ai-ps-opportunities-desktop"></div>
                 </div>
             </div>
 
-            <!-- AI Analysis Card -->
-            <div class="ccm-card" style="margin-top: 1.5rem;">
-                <div class="ccm-card-header">
-                    <h3>AI Analysis & Optimization</h3>
-                </div>
-                <div class="ccm-card-body">
-                    <p class="ccm-subtitle">Run a PageSpeed test first, then use AI to analyze the results and get optimization recommendations.</p>
-                    <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-                        <button type="button" id="ai-analyze-btn" class="ccm-button ccm-button-primary" disabled>Analyze with AI</button>
-                        <button type="button" id="ai-optimize-btn" class="ccm-button ccm-button-success" disabled>⚡ Auto-Optimize</button>
-                    </div>
-                    <div id="ai-analysis-loading" style="display: none; text-align: center; padding: 2rem;">
-                        <div class="ccm-spinner"></div>
-                        <p style="margin-top: 0.5rem;">AI is analyzing your PageSpeed results...</p>
-                    </div>
-                    <div id="ai-analysis-results" style="margin-top: 1rem; display: none;"></div>
-                </div>
-            </div>
+            <!-- Fix Summary (auto vs manual — populated by one-click flow) -->
+            <div id="ai-fix-summary" style="display: none; margin-top: 1.5rem;"></div>
 
-            <!-- Optimization Session Card -->
-            <div id="ai-session-card" class="ccm-card" style="margin-top: 1.5rem; display: none;">
-                <div class="ccm-card-header">
-                    <h3>Optimization Session</h3>
-                    <span id="ai-session-status" class="ccm-badge">—</span>
-                </div>
-                <div class="ccm-card-body">
-                    <div id="ai-session-progress"></div>
-                    <div id="ai-session-log" style="margin-top: 1rem; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem; background: #f5f5f5; padding: 1rem; border-radius: 4px;"></div>
-                </div>
-            </div>
+            <!-- Before/After Comparison -->
+            <div id="ai-before-after" style="display: none; margin-top: 1.5rem;"></div>
 
-            <!-- Results History Card -->
-            <div class="ccm-card" style="margin-top: 1.5rem;">
-                <div class="ccm-card-header">
-                    <h3>Recent Results</h3>
-                    <button type="button" id="ai-history-refresh-btn" class="ccm-button ccm-button-sm ccm-button-secondary">Refresh</button>
-                </div>
-                <div class="ccm-card-body">
-                    <div id="ai-history-table"></div>
-                </div>
+            <!-- AI Analysis (for standalone analyze) -->
+            <div id="ai-analysis-loading" style="display: none; text-align: center; padding: 2rem;">
+                <div class="ccm-spinner"></div>
+                <p style="margin-top: 0.5rem;"><?php _e('AI is analyzing your PageSpeed results...', 'ccm-tools'); ?></p>
             </div>
+            <div id="ai-analysis-results" style="margin-top: 1rem; display: none;"></div>
+
+            <!-- History (collapsible) -->
+            <details style="margin-top: 1.5rem;">
+                <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;"><?php _e('Recent Results History', 'ccm-tools'); ?></summary>
+                <div id="ai-history-table" style="padding-top: 0.75rem;"></div>
+            </details>
         </div>
     </div>
     <?php

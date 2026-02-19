@@ -1101,6 +1101,13 @@ function ccm_tools_render_perf_page() {
         ?>
         
         <div class="ccm-content">
+            <?php
+            // AI Optimizer section (one-click AI flow) — renders at top of page
+            if (function_exists('ccm_tools_render_ai_section')) {
+                ccm_tools_render_ai_section();
+            }
+            ?>
+
             <!-- Master Enable Toggle -->
             <div class="ccm-card">
                 <h2><?php _e('Performance Optimizer Status', 'ccm-tools'); ?></h2>

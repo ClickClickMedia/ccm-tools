@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.11.2
+ * Version: 7.12.0
  */
 
 /* ===================================
@@ -2453,4 +2453,293 @@ tr.ccm-front-page-row {
 
 .ccm-stat-value.ccm-error {
     color: var(--ccm-error);
+}
+
+/* ===================================
+   AI Optimizer — One-Click Flow
+   =================================== */
+
+/* Hero card */
+.ccm-ai-hero-card {
+    border-left: 4px solid var(--ccm-accent, #8b5cf6);
+}
+
+.ccm-ai-hero-card .ccm-card-header {
+    border-bottom: 1px solid var(--ccm-border);
+    padding-bottom: var(--ccm-space-md);
+    margin-bottom: var(--ccm-space-md);
+}
+
+/* Controls row */
+.ccm-ai-controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: end;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.ccm-ai-cta {
+    font-size: 1rem;
+    padding: 0.65rem 1.5rem;
+    white-space: nowrap;
+}
+
+/* Strategy tabs */
+.ccm-ai-strategy-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--ccm-border);
+    margin-bottom: 1rem;
+}
+
+.ccm-ai-tab {
+    padding: 0.5rem 1.25rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text-muted);
+    transition: all 0.2s;
+}
+
+.ccm-ai-tab:hover {
+    color: var(--ccm-text);
+}
+
+.ccm-ai-tab.active {
+    color: var(--ccm-primary);
+    border-bottom-color: var(--ccm-primary);
+}
+
+.ccm-ai-scores-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Step progress indicator */
+.ccm-ai-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    overflow: hidden;
+}
+
+.ccm-ai-step {
+    flex: 1;
+    min-width: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.75rem 0.5rem;
+    background: var(--ccm-bg);
+    border-right: 1px solid var(--ccm-border);
+    text-align: center;
+    transition: background 0.3s, opacity 0.3s;
+}
+
+.ccm-ai-step:last-child {
+    border-right: none;
+}
+
+.ccm-ai-step-indicator {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid var(--ccm-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    transition: all 0.3s;
+}
+
+.ccm-ai-step-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ccm-text-muted);
+}
+
+.ccm-ai-step-status {
+    font-size: 0.7rem;
+    color: var(--ccm-text-muted);
+    min-height: 1em;
+}
+
+/* Step states */
+.ccm-ai-step[data-status="active"] {
+    background: var(--ccm-primary-light, #eff6ff);
+}
+
+.ccm-ai-step[data-status="active"] .ccm-ai-step-indicator {
+    border-color: var(--ccm-primary);
+    background: var(--ccm-primary);
+    animation: ccm-pulse 1.5s infinite;
+}
+
+.ccm-ai-step[data-status="active"] .ccm-ai-step-indicator::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fff;
+}
+
+.ccm-ai-step[data-status="active"] .ccm-ai-step-label {
+    color: var(--ccm-primary);
+}
+
+.ccm-ai-step[data-status="done"] .ccm-ai-step-indicator {
+    border-color: var(--ccm-success);
+    background: var(--ccm-success);
+}
+
+.ccm-ai-step[data-status="done"] .ccm-ai-step-indicator::after {
+    content: '✓';
+    color: #fff;
+    font-weight: 700;
+}
+
+.ccm-ai-step[data-status="done"] .ccm-ai-step-label {
+    color: var(--ccm-success);
+}
+
+.ccm-ai-step[data-status="error"] .ccm-ai-step-indicator {
+    border-color: var(--ccm-error);
+    background: var(--ccm-error);
+}
+
+.ccm-ai-step[data-status="error"] .ccm-ai-step-indicator::after {
+    content: '✕';
+    color: #fff;
+    font-weight: 700;
+}
+
+.ccm-ai-step[data-status="error"] .ccm-ai-step-label {
+    color: var(--ccm-error);
+}
+
+.ccm-ai-step[data-status="skipped"] {
+    opacity: 0.4;
+}
+
+.ccm-ai-step[data-status="skipped"] .ccm-ai-step-indicator::after {
+    content: '—';
+    color: var(--ccm-text-muted);
+}
+
+@keyframes ccm-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}
+
+/* Fix summary sections */
+.ccm-ai-fix-section {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-md);
+    padding: 1rem 1.25rem;
+}
+
+.ccm-ai-fix-auto {
+    border-left: 4px solid var(--ccm-success);
+}
+
+.ccm-ai-fix-manual {
+    border-left: 4px solid var(--ccm-warning);
+}
+
+.ccm-ai-fix-section h4 {
+    margin: 0 0 0.25rem;
+}
+
+.ccm-ai-fix-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    margin-bottom: 0.5rem;
+    background: var(--ccm-bg);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.ccm-ai-fix-item:hover {
+    background: var(--ccm-bg-secondary, #f1f5f9);
+}
+
+.ccm-ai-fix-item input[type="checkbox"] {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+}
+
+.ccm-ai-fix-item-manual {
+    cursor: default;
+    padding-left: 1.25rem;
+}
+
+.ccm-ai-fix-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.ccm-ai-fix-details strong {
+    display: inline;
+    margin-right: 0.5rem;
+}
+
+.ccm-ai-fix-details code {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: var(--ccm-text-muted);
+}
+
+/* Before / After comparison */
+.ccm-ai-comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+.ccm-ai-comparison-col h4 {
+    margin: 0 0 0.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .ccm-ai-controls {
+        flex-direction: column;
+    }
+    .ccm-ai-controls .ccm-form-field {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    .ccm-ai-scores-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .ccm-ai-steps {
+        flex-direction: column;
+    }
+    .ccm-ai-step {
+        flex-direction: row;
+        min-width: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--ccm-border);
+    }
+    .ccm-ai-step:last-child {
+        border-bottom: none;
+    }
+    .ccm-ai-comparison {
+        grid-template-columns: 1fr;
+    }
 }

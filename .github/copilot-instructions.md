@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.11.2
+- **Current Version:** 7.12.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -190,6 +190,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_hub_get_results` | `ccm_tools_ajax_ai_hub_get_results()` | Get cached PageSpeed results |
 | `ccm_tools_ai_hub_ai_analyze` | `ccm_tools_ajax_ai_hub_ai_analyze()` | AI analysis of PageSpeed result |
 | `ccm_tools_ai_hub_ai_optimize` | `ccm_tools_ajax_ai_hub_ai_optimize()` | Full AI optimization session |
+| `ccm_tools_ai_apply_changes` | `ccm_tools_ajax_ai_apply_changes()` | Apply selected AI recommendations to perf settings |
 
 ## Performance Considerations
 
@@ -281,6 +282,44 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.0
+- **Combined AI + Performance Pages into One Page**
+  - AI Performance section now renders at the top of the Performance Optimizer page
+  - Removed separate AI submenu page and AI tab from header navigation
+  - AI section uses collapsible Hub Connection details panel
+  - `ccm_tools_render_ai_hub_page()` replaced with `ccm_tools_render_ai_section()` (embeddable)
+  - `ccm_tools_render_perf_page()` now calls `ccm_tools_render_ai_section()` before master toggle
+- **One-Click Optimize with Dual Strategy (Mobile + Desktop)**
+  - "One-Click Optimize" button runs full pipeline: test → analyze → review → apply → retest → compare
+  - Tests both Mobile AND Desktop in a single run (no strategy dropdown needed)
+  - Visual 8-step progress indicator with animated states (pending, active, done, error, skipped)
+  - AI analysis based on mobile results (primary strategy) via Claude on the hub
+- **Auto-Fix vs Manual Fix Categorization**
+  - Recommendations split into auto-fixable (matching perf optimizer setting keys) and manual fixes
+  - Auto-fixable items shown as checkboxes — user can select/deselect before applying
+  - Manual items shown as informational cards with descriptions
+  - "Apply Selected Changes" and "Skip" buttons with Promise-based confirmation flow
+- **New AJAX Handler: `ccm_tools_ai_apply_changes`**
+  - Accepts JSON array of recommendations, applies via existing `ccm_tools_ai_hub_apply_recommendations()`
+  - Returns before/after diff of changed settings for live UI update
+- **Live Settings Update Without Page Reload**
+  - `aiUpdatePageToggles()` updates on-page checkbox states in real time after applying changes
+  - Maps setting keys to DOM IDs (`defer_js` → `#perf-defer-js`) and dispatches change events
+- **Before / After Comparison**
+  - Side-by-side grid comparing Mobile and Desktop scores before and after optimization
+  - Color-coded change indicators (green for improvement, red for regression)
+- **Dual Strategy Result Tabs**
+  - Results area has Mobile / Desktop tab switcher
+  - Each tab has its own scores grid, metrics table, and opportunities list
+  - "Test Only" button also runs both strategies without AI analysis
+- **New CSS Classes**
+  - `.ccm-ai-hero-card` — accent-bordered hero card for AI section
+  - `.ccm-ai-steps` / `.ccm-ai-step` — horizontal step progress indicator with `@keyframes ccm-pulse`
+  - `.ccm-ai-strategy-tabs` / `.ccm-ai-tab` — tab switcher for Mobile/Desktop results
+  - `.ccm-ai-fix-section` / `.ccm-ai-fix-item` — fix summary cards with auto/manual variants
+  - `.ccm-ai-comparison` — before/after comparison grid
+  - Responsive breakpoints for mobile layout
 
 ### v7.11.2
 - **Fixed "Hub vunknown" After Test Connection**

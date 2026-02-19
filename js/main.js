@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.11.2
+ * Version: 7.12.0
  */
 
 (function() {
@@ -2318,6 +2318,9 @@
                 settingsPreview.style.display = settingsPreview.style.display === 'none' ? 'block' : 'none';
             });
         }
+
+        // Initialize AI Hub handlers (now embedded in perf page)
+        try { initAiHubHandlers(); } catch (e) { console.error('CCM: AI Hub init error', e); }
     }
     
     /**
@@ -3044,13 +3047,6 @@
             }
         } catch (e) { console.error('CCM: Redis init error', e); }
         
-        // Initialize AI Hub page handlers
-        try {
-            if ($('#ai-hub-save-btn')) {
-                initAiHubHandlers();
-            }
-        } catch (e) { console.error('CCM: AI Hub init error', e); }
-        
         // Mark front page rows
         const frontPageIndicators = $$('.ccm-front-page-indicator');
         frontPageIndicators.forEach(indicator => {
@@ -3565,42 +3561,63 @@
     }
     
     // ===================================
-    // AI Hub Functions
+    // AI Hub Functions — One-Click Optimize + Dual Strategy
     // ===================================
 
     /** State for the current AI session */
     let aiHubState = {
-        lastResultId: null,
-        sessionId: null,
+        lastResultId: null,     // most recent result_id (mobile — used for AI analysis)
+        resultIds: {},          // { mobile: id, desktop: id }
         sessionActive: false,
-        iteration: 0,
+        confirmedFixes: null,   // Promise resolver for user confirmation
+        beforeScores: null,     // { mobile: {}, desktop: {} }
+        afterScores: null,
     };
 
     /**
-     * Initialize AI Hub page event handlers
+     * Known perf-optimizer setting keys (for auto-fix detection)
+     */
+    const PERF_SETTING_KEYS = new Set([
+        'enabled', 'defer_js', 'delay_js', 'preload_css', 'preconnect', 'dns_prefetch',
+        'remove_query_strings', 'disable_emoji', 'disable_dashicons', 'lazy_load_iframes',
+        'youtube_facade', 'lcp_fetchpriority', 'lcp_preload', 'font_display_swap',
+        'speculation_rules', 'critical_css', 'disable_jquery_migrate', 'disable_block_css',
+        'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
+        'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
+    ]);
+
+    /**
+     * Initialize AI Hub event handlers
      */
     function initAiHubHandlers() {
         const saveBtn = $('#ai-hub-save-btn');
         const testBtn = $('#ai-hub-test-btn');
-        const runPsBtn = $('#ai-ps-run-btn');
-        const analyzeBtn = $('#ai-analyze-btn');
-        const optimizeBtn = $('#ai-optimize-btn');
-        const refreshBtn = $('#ai-history-refresh-btn');
+        const runBtn = $('#ai-ps-run-btn');
+        const oneClickBtn = $('#ai-one-click-btn');
 
         if (saveBtn) saveBtn.addEventListener('click', aiHubSaveSettings);
         if (testBtn) testBtn.addEventListener('click', aiHubTestConnection);
-        if (runPsBtn) runPsBtn.addEventListener('click', aiHubRunPageSpeed);
-        if (analyzeBtn) analyzeBtn.addEventListener('click', aiHubAnalyze);
-        if (optimizeBtn) optimizeBtn.addEventListener('click', aiHubOptimize);
-        if (refreshBtn) refreshBtn.addEventListener('click', aiHubLoadHistory);
+        if (runBtn) runBtn.addEventListener('click', aiTestOnly);
+        if (oneClickBtn) oneClickBtn.addEventListener('click', aiOneClickOptimize);
+
+        // Strategy tab switching
+        document.addEventListener('click', (e) => {
+            if (e.target.matches('.ccm-ai-tab')) {
+                const strategy = e.target.dataset.strategy;
+                $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === strategy));
+                $$('.ccm-ai-strategy-panel').forEach(p => {
+                    p.style.display = p.id === `ai-results-${strategy}` ? 'block' : 'none';
+                    p.classList.toggle('active', p.id === `ai-results-${strategy}`);
+                });
+            }
+        });
 
         // Load history on init
         aiHubLoadHistory();
     }
 
-    /**
-     * Save AI Hub connection settings
-     */
+    // ─── Hub Connection ────────────
+
     async function aiHubSaveSettings() {
         const btn = $('#ai-hub-save-btn');
         if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
@@ -3616,16 +3633,15 @@
             });
 
             showNotification('Settings saved.', 'success');
+            const oneClickBtn = $('#ai-one-click-btn');
+            if (oneClickBtn && apiKey) oneClickBtn.disabled = false;
         } catch (err) {
             showNotification(err.message || 'Failed to save settings.', 'error');
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Save Settings'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
         }
     }
 
-    /**
-     * Test connection to the AI Hub
-     */
     async function aiHubTestConnection() {
         const btn = $('#ai-hub-test-btn');
         const resultEl = $('#ai-hub-test-result');
@@ -3638,92 +3654,32 @@
             const res = await ajax('ccm_tools_ai_hub_test_connection', {}, { timeout: 15000 });
             const d = res.data;
 
-            if (statusBadge) {
-                statusBadge.textContent = 'Connected';
-                statusBadge.className = 'ccm-badge ccm-badge-success';
-            }
+            if (statusBadge) { statusBadge.textContent = 'Connected'; statusBadge.className = 'ccm-badge ccm-badge-success'; }
 
             let html = `<div class="ccm-success" style="padding: 0.5rem 0;">✅ ${d.message || 'Connected'}`;
             if (d.version) html += ` — Hub v${d.version}`;
             html += '</div>';
 
             if (d.features) {
-                const feats = Object.entries(d.features)
-                    .filter(([, v]) => v)
-                    .map(([k]) => k)
-                    .join(', ');
+                const feats = Object.entries(d.features).filter(([, v]) => v).map(([k]) => k).join(', ');
                 if (feats) html += `<small>Features: ${feats}</small>`;
             }
 
             if (resultEl) resultEl.innerHTML = html;
+            const oneClickBtn = $('#ai-one-click-btn');
+            if (oneClickBtn) oneClickBtn.disabled = false;
         } catch (err) {
-            if (statusBadge) {
-                statusBadge.textContent = 'Disconnected';
-                statusBadge.className = 'ccm-badge ccm-badge-error';
-            }
+            if (statusBadge) { statusBadge.textContent = 'Disconnected'; statusBadge.className = 'ccm-badge ccm-badge-error'; }
             if (resultEl) resultEl.innerHTML = `<div class="ccm-error">❌ ${err.message || 'Connection failed'}</div>`;
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Test Connection'; }
+            if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
         }
     }
 
-    /**
-     * Run a PageSpeed test via the hub
-     */
-    async function aiHubRunPageSpeed() {
-        const btn = $('#ai-ps-run-btn');
-        const resultsEl = $('#ai-ps-results');
-        const loadingEl = $('#ai-ps-loading');
-        const analyzeBtn = $('#ai-analyze-btn');
-        const optimizeBtn = $('#ai-optimize-btn');
+    // ─── PageSpeed render helpers ────────────
 
-        if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
-        if (resultsEl) resultsEl.style.display = 'none';
-        if (loadingEl) loadingEl.style.display = 'block';
-
-        try {
-            const url = ($('#ai-ps-url') || {}).value || '';
-            const strategy = ($('#ai-ps-strategy') || {}).value || 'mobile';
-
-            const res = await ajax('ccm_tools_ai_hub_run_pagespeed', {
-                url: url,
-                strategy: strategy,
-                force: 1,
-            }, { timeout: 120000 });
-
-            const data = res.data || {};
-            console.log('[CCM AI Hub] PageSpeed response:', JSON.stringify(data, null, 2));
-            aiHubState.lastResultId = data.result_id || data.id || null;
-
-            // Render scores
-            aiHubRenderScores(data.scores || {});
-
-            // Render metrics
-            aiHubRenderMetrics(data.metrics || {});
-
-            // Render opportunities
-            aiHubRenderOpportunities(data.opportunities || []);
-
-            if (resultsEl) resultsEl.style.display = 'block';
-
-            // Enable AI buttons
-            if (analyzeBtn && aiHubState.lastResultId) analyzeBtn.disabled = false;
-            if (optimizeBtn && aiHubState.lastResultId) optimizeBtn.disabled = false;
-
-            showNotification('PageSpeed test complete!', 'success');
-        } catch (err) {
-            showNotification(err.message || 'PageSpeed test failed.', 'error');
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Run Test'; }
-            if (loadingEl) loadingEl.style.display = 'none';
-        }
-    }
-
-    /**
-     * Render PageSpeed score circles
-     */
-    function aiHubRenderScores(scores) {
-        const container = $('#ai-ps-scores');
+    function aiRenderScores(scores, suffix) {
+        const container = $(`#ai-ps-scores-${suffix}`);
         if (!container) return;
 
         const categories = [
@@ -3739,24 +3695,15 @@
             let colorClass = 'ccm-error';
             if (num >= 90) colorClass = 'ccm-success';
             else if (num >= 50) colorClass = 'ccm-warning';
-
-            return `
-                <div style="text-align: center;">
-                    <div class="${colorClass}" style="font-size: 2rem; font-weight: 700;">${score}</div>
-                    <div style="font-size: 0.8rem; opacity: 0.7;">${cat.label}</div>
-                </div>
-            `;
+            return `<div style="text-align:center;"><div class="${colorClass}" style="font-size:2rem;font-weight:700;">${score}</div><div style="font-size:0.8rem;opacity:0.7;">${cat.label}</div></div>`;
         }).join('');
     }
 
-    /**
-     * Render PageSpeed metrics table
-     */
-    function aiHubRenderMetrics(metrics) {
-        const container = $('#ai-ps-metrics');
+    function aiRenderMetrics(metrics, suffix) {
+        const container = $(`#ai-ps-metrics-${suffix}`);
         if (!container) return;
 
-        const metricDefs = [
+        const defs = [
             { key: 'fcp_ms', label: 'First Contentful Paint', unit: 'ms' },
             { key: 'lcp_ms', label: 'Largest Contentful Paint', unit: 'ms' },
             { key: 'cls', label: 'Cumulative Layout Shift', unit: '' },
@@ -3766,7 +3713,7 @@
         ];
 
         let html = '<table class="ccm-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
-        metricDefs.forEach(m => {
+        defs.forEach(m => {
             const val = metrics[m.key];
             if (val !== undefined && val !== null) {
                 const display = m.unit === 'ms' ? `${Number(val).toLocaleString()} ms` : val;
@@ -3777,11 +3724,8 @@
         container.innerHTML = html;
     }
 
-    /**
-     * Render PageSpeed opportunities list
-     */
-    function aiHubRenderOpportunities(opportunities) {
-        const container = $('#ai-ps-opportunities');
+    function aiRenderOpportunities(opportunities, suffix) {
+        const container = $(`#ai-ps-opportunities-${suffix}`);
         if (!container) return;
 
         if (!opportunities.length) {
@@ -3789,10 +3733,11 @@
             return;
         }
 
-        let html = '<h4 style="margin-bottom: 0.5rem;">Opportunities</h4>';
+        let html = '<h4 style="margin-bottom:0.5rem;">Opportunities</h4>';
         html += '<table class="ccm-table"><thead><tr><th>Issue</th><th>Savings</th></tr></thead><tbody>';
         opportunities.forEach(opp => {
-            const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms` : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '—');
+            const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms`
+                          : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '—');
             html += `<tr><td>${opp.title || opp.id || 'Unknown'}</td><td>${savings}</td></tr>`;
         });
         html += '</tbody></table>';
@@ -3800,230 +3745,430 @@
     }
 
     /**
-     * Request AI analysis of the last PageSpeed result
+     * Render results for a single strategy into the tabbed panels
      */
-    async function aiHubAnalyze() {
-        if (!aiHubState.lastResultId) {
-            showNotification('Run a PageSpeed test first.', 'warning');
-            return;
-        }
+    function aiShowResultsForStrategy(data, strategy) {
+        aiRenderScores(data.scores || {}, strategy);
+        aiRenderMetrics(data.metrics || {}, strategy);
+        aiRenderOpportunities(data.opportunities || [], strategy);
+        const area = $('#ai-results-area');
+        if (area) area.style.display = 'block';
+    }
 
-        const btn = $('#ai-analyze-btn');
-        const loadingEl = $('#ai-analysis-loading');
-        const resultsEl = $('#ai-analysis-results');
+    // ─── Run a single PageSpeed test ────────────
 
-        if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
-        if (loadingEl) loadingEl.style.display = 'block';
-        if (resultsEl) resultsEl.style.display = 'none';
+    async function aiRunPageSpeed(url, strategy) {
+        const res = await ajax('ccm_tools_ai_hub_run_pagespeed', {
+            url: url,
+            strategy: strategy,
+            force: 1,
+        }, { timeout: 120000 });
+
+        const data = res.data || {};
+        aiHubState.resultIds[strategy] = data.result_id || data.id || null;
+        return data;
+    }
+
+    // ─── Test Only (runs both strategies, no AI) ────────────
+
+    async function aiTestOnly() {
+        const btn = $('#ai-ps-run-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
 
         try {
-            const res = await ajax('ccm_tools_ai_hub_ai_analyze', {
-                result_id: aiHubState.lastResultId,
-            }, { timeout: 120000 });
+            const url = ($('#ai-ps-url') || {}).value || '';
 
-            const data = res.data || {};
-            aiHubRenderAnalysis(data);
+            // Run mobile
+            const mobileData = await aiRunPageSpeed(url, 'mobile');
+            aiShowResultsForStrategy(mobileData, 'mobile');
 
-            if (resultsEl) resultsEl.style.display = 'block';
-            showNotification('AI analysis complete!', 'success');
+            // Run desktop
+            const desktopData = await aiRunPageSpeed(url, 'desktop');
+            aiShowResultsForStrategy(desktopData, 'desktop');
+
+            // Default to mobile tab
+            $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === 'mobile'));
+            $$('.ccm-ai-strategy-panel').forEach(p => {
+                p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
+            });
+
+            showNotification('PageSpeed tests complete (Mobile + Desktop)!', 'success');
         } catch (err) {
-            showNotification(err.message || 'AI analysis failed.', 'error');
+            showNotification(err.message || 'PageSpeed test failed.', 'error');
         } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Analyze with AI'; }
-            if (loadingEl) loadingEl.style.display = 'none';
+            if (btn) { btn.disabled = false; btn.textContent = 'Test Only'; }
         }
     }
 
-    /**
-     * Render AI analysis results
-     */
-    function aiHubRenderAnalysis(data) {
+    // ─── Step Progress UI ────────────
+
+    const AI_STEPS = [
+        { id: 'test-mobile',    label: 'Test Mobile' },
+        { id: 'test-desktop',   label: 'Test Desktop' },
+        { id: 'analyze',        label: 'AI Analysis' },
+        { id: 'review',         label: 'Review Fixes' },
+        { id: 'apply',          label: 'Apply Changes' },
+        { id: 'retest-mobile',  label: 'Re-test Mobile' },
+        { id: 'retest-desktop', label: 'Re-test Desktop' },
+        { id: 'compare',        label: 'Compare Results' },
+    ];
+
+    function aiRenderSteps() {
+        const container = $('#ai-steps');
+        if (!container) return;
+        container.innerHTML = AI_STEPS.map(s =>
+            `<div class="ccm-ai-step" id="ai-step-${s.id}" data-status="pending">
+                <span class="ccm-ai-step-indicator"></span>
+                <span class="ccm-ai-step-label">${s.label}</span>
+                <span class="ccm-ai-step-status"></span>
+            </div>`
+        ).join('');
+        const progressEl = $('#ai-progress');
+        if (progressEl) progressEl.style.display = 'block';
+    }
+
+    function aiUpdateStep(stepId, status, detail) {
+        const el = $(`#ai-step-${stepId}`);
+        if (!el) return;
+        el.dataset.status = status; // pending | active | done | error | skipped
+        const statusEl = el.querySelector('.ccm-ai-step-status');
+        if (statusEl && detail) statusEl.textContent = detail;
+    }
+
+    // ─── Render AI analysis ────────────
+
+    function aiRenderAnalysis(data) {
         const container = $('#ai-analysis-results');
         if (!container) return;
 
         const analysis = data.analysis || data;
         let html = '';
 
-        // Summary
         if (analysis.summary) {
-            html += `<div class="ccm-card-body" style="background: var(--ccm-bg-light, #f9fafb); border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
-                <strong>Summary</strong><p style="margin: 0.5rem 0 0;">${analysis.summary}</p></div>`;
+            html += `<div style="background:var(--ccm-bg-light,#f9fafb);border-radius:6px;padding:1rem;margin-bottom:1rem;">
+                <strong>Summary</strong><p style="margin:0.5rem 0 0;">${analysis.summary}</p></div>`;
         }
 
-        // Recommendations
-        if (analysis.recommendations && analysis.recommendations.length) {
-            html += '<h4 style="margin: 1rem 0 0.5rem;">Recommendations</h4>';
-            html += '<div class="ccm-table-container"><table class="ccm-table"><thead><tr><th>Setting</th><th>Current</th><th>Recommended</th><th>Impact</th><th>Reason</th></tr></thead><tbody>';
-            analysis.recommendations.forEach(rec => {
-                const impact = rec.impact || 'medium';
-                const impactClass = impact === 'high' ? 'ccm-error' : (impact === 'medium' ? 'ccm-warning' : 'ccm-info');
-                html += `<tr>
-                    <td><code>${rec.setting_key || '—'}</code></td>
-                    <td>${rec.current_value !== undefined ? String(rec.current_value) : '—'}</td>
-                    <td><strong>${rec.recommended_value !== undefined ? String(rec.recommended_value) : '—'}</strong></td>
-                    <td><span class="${impactClass}">${impact}</span></td>
-                    <td>${rec.reason || ''}</td>
-                </tr>`;
-            });
-            html += '</tbody></table></div>';
-        }
-
-        // Warnings
         if (analysis.warnings && analysis.warnings.length) {
-            html += '<h4 style="margin: 1rem 0 0.5rem;">⚠️ Warnings</h4><ul>';
+            html += '<div style="margin-bottom:1rem;"><h4 style="margin:0 0 0.5rem;">⚠️ Warnings</h4><ul>';
             analysis.warnings.forEach(w => { html += `<li>${w}</li>`; });
-            html += '</ul>';
+            html += '</ul></div>';
         }
 
-        // Token usage
         if (data.tokens_used) {
-            html += `<p style="margin-top: 1rem; font-size: 0.8rem; opacity: 0.6;">Tokens: ${Number(data.tokens_used).toLocaleString()} | Model: ${data.model || '?'} | Cost: ~$${data.estimated_cost || '?'}</p>`;
+            html += `<p style="margin-top:1rem;font-size:0.8rem;opacity:0.6;">Tokens: ${Number(data.tokens_used).toLocaleString()} | Model: ${data.model || '?'} | Cost: ~$${data.estimated_cost || '?'}</p>`;
         }
 
         container.innerHTML = html;
+        container.style.display = html ? 'block' : 'none';
     }
 
-    /**
-     * Start a full auto-optimization session
-     */
-    async function aiHubOptimize() {
-        if (!aiHubState.lastResultId) {
-            showNotification('Run a PageSpeed test first.', 'warning');
-            return;
+    // ─── Fix Summary (auto vs manual) ────────────
+
+    function aiRenderFixSummary(recommendations, manualActions) {
+        const container = $('#ai-fix-summary');
+        if (!container) return;
+
+        const autoFixes = (recommendations || []).filter(r => PERF_SETTING_KEYS.has(r.setting_key));
+        const manualFixes = (recommendations || []).filter(r => !PERF_SETTING_KEYS.has(r.setting_key));
+        const manual = [...manualFixes, ...(manualActions || []).map(a => ({ reason: a, setting_key: null, impact: 'info' }))];
+
+        let html = '';
+
+        // Auto-fixable
+        if (autoFixes.length) {
+            html += `<div class="ccm-ai-fix-section ccm-ai-fix-auto">
+                <h4>✅ Auto-Fixable (${autoFixes.length})</h4>
+                <p class="ccm-text-muted" style="margin:0 0 0.75rem;">These will be applied to your Performance Optimizer settings automatically.</p>`;
+            autoFixes.forEach((fix, i) => {
+                html += `<label class="ccm-ai-fix-item">
+                    <input type="checkbox" checked data-fix-index="${i}" class="ai-auto-fix-cb">
+                    <div class="ccm-ai-fix-details">
+                        <strong>${aiSettingLabel(fix.setting_key)}</strong>
+                        <span class="ccm-badge ccm-badge-${fix.impact === 'high' ? 'error' : (fix.impact === 'medium' ? 'warning' : 'info')}">${fix.impact || 'medium'}</span>
+                        <p class="ccm-text-muted" style="margin:0.25rem 0 0;">${fix.reason || ''}</p>
+                        <code>${fix.setting_key}: ${String(fix.current_value)} → ${String(fix.recommended_value)}</code>
+                    </div>
+                </label>`;
+            });
+            html += `<div style="margin-top:1rem;display:flex;gap:0.5rem;">
+                <button type="button" id="ai-confirm-apply" class="ccm-button ccm-button-primary">Apply Selected Changes</button>
+                <button type="button" id="ai-skip-apply" class="ccm-button ccm-button-secondary">Skip</button>
+            </div></div>`;
         }
 
-        const btn = $('#ai-optimize-btn');
-        const sessionCard = $('#ai-session-card');
-        const statusBadge = $('#ai-session-status');
-        const logEl = $('#ai-session-log');
+        // Manual items
+        if (manual.length) {
+            html += `<div class="ccm-ai-fix-section ccm-ai-fix-manual" style="margin-top:1rem;">
+                <h4>🔧 Manual Fixes (${manual.length})</h4>
+                <p class="ccm-text-muted" style="margin:0 0 0.75rem;">These require manual action and cannot be applied automatically.</p>`;
+            manual.forEach(fix => {
+                html += `<div class="ccm-ai-fix-item ccm-ai-fix-item-manual">
+                    <div class="ccm-ai-fix-details">
+                        ${fix.setting_key ? `<strong>${fix.setting_key}</strong>` : ''}
+                        <p style="margin:0.25rem 0 0;">${fix.reason || fix}</p>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+        }
 
-        if (btn) { btn.disabled = true; btn.textContent = '⚡ Optimizing…'; }
-        if (sessionCard) sessionCard.style.display = 'block';
-        if (statusBadge) { statusBadge.textContent = 'Starting'; statusBadge.className = 'ccm-badge ccm-badge-warning'; }
-        if (logEl) logEl.innerHTML = '';
+        if (!autoFixes.length && !manual.length) {
+            html = '<p class="ccm-success" style="padding:1rem;">No additional optimizations recommended — your site looks great!</p>';
+        }
 
-        aiHubState.sessionActive = true;
-        aiHubState.iteration = 0;
+        container.innerHTML = html;
+        container.style.display = 'block';
 
-        aiHubSessionLog('Starting optimization session…');
+        // Return auto fixes reference for apply step
+        return autoFixes;
+    }
+
+    /** Human-friendly label for perf setting keys */
+    function aiSettingLabel(key) {
+        const labels = {
+            defer_js: 'Defer JavaScript', delay_js: 'Delay JavaScript', preload_css: 'Async CSS Loading',
+            preconnect: 'Preconnect Hints', dns_prefetch: 'DNS Prefetch', remove_query_strings: 'Remove Query Strings',
+            disable_emoji: 'Disable Emoji Scripts', disable_dashicons: 'Disable Dashicons',
+            lazy_load_iframes: 'Lazy Load Iframes', youtube_facade: 'YouTube Lite Embeds',
+            lcp_fetchpriority: 'LCP Fetchpriority', font_display_swap: 'Font Display: Swap',
+            speculation_rules: 'Speculation Rules', critical_css: 'Critical CSS',
+            disable_jquery_migrate: 'Disable jQuery Migrate', disable_block_css: 'Disable Block CSS',
+            disable_woocommerce_cart_fragments: 'Disable Cart Fragments', reduce_heartbeat: 'Reduce Heartbeat',
+            disable_xmlrpc: 'Disable XML-RPC', disable_rsd_wlw: 'Remove RSD/WLW Links',
+            disable_shortlink: 'Remove Shortlink', disable_rest_api_links: 'Remove REST API Link',
+            disable_oembed: 'Disable oEmbed', enabled: 'Performance Optimizer',
+        };
+        return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // ─── Wait for user confirmation (returns selected recommendations) ────────────
+
+    function aiWaitForConfirmation(autoFixes) {
+        return new Promise(resolve => {
+            const applyBtn = $('#ai-confirm-apply');
+            const skipBtn = $('#ai-skip-apply');
+
+            if (!applyBtn) { resolve([]); return; }
+
+            applyBtn.addEventListener('click', () => {
+                // Collect checked fixes
+                const selected = [];
+                $$('.ai-auto-fix-cb').forEach((cb, i) => {
+                    if (cb.checked && autoFixes[i]) selected.push(autoFixes[i]);
+                });
+                applyBtn.disabled = true;
+                if (skipBtn) skipBtn.disabled = true;
+                resolve(selected);
+            });
+
+            if (skipBtn) {
+                skipBtn.addEventListener('click', () => {
+                    applyBtn.disabled = true;
+                    skipBtn.disabled = true;
+                    resolve([]);
+                });
+            }
+        });
+    }
+
+    // ─── Update page toggles in real time ────────────
+
+    function aiUpdatePageToggles(settings) {
+        if (!settings) return;
+        Object.entries(settings).forEach(([key, value]) => {
+            const id = `#perf-${key.replace(/_/g, '-')}`;
+            const el = $(id);
+            if (el && el.type === 'checkbox') {
+                el.checked = !!value;
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+    }
+
+    // ─── Before / After Comparison ────────────
+
+    function aiRenderBeforeAfter(before, after) {
+        const container = $('#ai-before-after');
+        if (!container) return;
+
+        const strategies = ['mobile', 'desktop'];
+        const categories = ['performance', 'accessibility', 'best_practices', 'seo'];
+
+        let html = '<h3 style="margin-bottom:1rem;">Before / After Comparison</h3>';
+        html += '<div class="ccm-ai-comparison">';
+
+        strategies.forEach(strategy => {
+            const b = (before || {})[strategy] || {};
+            const a = (after || {})[strategy] || {};
+            html += `<div class="ccm-ai-comparison-col">
+                <h4 style="text-transform:capitalize;margin-bottom:0.5rem;">${strategy}</h4>
+                <table class="ccm-table"><thead><tr><th>Category</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>`;
+
+            categories.forEach(cat => {
+                const bv = b[cat] ?? '—';
+                const av = a[cat] ?? '—';
+                const bNum = parseInt(bv, 10);
+                const aNum = parseInt(av, 10);
+                let change = '—';
+                let changeClass = '';
+                if (!isNaN(bNum) && !isNaN(aNum)) {
+                    const diff = aNum - bNum;
+                    change = (diff > 0 ? '+' : '') + diff;
+                    changeClass = diff > 0 ? 'ccm-success' : (diff < 0 ? 'ccm-error' : '');
+                }
+                const label = cat === 'best_practices' ? 'Best Practices' : cat.charAt(0).toUpperCase() + cat.slice(1);
+                html += `<tr><td>${label}</td><td>${bv}</td><td><strong>${av}</strong></td><td class="${changeClass}"><strong>${change}</strong></td></tr>`;
+            });
+
+            html += '</tbody></table></div>';
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+        container.style.display = 'block';
+    }
+
+    // ─── One-Click Optimize (main flow) ────────────
+
+    async function aiOneClickOptimize() {
+        const btn = $('#ai-one-click-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Optimizing…'; }
+
+        // Reset state
+        aiHubState.beforeScores = {};
+        aiHubState.afterScores = {};
+        aiHubState.resultIds = {};
+        const fixSummary = $('#ai-fix-summary');
+        const beforeAfter = $('#ai-before-after');
+        const analysisResults = $('#ai-analysis-results');
+        if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
+        if (beforeAfter) { beforeAfter.style.display = 'none'; beforeAfter.innerHTML = ''; }
+        if (analysisResults) { analysisResults.style.display = 'none'; analysisResults.innerHTML = ''; }
+
+        // Render step indicators
+        aiRenderSteps();
+
+        const url = ($('#ai-ps-url') || {}).value || '';
 
         try {
-            const url = ($('#ai-ps-url') || {}).value || '';
-            const strategy = ($('#ai-ps-strategy') || {}).value || 'mobile';
+            // ── Step 1: Test Mobile ──
+            aiUpdateStep('test-mobile', 'active', 'Running…');
+            const mobileData = await aiRunPageSpeed(url, 'mobile');
+            aiShowResultsForStrategy(mobileData, 'mobile');
+            aiHubState.beforeScores.mobile = mobileData.scores || {};
+            aiHubState.lastResultId = aiHubState.resultIds.mobile;
+            aiUpdateStep('test-mobile', 'done', `Perf: ${mobileData.scores?.performance ?? '—'}`);
 
-            // Step 1: Start session
-            aiHubSessionLog('Running initial PageSpeed test and AI analysis…');
-            const startRes = await ajax('ccm_tools_ai_hub_ai_optimize', {
-                optimize_action: 'start',
-                url: url,
-                strategy: strategy,
-                auto_apply: 1,
-            }, { timeout: 180000 });
+            // ── Step 2: Test Desktop ──
+            aiUpdateStep('test-desktop', 'active', 'Running…');
+            const desktopData = await aiRunPageSpeed(url, 'desktop');
+            aiShowResultsForStrategy(desktopData, 'desktop');
+            aiHubState.beforeScores.desktop = desktopData.scores || {};
+            aiUpdateStep('test-desktop', 'done', `Perf: ${desktopData.scores?.performance ?? '—'}`);
 
-            const startData = startRes.data || {};
-            aiHubState.sessionId = startData.session_id || null;
-            aiHubState.iteration = 1;
+            // Show results (default mobile tab)
+            $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === 'mobile'));
+            $$('.ccm-ai-strategy-panel').forEach(p => {
+                p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
+            });
 
-            if (startData.scores) {
-                aiHubSessionLog(`Initial scores — Performance: ${startData.scores.performance}, LCP: ${startData.metrics?.lcp || '?'}ms`);
+            // ── Step 3: AI Analysis (based on mobile result — primary strategy) ──
+            aiUpdateStep('analyze', 'active', 'Analyzing…');
+            const analysisLoading = $('#ai-analysis-loading');
+            if (analysisLoading) analysisLoading.style.display = 'block';
+
+            const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
+                result_id: aiHubState.lastResultId,
+            }, { timeout: 120000 });
+
+            if (analysisLoading) analysisLoading.style.display = 'none';
+
+            const analysisData = analysisRes.data || {};
+            const analysis = analysisData.analysis || analysisData;
+            aiRenderAnalysis(analysisData);
+            aiUpdateStep('analyze', 'done', `${(analysis.recommendations || []).length} recommendations`);
+
+            // ── Step 4: Review Fixes ──
+            aiUpdateStep('review', 'active', 'Waiting for review…');
+            const autoFixes = aiRenderFixSummary(analysis.recommendations || [], analysis.manual_actions || []);
+
+            let selectedFixes = [];
+            if (autoFixes && autoFixes.length) {
+                selectedFixes = await aiWaitForConfirmation(autoFixes);
             }
+            aiUpdateStep('review', 'done', selectedFixes.length ? `${selectedFixes.length} selected` : 'Skipped');
 
-            if (startData.auto_applied) {
-                aiHubSessionLog('✅ AI recommendations auto-applied to Performance Optimizer.');
-            }
+            // ── Step 5: Apply Changes ──
+            if (selectedFixes.length) {
+                aiUpdateStep('apply', 'active', 'Applying…');
+                const applyRes = await ajax('ccm_tools_ai_apply_changes', {
+                    recommendations: JSON.stringify(selectedFixes),
+                }, { timeout: 30000 });
 
-            if (startData.analysis?.recommendations?.length) {
-                aiHubSessionLog(`${startData.analysis.recommendations.length} recommendation(s) from AI.`);
-                aiHubRenderAnalysis(startData);
-                const resultsEl = $('#ai-analysis-results');
-                if (resultsEl) resultsEl.style.display = 'block';
-            }
+                const applyData = applyRes.data || {};
+                const changes = applyData.changes || [];
+                aiUpdateStep('apply', 'done', `${changes.length} settings changed`);
 
-            if (statusBadge) { statusBadge.textContent = 'Iteration 1'; statusBadge.className = 'ccm-badge ccm-badge-info'; }
-            aiHubSessionLog('Waiting 10s for cache to clear before re-test…');
-            await aiHubSleep(10000);
-
-            // Step 2: Retest loop (up to 3 iterations)
-            const maxIterations = 3;
-            while (aiHubState.sessionActive && aiHubState.iteration < maxIterations && aiHubState.sessionId) {
-                aiHubState.iteration++;
-                aiHubSessionLog(`Iteration ${aiHubState.iteration}: Re-testing…`);
-                if (statusBadge) statusBadge.textContent = `Iteration ${aiHubState.iteration}`;
-
-                const retestRes = await ajax('ccm_tools_ai_hub_ai_optimize', {
-                    optimize_action: 'retest',
-                    session_id: aiHubState.sessionId,
-                    url: url,
-                    strategy: strategy,
-                }, { timeout: 180000 });
-
-                const retestData = retestRes.data || {};
-
-                if (retestData.scores) {
-                    aiHubSessionLog(`Scores — Performance: ${retestData.scores.performance}`);
+                // Update on-page toggles in real time
+                if (applyData.settings) {
+                    aiUpdatePageToggles(applyData.settings);
                 }
 
-                if (retestData.score_change !== undefined) {
-                    const dir = retestData.score_change > 0 ? '📈' : (retestData.score_change < 0 ? '📉' : '➡️');
-                    aiHubSessionLog(`${dir} Score change: ${retestData.score_change > 0 ? '+' : ''}${retestData.score_change}`);
-                }
+                showNotification(`Applied ${changes.length} change(s).`, 'success');
 
-                if (retestData.status === 'completed' || retestData.completed) {
-                    aiHubSessionLog('🎉 Optimization session complete!');
-                    break;
-                }
+                // Wait for cache to clear before re-testing
+                await aiSleep(5000);
 
-                if (retestData.analysis?.recommendations?.length) {
-                    aiHubSessionLog(`${retestData.analysis.recommendations.length} additional recommendation(s). Applying…`);
-                }
+                // ── Step 6: Re-test Mobile ──
+                aiUpdateStep('retest-mobile', 'active', 'Re-testing…');
+                const mobileRetest = await aiRunPageSpeed(url, 'mobile');
+                aiHubState.afterScores.mobile = mobileRetest.scores || {};
+                aiUpdateStep('retest-mobile', 'done', `Perf: ${mobileRetest.scores?.performance ?? '—'}`);
 
-                aiHubSessionLog('Waiting 10s before next iteration…');
-                await aiHubSleep(10000);
+                // ── Step 7: Re-test Desktop ──
+                aiUpdateStep('retest-desktop', 'active', 'Re-testing…');
+                const desktopRetest = await aiRunPageSpeed(url, 'desktop');
+                aiHubState.afterScores.desktop = desktopRetest.scores || {};
+                aiUpdateStep('retest-desktop', 'done', `Perf: ${desktopRetest.scores?.performance ?? '—'}`);
+
+                // ── Step 8: Before / After Comparison ──
+                aiUpdateStep('compare', 'active', 'Comparing…');
+                aiRenderBeforeAfter(aiHubState.beforeScores, aiHubState.afterScores);
+                aiUpdateStep('compare', 'done', 'Complete');
+
+                // Update result panels with new data
+                aiShowResultsForStrategy(mobileRetest, 'mobile');
+                aiShowResultsForStrategy(desktopRetest, 'desktop');
+            } else {
+                // Skip apply + retest
+                aiUpdateStep('apply', 'skipped', 'Skipped');
+                aiUpdateStep('retest-mobile', 'skipped', 'Skipped');
+                aiUpdateStep('retest-desktop', 'skipped', 'Skipped');
+                aiUpdateStep('compare', 'skipped', 'Skipped');
             }
 
-            // Complete
-            if (aiHubState.sessionId) {
-                await ajax('ccm_tools_ai_hub_ai_optimize', {
-                    optimize_action: 'complete',
-                    session_id: aiHubState.sessionId,
-                }, { timeout: 30000 }).catch(() => {});
-            }
-
-            if (statusBadge) { statusBadge.textContent = 'Complete'; statusBadge.className = 'ccm-badge ccm-badge-success'; }
-            aiHubSessionLog('Session finished. Refresh the page to see updated settings.');
-            showNotification('AI optimization session complete!', 'success');
+            showNotification('One-Click Optimize complete!', 'success');
             aiHubLoadHistory();
         } catch (err) {
-            aiHubSessionLog(`❌ Error: ${err.message || 'Unknown error'}`);
+            console.error('[CCM AI] One-click error:', err);
             showNotification(err.message || 'Optimization failed.', 'error');
-            if (statusBadge) { statusBadge.textContent = 'Error'; statusBadge.className = 'ccm-badge ccm-badge-error'; }
+            // Mark current active step as error
+            AI_STEPS.forEach(s => {
+                const el = $(`#ai-step-${s.id}`);
+                if (el && el.dataset.status === 'active') aiUpdateStep(s.id, 'error', 'Failed');
+            });
         } finally {
-            aiHubState.sessionActive = false;
-            if (btn) { btn.disabled = false; btn.textContent = '⚡ Auto-Optimize'; }
+            if (btn) { btn.disabled = false; btn.textContent = '🚀 One-Click Optimize'; }
         }
     }
 
-    /**
-     * Append a message to the session log
-     */
-    function aiHubSessionLog(message) {
-        const logEl = $('#ai-session-log');
-        if (!logEl) return;
-        const time = new Date().toLocaleTimeString();
-        logEl.innerHTML += `<div>[${time}] ${message}</div>`;
-        logEl.scrollTop = logEl.scrollHeight;
-    }
+    // ─── Helpers ────────────
 
-    /**
-     * Promise-based sleep helper
-     */
-    function aiHubSleep(ms) {
+    function aiSleep(ms) {
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    /**
-     * Load PageSpeed results history
-     */
     async function aiHubLoadHistory() {
         const container = $('#ai-history-table');
         if (!container) return;
@@ -4031,37 +4176,24 @@
         container.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div>';
 
         try {
-            const strategy = ($('#ai-ps-strategy') || {}).value || 'mobile';
             const res = await ajax('ccm_tools_ai_hub_get_results', {
-                strategy: strategy,
                 limit: 10,
             }, { timeout: 15000 });
 
             const results = res.data?.results || res.data || [];
 
             if (!results.length) {
-                container.innerHTML = '<p style="opacity: 0.6;">No results yet. Run a PageSpeed test to get started.</p>';
+                container.innerHTML = '<p style="opacity:0.6;">No results yet. Run a test to get started.</p>';
                 return;
             }
 
-            let html = '<table class="ccm-table"><thead><tr><th>Date</th><th>Strategy</th><th>Perf</th><th>Access</th><th>BP</th><th>SEO</th><th>LCP</th><th>AI</th></tr></thead><tbody>';
+            let html = '<table class="ccm-table"><thead><tr><th>Date</th><th>Strategy</th><th>Perf</th><th>Access</th><th>BP</th><th>SEO</th><th>LCP</th></tr></thead><tbody>';
             results.forEach(r => {
                 const scores = r.scores || {};
                 const metrics = r.metrics || {};
                 const date = r.tested_at ? new Date(r.tested_at).toLocaleString() : '—';
-                const aiStatus = r.ai_analysis ? '✅' : '—';
                 const perfClass = (scores.performance >= 90) ? 'ccm-success' : ((scores.performance >= 50) ? 'ccm-warning' : 'ccm-error');
-
-                html += `<tr>
-                    <td>${date}</td>
-                    <td>${r.strategy || '—'}</td>
-                    <td class="${perfClass}"><strong>${scores.performance ?? '—'}</strong></td>
-                    <td>${scores.accessibility ?? '—'}</td>
-                    <td>${scores.best_practices ?? '—'}</td>
-                    <td>${scores.seo ?? '—'}</td>
-                    <td>${metrics.lcp_ms ? metrics.lcp_ms + 'ms' : '—'}</td>
-                    <td>${aiStatus}</td>
-                </tr>`;
+                html += `<tr><td>${date}</td><td>${r.strategy || '—'}</td><td class="${perfClass}"><strong>${scores.performance ?? '—'}</strong></td><td>${scores.accessibility ?? '—'}</td><td>${scores.best_practices ?? '—'}</td><td>${scores.seo ?? '—'}</td><td>${metrics.lcp_ms ? metrics.lcp_ms + 'ms' : '—'}</td></tr>`;
             });
             html += '</tbody></table>';
             container.innerHTML = html;
