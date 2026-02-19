@@ -40,14 +40,6 @@ ccm-tools/
 │   ├── update.php         # Plugin update checker
 │   ├── webp-converter.php # WebP image converter
 │   └── woocommerce-tools.php # WooCommerce-specific utilities
-├── hub/                    # Standalone API Hub app (api.tools.clickclick.media)
-│   ├── admin/             # Admin dashboard pages
-│   ├── api/v1/            # REST API endpoints (health, pagespeed, ai)
-│   ├── assets/            # Hub CSS/JS assets
-│   ├── auth/              # Google OAuth login/callback
-│   ├── config/            # Config, env parser, database, settings
-│   ├── database/          # Schema SQL
-│   └── includes/          # Core libraries (auth, encryption, functions, api-auth, settings)
 ├── img/                   # Image assets
 └── assets/
     └── object-cache.php   # WordPress object cache drop-in for Redis
@@ -317,7 +309,7 @@ After completing changes:
 
 ### v7.11.0
 - **AI Performance Hub — Centralized API Management + Plugin Integration**
-  - **New `hub/` subfolder:** Standalone PHP application for api.tools.clickclick.media
+  - **Hub application** (now private repo: ClickClickMedia/ccm-api-hub) for api.tools.clickclick.media
     - Google SSO restricted to @clickclickmedia.com.au domain
     - AES-256-CBC encrypted settings stored in MySQL (`.env` holds only DB credentials + encryption key)
     - 4-step setup wizard with super-admin bootstrapping (rik@clickclickmedia.com.au)
@@ -341,7 +333,7 @@ After completing changes:
     - Admin page with score circles, metrics table, opportunities, AI analysis, session log, history
   - **Wired into ccm.php:** `require_once`, submenu page (🤖 AI Performance), nav tab
   - **JS handlers in main.js:** `initAiHubHandlers()` with save, test, PageSpeed, analyze, optimize session, history
-  - New files: 35 files in `hub/`, 1 file `inc/ai-hub.php`
+  - New files: 35 files in hub (private repo), 1 file `inc/ai-hub.php`
   - Git branch: `feature/ai-performance`
 
 ### v7.10.15
