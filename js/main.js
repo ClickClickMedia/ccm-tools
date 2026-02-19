@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.15.0
+ * Version: 7.15.1
  */
 
 (function() {
@@ -5033,7 +5033,10 @@
                     // Build changes summary
                     let changesList = '';
                     if (run.changes && run.changes.length) {
-                        const labels = run.changes.map(key => aiSettingLabel(key));
+                        const labels = run.changes.map(c => {
+                            const k = typeof c === 'object' && c.key ? c.key : String(c);
+                            return aiSettingLabel(k);
+                        });
                         changesList = `<div class="ccm-ai-run-changes">${labels.map(l => `<span class="ccm-ai-run-change-tag">${l}</span>`).join('')}</div>`;
                     }
 

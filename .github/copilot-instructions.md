@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.15.0
+- **Current Version:** 7.15.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -287,6 +287,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.15.1
+- **Fixed "key.replace is not a function" Error in Recent Results History**
+  - Optimization run history stored `changes` as objects `{key, from, to}` (enriched in v7.13.1 for AI Learning Memory)
+  - `aiHubLoadHistory()` passed these objects directly to `aiSettingLabel(key)` which expects a string
+  - The fallback `key.replace(/_/g, ' ')` threw TypeError on object input
+  - Fixed: extracts `.key` property from object entries, falls back to `String(c)` for plain strings
+  - Recent Results History section now renders correctly with enriched change data
 
 ### v7.15.0
 - **PageSpeed Scores on Dashboard**
