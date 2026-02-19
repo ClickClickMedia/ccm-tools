@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.14.0
+ * Version: 7.14.1
  */
 
 /* ===================================
@@ -2593,15 +2593,18 @@ tr.ccm-front-page-row {
 }
 
 .ccm-ai-step-indicator {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     border: 2px solid var(--ccm-border);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.7rem;
-    transition: all 0.3s;
+    font-size: 0;
+    line-height: 1;
+    transition: border-color 0.3s, background-color 0.3s;
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
 .ccm-ai-step-label {
@@ -2629,6 +2632,7 @@ tr.ccm-front-page-row {
 
 .ccm-ai-step[data-status="active"] .ccm-ai-step-indicator::after {
     content: '';
+    display: block;
     width: 8px;
     height: 8px;
     border-radius: 50%;
@@ -2647,7 +2651,13 @@ tr.ccm-front-page-row {
 .ccm-ai-step[data-status="done"] .ccm-ai-step-indicator::after {
     content: '✓';
     color: #fff;
+    font-size: 14px;
     font-weight: 700;
+    line-height: 1;
+    width: auto;
+    height: auto;
+    background: none;
+    border-radius: 0;
 }
 
 .ccm-ai-step[data-status="done"] .ccm-ai-step-label {
@@ -2662,7 +2672,13 @@ tr.ccm-front-page-row {
 .ccm-ai-step[data-status="error"] .ccm-ai-step-indicator::after {
     content: '✕';
     color: #fff;
+    font-size: 14px;
     font-weight: 700;
+    line-height: 1;
+    width: auto;
+    height: auto;
+    background: none;
+    border-radius: 0;
 }
 
 .ccm-ai-step[data-status="error"] .ccm-ai-step-label {
@@ -2676,6 +2692,12 @@ tr.ccm-front-page-row {
 .ccm-ai-step[data-status="skipped"] .ccm-ai-step-indicator::after {
     content: '—';
     color: var(--ccm-text-muted);
+    font-size: 14px;
+    line-height: 1;
+    width: auto;
+    height: auto;
+    background: none;
+    border-radius: 0;
 }
 
 @keyframes ccm-pulse {

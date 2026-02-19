@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.14.0
+- **Current Version:** 7.14.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -286,6 +286,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.14.1
+- **Fixed Step Indicator Icon Rendering Artifacts**
+  - Step progress circles (checkmark, X, dash) had visual artifacts due to inherited `font-size: 0.7rem` being too small for Unicode characters
+  - Set `font-size: 0` on the indicator element itself to prevent any text content leakage
+  - Added explicit `font-size: 14px` and `line-height: 1` on `::after` pseudo-elements for done/error/skipped states
+  - Added explicit property resets (`width: auto; height: auto; background: none; border-radius: 0`) on text-based states to prevent active state (white dot) properties from bleeding through
+  - Changed `transition: all 0.3s` to `transition: border-color 0.3s, background-color 0.3s` to avoid unexpected property transitions
+  - Added `overflow: hidden` and `flex-shrink: 0` for clipping and layout stability
+  - Increased indicator size from 24px to 28px for better visibility
+- **Improved One-Click Optimize Error Handling**
+  - Failed step now shows the actual error message (truncated to 40 chars) instead of generic "Failed"
+  - Remaining pending steps are marked as "skipped" (dimmed) when the flow aborts early
+  - Gives users clear visibility into what went wrong and which steps were not attempted
 
 ### v7.14.0
 - **AI Troubleshooter Chat — Diagnose Optimization Issues in Real-Time**

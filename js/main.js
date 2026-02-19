@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.14.0
+ * Version: 7.14.1
  */
 
 (function() {
@@ -4535,12 +4535,18 @@
             aiHubLoadHistory();
         } catch (err) {
             console.error('[CCM AI] One-click error:', err);
-            aiLog(`Error: ${err.message || 'Optimization failed.'}`, 'error');
-            showNotification(err.message || 'Optimization failed.', 'error');
-            // Mark current active step as error
+            const errMsg = err.message || 'Optimization failed.';
+            aiLog(`Error: ${errMsg}`, 'error');
+            showNotification(errMsg, 'error');
+            // Mark current active step as error with details, remaining as skipped
             AI_STEPS.forEach(s => {
                 const el = $(`#ai-step-${s.id}`);
-                if (el && el.dataset.status === 'active') aiUpdateStep(s.id, 'error', 'Failed');
+                if (!el) return;
+                if (el.dataset.status === 'active') {
+                    aiUpdateStep(s.id, 'error', errMsg.length > 40 ? errMsg.slice(0, 40) + '…' : errMsg);
+                } else if (el.dataset.status === 'pending') {
+                    aiUpdateStep(s.id, 'skipped', '');
+                }
             });
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = '🚀 One-Click Optimize'; }
