@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.7
+- **Current Version:** 7.12.8
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -283,6 +283,11 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.8
+- **Increased AI Optimization Max Iterations from 3 to 10**
+  - Allows the optimizer to keep retrying after rollbacks until the hub API rate limit is reached
+  - Prevents premature "Max iterations reached after rollback" when there are still API calls available
 
 ### v7.12.7
 - **Redesigned Recent Results History**

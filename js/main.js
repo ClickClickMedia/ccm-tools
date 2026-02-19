@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.7
+ * Version: 7.12.8
  */
 
 (function() {
@@ -4122,7 +4122,7 @@
 
     // ─── One-Click Optimize (iterative improvement loop with rollback) ────────────
 
-    const AI_MAX_ITERATIONS = 3;
+    const AI_MAX_ITERATIONS = 10;
 
     async function aiOneClickOptimize() {
         const btn = $('#ai-one-click-btn');
