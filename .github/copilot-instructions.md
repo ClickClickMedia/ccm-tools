@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.1
+- **Current Version:** 7.12.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -282,6 +282,17 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.2
+- **AI Performance Optimizer — Button Uniformity & Layout Fixes**
+  - Fixed mismatched button heights between "One-Click Optimize" (was 1rem font + large padding) and "Test Only" (default smaller sizing)
+  - All buttons in AI controls row now share consistent `height: 2.5rem` with matching padding
+  - Hub Connection row replaced inline CSS grid with proper `.ccm-ai-connection-row` flex layout
+  - API Key input, Save, and Test buttons now align cleanly at the same height
+  - URL input field and action buttons share the same `2.5rem` height via scoped rules
+  - Removed inline `style` attributes from HTML in favour of CSS classes
+  - Added mobile responsive rules for `.ccm-ai-connection-row` (stacks vertically, full-width buttons)
+  - `.ccm-ai-cta` simplified to font-weight and padding override only (no font-size override)
 
 ### v7.12.1
 - **Deep AI Analysis — Live Page Fetching + Resource-Aware Recommendations**

@@ -471,7 +471,7 @@ function ccm_tools_render_ai_section(): void {
                 <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;"><?php _e('Hub Connection', 'ccm-tools'); ?></summary>
                 <div style="padding: 0.75rem 0;">
                     <input type="hidden" id="ai-hub-url" value="<?php echo esc_attr($settings['hub_url']); ?>">
-                    <div style="display: grid; grid-template-columns: 1fr auto auto; gap: 0.5rem; align-items: end;">
+                    <div class="ccm-ai-connection-row">
                         <div class="ccm-form-field">
                             <label for="ai-hub-key"><?php _e('API Key', 'ccm-tools'); ?></label>
                             <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key']); ?>" placeholder="ccm_xxxx..." class="ccm-input">
@@ -485,7 +485,7 @@ function ccm_tools_render_ai_section(): void {
 
             <!-- URL & Action Controls -->
             <div class="ccm-ai-controls">
-                <div class="ccm-form-field" style="flex: 1; min-width: 200px;">
+                <div class="ccm-form-field">
                     <label for="ai-ps-url"><?php _e('URL to Test', 'ccm-tools'); ?></label>
                     <input type="url" id="ai-ps-url" value="<?php echo esc_url(site_url()); ?>" class="ccm-input">
                 </div>

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.12.1
+ * Version: 7.12.2
  */
 
 /* ===================================
@@ -2479,10 +2479,52 @@ tr.ccm-front-page-row {
     margin-top: 1rem;
 }
 
-.ccm-ai-cta {
-    font-size: 1rem;
-    padding: 0.65rem 1.5rem;
+.ccm-ai-controls .ccm-form-field {
+    flex: 1;
+    min-width: 200px;
+}
+
+.ccm-ai-controls .ccm-button {
+    height: 2.5rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
     white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.ccm-ai-cta {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+}
+
+/* Hub connection row */
+.ccm-ai-connection-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: end;
+    flex-wrap: wrap;
+}
+
+.ccm-ai-connection-row .ccm-form-field {
+    flex: 1;
+    min-width: 200px;
+}
+
+.ccm-ai-connection-row .ccm-button {
+    height: 2.5rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Ensure inputs in AI rows match button height */
+.ccm-ai-connection-row .ccm-input,
+.ccm-ai-controls .ccm-input {
+    height: 2.5rem;
+    box-sizing: border-box;
 }
 
 /* Strategy tabs */
@@ -2720,9 +2762,21 @@ tr.ccm-front-page-row {
     .ccm-ai-controls {
         flex-direction: column;
     }
+    .ccm-ai-controls .ccm-button {
+        width: 100%;
+    }
     .ccm-ai-controls .ccm-form-field {
         width: 100% !important;
         min-width: 0 !important;
+    }
+    .ccm-ai-connection-row {
+        flex-direction: column;
+    }
+    .ccm-ai-connection-row .ccm-form-field {
+        min-width: 0;
+    }
+    .ccm-ai-connection-row .ccm-button {
+        width: 100%;
     }
     .ccm-ai-scores-grid {
         grid-template-columns: repeat(2, 1fr);
