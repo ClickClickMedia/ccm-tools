@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.12.0
+ * Version: 7.12.1
  */
 
 (function() {
@@ -3584,6 +3584,10 @@
         'speculation_rules', 'critical_css', 'disable_jquery_migrate', 'disable_block_css',
         'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
         'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
+        // Deep analysis data keys (auto-applied by apply_recommendations)
+        'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
+        'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
+        'delay_js_timeout', 'speculation_eagerness', 'heartbeat_interval',
     ]);
 
     /**
@@ -3881,13 +3885,14 @@
                 <h4>✅ Auto-Fixable (${autoFixes.length})</h4>
                 <p class="ccm-text-muted" style="margin:0 0 0.75rem;">These will be applied to your Performance Optimizer settings automatically.</p>`;
             autoFixes.forEach((fix, i) => {
+                const displayValue = aiFormatValue(fix.recommended_value);
                 html += `<label class="ccm-ai-fix-item">
                     <input type="checkbox" checked data-fix-index="${i}" class="ai-auto-fix-cb">
                     <div class="ccm-ai-fix-details">
                         <strong>${aiSettingLabel(fix.setting_key)}</strong>
-                        <span class="ccm-badge ccm-badge-${fix.impact === 'high' ? 'error' : (fix.impact === 'medium' ? 'warning' : 'info')}">${fix.impact || 'medium'}</span>
+                        <span class="ccm-badge ccm-badge-${fix.impact === 'high' ? 'error' : (fix.impact === 'medium' ? 'warning' : 'info')}">${fix.impact || fix.estimated_impact || 'medium'}</span>
                         <p class="ccm-text-muted" style="margin:0.25rem 0 0;">${fix.reason || ''}</p>
-                        <code>${fix.setting_key}: ${String(fix.current_value)} → ${String(fix.recommended_value)}</code>
+                        <code style="word-break:break-all;">${fix.setting_key} → ${displayValue}</code>
                     </div>
                 </label>`;
             });
@@ -3931,8 +3936,14 @@
             preconnect: 'Preconnect Hints', dns_prefetch: 'DNS Prefetch', remove_query_strings: 'Remove Query Strings',
             disable_emoji: 'Disable Emoji Scripts', disable_dashicons: 'Disable Dashicons',
             lazy_load_iframes: 'Lazy Load Iframes', youtube_facade: 'YouTube Lite Embeds',
-            lcp_fetchpriority: 'LCP Fetchpriority', font_display_swap: 'Font Display: Swap',
+            lcp_fetchpriority: 'LCP Fetchpriority', lcp_preload: 'LCP Image Preload',
+            font_display_swap: 'Font Display: Swap',
             speculation_rules: 'Speculation Rules', critical_css: 'Critical CSS',
+            critical_css_code: 'Critical CSS Code (generated)', preconnect_urls: 'Preconnect URLs',
+            dns_prefetch_urls: 'DNS Prefetch URLs', lcp_preload_url: 'LCP Image URL',
+            defer_js_excludes: 'Defer JS Exclude List', delay_js_excludes: 'Delay JS Exclude List',
+            preload_css_excludes: 'Async CSS Exclude List', delay_js_timeout: 'Delay JS Timeout',
+            speculation_eagerness: 'Speculation Eagerness', heartbeat_interval: 'Heartbeat Interval',
             disable_jquery_migrate: 'Disable jQuery Migrate', disable_block_css: 'Disable Block CSS',
             disable_woocommerce_cart_fragments: 'Disable Cart Fragments', reduce_heartbeat: 'Reduce Heartbeat',
             disable_xmlrpc: 'Disable XML-RPC', disable_rsd_wlw: 'Remove RSD/WLW Links',
@@ -3940,6 +3951,19 @@
             disable_oembed: 'Disable oEmbed', enabled: 'Performance Optimizer',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    /** Format a recommended_value for display in the fix summary */
+    function aiFormatValue(value) {
+        if (Array.isArray(value)) {
+            if (value.length === 0) return '[]';
+            if (value.length <= 3) return JSON.stringify(value);
+            return `[${value.slice(0, 3).map(v => `"${v}"`).join(', ')}, …+${value.length - 3}]`;
+        }
+        if (typeof value === 'string' && value.length > 80) {
+            return `"${value.substring(0, 77)}…" (${value.length} chars)`;
+        }
+        return String(value);
     }
 
     // ─── Wait for user confirmation (returns selected recommendations) ────────────
@@ -3979,9 +4003,23 @@
         Object.entries(settings).forEach(([key, value]) => {
             const id = `#perf-${key.replace(/_/g, '-')}`;
             const el = $(id);
-            if (el && el.type === 'checkbox') {
+            if (!el) return;
+
+            if (el.type === 'checkbox') {
                 el.checked = !!value;
                 el.dispatchEvent(new Event('change', { bubbles: true }));
+            } else if (el.tagName === 'TEXTAREA') {
+                // Critical CSS code or other textarea content
+                el.value = Array.isArray(value) ? value.join('\n') : String(value || '');
+            } else if (el.tagName === 'SELECT') {
+                el.value = String(value || '');
+            } else if (el.type === 'text' || el.type === 'url' || el.type === 'number') {
+                // Text inputs for URLs, comma-separated lists, numbers
+                if (Array.isArray(value)) {
+                    el.value = value.join(', ');
+                } else {
+                    el.value = String(value || '');
+                }
             }
         });
     }

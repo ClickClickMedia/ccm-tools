@@ -308,12 +308,37 @@ function ccm_tools_ajax_ai_hub_ai_optimize(): void {
 /**
  * Apply AI recommendations to Performance Optimizer settings
  * 
+ * Handles complex value types: booleans, integers, arrays (URL lists, exclude lists),
+ * and large strings (critical CSS code). Auto-enables corresponding boolean toggles
+ * when data values are set (e.g., setting preconnect_urls also enables preconnect).
+ * 
  * @param array $recommendations Array of recommendations from AI analysis
  * @return bool Whether settings were successfully applied
  */
 function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
     $settings = ccm_tools_perf_get_settings();
     $changed = false;
+
+    // Map data keys to their parent boolean toggle
+    // When the AI sets a data key, auto-enable the corresponding feature toggle
+    $data_to_toggle = [
+        'critical_css_code'  => 'critical_css',
+        'preconnect_urls'    => 'preconnect',
+        'dns_prefetch_urls'  => 'dns_prefetch',
+        'lcp_preload_url'    => 'lcp_preload',
+    ];
+
+    // Keys that contain CSS code — must NOT use sanitize_text_field (it strips tags/newlines)
+    $css_keys = ['critical_css_code'];
+
+    // Keys that contain URLs — sanitize individually as URLs
+    $url_array_keys = ['preconnect_urls', 'dns_prefetch_urls'];
+
+    // Keys that contain string arrays (handles, URL fragments) — sanitize individually
+    $string_array_keys = ['defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes'];
+
+    // Keys that contain a single URL
+    $url_keys = ['lcp_preload_url'];
 
     foreach ($recommendations as $rec) {
         $key = $rec['setting_key'] ?? '';
@@ -324,20 +349,52 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
         // Only apply known settings
         if (!array_key_exists($key, $settings)) continue;
 
-        // Type-match the value
+        // Type-match and sanitize the value
         if (is_bool($settings[$key])) {
             $settings[$key] = (bool)$value;
         } elseif (is_int($settings[$key])) {
             $settings[$key] = (int)$value;
+        } elseif (in_array($key, $css_keys, true)) {
+            // CSS code: strip PHP tags and null bytes, but preserve CSS content
+            if (is_string($value)) {
+                $value = str_replace(['<?php', '<?', '?>'], '', $value);
+                $value = str_replace("\0", '', $value);
+                $settings[$key] = $value;
+            }
+        } elseif (in_array($key, $url_array_keys, true)) {
+            // Array of URLs
+            if (is_array($value)) {
+                $settings[$key] = array_values(array_filter(array_map('esc_url_raw', $value)));
+            }
+        } elseif (in_array($key, $string_array_keys, true)) {
+            // Array of handles/fragments
+            if (is_array($value)) {
+                $settings[$key] = array_values(array_filter(array_map('sanitize_text_field', $value)));
+            }
+        } elseif (in_array($key, $url_keys, true)) {
+            // Single URL
+            if (is_string($value)) {
+                $settings[$key] = esc_url_raw($value);
+            }
         } elseif (is_array($settings[$key])) {
+            // Generic array fallback
             if (is_array($value)) {
                 $settings[$key] = array_map('sanitize_text_field', $value);
             }
         } else {
+            // Generic string
             $settings[$key] = sanitize_text_field((string)$value);
         }
 
         $changed = true;
+
+        // Auto-enable the parent boolean toggle if this is a data key
+        if (isset($data_to_toggle[$key])) {
+            $toggleKey = $data_to_toggle[$key];
+            if (array_key_exists($toggleKey, $settings)) {
+                $settings[$toggleKey] = true;
+            }
+        }
     }
 
     if ($changed) {

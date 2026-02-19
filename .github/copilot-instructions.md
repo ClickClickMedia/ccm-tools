@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.12.0
+- **Current Version:** 7.12.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -282,6 +282,47 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.12.1
+- **Deep AI Analysis — Live Page Fetching + Resource-Aware Recommendations**
+  - Hub now fetches the actual website HTML during AI analysis to provide concrete, data-driven recommendations
+  - New shared `includes/page-analyzer.php` with `fetchPageResources()` — parses scripts, stylesheets, images, inline styles, above-fold HTML, and third-party domains from live page
+  - `fetchMainCssContent()` fetches up to 4 CSS files (60KB limit, same-origin priority) for critical CSS generation
+  - `extractAboveFoldHtml()` provides first 4KB of cleaned body structure for above-fold analysis
+  - `calculateClaudeCost()` with per-model pricing (Sonnet 4, Opus 4, Haiku 3.5)
+- **Critical CSS Generation**
+  - AI analyzes actual page HTML structure + fetched CSS to generate real critical CSS code
+  - Prompt instructs Claude to include only above-fold rules, keep under 15KB, minify output
+  - `critical_css_code` applied directly to Performance Optimizer settings
+  - Parent toggle `critical_css` auto-enabled when CSS code is set
+- **JS Defer/Delay Script Analysis**
+  - AI receives full list of page scripts with src, id, defer/async status
+  - Detailed prompt rules: jQuery always excluded from defer, analytics/tracking ideal for delay, theme scripts need careful testing
+  - Returns concrete `defer_js_excludes` and `delay_js_excludes` arrays
+- **Preconnect & DNS Prefetch Domain Identification**
+  - Third-party domains extracted from page resources (scripts, stylesheets, images)
+  - AI categorizes: fonts/CDN → preconnect, analytics/tracking → DNS prefetch only
+  - Returns `preconnect_urls` and `dns_prefetch_urls` arrays
+- **LCP Image Preload Detection**
+  - AI identifies the Largest Contentful Paint image from PSI data + page images
+  - Returns `lcp_preload_url` for the specific image URL to preload
+  - Parent toggle `lcp_preload` auto-enabled when URL is set
+- **Hub Admin Model Selection**
+  - AI tab in hub settings now has model dropdown with pricing info per model
+  - Shows capability descriptions (Sonnet 4 — best balance, Opus 4 — highest quality, Haiku 3.5 — fastest)
+  - Max tokens default increased to 16,384 (was 4,096) for deep analysis needs
+  - Upper limit increased to 65,536
+- **Enhanced Plugin Apply Recommendations**
+  - `ccm_tools_ai_hub_apply_recommendations()` rewritten for complex value types
+  - CSS keys use custom sanitization (strips PHP tags only, preserves CSS syntax)
+  - URL arrays sanitized via `esc_url_raw`, string arrays via `sanitize_text_field`
+  - `$data_to_toggle` mapping auto-enables parent boolean toggles (e.g., setting `preconnect_urls` enables `preconnect`)
+- **Enhanced JS for New Setting Types**
+  - `PERF_SETTING_KEYS` expanded with data keys: `critical_css_code`, `preconnect_urls`, `dns_prefetch_urls`, `lcp_preload_url`, exclude lists, etc.
+  - New `aiFormatValue()` for displaying arrays and long strings in fix summaries
+  - `aiUpdatePageToggles()` handles textarea, select, text/url/number inputs (not just checkboxes)
+- **Model**: Claude Sonnet 4 (`claude-sonnet-4-20250514`) as default
+- **Both ai-analyze.php and ai-optimize.php** use shared page-analyzer.php utilities
 
 ### v7.12.0
 - **Combined AI + Performance Pages into One Page**
