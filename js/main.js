@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.16.2
+ * Version: 7.17.0
  */
 
 (function() {
@@ -3991,6 +3991,7 @@
         { id: 'apply',          label: 'Apply Changes' },
         { id: 'retest-mobile',  label: 'Re-test Mobile' },
         { id: 'retest-desktop', label: 'Re-test Desktop' },
+        { id: 'console-check',  label: 'Console Check' },
         { id: 'compare',        label: 'Compare Results' },
     ];
 
@@ -4391,9 +4392,31 @@
                 p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
             });
 
+            // ── Baseline Console Check (capture pre-existing JS errors) ──
+            let baselineConsoleErrors = [];
+            try {
+                aiLog('Running baseline console error check (headless Chromium)…', 'info');
+                const baselineConsole = await ajax('ccm_tools_ai_hub_console_check', {
+                    url: url,
+                    wait_seconds: 12,
+                }, { timeout: 60000 });
+                const baseData = baselineConsole.data || {};
+                baselineConsoleErrors = baseData.errors || [];
+                const baseWarnCount = (baseData.warnings || []).length;
+                if (baselineConsoleErrors.length > 0) {
+                    aiLog(`Baseline: ${baselineConsoleErrors.length} pre-existing console error(s) detected (will be excluded from post-change diff)`, 'warn');
+                    baselineConsoleErrors.forEach(e => aiLog(`  Pre-existing: ${e.message} <small>(${e.source})</small>`, 'info'));
+                } else {
+                    aiLog(`Baseline: no console errors ✓${baseWarnCount > 0 ? ` (${baseWarnCount} warning(s))` : ''}`, 'success');
+                }
+            } catch (consoleErr) {
+                aiLog(`Baseline console check failed: ${consoleErr.message} — continuing without baseline`, 'warn');
+            }
+
             // Track snapshot scores (updated after each successful keep)
             let snapshotMobilePerf = mobileData.scores?.performance ?? 0;
             let snapshotDesktopPerf = desktopData.scores?.performance ?? 0;
+            let consoleErrorContext = ''; // accumulated for AI context
             let iteration = 0;
             let hasApplied = false;
 
@@ -4414,6 +4437,7 @@
                 const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
                     result_id: aiHubState.lastResultId,
                     url: url,
+                    console_errors: consoleErrorContext || '',
                 }, { timeout: 120000 });
 
                 if (analysisLoading) analysisLoading.style.display = 'none';
@@ -4501,6 +4525,45 @@
                 aiUpdateStep('retest-desktop', 'done', `Perf: ${retestDesktopPerf}${iterLabel}`);
                 aiLog(`Desktop re-test — Performance: <strong>${retestDesktopPerf}</strong>, LCP: ${desktopRetest.metrics?.lcp_ms ?? '—'}ms`, 'info');
 
+                // ── Console Error Check — detect broken JS functionality ──
+                let newConsoleErrors = [];
+                try {
+                    aiUpdateStep('console-check', 'active', 'Checking…');
+                    aiLog('Running console error check (headless Chromium)…', 'step');
+                    const consoleRes = await ajax('ccm_tools_ai_hub_console_check', {
+                        url: url,
+                        wait_seconds: 12,
+                    }, { timeout: 60000 });
+                    const consoleData = consoleRes.data || {};
+                    const afterErrors = consoleData.errors || [];
+                    const afterWarnings = consoleData.warnings || [];
+
+                    // Diff: only NEW errors not present in baseline
+                    const baselineMsgs = new Set(baselineConsoleErrors.map(e => e.message));
+                    newConsoleErrors = afterErrors.filter(e => !baselineMsgs.has(e.message));
+
+                    if (newConsoleErrors.length > 0) {
+                        aiUpdateStep('console-check', 'error', `${newConsoleErrors.length} NEW error(s)`);
+                        aiLog(`⚠ <strong>${newConsoleErrors.length} NEW console error(s)</strong> detected after changes:`, 'error');
+                        newConsoleErrors.forEach(e => {
+                            aiLog(`  <code>${e.message}</code> <small>(${e.source}:${e.line})</small>`, 'error');
+                        });
+                        // Build context for next AI iteration
+                        consoleErrorContext = 'CONSOLE ERRORS AFTER LAST CHANGES:\n' +
+                            newConsoleErrors.map(e => `- ${e.message} (${e.source}:${e.line})`).join('\n') +
+                            '\nThese errors were NOT present before changes were applied. The settings that caused JS breakage were rolled back.';
+                    } else {
+                        const totalAfter = afterErrors.length;
+                        const warnCount = afterWarnings.length;
+                        aiUpdateStep('console-check', 'done', 'No new errors ✓');
+                        aiLog(`Console check: no new JS errors ✓${totalAfter > 0 ? ` (${totalAfter} pre-existing)` : ''}${warnCount > 0 ? `, ${warnCount} warning(s)` : ''}`, 'success');
+                        consoleErrorContext = '';
+                    }
+                } catch (consoleErr) {
+                    aiLog(`Console check failed: ${consoleErr.message} — continuing with score-based evaluation only`, 'warn');
+                    aiUpdateStep('console-check', 'done', 'Skipped');
+                }
+
                 // ── Evaluate results (smart rollback with net-gain logic) ──
                 const mobileChange = retestMobilePerf - snapshotMobilePerf;
                 const desktopChange = retestDesktopPerf - snapshotDesktopPerf;
@@ -4509,15 +4572,28 @@
                 // KEEP changes if:
                 // 1. Both scores within noise tolerance (neither dropped meaningfully)
                 // 2. Net positive AND neither dropped catastrophically (>15 points)
+                // 3. AND no new console errors (functionality must not break)
                 const bothStable = mobileChange >= -PSI_NOISE && desktopChange >= -PSI_NOISE;
                 const netPositive = netChange > 0 && mobileChange > -15 && desktopChange > -15;
-                const keepChanges = bothStable || netPositive;
+                const hasNewConsoleErrors = newConsoleErrors.length > 0;
+                let keepChanges = (bothStable || netPositive) && !hasNewConsoleErrors;
+
+                // Force rollback if new console errors detected, regardless of scores
+                if (hasNewConsoleErrors && (bothStable || netPositive)) {
+                    aiLog(`Scores improved (net +${netChange}) but NEW console errors detected — rolling back to protect functionality`, 'error');
+                    showNotification('New JS errors detected — rolling back despite score improvement', 'warning');
+                }
 
                 if (!keepChanges) {
-                    // ── ROLLBACK — net negative or catastrophic drop ──
-                    aiLog(`Scores regressed — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange} (net: ${netChange >= 0 ? '+' : ''}${netChange}). Rolling back…`, 'error');
+                    // ── ROLLBACK — net negative, catastrophic drop, or console errors ──
+                    const rollbackReason = hasNewConsoleErrors
+                        ? `New JS console errors detected (${newConsoleErrors.length})`
+                        : `Scores regressed — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange} (net: ${netChange >= 0 ? '+' : ''}${netChange})`;
+                    aiLog(`${rollbackReason}. Rolling back…`, 'error');
                     showNotification(
-                        `Net negative (${netChange >= 0 ? '+' : ''}${netChange}). Rolling back…`,
+                        hasNewConsoleErrors
+                            ? `JS errors detected — rolling back to protect functionality`
+                            : `Net negative (${netChange >= 0 ? '+' : ''}${netChange}). Rolling back…`,
                         'warning'
                     );
                     aiUpdateStep('compare', 'active', 'Rolling back…');
@@ -4548,6 +4624,7 @@
                         aiUpdateStep('apply', 'pending', '');
                         aiUpdateStep('retest-mobile', 'pending', '');
                         aiUpdateStep('retest-desktop', 'pending', '');
+                        aiUpdateStep('console-check', 'pending', '');
                         aiUpdateStep('compare', 'pending', '');
                         continue; // next iteration
                     } else {
@@ -4599,6 +4676,7 @@
                 aiUpdateStep('apply', 'pending', '');
                 aiUpdateStep('retest-mobile', 'pending', '');
                 aiUpdateStep('retest-desktop', 'pending', '');
+                aiUpdateStep('console-check', 'pending', '');
                 aiUpdateStep('compare', 'pending', '');
             }
 
@@ -4607,6 +4685,7 @@
                 aiUpdateStep('apply', 'skipped', 'Skipped');
                 aiUpdateStep('retest-mobile', 'skipped', 'Skipped');
                 aiUpdateStep('retest-desktop', 'skipped', 'Skipped');
+                aiUpdateStep('console-check', 'skipped', 'Skipped');
                 aiUpdateStep('compare', 'skipped', 'Skipped');
             }
 

@@ -339,6 +339,12 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
         $context .= 'Database has ' . $toolStatus['database']['tables_needing_optimization'] . ' tables needing optimization. ';
     }
 
+    // Add console error context from previous iteration (if any)
+    $consoleErrors = sanitize_textarea_field($_POST['console_errors'] ?? '');
+    if (!empty($consoleErrors)) {
+        $context .= "\n" . $consoleErrors;
+    }
+
     $result = ccm_tools_ai_hub_request('ai/analyze', [
         'result_id'        => $resultId,
         'current_settings' => $currentSettings,
@@ -671,6 +677,38 @@ function ccm_tools_ajax_ai_rollback_settings(): void {
 }
 
 // ─── AI Chat — Troubleshooting Assistant ─────────────────────────
+
+add_action('wp_ajax_ccm_tools_ai_hub_console_check', 'ccm_tools_ajax_ai_hub_console_check');
+
+/**
+ * Run a console error check on a URL via the Hub's headless Chromium.
+ * Returns JS errors, uncaught exceptions, and warnings found on the page.
+ */
+function ccm_tools_ajax_ai_hub_console_check(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $url = sanitize_url($_POST['url'] ?? '');
+    $wait = absint($_POST['wait_seconds'] ?? 12);
+
+    if (empty($url)) {
+        wp_send_json_error(['message' => 'URL is required']);
+    }
+
+    $result = ccm_tools_ai_hub_request('console/check', [
+        'url'          => $url,
+        'wait_seconds' => $wait,
+    ], 'POST', 60);
+
+    if (is_wp_error($result)) {
+        wp_send_json_error(['message' => $result->get_error_message()]);
+    }
+
+    wp_send_json_success($result);
+}
 
 add_action('wp_ajax_ccm_tools_ai_chat', 'ccm_tools_ajax_ai_chat');
 

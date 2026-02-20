@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.16.2
+- **Current Version:** 7.17.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -195,6 +195,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_preflight` | `ccm_tools_ajax_ai_preflight()` | Pre-flight check of server-side tool status |
 | `ccm_tools_ai_enable_tool` | `ccm_tools_ajax_ai_enable_tool()` | Enable a server-side tool (htaccess, webp, redis, performance) |
 | `ccm_tools_ai_chat` | `ccm_tools_ajax_ai_chat()` | Send message to AI troubleshooting assistant |
+| `ccm_tools_ai_hub_console_check` | `ccm_tools_ajax_ai_hub_console_check()` | Check URL for JS console errors via headless Chromium |
 | `ccm_tools_ai_hub_get_latest_scores` | `ccm_tools_ajax_ai_hub_get_latest_scores()` | Get latest PageSpeed scores for dashboard widget |
 
 ## Performance Considerations
@@ -287,6 +288,24 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.0
+- **Console Error Checking — Automated JS Functionality Protection**
+  - New safety check in the One-Click Optimize pipeline that detects when performance changes break JavaScript functionality
+  - Uses headless Chromium on the hub server to load the optimized page and capture console errors, uncaught exceptions, and unhandled promise rejections
+  - **Baseline comparison**: captures pre-existing console errors before optimization, then only reacts to NEW errors introduced by changes
+  - **Automatic rollback**: if new console errors are detected after applying changes, the optimizer rolls back immediately — regardless of score improvement
+  - Prevents JS Delay, Defer JS, and other script optimizations from silently breaking interactive features (navigation, modals, sliders, etc.)
+  - Console error context passed to AI for next iteration so it avoids problematic settings
+  - **New step in progress UI**: "Console Check" step added between Re-test and Compare
+  - Activity log shows detailed error messages with source file and line number
+  - **Hub endpoint**: New `POST /api/v1/console/check` — loads URL in headless Chromium, parses `--enable-logging=stderr` output for CONSOLE entries
+  - **Hub utility**: New `includes/console-checker.php` with `findChromiumBinary()`, `checkConsoleErrors()`, `deduplicateConsoleEntries()`, `diffConsoleErrors()`
+  - Zero external dependencies — communicates with Chromium directly via `proc_open` and stderr parsing
+  - Chromium flags: `--headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --enable-logging=stderr`
+  - Configurable wait time (5-30 seconds) to capture delayed script errors (JS Delay fallback timeout)
+  - New plugin AJAX handler: `ccm_tools_ai_hub_console_check` proxying to hub endpoint
+  - Rollback decision logic updated: `keepChanges = (bothStable || netPositive) && !hasNewConsoleErrors`
 
 ### v7.16.2
 - **Multiple Screenshot Uploads in AI Chat**
