@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.17.0
+ * Version: 7.17.1
  */
 
 (function() {
@@ -4228,6 +4228,60 @@
         container.style.display = 'block';
     }
 
+    /**
+     * Render before/after screenshot comparison (desktop + mobile)
+     */
+    function aiRenderScreenshotComparison(before, after) {
+        const container = $('#ai-screenshot-compare');
+        if (!container) return;
+        if (!before || !after) return;
+
+        const hasDesktop = before.desktop?.data_uri && after.desktop?.data_uri;
+        const hasMobile = before.mobile?.data_uri && after.mobile?.data_uri;
+        if (!hasDesktop && !hasMobile) return;
+
+        let html = '<h3>Visual Comparison</h3><p class="ccm-text-muted" style="margin-bottom:1rem;">Click any image to view full size in a new tab.</p>';
+
+        if (hasDesktop) {
+            html += `<h4 class="ccm-screenshot-heading">Desktop (1920×1080)</h4>
+            <div class="ccm-screenshot-row">
+                <div class="ccm-screenshot-col">
+                    <div class="ccm-screenshot-label">Before</div>
+                    <a href="${before.desktop.data_uri}" target="_blank" rel="noopener">
+                        <img src="${before.desktop.data_uri}" alt="Before — Desktop" loading="lazy" />
+                    </a>
+                </div>
+                <div class="ccm-screenshot-col">
+                    <div class="ccm-screenshot-label ccm-screenshot-label-after">After</div>
+                    <a href="${after.desktop.data_uri}" target="_blank" rel="noopener">
+                        <img src="${after.desktop.data_uri}" alt="After — Desktop" loading="lazy" />
+                    </a>
+                </div>
+            </div>`;
+        }
+
+        if (hasMobile) {
+            html += `<h4 class="ccm-screenshot-heading">Mobile (375×812)</h4>
+            <div class="ccm-screenshot-row ccm-screenshot-row-mobile">
+                <div class="ccm-screenshot-col ccm-screenshot-col-mobile">
+                    <div class="ccm-screenshot-label">Before</div>
+                    <a href="${before.mobile.data_uri}" target="_blank" rel="noopener">
+                        <img src="${before.mobile.data_uri}" alt="Before — Mobile" loading="lazy" />
+                    </a>
+                </div>
+                <div class="ccm-screenshot-col ccm-screenshot-col-mobile">
+                    <div class="ccm-screenshot-label ccm-screenshot-label-after">After</div>
+                    <a href="${after.mobile.data_uri}" target="_blank" rel="noopener">
+                        <img src="${after.mobile.data_uri}" alt="After — Mobile" loading="lazy" />
+                    </a>
+                </div>
+            </div>`;
+        }
+
+        container.innerHTML = html;
+        container.style.display = 'block';
+    }
+
     // ─── One-Click Optimize (iterative improvement loop with rollback) ────────────
 
     const AI_MAX_ITERATIONS = 10;
@@ -4245,10 +4299,12 @@
         const beforeAfter = $('#ai-before-after');
         const analysisResults = $('#ai-analysis-results');
         const remainingRecs = $('#ai-remaining-recommendations');
+        const screenshotCompare = $('#ai-screenshot-compare');
         if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
         if (beforeAfter) { beforeAfter.style.display = 'none'; beforeAfter.innerHTML = ''; }
         if (analysisResults) { analysisResults.style.display = 'none'; analysisResults.innerHTML = ''; }
         if (remainingRecs) { remainingRecs.style.display = 'none'; remainingRecs.innerHTML = ''; }
+        if (screenshotCompare) { screenshotCompare.style.display = 'none'; screenshotCompare.innerHTML = ''; }
 
         // Render step indicators & clear log
         aiRenderSteps();
@@ -4411,6 +4467,24 @@
                 }
             } catch (consoleErr) {
                 aiLog(`Baseline console check failed: ${consoleErr.message} — continuing without baseline`, 'warn');
+            }
+
+            // ── Baseline Screenshots (before any changes) ──
+            let baselineScreenshots = null;
+            try {
+                aiLog('Capturing baseline screenshots (desktop + mobile)…', 'info');
+                const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url }, { timeout: 60000 });
+                baselineScreenshots = ssRes.data || null;
+                const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
+                const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
+                if (baselineScreenshots?.desktop?.data_uri) {
+                    aiLog(`Baseline desktop screenshot captured (${dkSize}KB, ${baselineScreenshots.desktop.format})`, 'success');
+                }
+                if (baselineScreenshots?.mobile?.data_uri) {
+                    aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format})`, 'success');
+                }
+            } catch (ssErr) {
+                aiLog(`Baseline screenshot capture failed: ${ssErr.message} — continuing without visual comparison`, 'warn');
             }
 
             // Track snapshot scores (updated after each successful keep)
@@ -4697,6 +4771,23 @@
                 lastMobileOpportunities, lastDesktopOpportunities,
                 lastManualActions
             );
+
+            // ── Final Screenshots + Visual Comparison ──
+            if (hasApplied && baselineScreenshots?.desktop?.data_uri) {
+                try {
+                    aiLog('Capturing final screenshots for visual comparison…', 'info');
+                    const afterSsRes = await ajax('ccm_tools_ai_hub_screenshot', { url }, { timeout: 60000 });
+                    const afterScreenshots = afterSsRes.data || null;
+                    if (afterScreenshots?.desktop?.data_uri || afterScreenshots?.mobile?.data_uri) {
+                        aiLog('Final screenshots captured — rendering comparison', 'success');
+                        aiRenderScreenshotComparison(baselineScreenshots, afterScreenshots);
+                    } else {
+                        aiLog('Final screenshot capture returned no images', 'warn');
+                    }
+                } catch (ssErr) {
+                    aiLog(`Final screenshot capture failed: ${ssErr.message}`, 'warn');
+                }
+            }
 
             aiLog('One-Click Optimize complete!', 'success');
             showNotification('One-Click Optimize complete!', 'success');

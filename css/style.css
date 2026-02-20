@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.17.0
+ * Version: 7.17.1
  */
 
 /* ===================================
@@ -3195,6 +3195,69 @@ tr.ccm-front-page-row {
     line-height: 1.5;
 }
 
+/* ─── Screenshot Comparison ─── */
+#ai-screenshot-compare {
+    background: var(--ccm-bg);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    padding: 1.25rem;
+}
+
+#ai-screenshot-compare h3 {
+    margin: 0 0 1rem;
+    font-size: 1rem;
+}
+
+#ai-screenshot-compare h4 {
+    margin: 1.25rem 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--ccm-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.ccm-screenshot-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.ccm-screenshot-col {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    overflow: hidden;
+    background: var(--ccm-bg-alt, #fafafa);
+}
+
+.ccm-screenshot-col a {
+    display: block;
+}
+
+.ccm-screenshot-col img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.ccm-screenshot-label {
+    padding: 0.4rem 0.75rem;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.8rem;
+    background: var(--ccm-bg-alt, #f3f4f6);
+    border-bottom: 1px solid var(--ccm-border);
+    color: var(--ccm-text-muted);
+}
+
+.ccm-screenshot-label-after {
+    background: var(--ccm-success-bg, #ecfdf5);
+    color: var(--ccm-success, #22c55e);
+}
+
+.ccm-screenshot-col-mobile {
+    max-width: 240px;
+}
+
 /* ─── History — Optimization Runs ─── */
 .ccm-ai-history-runs {
     display: flex;
@@ -3717,6 +3780,12 @@ tr.ccm-front-page-row {
     }
     .ccm-ai-result-strategy {
         min-width: 0;
+    }
+    .ccm-screenshot-row {
+        grid-template-columns: 1fr;
+    }
+    .ccm-screenshot-col-mobile {
+        max-width: none;
     }
     /* Chat widget mobile */
     .ccm-ai-chat-widget {

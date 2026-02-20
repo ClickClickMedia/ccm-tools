@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.0
+- **Current Version:** 7.17.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -288,6 +288,27 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.1
+- **Visual Screenshot Comparison — Before/After Layout Regression Detection**
+  - Captures full-viewport screenshots (desktop 1920×1080 + mobile 375×812) before and after optimization
+  - Detects content shifts, missing sections, images out of place, and layout breakage caused by performance changes
+  - Baseline screenshots captured after PageSpeed tests but before any AI optimization changes
+  - Final screenshots captured after the optimization loop completes (only when changes were applied)
+  - Side-by-side comparison UI: Before/After columns for both desktop and mobile viewports
+  - Images clickable to open full-size in new tab for detailed inspection
+  - **Hub endpoint**: New `POST /api/v1/screenshot/capture` — launches headless Chromium with `--screenshot` flag
+  - **Hub utility**: New `includes/screenshot.php` with `captureScreenshot()` and `captureScreenshots()`
+  - Chromium flags: `--headless=new --no-sandbox --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --run-all-compositor-stages-before-draw --ignore-certificate-errors`
+  - PNG output converted to JPEG via GD library (82% quality) for ~5-10× smaller transfer size
+  - Mobile emulation via iPhone 17 user-agent string for accurate mobile rendering
+  - Returned as base64 data URIs for direct use in `<img>` elements (no temp file cleanup needed client-side)
+  - New plugin AJAX handler: `ccm_tools_ai_hub_screenshot` proxying to hub endpoint
+  - New JS function: `aiRenderScreenshotComparison(before, after)` renders comparison grid
+  - New CSS: `.ccm-screenshot-row`, `.ccm-screenshot-col`, `.ccm-screenshot-label`, `.ccm-screenshot-col-mobile`
+  - Responsive: single-column layout on mobile (≤768px)
+  - Activity log shows capture progress with file sizes and format info
+  - Graceful degradation: screenshot failures logged as warnings, optimization continues normally
 
 ### v7.17.0
 - **Console Error Checking — Automated JS Functionality Protection**

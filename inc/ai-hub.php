@@ -710,6 +710,36 @@ function ccm_tools_ajax_ai_hub_console_check(): void {
     wp_send_json_success($result);
 }
 
+add_action('wp_ajax_ccm_tools_ai_hub_screenshot', 'ccm_tools_ajax_ai_hub_screenshot');
+
+/**
+ * Capture desktop + mobile screenshots of a URL via the Hub's headless Chromium.
+ * Returns base64 data URIs for both viewport captures.
+ */
+function ccm_tools_ajax_ai_hub_screenshot(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $url = sanitize_url($_POST['url'] ?? '');
+
+    if (empty($url)) {
+        wp_send_json_error(['message' => 'URL is required']);
+    }
+
+    $result = ccm_tools_ai_hub_request('screenshot/capture', [
+        'url' => $url,
+    ], 'POST', 60);
+
+    if (is_wp_error($result)) {
+        wp_send_json_error(['message' => $result->get_error_message()]);
+    }
+
+    wp_send_json_success($result);
+}
+
 add_action('wp_ajax_ccm_tools_ai_chat', 'ccm_tools_ajax_ai_chat');
 
 /**
@@ -1249,6 +1279,9 @@ function ccm_tools_render_ai_section(): void {
 
             <!-- Before/After Comparison -->
             <div id="ai-before-after" style="display: none; margin-top: 1.5rem;"></div>
+
+            <!-- Visual Screenshot Comparison -->
+            <div id="ai-screenshot-compare" style="display: none; margin-top: 1.5rem;"></div>
 
             <!-- Remaining Recommendations (when score < 90) -->
             <div id="ai-remaining-recommendations" style="display: none; margin-top: 1.5rem;"></div>
