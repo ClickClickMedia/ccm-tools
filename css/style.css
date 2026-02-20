@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.17.1
+ * Version: 7.17.2
  */
 
 /* ===================================
@@ -3195,20 +3195,13 @@ tr.ccm-front-page-row {
     line-height: 1.5;
 }
 
-/* ─── Screenshot Comparison ─── */
-#ai-screenshot-compare {
-    background: var(--ccm-bg);
-    border: 1px solid var(--ccm-border);
-    border-radius: var(--ccm-radius);
-    padding: 1.25rem;
-}
-
-#ai-screenshot-compare h3 {
-    margin: 0 0 1rem;
+/* ─── Screenshot Comparison (inside #ai-before-after) ─── */
+#ai-before-after h3:nth-of-type(n+2) {
+    margin-top: 1.5rem;
     font-size: 1rem;
 }
 
-#ai-screenshot-compare h4 {
+#ai-before-after h4.ccm-screenshot-heading {
     margin: 1.25rem 0 0.5rem;
     font-size: 0.85rem;
     color: var(--ccm-text-muted);

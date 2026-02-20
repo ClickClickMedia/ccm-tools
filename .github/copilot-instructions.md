@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.1
+- **Current Version:** 7.17.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -288,6 +288,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.2
+- **Screenshot Comparison Moved into Results Section**
+  - Before/after screenshots now render inside the Before/After Comparison block alongside score tables
+  - Removed separate `#ai-screenshot-compare` container — screenshots append to `#ai-before-after` via `insertAdjacentHTML`
+  - Unified results view: score comparison + visual comparison in one cohesive section
+  - CSS updated to scope screenshot heading styles within `#ai-before-after`
 
 ### v7.17.1
 - **Visual Screenshot Comparison — Before/After Layout Regression Detection**

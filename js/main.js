@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.17.1
+ * Version: 7.17.2
  */
 
 (function() {
@@ -4232,7 +4232,7 @@
      * Render before/after screenshot comparison (desktop + mobile)
      */
     function aiRenderScreenshotComparison(before, after) {
-        const container = $('#ai-screenshot-compare');
+        const container = $('#ai-before-after');
         if (!container) return;
         if (!before || !after) return;
 
@@ -4240,7 +4240,7 @@
         const hasMobile = before.mobile?.data_uri && after.mobile?.data_uri;
         if (!hasDesktop && !hasMobile) return;
 
-        let html = '<h3>Visual Comparison</h3><p class="ccm-text-muted" style="margin-bottom:1rem;">Click any image to view full size in a new tab.</p>';
+        let html = '<h3 style="margin-top:1.5rem;">Visual Comparison</h3><p class="ccm-text-muted" style="margin-bottom:1rem;">Click any image to view full size in a new tab.</p>';
 
         if (hasDesktop) {
             html += `<h4 class="ccm-screenshot-heading">Desktop (1920×1080)</h4>
@@ -4278,7 +4278,7 @@
             </div>`;
         }
 
-        container.innerHTML = html;
+        container.insertAdjacentHTML('beforeend', html);
         container.style.display = 'block';
     }
 
@@ -4299,12 +4299,10 @@
         const beforeAfter = $('#ai-before-after');
         const analysisResults = $('#ai-analysis-results');
         const remainingRecs = $('#ai-remaining-recommendations');
-        const screenshotCompare = $('#ai-screenshot-compare');
         if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
         if (beforeAfter) { beforeAfter.style.display = 'none'; beforeAfter.innerHTML = ''; }
         if (analysisResults) { analysisResults.style.display = 'none'; analysisResults.innerHTML = ''; }
         if (remainingRecs) { remainingRecs.style.display = 'none'; remainingRecs.innerHTML = ''; }
-        if (screenshotCompare) { screenshotCompare.style.display = 'none'; screenshotCompare.innerHTML = ''; }
 
         // Render step indicators & clear log
         aiRenderSteps();
