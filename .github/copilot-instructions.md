@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.16.1
+- **Current Version:** 7.16.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -287,6 +287,29 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.16.2
+- **Multiple Screenshot Uploads in AI Chat**
+  - File input now accepts multiple images (up to 5 per message)
+  - Preview area shows all attached images as a grid of thumbnails with individual remove (×) buttons on each
+  - Redesigned preview: per-image red circular remove button (positioned top-right), wrapping flex layout
+  - Message bubbles display all attached images in a flex row before the text
+  - Plugin AJAX handler accepts `images` as JSON array of data URIs, validates each independently
+  - Hub receives `images` array and builds Claude multimodal message with multiple image content blocks
+- **AI Chat Now Has Error Log Context**
+  - Last 50 lines of the site's PHP error log are automatically included in the AI system prompt
+  - AI can now identify PHP fatal errors, plugin conflicts, deprecated function warnings etc.
+  - Uses existing `ccm_tools_read_error_log()` — capped at 8 KB to avoid oversized requests
+  - Hub system prompt appends error log under "Recent Error Log" section in a code block
+- **Fixed Truncated AI Chat Responses**
+  - Increased `max_tokens` cap from 4,096 to 8,192 for chat responses
+  - Prevents AI responses from being cut off mid-sentence during detailed troubleshooting
+- **CSS Changes**
+  - `.ccm-ai-chat-image-preview` now uses `flex-wrap: wrap` for multi-image grid
+  - New `.ccm-ai-chat-image-preview-item` with relative positioning for remove button overlay
+  - Remove button changed from text to circular red badge with white ×
+  - New `.ccm-ai-chat-msg-images` flex wrapper for multiple images in message bubbles
+  - Slightly smaller thumbnails (56px preview, 160×120px in messages) to accommodate multiple images
 
 ### v7.16.1
 - **AI Chat Screenshot Upload via Claude Vision API**

@@ -696,16 +696,20 @@ function ccm_tools_ajax_ai_chat(): void {
         $conversation = [];
     }
 
-    // Handle attached image (base64 data URI)
-    $image = null;
-    $imageRaw = isset($_POST['image']) ? wp_unslash($_POST['image']) : '';
-    if (!empty($imageRaw)) {
-        // Validate it's a base64 data URI for a supported image type
-        if (preg_match('/^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+\/=]+)$/', $imageRaw, $matches)) {
-            $image = [
-                'media_type' => $matches[1],
-                'data'       => $matches[2],
-            ];
+    // Handle attached images (JSON array of base64 data URIs)
+    $images = [];
+    $imagesRaw = isset($_POST['images']) ? wp_unslash($_POST['images']) : '';
+    if (!empty($imagesRaw)) {
+        $imagesArray = json_decode($imagesRaw, true);
+        if (is_array($imagesArray)) {
+            foreach (array_slice($imagesArray, 0, 5) as $dataUri) {
+                if (is_string($dataUri) && preg_match('/^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+\/=]+)$/', $dataUri, $matches)) {
+                    $images[] = [
+                        'media_type' => $matches[1],
+                        'data'       => $matches[2],
+                    ];
+                }
+            }
         }
     }
 
@@ -724,16 +728,32 @@ function ccm_tools_ajax_ai_chat(): void {
         $context .= "\n" . $learnings;
     }
 
+    // Read recent error log entries for AI context
+    $errorLog = '';
+    if (function_exists('ccm_tools_get_default_log_file_path') && function_exists('ccm_tools_read_error_log')) {
+        $logFile = ccm_tools_get_default_log_file_path();
+        if (!empty($logFile) && file_exists($logFile) && filesize($logFile) > 0) {
+            $logData = ccm_tools_read_error_log($logFile, 50);
+            if (!empty($logData['content']) && is_string($logData['content'])) {
+                // Strip HTML tags (formatted content may have them) and limit size
+                $rawLog = wp_strip_all_tags($logData['content']);
+                // Cap at 8KB to avoid making the request too large
+                $errorLog = mb_substr($rawLog, 0, 8192);
+            }
+        }
+    }
+
     $requestBody = [
         'message'          => $message,
         'conversation'     => $conversation,
         'current_settings' => $currentSettings,
         'context'          => $context,
         'site_url'         => $siteUrl,
+        'error_log'        => $errorLog,
     ];
 
-    if ($image) {
-        $requestBody['image'] = $image;
+    if (!empty($images)) {
+        $requestBody['images'] = $images;
     }
 
     $result = ccm_tools_ai_hub_request('ai/chat', $requestBody, 'POST', 90);
@@ -1239,13 +1259,10 @@ function ccm_tools_render_ai_section(): void {
                 </div>
             </div>
             <div class="ccm-ai-chat-input-area">
-                <div id="ai-chat-image-preview" class="ccm-ai-chat-image-preview" style="display: none;">
-                    <img id="ai-chat-image-preview-img" src="" alt="<?php esc_attr_e('Preview', 'ccm-tools'); ?>">
-                    <button id="ai-chat-image-preview-remove" class="ccm-ai-chat-image-preview-remove" type="button" title="<?php esc_attr_e('Remove image', 'ccm-tools'); ?>">&times;</button>
-                </div>
+                <div id="ai-chat-image-preview" class="ccm-ai-chat-image-preview" style="display: none;"></div>
                 <div class="ccm-ai-chat-input-row">
-                    <input type="file" id="ai-chat-file-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display: none;">
-                    <button id="ai-chat-attach" class="ccm-ai-chat-attach" type="button" title="<?php esc_attr_e('Attach screenshot', 'ccm-tools'); ?>">
+                    <input type="file" id="ai-chat-file-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display: none;">
+                    <button id="ai-chat-attach" class="ccm-ai-chat-attach" type="button" title="<?php esc_attr_e('Attach screenshots', 'ccm-tools'); ?>">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
                     </button>
                     <textarea id="ai-chat-input" class="ccm-ai-chat-input" rows="1" placeholder="<?php esc_attr_e('Describe the issue...', 'ccm-tools'); ?>"></textarea>
