@@ -696,6 +696,19 @@ function ccm_tools_ajax_ai_chat(): void {
         $conversation = [];
     }
 
+    // Handle attached image (base64 data URI)
+    $image = null;
+    $imageRaw = isset($_POST['image']) ? wp_unslash($_POST['image']) : '';
+    if (!empty($imageRaw)) {
+        // Validate it's a base64 data URI for a supported image type
+        if (preg_match('/^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+\/=]+)$/', $imageRaw, $matches)) {
+            $image = [
+                'media_type' => $matches[1],
+                'data'       => $matches[2],
+            ];
+        }
+    }
+
     // Build context with current settings and optimization status
     $currentSettings = ccm_tools_perf_get_settings();
     $siteUrl = esc_url_raw(sanitize_text_field($_POST['site_url'] ?? site_url()));
@@ -711,13 +724,19 @@ function ccm_tools_ajax_ai_chat(): void {
         $context .= "\n" . $learnings;
     }
 
-    $result = ccm_tools_ai_hub_request('ai/chat', [
+    $requestBody = [
         'message'          => $message,
         'conversation'     => $conversation,
         'current_settings' => $currentSettings,
         'context'          => $context,
         'site_url'         => $siteUrl,
-    ], 'POST', 60);
+    ];
+
+    if ($image) {
+        $requestBody['image'] = $image;
+    }
+
+    $result = ccm_tools_ai_hub_request('ai/chat', $requestBody, 'POST', 90);
 
     if (is_wp_error($result)) {
         wp_send_json_error(['message' => $result->get_error_message()]);
@@ -1220,10 +1239,20 @@ function ccm_tools_render_ai_section(): void {
                 </div>
             </div>
             <div class="ccm-ai-chat-input-area">
-                <textarea id="ai-chat-input" class="ccm-ai-chat-input" rows="1" placeholder="<?php esc_attr_e('Describe the issue...', 'ccm-tools'); ?>"></textarea>
-                <button id="ai-chat-send" class="ccm-ai-chat-send" type="button" title="<?php esc_attr_e('Send', 'ccm-tools'); ?>">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                </button>
+                <div id="ai-chat-image-preview" class="ccm-ai-chat-image-preview" style="display: none;">
+                    <img id="ai-chat-image-preview-img" src="" alt="<?php esc_attr_e('Preview', 'ccm-tools'); ?>">
+                    <button id="ai-chat-image-preview-remove" class="ccm-ai-chat-image-preview-remove" type="button" title="<?php esc_attr_e('Remove image', 'ccm-tools'); ?>">&times;</button>
+                </div>
+                <div class="ccm-ai-chat-input-row">
+                    <input type="file" id="ai-chat-file-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display: none;">
+                    <button id="ai-chat-attach" class="ccm-ai-chat-attach" type="button" title="<?php esc_attr_e('Attach screenshot', 'ccm-tools'); ?>">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    </button>
+                    <textarea id="ai-chat-input" class="ccm-ai-chat-input" rows="1" placeholder="<?php esc_attr_e('Describe the issue...', 'ccm-tools'); ?>"></textarea>
+                    <button id="ai-chat-send" class="ccm-ai-chat-send" type="button" title="<?php esc_attr_e('Send', 'ccm-tools'); ?>">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

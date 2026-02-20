@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.16.0
+ * Version: 7.16.1
  */
 
 /* ===================================
@@ -3522,12 +3522,83 @@ tr.ccm-front-page-row {
 /* Input area */
 .ccm-ai-chat-input-area {
     display: flex;
-    align-items: flex-end;
+    flex-direction: column;
     gap: 0.5rem;
     padding: 0.75rem;
     border-top: 1px solid var(--ccm-border, #e2e8f0);
     flex-shrink: 0;
     background: var(--ccm-bg, #fff);
+}
+.ccm-ai-chat-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+/* Image preview above input */
+.ccm-ai-chat-image-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem;
+    background: var(--ccm-bg-secondary, #f1f5f9);
+    border-radius: 8px;
+    border: 1px solid var(--ccm-border, #e2e8f0);
+}
+.ccm-ai-chat-image-preview img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--ccm-border, #e2e8f0);
+}
+.ccm-ai-chat-image-preview-remove {
+    background: none;
+    border: none;
+    color: var(--ccm-text-muted, #64748b);
+    cursor: pointer;
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    margin-left: auto;
+}
+.ccm-ai-chat-image-preview-remove:hover {
+    color: var(--ccm-error, #ef4444);
+    background: rgba(239, 68, 68, 0.1);
+}
+/* Attach button */
+.ccm-ai-chat-attach {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: none;
+    border: 1px solid var(--ccm-border, #e2e8f0);
+    border-radius: 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: var(--ccm-text-muted, #64748b);
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.ccm-ai-chat-attach:hover {
+    color: var(--ccm-primary, #3b82f6);
+    border-color: var(--ccm-primary, #3b82f6);
+    background: rgba(59, 130, 246, 0.05);
+}
+/* Image inside chat messages */
+.ccm-ai-chat-msg-image {
+    max-width: 200px;
+    max-height: 150px;
+    border-radius: 8px;
+    margin-bottom: 0.4rem;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    display: block;
+}
+.ccm-ai-chat-msg-image:hover {
+    opacity: 0.85;
 }
 .ccm-ai-chat-input {
     flex: 1;

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.16.0
+ * Version: 7.16.1
  */
 
 (function() {
@@ -4801,6 +4801,7 @@
         conversation: [],
         isOpen: false,
         isSending: false,
+        pendingImage: null, // { dataUri, mediaType, base64 }
     };
 
     function initAiChat() {
@@ -4836,6 +4837,17 @@
 
         if (send) send.addEventListener('click', aiChatSend);
 
+        // Image attach handlers
+        const fileInput = $('#ai-chat-file-input');
+        const attachBtn = $('#ai-chat-attach');
+        const removePreview = $('#ai-chat-image-preview-remove');
+
+        if (attachBtn && fileInput) {
+            attachBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', aiChatHandleImage);
+        }
+        if (removePreview) removePreview.addEventListener('click', aiChatClearImage);
+
         if (input) {
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -4853,6 +4865,7 @@
 
     function aiChatClear() {
         aiChatState.conversation = [];
+        aiChatClearImage();
         const messages = $('#ai-chat-messages');
         if (messages) {
             messages.innerHTML = `<div class="ccm-ai-chat-msg ccm-ai-chat-msg-assistant">
@@ -4861,7 +4874,7 @@
         }
     }
 
-    function aiChatAppendMessage(role, content) {
+    function aiChatAppendMessage(role, content, imageDataUri = null) {
         const messages = $('#ai-chat-messages');
         if (!messages) return;
 
@@ -4875,7 +4888,20 @@
             // Render markdown-like formatting for AI responses
             contentEl.innerHTML = aiChatFormatMarkdown(content);
         } else {
-            contentEl.textContent = content;
+            // User message — may include an image
+            if (imageDataUri) {
+                const img = document.createElement('img');
+                img.src = imageDataUri;
+                img.alt = 'Screenshot';
+                img.className = 'ccm-ai-chat-msg-image';
+                img.addEventListener('click', () => window.open(imageDataUri, '_blank'));
+                contentEl.appendChild(img);
+            }
+            if (content) {
+                const textSpan = document.createElement('span');
+                textSpan.textContent = content;
+                contentEl.appendChild(textSpan);
+            }
         }
 
         msg.appendChild(contentEl);
@@ -4924,6 +4950,57 @@
         return html;
     }
 
+    /** Handle image file selection for chat */
+    function aiChatHandleImage(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            showNotification('Please select an image file (PNG, JPEG, GIF, or WebP)', 'error');
+            return;
+        }
+
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (file.size > maxSize) {
+            showNotification('Image must be under 5 MB', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const dataUri = ev.target.result;
+            const headerMatch = dataUri.match(/^data:(image\/[a-z+]+);base64,/);
+            if (!headerMatch) {
+                showNotification('Could not read image', 'error');
+                return;
+            }
+            const mediaType = headerMatch[1];
+            const base64 = dataUri.slice(headerMatch[0].length);
+
+            aiChatState.pendingImage = { dataUri, mediaType, base64 };
+
+            const preview = $('#ai-chat-image-preview');
+            const previewImg = $('#ai-chat-image-preview-img');
+            if (preview && previewImg) {
+                previewImg.src = dataUri;
+                preview.style.display = 'flex';
+            }
+        };
+        reader.readAsDataURL(file);
+
+        // Reset so the same file can be re-selected
+        e.target.value = '';
+    }
+
+    /** Clear pending image from chat */
+    function aiChatClearImage() {
+        aiChatState.pendingImage = null;
+        const preview = $('#ai-chat-image-preview');
+        if (preview) preview.style.display = 'none';
+        const previewImg = $('#ai-chat-image-preview-img');
+        if (previewImg) previewImg.src = '';
+    }
+
     async function aiChatSend() {
         if (aiChatState.isSending) return;
 
@@ -4932,15 +5009,22 @@
         if (!input) return;
 
         const message = input.value.trim();
-        if (!message) return;
+        const hasImage = !!aiChatState.pendingImage;
+
+        // Need at least a message or an image
+        if (!message && !hasImage) return;
 
         aiChatState.isSending = true;
         input.value = '';
         input.style.height = 'auto';
         if (sendBtn) sendBtn.disabled = true;
 
-        // Add user message
-        aiChatAppendMessage('user', message);
+        // Capture image data before clearing
+        const imageDataUri = hasImage ? aiChatState.pendingImage.dataUri : null;
+        aiChatClearImage();
+
+        // Add user message (with optional image thumbnail)
+        aiChatAppendMessage('user', message, imageDataUri);
 
         // Show typing indicator
         const messages = $('#ai-chat-messages');
@@ -4955,19 +5039,27 @@
         try {
             const siteUrl = ($('#ai-ps-url') || {}).value || '';
 
-            const res = await ajax('ccm_tools_ai_chat', {
-                message: message,
+            const ajaxData = {
+                message: message || '(screenshot attached — please analyze this image)',
                 conversation: JSON.stringify(aiChatState.conversation),
                 site_url: siteUrl,
-            }, { timeout: 60000 });
+            };
+
+            // Include image as base64 data URI if present
+            if (imageDataUri) {
+                ajaxData.image = imageDataUri;
+            }
+
+            const res = await ajax('ccm_tools_ai_chat', ajaxData, { timeout: 90000 });
 
             // Remove typing indicator
             if (typing.parentElement) typing.remove();
 
             const reply = res.data?.reply || 'Sorry, I could not generate a response.';
 
-            // Update conversation history
-            aiChatState.conversation.push({ role: 'user', content: message });
+            // Update conversation history (don't store full base64 — just note image was sent)
+            const historyContent = message + (hasImage ? ' [screenshot attached]' : '');
+            aiChatState.conversation.push({ role: 'user', content: historyContent || '[screenshot attached]' });
             aiChatState.conversation.push({ role: 'assistant', content: reply });
 
             // Keep conversation manageable (last 20 messages)
