@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.16.0
+- **Current Version:** 7.16.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -287,6 +287,22 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.16.1
+- **AI Chat Screenshot Upload via Claude Vision API**
+  - Users can now attach screenshots (PNG, JPEG, GIF, WebP) to AI Troubleshooter chat messages
+  - Image button (landscape icon) added to chat input area next to the send button
+  - Click to select an image file (max 5 MB) — shown as a thumbnail preview above the input
+  - Preview has a remove (×) button to cancel before sending
+  - Images displayed as thumbnails in user message bubbles (clickable to open full-size)
+  - AI receives the image via Claude's Vision API (base64 content blocks) for visual analysis
+  - Enables diagnosing visual glitches, broken layouts, FOUC, missing elements directly from screenshots
+  - Screenshot Analysis section added to hub system prompt — instructs AI how to analyze visual issues
+  - Conversation history stores `[screenshot attached]` text (not full base64) to keep token usage manageable
+  - Plugin AJAX handler validates image data URI format and extracts media type + base64 data
+  - Hub ai-chat.php builds multimodal Claude message with `image` + `text` content blocks
+  - Timeout increased to 90 seconds for image-containing requests (vision processing takes longer)
+  - New CSS: `.ccm-ai-chat-image-preview`, `.ccm-ai-chat-attach`, `.ccm-ai-chat-msg-image`, `.ccm-ai-chat-input-row`
 
 ### v7.16.0
 - **Video Optimization Settings for PageSpeed Performance**
