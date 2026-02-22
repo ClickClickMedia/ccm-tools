@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.4
+- **Current Version:** 7.17.5
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -288,6 +288,21 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.5
+- **Screenshot Capture Timeout Fix — Execution Time Limit + Backward Compatibility**
+  - Root cause: PHP default `max_execution_time` (30s) was killing the hub PHP process mid-capture — two Chromium screenshots need ~50s total
+  - Added `@set_time_limit(120)` to hub `api/v1/screenshot-capture.php` endpoint
+  - Added `@set_time_limit(120)` to hub `captureScreenshots()` in `includes/screenshot.php`
+  - Added `@set_time_limit(120)` to plugin AJAX handler `ccm_tools_ajax_ai_hub_screenshot()`
+  - Comprehensive `appLog()` logging throughout screenshot capture pipeline for debugging:
+    - Chromium binary check, proc_open start, process finish time, PNG file check, JPEG save result
+    - Per-capture and total timing in `captureScreenshots()`
+  - Increased plugin-to-hub HTTP request timeout from 60s to 120s
+  - Increased JS AJAX timeout from 60s to 120s for both baseline and final captures
+  - **Backward compatibility**: JS now handles both `url` (v7.17.4+ file-based) and `data_uri` (v7.17.1-7.17.3 base64) response formats
+  - `aiShowBaselineScreenshots()` and `aiShowAfterScreenshots()` use `data.desktop.url || data.desktop.data_uri` pattern
+  - Prevents silent failure if hub has not yet deployed the file-based storage update
 
 ### v7.17.4
 - **Screenshot Storage Rewrite — File-Based with Persistent History**

@@ -724,6 +724,9 @@ function ccm_tools_ajax_ai_hub_screenshot(): void {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
 
+    // Screenshots require 2 Chromium captures (~25s each) — extend execution time
+    @set_time_limit(120);
+
     $url    = sanitize_url($_POST['url'] ?? '');
     $phase  = sanitize_text_field($_POST['phase'] ?? 'before');
     $run_id = sanitize_text_field($_POST['run_id'] ?? '');
@@ -741,7 +744,7 @@ function ccm_tools_ajax_ai_hub_screenshot(): void {
         $body['run_id'] = $run_id;
     }
 
-    $result = ccm_tools_ai_hub_request('screenshot/capture', $body, 'POST', 60);
+    $result = ccm_tools_ai_hub_request('screenshot/capture', $body, 'POST', 120);
 
     if (is_wp_error($result)) {
         wp_send_json_error(['message' => $result->get_error_message()]);
