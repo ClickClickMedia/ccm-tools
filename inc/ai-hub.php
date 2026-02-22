@@ -714,7 +714,8 @@ add_action('wp_ajax_ccm_tools_ai_hub_screenshot', 'ccm_tools_ajax_ai_hub_screens
 
 /**
  * Capture desktop + mobile screenshots of a URL via the Hub's headless Chromium.
- * Returns base64 data URIs for both viewport captures.
+ * Screenshots are stored as files on the hub server and URLs are returned.
+ * Accepts phase (before/after) and run_id for grouping captures.
  */
 function ccm_tools_ajax_ai_hub_screenshot(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -723,15 +724,24 @@ function ccm_tools_ajax_ai_hub_screenshot(): void {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
 
-    $url = sanitize_url($_POST['url'] ?? '');
+    $url    = sanitize_url($_POST['url'] ?? '');
+    $phase  = sanitize_text_field($_POST['phase'] ?? 'before');
+    $run_id = sanitize_text_field($_POST['run_id'] ?? '');
 
     if (empty($url)) {
         wp_send_json_error(['message' => 'URL is required']);
     }
 
-    $result = ccm_tools_ai_hub_request('screenshot/capture', [
-        'url' => $url,
-    ], 'POST', 60);
+    if (!in_array($phase, ['before', 'after'], true)) {
+        $phase = 'before';
+    }
+
+    $body = ['url' => $url, 'phase' => $phase];
+    if (!empty($run_id)) {
+        $body['run_id'] = $run_id;
+    }
+
+    $result = ccm_tools_ai_hub_request('screenshot/capture', $body, 'POST', 60);
 
     if (is_wp_error($result)) {
         wp_send_json_error(['message' => $result->get_error_message()]);

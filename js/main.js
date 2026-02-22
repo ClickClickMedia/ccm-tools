@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.17.3
+ * Version: 7.17.4
  */
 
 (function() {
@@ -4235,8 +4235,8 @@
         const container = $('#ai-screenshots');
         if (!container || !data) return;
 
-        const hasDesktop = !!data.desktop?.data_uri;
-        const hasMobile = !!data.mobile?.data_uri;
+        const hasDesktop = !!data.desktop?.url;
+        const hasMobile = !!data.mobile?.url;
         if (!hasDesktop && !hasMobile) return;
 
         let html = '<h3>Page Screenshots</h3>';
@@ -4247,7 +4247,7 @@
             <div class="ccm-screenshot-row">
                 <div class="ccm-screenshot-col">
                     <div class="ccm-screenshot-label">Before</div>
-                    <img src="${data.desktop.data_uri}" alt="Before — Desktop"
+                    <img src="${data.desktop.url}" alt="Before — Desktop"
                          class="ccm-screenshot-img" data-viewport="desktop" data-phase="before" />
                 </div>
                 <div class="ccm-screenshot-col ccm-screenshot-placeholder" id="ss-after-desktop">
@@ -4266,7 +4266,7 @@
             <div class="ccm-screenshot-row ccm-screenshot-row-mobile">
                 <div class="ccm-screenshot-col ccm-screenshot-col-mobile">
                     <div class="ccm-screenshot-label">Before</div>
-                    <img src="${data.mobile.data_uri}" alt="Before — Mobile"
+                    <img src="${data.mobile.url}" alt="Before — Mobile"
                          class="ccm-screenshot-img" data-viewport="mobile" data-phase="before" />
                 </div>
                 <div class="ccm-screenshot-col ccm-screenshot-col-mobile ccm-screenshot-placeholder" id="ss-after-mobile">
@@ -4289,26 +4289,26 @@
     function aiShowAfterScreenshots(data) {
         if (!data) return;
 
-        if (data.desktop?.data_uri) {
+        if (data.desktop?.url) {
             const el = document.getElementById('ss-after-desktop');
             if (el) {
                 el.classList.remove('ccm-screenshot-placeholder');
                 const label = el.querySelector('.ccm-screenshot-label');
                 const labelHtml = label ? label.outerHTML : '';
                 el.innerHTML = labelHtml +
-                    `<img src="${data.desktop.data_uri}" alt="After — Desktop"
+                    `<img src="${data.desktop.url}" alt="After — Desktop"
                           class="ccm-screenshot-img" data-viewport="desktop" data-phase="after" />`;
             }
         }
 
-        if (data.mobile?.data_uri) {
+        if (data.mobile?.url) {
             const el = document.getElementById('ss-after-mobile');
             if (el) {
                 el.classList.remove('ccm-screenshot-placeholder');
                 const label = el.querySelector('.ccm-screenshot-label');
                 const labelHtml = label ? label.outerHTML : '';
                 el.innerHTML = labelHtml +
-                    `<img src="${data.mobile.data_uri}" alt="After — Mobile"
+                    `<img src="${data.mobile.url}" alt="After — Mobile"
                           class="ccm-screenshot-img" data-viewport="mobile" data-phase="after" />`;
             }
         }
@@ -4572,16 +4572,18 @@
 
             // ── Baseline Screenshots (before any changes) ──
             let baselineScreenshots = null;
+            let screenshotRunId = '';
             try {
                 aiLog('Capturing baseline screenshots (desktop + mobile)…', 'info');
-                const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url }, { timeout: 60000 });
+                const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url, phase: 'before' }, { timeout: 60000 });
                 baselineScreenshots = ssRes.data || null;
+                screenshotRunId = baselineScreenshots?.run_id || '';
                 const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
                 const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
-                if (baselineScreenshots?.desktop?.data_uri) {
+                if (baselineScreenshots?.desktop?.url) {
                     aiLog(`Baseline desktop screenshot captured (${dkSize}KB, ${baselineScreenshots.desktop.format})`, 'success');
                 }
-                if (baselineScreenshots?.mobile?.data_uri) {
+                if (baselineScreenshots?.mobile?.url) {
                     aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format})`, 'success');
                 }
                 // Show "Before" immediately
@@ -4876,12 +4878,14 @@
             );
 
             // ── Final Screenshots + Visual Comparison ──
-            if (hasApplied && baselineScreenshots?.desktop?.data_uri) {
+            if (hasApplied && baselineScreenshots?.desktop?.url) {
                 try {
                     aiLog('Capturing final screenshots for visual comparison…', 'info');
-                    const afterSsRes = await ajax('ccm_tools_ai_hub_screenshot', { url }, { timeout: 60000 });
+                    const afterParams = { url, phase: 'after' };
+                    if (screenshotRunId) afterParams.run_id = screenshotRunId;
+                    const afterSsRes = await ajax('ccm_tools_ai_hub_screenshot', afterParams, { timeout: 60000 });
                     const afterScreenshots = afterSsRes.data || null;
-                    if (afterScreenshots?.desktop?.data_uri || afterScreenshots?.mobile?.data_uri) {
+                    if (afterScreenshots?.desktop?.url || afterScreenshots?.mobile?.url) {
                         aiLog('Final screenshots captured — rendering comparison', 'success');
                         aiShowAfterScreenshots(afterScreenshots);
                     } else {

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.3
+- **Current Version:** 7.17.4
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -288,6 +288,38 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.4
+- **Screenshot Storage Rewrite — File-Based with Persistent History**
+  - Root cause fix: previous versions (7.17.1-7.17.3) returned base64 data URIs (1-3MB each) which overwhelmed the JSON → WordPress AJAX → browser chain, causing screenshots to silently fail
+  - Screenshots now saved as JPEG files on the hub server under `screenshots/` directory with UUID filenames
+  - Hub returns lightweight URLs instead of data URIs — response drops from ~6MB to ~500 bytes
+  - New `screenshots` database table stores metadata: site_id, url, viewport, phase, run_id, filename, dimensions, size, format
+  - Auto-migration: `ensureScreenshotTable()` creates the table on first use if it doesn't exist
+  - `run_id` UUID groups before/after capture pairs for history tracking
+  - Plugin AJAX handler now passes `phase` (before/after) and `run_id` to hub endpoint
+  - JS updated: checks `data.desktop.url` instead of `data.desktop.data_uri` for success detection
+  - Baseline capture sends `phase: 'before'`, final capture sends `phase: 'after'` with same `run_id`
+  - `screenshotUrl()` helper builds full public URL from filename
+  - `cleanupOldScreenshots()` utility removes files + DB records older than configurable retention period
+- **Hub Screenshot History API**
+  - New `GET /api/v1/screenshot/history` endpoint returns grouped before/after captures per site
+  - Supports `url` filter and configurable `limit` (default 20, max 100)
+  - `getScreenshotHistory()` returns structured array with before/after desktop/mobile per run
+- **Hub Admin Screenshots Page**
+  - New "Screenshots" page in hub admin navigation (📸 icon)
+  - Browse all screenshot captures grouped by optimization run
+  - Filter by site and URL
+  - Stats header shows total runs, files, and disk usage
+  - Before/After columns with desktop + mobile thumbnails
+  - Thumbnails link to full-size images in new tab
+  - Badges indicate "Before & After" vs "Before Only" captures
+  - Responsive grid layout adapts mobile screenshots to narrower column
+- **Hub Infrastructure**
+  - New `screenshots/` directory with `.htaccess` (Options -Indexes) for direct file serving
+  - `screenshots` table added to `database/schema.sql`
+  - `screenshot/history` route added to API v1 router
+  - Navigation updated in `layout-header.php`
 
 ### v7.17.3
 - **Interactive Screenshot Comparison with Lightbox**
