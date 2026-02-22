@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.17.2
+ * Version: 7.17.3
  */
 
 (function() {
@@ -4229,58 +4229,159 @@
     }
 
     /**
-     * Render before/after screenshot comparison (desktop + mobile)
+     * Show baseline (before) screenshots immediately — after column stays as placeholder.
      */
-    function aiRenderScreenshotComparison(before, after) {
-        const container = $('#ai-before-after');
-        if (!container) return;
-        if (!before || !after) return;
+    function aiShowBaselineScreenshots(data) {
+        const container = $('#ai-screenshots');
+        if (!container || !data) return;
 
-        const hasDesktop = before.desktop?.data_uri && after.desktop?.data_uri;
-        const hasMobile = before.mobile?.data_uri && after.mobile?.data_uri;
+        const hasDesktop = !!data.desktop?.data_uri;
+        const hasMobile = !!data.mobile?.data_uri;
         if (!hasDesktop && !hasMobile) return;
 
-        let html = '<h3 style="margin-top:1.5rem;">Visual Comparison</h3><p class="ccm-text-muted" style="margin-bottom:1rem;">Click any image to view full size in a new tab.</p>';
+        let html = '<h3>Page Screenshots</h3>';
 
+        // Desktop row
         if (hasDesktop) {
             html += `<h4 class="ccm-screenshot-heading">Desktop (1920×1080)</h4>
             <div class="ccm-screenshot-row">
                 <div class="ccm-screenshot-col">
                     <div class="ccm-screenshot-label">Before</div>
-                    <a href="${before.desktop.data_uri}" target="_blank" rel="noopener">
-                        <img src="${before.desktop.data_uri}" alt="Before — Desktop" loading="lazy" />
-                    </a>
+                    <img src="${data.desktop.data_uri}" alt="Before — Desktop"
+                         class="ccm-screenshot-img" data-viewport="desktop" data-phase="before" />
                 </div>
-                <div class="ccm-screenshot-col">
+                <div class="ccm-screenshot-col ccm-screenshot-placeholder" id="ss-after-desktop">
                     <div class="ccm-screenshot-label ccm-screenshot-label-after">After</div>
-                    <a href="${after.desktop.data_uri}" target="_blank" rel="noopener">
-                        <img src="${after.desktop.data_uri}" alt="After — Desktop" loading="lazy" />
-                    </a>
+                    <div class="ccm-screenshot-waiting">
+                        <div class="ccm-spinner ccm-spinner-small"></div>
+                        <span>Waiting for optimisation…</span>
+                    </div>
                 </div>
             </div>`;
         }
 
+        // Mobile row
         if (hasMobile) {
             html += `<h4 class="ccm-screenshot-heading">Mobile (375×812)</h4>
             <div class="ccm-screenshot-row ccm-screenshot-row-mobile">
                 <div class="ccm-screenshot-col ccm-screenshot-col-mobile">
                     <div class="ccm-screenshot-label">Before</div>
-                    <a href="${before.mobile.data_uri}" target="_blank" rel="noopener">
-                        <img src="${before.mobile.data_uri}" alt="Before — Mobile" loading="lazy" />
-                    </a>
+                    <img src="${data.mobile.data_uri}" alt="Before — Mobile"
+                         class="ccm-screenshot-img" data-viewport="mobile" data-phase="before" />
                 </div>
-                <div class="ccm-screenshot-col ccm-screenshot-col-mobile">
+                <div class="ccm-screenshot-col ccm-screenshot-col-mobile ccm-screenshot-placeholder" id="ss-after-mobile">
                     <div class="ccm-screenshot-label ccm-screenshot-label-after">After</div>
-                    <a href="${after.mobile.data_uri}" target="_blank" rel="noopener">
-                        <img src="${after.mobile.data_uri}" alt="After — Mobile" loading="lazy" />
-                    </a>
+                    <div class="ccm-screenshot-waiting">
+                        <div class="ccm-spinner ccm-spinner-small"></div>
+                        <span>Waiting for optimisation…</span>
+                    </div>
                 </div>
             </div>`;
         }
 
-        container.insertAdjacentHTML('beforeend', html);
+        container.innerHTML = html;
         container.style.display = 'block';
     }
+
+    /**
+     * Fill in the "After" column with captured screenshots and enable lightbox.
+     */
+    function aiShowAfterScreenshots(data) {
+        if (!data) return;
+
+        if (data.desktop?.data_uri) {
+            const el = document.getElementById('ss-after-desktop');
+            if (el) {
+                el.classList.remove('ccm-screenshot-placeholder');
+                const label = el.querySelector('.ccm-screenshot-label');
+                const labelHtml = label ? label.outerHTML : '';
+                el.innerHTML = labelHtml +
+                    `<img src="${data.desktop.data_uri}" alt="After — Desktop"
+                          class="ccm-screenshot-img" data-viewport="desktop" data-phase="after" />`;
+            }
+        }
+
+        if (data.mobile?.data_uri) {
+            const el = document.getElementById('ss-after-mobile');
+            if (el) {
+                el.classList.remove('ccm-screenshot-placeholder');
+                const label = el.querySelector('.ccm-screenshot-label');
+                const labelHtml = label ? label.outerHTML : '';
+                el.innerHTML = labelHtml +
+                    `<img src="${data.mobile.data_uri}" alt="After — Mobile"
+                          class="ccm-screenshot-img" data-viewport="mobile" data-phase="after" />`;
+            }
+        }
+
+        // Add "Compare" button hint
+        const container = $('#ai-screenshots');
+        if (container && !container.querySelector('.ccm-screenshot-hint')) {
+            container.insertAdjacentHTML('afterbegin',
+                '<p class="ccm-screenshot-hint">Click any image to open side-by-side lightbox comparison.</p>');
+        }
+    }
+
+    /**
+     * Lightbox overlay for side-by-side screenshot comparison.
+     * Shows Before + After for the clicked viewport (desktop or mobile).
+     */
+    function aiOpenScreenshotLightbox(viewport) {
+        const container = $('#ai-screenshots');
+        if (!container) return;
+
+        const imgs = container.querySelectorAll(`.ccm-screenshot-img[data-viewport="${viewport}"]`);
+        const beforeImg = [...imgs].find(i => i.dataset.phase === 'before');
+        const afterImg = [...imgs].find(i => i.dataset.phase === 'after');
+        if (!beforeImg) return;
+
+        // Build overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'ccm-lightbox-overlay';
+
+        const isMobile = viewport === 'mobile';
+        const label = isMobile ? 'Mobile (375×812)' : 'Desktop (1920×1080)';
+
+        let inner = `
+            <div class="ccm-lightbox-header">
+                <h3>${label}</h3>
+                <button class="ccm-lightbox-close" title="Close (Esc)">×</button>
+            </div>
+            <div class="ccm-lightbox-body${isMobile ? ' ccm-lightbox-body-mobile' : ''}">
+                <div class="ccm-lightbox-panel">
+                    <div class="ccm-lightbox-label">Before</div>
+                    <img src="${beforeImg.src}" alt="Before — ${label}" />
+                </div>`;
+
+        if (afterImg) {
+            inner += `
+                <div class="ccm-lightbox-panel">
+                    <div class="ccm-lightbox-label ccm-lightbox-label-after">After</div>
+                    <img src="${afterImg.src}" alt="After — ${label}" />
+                </div>`;
+        }
+
+        inner += '</div>';
+        overlay.innerHTML = inner;
+        document.body.appendChild(overlay);
+
+        // Trap focus & lock scroll
+        document.body.style.overflow = 'hidden';
+
+        // Close handlers
+        const close = () => { overlay.remove(); document.body.style.overflow = ''; };
+        overlay.querySelector('.ccm-lightbox-close').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        const onKey = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+        document.addEventListener('keydown', onKey);
+    }
+
+    // Delegate click on screenshot images → open lightbox
+    document.addEventListener('click', (e) => {
+        const img = e.target.closest('.ccm-screenshot-img');
+        if (!img) return;
+        const viewport = img.dataset.viewport;
+        if (viewport) aiOpenScreenshotLightbox(viewport);
+    });
 
     // ─── One-Click Optimize (iterative improvement loop with rollback) ────────────
 
@@ -4299,10 +4400,12 @@
         const beforeAfter = $('#ai-before-after');
         const analysisResults = $('#ai-analysis-results');
         const remainingRecs = $('#ai-remaining-recommendations');
+        const screenshots = $('#ai-screenshots');
         if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
         if (beforeAfter) { beforeAfter.style.display = 'none'; beforeAfter.innerHTML = ''; }
         if (analysisResults) { analysisResults.style.display = 'none'; analysisResults.innerHTML = ''; }
         if (remainingRecs) { remainingRecs.style.display = 'none'; remainingRecs.innerHTML = ''; }
+        if (screenshots) { screenshots.style.display = 'none'; screenshots.innerHTML = ''; }
 
         // Render step indicators & clear log
         aiRenderSteps();
@@ -4481,6 +4584,8 @@
                 if (baselineScreenshots?.mobile?.data_uri) {
                     aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format})`, 'success');
                 }
+                // Show "Before" immediately
+                aiShowBaselineScreenshots(baselineScreenshots);
             } catch (ssErr) {
                 aiLog(`Baseline screenshot capture failed: ${ssErr.message} — continuing without visual comparison`, 'warn');
             }
@@ -4778,7 +4883,7 @@
                     const afterScreenshots = afterSsRes.data || null;
                     if (afterScreenshots?.desktop?.data_uri || afterScreenshots?.mobile?.data_uri) {
                         aiLog('Final screenshots captured — rendering comparison', 'success');
-                        aiRenderScreenshotComparison(baselineScreenshots, afterScreenshots);
+                        aiShowAfterScreenshots(afterScreenshots);
                     } else {
                         aiLog('Final screenshot capture returned no images', 'warn');
                     }

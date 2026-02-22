@@ -1277,8 +1277,11 @@ function ccm_tools_render_ai_section(): void {
             <!-- Fix Summary (auto vs manual — populated by one-click flow) -->
             <div id="ai-fix-summary" style="display: none; margin-top: 1.5rem;"></div>
 
-            <!-- Before/After Comparison (includes visual screenshots) -->
+            <!-- Before/After Score Comparison -->
             <div id="ai-before-after" style="display: none; margin-top: 1.5rem;"></div>
+
+            <!-- Visual Screenshot Comparison -->
+            <div id="ai-screenshots" style="display: none; margin-top: 1.5rem;"></div>
 
             <!-- Remaining Recommendations (when score < 90) -->
             <div id="ai-remaining-recommendations" style="display: none; margin-top: 1.5rem;"></div>

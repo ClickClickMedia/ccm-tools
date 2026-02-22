@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.2
+- **Current Version:** 7.17.3
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -288,6 +288,22 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.3
+- **Interactive Screenshot Comparison with Lightbox**
+  - "Before" screenshots now display immediately after baseline capture (no waiting for optimization to finish)
+  - "After" column shows a spinner placeholder until final screenshots are captured
+  - After screenshots slide into place beside the baseline when ready
+  - Clicking any screenshot opens a fullscreen lightbox overlay with side-by-side Before/After comparison
+  - Lightbox supports keyboard close (Esc), click-outside-to-close, and close button
+  - Desktop and mobile viewports shown separately — lightbox adapts width for mobile screenshots
+  - Screenshots moved to dedicated `#ai-screenshots` container (independent from score comparison)
+  - Dark overlay (92% opacity) with fade-in animation for professional comparison experience
+  - Hover effect on thumbnail images indicates clickability
+  - New CSS: `.ccm-lightbox-overlay`, `.ccm-lightbox-header`, `.ccm-lightbox-body`, `.ccm-lightbox-panel`, `.ccm-lightbox-label`, `.ccm-screenshot-waiting`, `.ccm-screenshot-placeholder`
+  - New JS: `aiShowBaselineScreenshots()`, `aiShowAfterScreenshots()`, `aiOpenScreenshotLightbox()` replace old `aiRenderScreenshotComparison()`
+  - Responsive: lightbox collapses to single-column on mobile
+  - Body scroll locked while lightbox is open
 
 ### v7.17.2
 - **Screenshot Comparison Moved into Results Section**

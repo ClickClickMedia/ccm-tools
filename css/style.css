@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.17.2
+ * Version: 7.17.3
  */
 
 /* ===================================
@@ -3195,13 +3195,26 @@ tr.ccm-front-page-row {
     line-height: 1.5;
 }
 
-/* ─── Screenshot Comparison (inside #ai-before-after) ─── */
-#ai-before-after h3:nth-of-type(n+2) {
-    margin-top: 1.5rem;
+/* ─── Screenshot Comparison + Lightbox ─── */
+#ai-screenshots {
+    background: var(--ccm-bg);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    padding: 1.25rem;
+}
+
+#ai-screenshots h3 {
+    margin: 0 0 0.25rem;
     font-size: 1rem;
 }
 
-#ai-before-after h4.ccm-screenshot-heading {
+.ccm-screenshot-hint {
+    margin: 0 0 1rem;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text-muted);
+}
+
+.ccm-screenshot-heading {
     margin: 1.25rem 0 0.5rem;
     font-size: 0.85rem;
     color: var(--ccm-text-muted);
@@ -3222,14 +3235,16 @@ tr.ccm-front-page-row {
     background: var(--ccm-bg-alt, #fafafa);
 }
 
-.ccm-screenshot-col a {
-    display: block;
-}
-
-.ccm-screenshot-col img {
+.ccm-screenshot-img {
     width: 100%;
     height: auto;
     display: block;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.ccm-screenshot-img:hover {
+    opacity: 0.85;
 }
 
 .ccm-screenshot-label {
@@ -3249,6 +3264,117 @@ tr.ccm-front-page-row {
 
 .ccm-screenshot-col-mobile {
     max-width: 240px;
+}
+
+.ccm-screenshot-placeholder {
+    min-height: 120px;
+}
+
+.ccm-screenshot-waiting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 2rem 1rem;
+    color: var(--ccm-text-muted);
+    font-size: var(--ccm-text-sm);
+}
+
+/* ─── Lightbox Overlay ─── */
+.ccm-lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    background: rgba(0, 0, 0, 0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    padding: 1rem;
+    animation: ccm-lb-fadein 0.2s ease;
+}
+
+@keyframes ccm-lb-fadein {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.ccm-lightbox-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 1600px;
+    padding: 0.5rem 0 0.75rem;
+    flex-shrink: 0;
+}
+
+.ccm-lightbox-header h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.ccm-lightbox-close {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    font-size: 1.5rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: background 0.15s;
+}
+
+.ccm-lightbox-close:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+.ccm-lightbox-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    width: 100%;
+    max-width: 1600px;
+    flex: 1;
+}
+
+.ccm-lightbox-body-mobile {
+    max-width: 800px;
+}
+
+.ccm-lightbox-panel {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--ccm-radius, 8px);
+    overflow: hidden;
+    background: #1a1a1a;
+}
+
+.ccm-lightbox-label {
+    padding: 0.5rem 1rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-align: center;
+    color: rgba(255,255,255,0.7);
+    background: #222;
+    border-bottom: 1px solid #333;
+}
+
+.ccm-lightbox-label-after {
+    color: var(--ccm-success, #22c55e);
+}
+
+.ccm-lightbox-panel img {
+    width: 100%;
+    height: auto;
+    display: block;
 }
 
 /* ─── History — Optimization Runs ─── */
@@ -3779,6 +3905,9 @@ tr.ccm-front-page-row {
     }
     .ccm-screenshot-col-mobile {
         max-width: none;
+    }
+    .ccm-lightbox-body {
+        grid-template-columns: 1fr;
     }
     /* Chat widget mobile */
     .ccm-ai-chat-widget {
