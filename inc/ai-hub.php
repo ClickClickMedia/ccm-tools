@@ -753,6 +753,53 @@ function ccm_tools_ajax_ai_hub_screenshot(): void {
     wp_send_json_success($result);
 }
 
+add_action('wp_ajax_ccm_tools_ai_hub_visual_compare', 'ccm_tools_ajax_ai_hub_visual_compare');
+
+/**
+ * Compare before/after screenshots via AI Vision to detect layout regressions.
+ * Sends screenshot URLs to the Hub which fetches them and runs Claude Vision analysis.
+ */
+function ccm_tools_ajax_ai_hub_visual_compare(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $before_desktop_url = sanitize_url($_POST['before_desktop_url'] ?? '');
+    $after_desktop_url  = sanitize_url($_POST['after_desktop_url'] ?? '');
+    $before_mobile_url  = sanitize_url($_POST['before_mobile_url'] ?? '');
+    $after_mobile_url   = sanitize_url($_POST['after_mobile_url'] ?? '');
+    $changes_applied    = isset($_POST['changes_applied']) ? json_decode(wp_unslash($_POST['changes_applied']), true) : [];
+
+    if (empty($before_desktop_url) || empty($after_desktop_url)) {
+        wp_send_json_error(['message' => 'Before and after desktop screenshot URLs are required']);
+    }
+
+    $body = [
+        'before_desktop_url' => $before_desktop_url,
+        'after_desktop_url'  => $after_desktop_url,
+    ];
+
+    if (!empty($before_mobile_url)) {
+        $body['before_mobile_url'] = $before_mobile_url;
+    }
+    if (!empty($after_mobile_url)) {
+        $body['after_mobile_url'] = $after_mobile_url;
+    }
+    if (!empty($changes_applied) && is_array($changes_applied)) {
+        $body['changes_applied'] = $changes_applied;
+    }
+
+    $result = ccm_tools_ai_hub_request('ai/visual-compare', $body, 'POST', 120);
+
+    if (is_wp_error($result)) {
+        wp_send_json_error(['message' => $result->get_error_message()]);
+    }
+
+    wp_send_json_success($result);
+}
+
 add_action('wp_ajax_ccm_tools_ai_chat', 'ccm_tools_ajax_ai_chat');
 
 /**

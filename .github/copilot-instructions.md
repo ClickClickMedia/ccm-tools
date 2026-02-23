@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.6
+- **Current Version:** 7.17.7
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -195,6 +195,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_preflight` | `ccm_tools_ajax_ai_preflight()` | Pre-flight check of server-side tool status |
 | `ccm_tools_ai_enable_tool` | `ccm_tools_ajax_ai_enable_tool()` | Enable a server-side tool (htaccess, webp, redis, performance) |
 | `ccm_tools_ai_chat` | `ccm_tools_ajax_ai_chat()` | Send message to AI troubleshooting assistant |
+| `ccm_tools_ai_hub_visual_compare` | `ccm_tools_ajax_ai_hub_visual_compare()` | AI visual regression detection (before/after screenshots) |
 | `ccm_tools_ai_hub_console_check` | `ccm_tools_ajax_ai_hub_console_check()` | Check URL for JS console errors via headless Chromium |
 | `ccm_tools_ai_hub_get_latest_scores` | `ccm_tools_ajax_ai_hub_get_latest_scores()` | Get latest PageSpeed scores for dashboard widget |
 
@@ -288,6 +289,23 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.7
+- **AI Visual Regression Detection — Automatic Layout Integrity Check**
+  - New safety check in the One-Click Optimize pipeline that detects when performance changes break page layout
+  - After each iteration's screenshot capture, before/after images are sent to Claude Vision API for comparison
+  - AI analyzes desktop and mobile screenshots for structural layout regressions: shifted elements, missing content, broken grids, overlapping text, collapsed navigation
+  - Smart differentiation: ignores expected differences (video playback states, lazy-loading placeholders, cookie banners, chat widgets, carousel slide changes, dynamic ads, minor compression artifacts)
+  - **Automatic rollback**: if critical layout regression detected, settings are rolled back regardless of score improvement
+  - Visual regression context passed to AI for next iteration so it avoids problematic CSS/JS settings
+  - Three severity levels: `none` (identical), `minor` (acceptable), `critical` (triggers rollback)
+  - New "Visual Check" step added to progress indicator between Console Check and Compare
+  - Activity log shows detailed issue descriptions with affected area, likely cause, and suggested fix per issue
+  - **Hub endpoint**: New `POST /api/v1/ai/visual-compare` — fetches screenshot URLs, encodes as base64, sends to Claude Vision with structured comparison prompt
+  - Hub returns structured JSON: `layout_ok`, `severity`, `issues[]` with `description`, `area`, `likely_cause`, `suggested_fix`
+  - New plugin AJAX handler: `ccm_tools_ai_hub_visual_compare` proxying to hub endpoint
+  - Rollback decision logic updated: `keepChanges = (bothStable || netPositive) && !hasNewConsoleErrors && !hasLayoutRegression`
+  - Tokens and cost logged per visual check call
 
 ### v7.17.6
 - **Per-Iteration Screenshot Capture During One-Click Optimize**
