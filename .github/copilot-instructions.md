@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.5
+- **Current Version:** 7.17.6
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -288,6 +288,17 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.6
+- **Per-Iteration Screenshot Capture During One-Click Optimize**
+  - Screenshots now captured after every optimization iteration, not just at the beginning and end
+  - After each iteration's retests and console check, a screenshot is taken to show the visual state of the page
+  - "After" column in the screenshot comparison updates live with each iteration's capture
+  - After label shows iteration number (e.g., "After (Iter 2)") so users can track which iteration produced the current visual
+  - If the final iteration was rolled back, a post-rollback screenshot is captured to show the actual final state
+  - Eliminates redundant final screenshot capture when the last iteration was kept (per-iteration capture is already current)
+  - `aiShowAfterScreenshots()` now accepts optional `iteration` parameter for labeling
+  - Activity log shows screenshot file sizes per iteration for monitoring
 
 ### v7.17.5
 - **Screenshot Capture Timeout Fix — Execution Time Limit + Backward Compatibility**

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.17.5
+ * Version: 7.17.6
  */
 
 (function() {
@@ -4285,20 +4285,21 @@
 
     /**
      * Fill in the "After" column with captured screenshots and enable lightbox.
+     * @param {object} data - Screenshot data with desktop/mobile URLs
+     * @param {number} [iteration] - Optional iteration number to display in label
      */
-    function aiShowAfterScreenshots(data) {
+    function aiShowAfterScreenshots(data, iteration) {
         if (!data) return;
 
         const afterDesktopSrc = data.desktop?.url || data.desktop?.data_uri || '';
         const afterMobileSrc = data.mobile?.url || data.mobile?.data_uri || '';
+        const iterLabel = iteration ? ` <small>(Iter ${iteration})</small>` : '';
 
         if (afterDesktopSrc) {
             const el = document.getElementById('ss-after-desktop');
             if (el) {
                 el.classList.remove('ccm-screenshot-placeholder');
-                const label = el.querySelector('.ccm-screenshot-label');
-                const labelHtml = label ? label.outerHTML : '';
-                el.innerHTML = labelHtml +
+                el.innerHTML = `<div class="ccm-screenshot-label ccm-screenshot-label-after">After${iterLabel}</div>` +
                     `<img src="${afterDesktopSrc}" alt="After — Desktop"
                           class="ccm-screenshot-img" data-viewport="desktop" data-phase="after" />`;
             }
@@ -4308,9 +4309,7 @@
             const el = document.getElementById('ss-after-mobile');
             if (el) {
                 el.classList.remove('ccm-screenshot-placeholder');
-                const label = el.querySelector('.ccm-screenshot-label');
-                const labelHtml = label ? label.outerHTML : '';
-                el.innerHTML = labelHtml +
+                el.innerHTML = `<div class="ccm-screenshot-label ccm-screenshot-label-after">After${iterLabel}</div>` +
                     `<img src="${afterMobileSrc}" alt="After — Mobile"
                           class="ccm-screenshot-img" data-viewport="mobile" data-phase="after" />`;
             }
@@ -4746,6 +4745,28 @@
                     aiUpdateStep('console-check', 'done', 'Skipped');
                 }
 
+                // ── Per-iteration screenshot (capture visual state after changes) ──
+                if (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri) {
+                    try {
+                        aiLog(`Capturing screenshot after iteration ${iteration}…`, 'info');
+                        const iterSsParams = { url, phase: 'after' };
+                        if (screenshotRunId) iterSsParams.run_id = screenshotRunId;
+                        const iterSsRes = await ajax('ccm_tools_ai_hub_screenshot', iterSsParams, { timeout: 120000 });
+                        const iterScreenshots = iterSsRes.data || null;
+                        if (iterScreenshots?.desktop?.url || iterScreenshots?.desktop?.data_uri ||
+                            iterScreenshots?.mobile?.url || iterScreenshots?.mobile?.data_uri) {
+                            const dkSize = Math.round((iterScreenshots?.desktop?.size_bytes || 0) / 1024);
+                            const mbSize = Math.round((iterScreenshots?.mobile?.size_bytes || 0) / 1024);
+                            aiLog(`Iteration ${iteration} screenshots captured (desktop: ${dkSize}KB, mobile: ${mbSize}KB)`, 'success');
+                            aiShowAfterScreenshots(iterScreenshots, iteration);
+                        } else {
+                            aiLog(`Iteration ${iteration} screenshot returned no images`, 'warn');
+                        }
+                    } catch (ssErr) {
+                        aiLog(`Iteration ${iteration} screenshot failed: ${ssErr.message}`, 'warn');
+                    }
+                }
+
                 // ── Evaluate results (smart rollback with net-gain logic) ──
                 const mobileChange = retestMobilePerf - snapshotMobilePerf;
                 const desktopChange = retestDesktopPerf - snapshotDesktopPerf;
@@ -4880,16 +4901,16 @@
                 lastManualActions
             );
 
-            // ── Final Screenshots + Visual Comparison ──
-            if (hasApplied && (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri)) {
+            // ── Final Screenshots (only if last iteration was rolled back — otherwise per-iteration capture is current) ──
+            if (hasApplied && wasRolledBack && (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri)) {
                 try {
-                    aiLog('Capturing final screenshots for visual comparison…', 'info');
+                    aiLog('Capturing final screenshots (post-rollback state)…', 'info');
                     const afterParams = { url, phase: 'after' };
                     if (screenshotRunId) afterParams.run_id = screenshotRunId;
                     const afterSsRes = await ajax('ccm_tools_ai_hub_screenshot', afterParams, { timeout: 120000 });
                     const afterScreenshots = afterSsRes.data || null;
                     if (afterScreenshots?.desktop?.url || afterScreenshots?.desktop?.data_uri || afterScreenshots?.mobile?.url || afterScreenshots?.mobile?.data_uri) {
-                        aiLog('Final screenshots captured — rendering comparison', 'success');
+                        aiLog('Final screenshots captured (rolled-back state)', 'success');
                         aiShowAfterScreenshots(afterScreenshots);
                     } else {
                         aiLog('Final screenshot capture returned no images', 'warn');
