@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.11
+- **Current Version:** 7.17.12
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.12
+- **Fixed Plugin Update Loop — Header Version Was Stuck at 7.17.9**
+  - Plugin header `Version:` in ccm.php line 6 was never updated from 7.17.9 during v7.17.10 and v7.17.11 releases
+  - WordPress reads the plugin header (not the `CCM_HELPER_VERSION` constant) for version comparison
+  - `version_compare('7.17.11', '7.17.9', '>')` was always true → perpetual "Update to 7.17.11" notification
+  - Both the header and constant now updated to 7.17.12
+- **Fixed Hub Iteration Screenshots Not Showing (Timing Window Too Narrow)**
+  - After screenshots for iterations were not appearing on the hub site detail page
+  - Root cause: 120-second lookback window (`$pairTs - 120`) was far too tight
+  - After screenshots are captured 3-5 minutes before the retest (flow: apply → screenshot → console check → visual check → retest)
+  - Changed to use `$prevPairTs` (previous pair's timestamp) as the lower bound instead of `$pairTs - 120`
+  - Now correctly matches any after-screenshot between the previous test and the next test
+  - Iteration 1 (and all subsequent iterations) now show Before (Baseline) vs After comparison correctly
 
 ### v7.17.11
 - **Searchable Page Picker for URL to Test**
