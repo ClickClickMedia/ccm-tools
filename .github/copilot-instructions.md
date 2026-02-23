@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.7
+- **Current Version:** 7.17.8
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.8
+- **Auto-Scroll to Screenshots During Optimization**
+  - After screenshots were not visible during per-iteration captures because the `#ai-screenshots` container is at the bottom of the results area, far below the activity log the user watches
+  - Added `scrollIntoView({ behavior: 'smooth', block: 'center' })` to `aiShowBaselineScreenshots()` — page scrolls to Before screenshots when baseline capture completes
+  - Added `scrollIntoView({ behavior: 'smooth', block: 'center' })` to `aiShowAfterScreenshots()` — page scrolls to show updated After screenshots after each iteration's capture
+  - Added activity log entry "After screenshots updated — scroll to see comparison ↓" when per-iteration After screenshots are rendered
+  - Users now see both Before and After screenshots update in real-time during the optimization loop without manual scrolling
 
 ### v7.17.7
 - **AI Visual Regression Detection — Automatic Layout Integrity Check**

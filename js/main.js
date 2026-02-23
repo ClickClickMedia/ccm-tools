@@ -4282,6 +4282,9 @@
 
         container.innerHTML = html;
         container.style.display = 'block';
+
+        // Scroll screenshots into view so the user sees them immediately
+        container.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     /**
@@ -4321,6 +4324,11 @@
         if (container && !container.querySelector('.ccm-screenshot-hint')) {
             container.insertAdjacentHTML('afterbegin',
                 '<p class="ccm-screenshot-hint">Click any image to open side-by-side lightbox comparison.</p>');
+        }
+
+        // Scroll screenshots into view so the user sees the After column update
+        if (container) {
+            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }
 
@@ -4761,6 +4769,7 @@
                             const mbSize = Math.round((iterScreenshots?.mobile?.size_bytes || 0) / 1024);
                             aiLog(`Iteration ${iteration} screenshots captured (desktop: ${dkSize}KB, mobile: ${mbSize}KB)`, 'success');
                             aiShowAfterScreenshots(iterScreenshots, iteration);
+                            aiLog('After screenshots updated — scroll to see comparison ↓', 'info');
                         } else {
                             aiLog(`Iteration ${iteration} screenshot returned no images`, 'warn');
                         }
