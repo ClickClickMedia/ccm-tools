@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.18.1
+ * Version: 7.18.2
  */
 
 (function() {
@@ -4120,6 +4120,7 @@
     const AI_STEPS = [
         { id: 'preflight',      label: 'Pre-flight Check' },
         { id: 'snapshot',       label: 'Save Snapshot' },
+        { id: 'screenshots',    label: 'Screenshots' },
         { id: 'test-mobile',    label: 'Test Mobile' },
         { id: 'test-desktop',   label: 'Test Desktop' },
         { id: 'analyze',        label: 'AI Analysis' },
@@ -4668,7 +4669,36 @@
             aiUpdateStep('snapshot', 'done', 'Saved');
             aiLog('Snapshot saved.', 'success');
 
-            // ── Step 2: Test Mobile (baseline) ──
+            // ── Kick off Screenshots + Console Check in background (parallel with PSI tests) ──
+            aiUpdateStep('screenshots', 'active', 'Capturing…');
+            aiLog('Capturing baseline screenshots + console check in background…', 'info');
+
+            // Screenshot promise (runs in background)
+            const screenshotPromise = (async () => {
+                try {
+                    const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url, phase: 'before' }, { timeout: 120000 });
+                    return ssRes.data || null;
+                } catch (e) {
+                    aiLog(`Baseline screenshot capture failed: ${e.message} — continuing without visual comparison`, 'warn');
+                    return null;
+                }
+            })();
+
+            // Console check promise (runs in background)
+            const consolePromise = (async () => {
+                try {
+                    const baselineConsole = await ajax('ccm_tools_ai_hub_console_check', {
+                        url: url,
+                        wait_seconds: 12,
+                    }, { timeout: 60000 });
+                    return baselineConsole.data || {};
+                } catch (e) {
+                    aiLog(`Baseline console check failed: ${e.message} — continuing without baseline`, 'warn');
+                    return {};
+                }
+            })();
+
+            // ── Step 2: Test Mobile (baseline) — runs while screenshots/console capture ──
             aiUpdateStep('test-mobile', 'active', 'Running…');
             aiLog('Running Mobile PageSpeed test…', 'step');
             const mobileData = await aiRunPageSpeed(url, 'mobile');
@@ -4679,6 +4709,26 @@
             const mobilePerf = mobileData.scores?.performance ?? '—';
             aiUpdateStep('test-mobile', 'done', `Perf: ${mobilePerf}`);
             aiLog(`Mobile scores — Performance: <strong>${mobilePerf}</strong>, LCP: ${mobileData.metrics?.lcp_ms ?? '—'}ms, CLS: ${mobileData.metrics?.cls ?? '—'}`, 'info');
+
+            // ── Check if screenshots finished during Mobile test ──
+            // (show them ASAP for user feedback — don't wait for Desktop test)
+            let baselineScreenshots = null;
+            let screenshotRunId = '';
+            const screenshotReady = await Promise.race([screenshotPromise, new Promise(r => setTimeout(() => r('pending'), 0))]);
+            if (screenshotReady && screenshotReady !== 'pending') {
+                baselineScreenshots = screenshotReady;
+                screenshotRunId = baselineScreenshots?.run_id || '';
+                const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
+                const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
+                if (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri) {
+                    aiLog(`Baseline desktop screenshot captured (${dkSize}KB, ${baselineScreenshots.desktop.format || 'jpeg'})`, 'success');
+                }
+                if (baselineScreenshots?.mobile?.url || baselineScreenshots?.mobile?.data_uri) {
+                    aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format || 'jpeg'})`, 'success');
+                }
+                aiShowBaselineScreenshots(baselineScreenshots);
+                aiUpdateStep('screenshots', 'done', 'Captured');
+            }
 
             // ── Step 3: Test Desktop (baseline) ──
             aiUpdateStep('test-desktop', 'active', 'Running…');
@@ -4697,47 +4747,34 @@
                 p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
             });
 
-            // ── Baseline Console Check (capture pre-existing JS errors) ──
-            let baselineConsoleErrors = [];
-            try {
-                aiLog('Running baseline console error check (headless Chromium)…', 'info');
-                const baselineConsole = await ajax('ccm_tools_ai_hub_console_check', {
-                    url: url,
-                    wait_seconds: 12,
-                }, { timeout: 60000 });
-                const baseData = baselineConsole.data || {};
-                baselineConsoleErrors = baseData.errors || [];
-                const baseWarnCount = (baseData.warnings || []).length;
-                if (baselineConsoleErrors.length > 0) {
-                    aiLog(`Baseline: ${baselineConsoleErrors.length} pre-existing console error(s) detected (will be excluded from post-change diff)`, 'warn');
-                    baselineConsoleErrors.forEach(e => aiLog(`  Pre-existing: ${e.message} <small>(${e.source})</small>`, 'info'));
+            // ── Await Screenshots if not yet resolved (should be done by now) ──
+            if (!baselineScreenshots) {
+                baselineScreenshots = await screenshotPromise;
+                screenshotRunId = baselineScreenshots?.run_id || '';
+                if (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri) {
+                    const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
+                    const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
+                    aiLog(`Baseline desktop screenshot captured (${dkSize}KB, ${baselineScreenshots.desktop.format || 'jpeg'})`, 'success');
+                    if (baselineScreenshots?.mobile?.url || baselineScreenshots?.mobile?.data_uri) {
+                        aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format || 'jpeg'})`, 'success');
+                    }
+                    aiShowBaselineScreenshots(baselineScreenshots);
+                    aiUpdateStep('screenshots', 'done', 'Captured');
                 } else {
-                    aiLog(`Baseline: no console errors ✓${baseWarnCount > 0 ? ` (${baseWarnCount} warning(s))` : ''}`, 'success');
+                    aiUpdateStep('screenshots', 'done', 'Skipped');
                 }
-            } catch (consoleErr) {
-                aiLog(`Baseline console check failed: ${consoleErr.message} — continuing without baseline`, 'warn');
             }
 
-            // ── Baseline Screenshots (before any changes) ──
-            let baselineScreenshots = null;
-            let screenshotRunId = '';
-            try {
-                aiLog('Capturing baseline screenshots (desktop + mobile)…', 'info');
-                const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url, phase: 'before' }, { timeout: 120000 });
-                baselineScreenshots = ssRes.data || null;
-                screenshotRunId = baselineScreenshots?.run_id || '';
-                const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
-                const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
-                if (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri) {
-                    aiLog(`Baseline desktop screenshot captured (${dkSize}KB, ${baselineScreenshots.desktop.format || 'jpeg'})`, 'success');
-                }
-                if (baselineScreenshots?.mobile?.url || baselineScreenshots?.mobile?.data_uri) {
-                    aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format || 'jpeg'})`, 'success');
-                }
-                // Show "Before" immediately
-                aiShowBaselineScreenshots(baselineScreenshots);
-            } catch (ssErr) {
-                aiLog(`Baseline screenshot capture failed: ${ssErr.message} — continuing without visual comparison`, 'warn');
+            // ── Await Baseline Console Check results ──
+            let baselineConsoleErrors = [];
+            const consoleData = await consolePromise;
+            baselineConsoleErrors = consoleData.errors || [];
+            const baseWarnCount = (consoleData.warnings || []).length;
+            if (baselineConsoleErrors.length > 0) {
+                aiLog(`Baseline: ${baselineConsoleErrors.length} pre-existing console error(s) detected (will be excluded from post-change diff)`, 'warn');
+                baselineConsoleErrors.forEach(e => aiLog(`  Pre-existing: ${e.message} <small>(${e.source})</small>`, 'info'));
+            } else {
+                aiLog(`Baseline: no console errors ✓${baseWarnCount > 0 ? ` (${baseWarnCount} warning(s))` : ''}`, 'success');
             }
 
             // Track snapshot scores (updated after each successful keep)

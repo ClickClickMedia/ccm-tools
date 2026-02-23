@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.1
+- **Current Version:** 7.18.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,18 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.2
+- **Parallelized Baseline Screenshots + Console Check with PageSpeed Tests**
+  - Screenshots and console error check now fire in the background immediately after saving the settings snapshot
+  - Previously these ran sequentially AFTER both PageSpeed tests completed, adding ~60-120s of wait time
+  - Screenshots appear as soon as they resolve — often during or right after the Mobile PSI test finishes
+  - Users see visual baseline much earlier, providing instant feedback that the process is working
+  - Console check results collected after both PSI tests complete (they run faster than PSI anyway)
+  - New "Screenshots" step indicator added to the progress bar between Save Snapshot and Test Mobile
+  - Uses `Promise.race` to check if screenshots finished during Mobile test, awaits remainder after Desktop test
+  - No functional changes to the optimization pipeline — same data, same safety checks, just faster perceived performance
+  - Estimated time savings: 30-90 seconds depending on hub server screenshot capture speed
 
 ### v7.18.1
 - **AI API Token Optimization — Reduced Claude Input Token Usage by ~40%**
