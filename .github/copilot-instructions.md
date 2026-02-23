@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.3
+- **Current Version:** 7.18.4
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.4
+- **Fixed Screenshot Capture Broken by --virtual-time-budget Flag**
+  - `--virtual-time-budget=10000` added in v7.18.3 is incompatible with Chromium's `--screenshot` flag in headless=new mode
+  - The virtual time simulation prevents Chromium from producing an output PNG file, causing "no output file produced" errors
+  - Removed `--virtual-time-budget` flag entirely
+  - Added `--disable-background-timer-throttling`, `--disable-renderer-backgrounding`, and `--disable-backgrounding-occluded-windows` instead
+  - These flags keep renderer and timers active during capture without conflicting with the screenshot mechanism
 
 ### v7.18.3
 - **Fixed Visual Check Always Skipping + Screenshot Missing Lazy-Loaded Content**
