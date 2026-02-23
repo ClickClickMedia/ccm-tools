@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.12
+- **Current Version:** 7.17.13
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.13
+- **Live UI Update When Pre-Flight Enables Performance Optimizer**
+  - When the One-Click Optimize pre-flight check enables the Performance Optimizer, the master toggle and status text now update immediately on the page
+  - Previously the log showed "Performance Optimizer enabled" but the toggle stayed OFF and status showed "INACTIVE"
+  - Calls `aiUpdatePageToggles({ enabled: true })` after successful enable, which flips the checkbox and dispatches a change event
+  - The existing change handler updates the status text and CSS class in real-time
 
 ### v7.17.12
 - **Fixed Plugin Update Loop — Header Version Was Stuck at 7.17.9**

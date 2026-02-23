@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.17.12
+ * Version: 7.17.13
  */
 
 (function() {
@@ -4636,6 +4636,8 @@
                         await ajax('ccm_tools_ai_enable_tool', { tool: 'performance' }, { timeout: 10000 });
                         aiLog('Performance Optimizer enabled.', 'success');
                         toolsEnabled++;
+                        // Live-update the master toggle on the page
+                        aiUpdatePageToggles({ enabled: true });
                     } catch (e) { aiLog(`Perf enable failed: ${e.message}`, 'warn'); }
                 }
 
