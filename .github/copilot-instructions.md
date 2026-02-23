@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.13
+- **Current Version:** 7.18.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -191,7 +191,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_hub_ai_analyze` | `ccm_tools_ajax_ai_hub_ai_analyze()` | AI analysis of PageSpeed result |
 | `ccm_tools_ai_hub_ai_optimize` | `ccm_tools_ajax_ai_hub_ai_optimize()` | Full AI optimization session |
 | `ccm_tools_ai_apply_changes` | `ccm_tools_ajax_ai_apply_changes()` | Apply selected AI recommendations to perf settings |
-| `ccm_tools_ai_save_run` | `ccm_tools_ajax_ai_save_run()` | Save optimization run summary to wp_options |
+| `ccm_tools_ai_save_run` | `ccm_tools_ajax_ai_save_run()` | Save optimization run summary to wp_options + hub |
 | `ccm_tools_ai_preflight` | `ccm_tools_ajax_ai_preflight()` | Pre-flight check of server-side tool status |
 | `ccm_tools_ai_enable_tool` | `ccm_tools_ajax_ai_enable_tool()` | Enable a server-side tool (htaccess, webp, redis, performance) |
 | `ccm_tools_ai_chat` | `ccm_tools_ajax_ai_chat()` | Send message to AI troubleshooting assistant |
@@ -289,6 +289,29 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.0
+- **Cross-Site AI Learning — Hub-Centralized Optimization Intelligence**
+  - Optimization run outcomes are now stored on the hub in a new `optimization_runs` database table
+  - Every One-Click Optimize session sends results (URL, before/after scores, settings changed, outcome) to the hub after saving locally
+  - Hub aggregates data from ALL sites to identify patterns: which settings consistently improve scores vs which cause rollbacks
+  - New `buildHubLearnings()` function analyses all runs and builds a structured intelligence report for AI prompts
+  - Cross-site intelligence injected into all 3 AI endpoints: Analyze, Optimize, and Chat
+  - AI prompt updated with new "Cross-Site Optimization Intelligence" section explaining how to use hub data
+  - AI told to: prioritise HIGH CONFIDENCE settings (many wins across sites), avoid HIGH RISK settings (many rollbacks), prefer site-specific history when it disagrees with cross-site data
+  - Settings with mixed results include win/loss ratios for nuanced AI decision-making
+  - **Hub Admin Page**: New "Optimizations" page (🧠 icon) in hub navigation
+    - Stats grid: total runs, improved count, rolled back count, avg score gain, best scores achieved
+    - Setting Intelligence table: win/loss analysis per setting with success rate bar, verdict badges (Safe, Avoid, Mixed, Risky)
+    - Full runs table with site, URL, before→after scores, deltas, iterations, outcome, settings changed
+    - Filter by site and outcome (improved/rolled back/no changes)
+  - **New Hub API Endpoints**:
+    - `POST /api/v1/optimization/save-run` — stores run data from any site
+    - `GET /api/v1/optimization/learnings` — returns aggregate intelligence and stats
+  - **Auto-migration**: `ensureOptimizationRunsTable()` creates table on first use (same pattern as screenshots)
+  - Plugin save handler now POSTs to hub (best-effort, 15s timeout) alongside local wp_options save
+  - Hub learnings supplement (not replace) site-specific learning history — both are included in AI context
+  - New file: `includes/learnings.php` (hub), `admin/optimizations.php` (hub), `api/v1/optimization-save-run.php`, `api/v1/optimization-learnings.php`
 
 ### v7.17.13
 - **Live UI Update When Pre-Flight Enables Performance Optimizer**

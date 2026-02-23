@@ -528,8 +528,9 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
 add_action('wp_ajax_ccm_tools_ai_save_run', 'ccm_tools_ajax_ai_save_run');
 
 /**
- * Save an optimization run summary to the local log.
- * Stored as a capped array in wp_options.
+ * Save an optimization run summary to:
+ * 1. Local wp_options log (site-specific learning)
+ * 2. Hub database (cross-site learning intelligence)
  */
 function ccm_tools_ajax_ai_save_run(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -572,6 +573,7 @@ function ccm_tools_ajax_ai_save_run(): void {
         }
     }
 
+    // Save locally (site-specific learning)
     $runs = get_option('ccm_tools_ai_optimization_runs', []);
     if (!is_array($runs)) $runs = [];
 
@@ -580,7 +582,27 @@ function ccm_tools_ajax_ai_save_run(): void {
 
     update_option('ccm_tools_ai_optimization_runs', $runs, false);
 
-    wp_send_json_success(['message' => 'Run saved', 'run' => $run]);
+    // Also save to hub for cross-site learning (best-effort, non-blocking)
+    $hub_result = ccm_tools_ai_hub_request('optimization/save-run', [
+        'url'             => $run['url'],
+        'before_mobile'   => $run['before_mobile'],
+        'before_desktop'  => $run['before_desktop'],
+        'after_mobile'    => $run['after_mobile'],
+        'after_desktop'   => $run['after_desktop'],
+        'changes'         => $run['changes'],
+        'changes_count'   => $run['changes_count'],
+        'iterations'      => $run['iterations'],
+        'rolled_back'     => $run['rolled_back'],
+        'outcome'         => $run['outcome'],
+    ], 'POST', 15);
+
+    $hub_saved = !is_wp_error($hub_result);
+
+    wp_send_json_success([
+        'message'   => 'Run saved',
+        'run'       => $run,
+        'hub_saved' => $hub_saved,
+    ]);
 }
 
 // ─── Admin Page Section ─────────────────────────────────────────
