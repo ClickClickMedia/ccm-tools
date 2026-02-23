@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.8
+- **Current Version:** 7.17.9
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.9
+- **Fixed Side-by-Side Screenshot Comparison Layout**
+  - Before and After screenshots had wildly different heights due to full-page captures (8192px/12288px) with auto-crop producing different content lengths
+  - Added `max-height: 520px; object-fit: cover; object-position: top;` to `.ccm-screenshot-img`
+  - Both Before and After now show the same "above the fold" viewport at the same scale, making visual comparison meaningful
+  - Heading updated to note "above the fold · click to view full page" — lightbox still shows full images
+  - New `.ccm-screenshot-crop-note` CSS class for future use
 
 ### v7.17.8
 - **Auto-Scroll to Screenshots During Optimization**

@@ -4244,7 +4244,7 @@
 
         // Desktop row
         if (desktopSrc) {
-            html += `<h4 class="ccm-screenshot-heading">Desktop (1920×1080)</h4>
+            html += `<h4 class="ccm-screenshot-heading">DESKTOP (1920×1080) — above the fold · click to view full page</h4>
             <div class="ccm-screenshot-row">
                 <div class="ccm-screenshot-col">
                     <div class="ccm-screenshot-label">Before</div>
@@ -4263,7 +4263,7 @@
 
         // Mobile row
         if (mobileSrc) {
-            html += `<h4 class="ccm-screenshot-heading">Mobile (375×812)</h4>
+            html += `<h4 class="ccm-screenshot-heading">MOBILE (375×812) — above the fold · click to view full page</h4>
             <div class="ccm-screenshot-row ccm-screenshot-row-mobile">
                 <div class="ccm-screenshot-col ccm-screenshot-col-mobile">
                     <div class="ccm-screenshot-label">Before</div>

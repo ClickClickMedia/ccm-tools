@@ -3241,10 +3241,22 @@ tr.ccm-front-page-row {
     display: block;
     cursor: pointer;
     transition: opacity 0.15s;
+    max-height: 520px;
+    object-fit: cover;
+    object-position: top;
 }
 
 .ccm-screenshot-img:hover {
     opacity: 0.85;
+}
+
+.ccm-screenshot-crop-note {
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--ccm-text-muted);
+    padding: 0.3rem 0;
+    background: var(--ccm-bg-alt, #f3f4f6);
+    border-top: 1px solid var(--ccm-border);
 }
 
 .ccm-screenshot-label {
