@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.18.2
+ * Version: 7.18.3
  */
 
 (function() {
@@ -4961,58 +4961,80 @@
                 const beforeMobileSrc = baselineScreenshots?.mobile?.url || '';
 
                 if (afterDesktopSrc && beforeDesktopSrc) {
-                    try {
-                        aiUpdateStep('visual-check', 'active', 'Analyzing…');
-                        aiLog('Running visual regression check (AI comparing before/after screenshots)…', 'step');
+                    // Always run visual check — retry once on failure
+                    let visualAttempts = 0;
+                    const maxVisualAttempts = 2;
+                    while (visualAttempts < maxVisualAttempts) {
+                        visualAttempts++;
+                        try {
+                            aiUpdateStep('visual-check', 'active', visualAttempts > 1 ? 'Retrying…' : 'Analyzing…');
+                            if (visualAttempts === 1) {
+                                aiLog('Running visual regression check (AI comparing before/after screenshots)…', 'step');
+                            } else {
+                                aiLog('Retrying visual regression check…', 'warn');
+                            }
 
-                        const visualParams = {
-                            before_desktop_url: beforeDesktopSrc,
-                            after_desktop_url: afterDesktopSrc,
-                        };
-                        if (beforeMobileSrc && afterMobileSrc) {
-                            visualParams.before_mobile_url = beforeMobileSrc;
-                            visualParams.after_mobile_url = afterMobileSrc;
-                        }
-                        if (allChanges.length > 0) {
-                            visualParams.changes_applied = JSON.stringify(allChanges.slice(-20));
-                        }
+                            const visualParams = {
+                                before_desktop_url: beforeDesktopSrc,
+                                after_desktop_url: afterDesktopSrc,
+                            };
+                            if (beforeMobileSrc && afterMobileSrc) {
+                                visualParams.before_mobile_url = beforeMobileSrc;
+                                visualParams.after_mobile_url = afterMobileSrc;
+                            }
+                            if (allChanges.length > 0) {
+                                visualParams.changes_applied = JSON.stringify(allChanges.slice(-20));
+                            }
 
-                        const visualRes = await ajax('ccm_tools_ai_hub_visual_compare', visualParams, { timeout: 120000 });
-                        const visualData = visualRes.data || {};
+                            const visualRes = await ajax('ccm_tools_ai_hub_visual_compare', visualParams, { timeout: 120000 });
+                            const visualData = visualRes.data || {};
 
-                        if (visualData.layout_ok === false && visualData.severity === 'critical') {
-                            hasLayoutRegression = true;
-                            const issueCount = (visualData.issues || []).length;
-                            aiUpdateStep('visual-check', 'error', `${issueCount} layout issue(s)`);
-                            aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED</strong>: ${visualData.summary}`, 'error');
-                            (visualData.issues || []).forEach(issue => {
-                                aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description}`, 'error');
-                                if (issue.likely_cause) aiLog(`    Likely cause: ${issue.likely_cause}`, 'info');
-                                if (issue.suggested_fix) aiLog(`    Suggested fix: ${issue.suggested_fix}`, 'info');
-                            });
-                            // Build context for next AI iteration
-                            visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
-                                (visualData.issues || []).map(i =>
-                                    `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
-                                ).join('\n') +
-                                '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back. DO NOT re-enable settings that cause layout shifts.';
-                        } else if (visualData.severity === 'minor') {
-                            aiUpdateStep('visual-check', 'done', 'Minor differences');
-                            aiLog(`Visual check: minor differences detected (acceptable) — ${visualData.summary}`, 'info');
-                        } else {
-                            aiUpdateStep('visual-check', 'done', 'Layout OK ✓');
-                            aiLog(`Visual check: no layout regressions ✓${visualData.summary ? ' — ' + visualData.summary : ''}`, 'success');
-                        }
+                            if (visualData.layout_ok === false && visualData.severity === 'critical') {
+                                hasLayoutRegression = true;
+                                const issueCount = (visualData.issues || []).length;
+                                aiUpdateStep('visual-check', 'error', `${issueCount} layout issue(s)`);
+                                aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED</strong>: ${visualData.summary}`, 'error');
+                                (visualData.issues || []).forEach(issue => {
+                                    aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description}`, 'error');
+                                    if (issue.likely_cause) aiLog(`    Likely cause: ${issue.likely_cause}`, 'info');
+                                    if (issue.suggested_fix) aiLog(`    Suggested fix: ${issue.suggested_fix}`, 'info');
+                                });
+                                // Build context for next AI iteration
+                                visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
+                                    (visualData.issues || []).map(i =>
+                                        `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
+                                    ).join('\n') +
+                                    '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back. DO NOT re-enable settings that cause layout shifts.';
+                            } else if (visualData.severity === 'minor') {
+                                aiUpdateStep('visual-check', 'done', 'Minor differences');
+                                aiLog(`Visual check: minor differences detected (acceptable) — ${visualData.summary}`, 'info');
+                            } else {
+                                aiUpdateStep('visual-check', 'done', 'Layout OK ✓');
+                                aiLog(`Visual check: no layout regressions ✓${visualData.summary ? ' — ' + visualData.summary : ''}`, 'success');
+                            }
 
-                        if (visualData.tokens_used) {
-                            aiLog(`Visual check tokens: ${Number(visualData.tokens_used).toLocaleString()} | Cost: ~$${visualData.cost_usd || '?'}`, 'info');
+                            if (visualData.tokens_used) {
+                                aiLog(`Visual check tokens: ${Number(visualData.tokens_used).toLocaleString()} | Cost: ~$${visualData.cost_usd || '?'}`, 'info');
+                            }
+                            break; // success — exit retry loop
+                        } catch (visualErr) {
+                            if (visualAttempts < maxVisualAttempts) {
+                                aiLog(`Visual check attempt ${visualAttempts} failed: ${visualErr.message} — retrying…`, 'warn');
+                            } else {
+                                aiLog(`Visual check failed after ${maxVisualAttempts} attempts: ${visualErr.message} — treating as potential regression for safety`, 'warn');
+                                // Fail-safe: treat failed visual check as potential issue so AI is cautious
+                                hasLayoutRegression = false; // don't force rollback, but warn
+                                aiUpdateStep('visual-check', 'error', 'Check failed');
+                                visualRegressionContext = 'VISUAL CHECK FAILED: Could not verify layout integrity via screenshot comparison. ' +
+                                    'Proceed with caution — avoid aggressive CSS/JS changes that could cause layout shifts.';
+                            }
                         }
-                    } catch (visualErr) {
-                        aiLog(`Visual regression check failed: ${visualErr.message} — continuing with score-based evaluation only`, 'warn');
-                        aiUpdateStep('visual-check', 'done', 'Skipped');
                     }
                 } else {
-                    aiUpdateStep('visual-check', 'done', 'No screenshots');
+                    // No screenshots available — still flag it clearly
+                    aiUpdateStep('visual-check', 'error', 'No screenshots');
+                    aiLog('Visual check: could not run — no before/after screenshots available', 'warn');
+                    visualRegressionContext = 'VISUAL CHECK UNAVAILABLE: No screenshots captured. Proceed with score-based evaluation only.';
                 }
 
                 // ── Evaluate results (smart rollback with net-gain logic) ──

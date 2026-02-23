@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.2
+- **Current Version:** 7.18.3
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,17 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.3
+- **Fixed Visual Check Always Skipping + Screenshot Missing Lazy-Loaded Content**
+  - **Visual Check now retries on failure**: Previously if the visual compare API call failed or timed out, the step silently showed "Skipped" and continued. Now retries once automatically before marking as failed
+  - **Visual Check no longer silently skips**: When the check fails after retries, it shows "Check failed" (error state) instead of "Skipped" (done state), and passes a caution context to the AI for the next iteration
+  - **When no screenshots exist**: Step now shows error state ("No screenshots") instead of quietly showing done, and passes context warning to AI
+  - **Screenshot capture now waits for lazy-loaded content**: Added `--virtual-time-budget=10000` (10 seconds) to headless Chromium flags
+  - Chromium's `--screenshot` flag previously captured immediately after DOMContentLoaded — missing lazy-loaded images, deferred JS content, facade elements, and below-fold resources
+  - Virtual time budget advances Chromium's internal clock, triggering `setTimeout`, `requestAnimationFrame`, `IntersectionObserver` callbacks, and network fetches before capturing
+  - Screenshots now show the full rendered page including lazy-loaded hero images, video facades, animated elements, and JS-populated content
+  - Fixes missing laptop/phone mockup images and other below-fold content in baseline screenshots
 
 ### v7.18.2
 - **Parallelized Baseline Screenshots + Console Check with PageSpeed Tests**
