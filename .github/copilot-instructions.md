@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.9
+- **Current Version:** 7.17.10
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,21 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.10
+- **Visual Regression Detection — Fail-Safe Default + Stronger Prompt**
+  - **CRITICAL FIX**: JSON parse fallback in `ai-visual-compare.php` now defaults to `layout_ok: false, severity: 'critical'` instead of `layout_ok: true`
+  - Previously, if Claude returned unparseable JSON, the visual check silently passed — allowing broken layouts to remain deployed
+  - Now unparseable responses trigger automatic rollback for safety
+  - Added explicit detection rules for completely unstyled pages (missing CSS, raw HTML rendering)
+  - Prompt now lists "AUTOMATIC CRITICAL" conditions: unstyled pages, navigation running together, hero sections collapsed to text, content spilling beyond viewport
+  - These patterns are always treated as critical regardless of other factors
+- **Hub Site Detail — Baseline-Only Before Screenshots + Per-Iteration Comparison**
+  - Baseline now shows only the FIRST set of Before screenshots (was showing all Before screenshots from all runs)
+  - Each iteration now shows a side-by-side comparison grid: Before (Baseline) alongside After (Iteration N)
+  - Before and After columns have colored phase labels (green for Before, blue for After)
+  - Comparison grid uses CSS Grid 2-column layout with responsive single-column on mobile
+  - `$baselineSS` variable extracted once per session and reused across all iterations
 
 ### v7.17.9
 - **Fixed Side-by-Side Screenshot Comparison Layout**

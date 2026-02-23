@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.17.9');
+    define('CCM_HELPER_VERSION', '7.17.10');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
