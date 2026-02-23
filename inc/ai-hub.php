@@ -1278,8 +1278,17 @@ function ccm_tools_render_ai_section(): void {
             <!-- URL & Action Controls -->
             <div class="ccm-ai-controls">
                 <div class="ccm-form-field">
-                    <label for="ai-ps-url"><?php _e('URL to Test', 'ccm-tools'); ?></label>
-                    <input type="url" id="ai-ps-url" value="<?php echo esc_url(site_url()); ?>" class="ccm-input">
+                    <label for="ai-ps-url-search"><?php _e('Page to Test', 'ccm-tools'); ?></label>
+                    <div class="ccm-url-picker">
+                        <input type="text" id="ai-ps-url-search" class="ccm-input" placeholder="<?php esc_attr_e('Search pages, posts, products…', 'ccm-tools'); ?>" autocomplete="off">
+                        <input type="hidden" id="ai-ps-url" value="<?php echo esc_url(site_url()); ?>">
+                        <div id="ai-ps-url-selected" class="ccm-url-picker-selected">
+                            <span class="ccm-url-picker-badge">Homepage</span>
+                            <span class="ccm-url-picker-url"><?php echo esc_html(site_url('/')); ?></span>
+                            <button type="button" class="ccm-url-picker-clear" title="<?php esc_attr_e('Clear', 'ccm-tools'); ?>">&times;</button>
+                        </div>
+                        <div id="ai-ps-url-dropdown" class="ccm-url-picker-dropdown"></div>
+                    </div>
                 </div>
                 <button type="button" id="ai-one-click-btn" class="ccm-button ccm-button-primary ccm-ai-cta" <?php echo $hasKey ? '' : 'disabled'; ?>>
                     🚀 <?php _e('One-Click Optimize', 'ccm-tools'); ?>

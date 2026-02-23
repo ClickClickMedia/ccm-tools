@@ -3218,3 +3218,63 @@ function ccm_tools_ajax_redis_get_stats(): void {
         'stats' => $stats
     ));
 }
+
+// Search pages/posts/CPTs for AI URL picker
+add_action('wp_ajax_ccm_tools_search_pages', 'ccm_tools_ajax_search_pages');
+function ccm_tools_ajax_search_pages(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('Unauthorized', 'ccm-tools'));
+    }
+
+    $search = sanitize_text_field($_POST['search'] ?? '');
+    $results = [];
+
+    // Get all public post types
+    $post_types = get_post_types(['public' => true], 'objects');
+    $type_slugs = array_keys($post_types);
+
+    // Build WP_Query args
+    $args = [
+        'post_type'      => $type_slugs,
+        'post_status'    => 'publish',
+        'posts_per_page' => 20,
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+    ];
+
+    if (!empty($search)) {
+        $args['s'] = $search;
+    }
+
+    $query = new WP_Query($args);
+
+    // Always include the homepage first
+    $home_url = home_url('/');
+    if (empty($search) || stripos('home homepage front page', $search) !== false || stripos($home_url, $search) !== false) {
+        $front_id = (int) get_option('page_on_front');
+        $home_title = $front_id ? get_the_title($front_id) : get_bloginfo('name');
+        $results[] = [
+            'id'    => $front_id ?: 0,
+            'title' => $home_title ?: 'Homepage',
+            'url'   => $home_url,
+            'type'  => 'Homepage',
+        ];
+    }
+
+    foreach ($query->posts as $post) {
+        $url = get_permalink($post);
+        // Skip if this is the homepage (already added)
+        if (trailingslashit($url) === trailingslashit($home_url)) continue;
+
+        $type_label = isset($post_types[$post->post_type]) ? $post_types[$post->post_type]->labels->singular_name : ucfirst($post->post_type);
+        $results[] = [
+            'id'    => $post->ID,
+            'title' => $post->post_title,
+            'url'   => $url,
+            'type'  => $type_label,
+        ];
+    }
+
+    wp_send_json_success($results);
+}

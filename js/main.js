@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.17.10
+ * Version: 7.17.11
  */
 
 (function() {
@@ -3762,6 +3762,141 @@
 
         // AI Chat widget
         initAiChat();
+
+        // URL picker (searchable page selector)
+        initAiUrlPicker();
+    }
+
+    // ─── URL Picker (Page/Post/CPT search) ────────────
+
+    function initAiUrlPicker() {
+        const searchInput = $('#ai-ps-url-search');
+        const hiddenInput = $('#ai-ps-url');
+        const selectedEl = $('#ai-ps-url-selected');
+        const dropdown = $('#ai-ps-url-dropdown');
+        if (!searchInput || !hiddenInput || !dropdown) return;
+
+        let debounceTimer = null;
+        let currentResults = [];
+
+        // Show selected state, hide search input
+        function showSelected(title, url, type) {
+            hiddenInput.value = url;
+            const badge = selectedEl.querySelector('.ccm-url-picker-badge');
+            const urlSpan = selectedEl.querySelector('.ccm-url-picker-url');
+            if (badge) badge.textContent = type || 'Page';
+            if (urlSpan) urlSpan.textContent = url;
+            selectedEl.style.display = 'flex';
+            searchInput.style.display = 'none';
+            dropdown.style.display = 'none';
+            searchInput.value = '';
+        }
+
+        // Clear selection, show search input
+        function clearSelection() {
+            hiddenInput.value = '';
+            selectedEl.style.display = 'none';
+            searchInput.style.display = '';
+            searchInput.value = '';
+            searchInput.focus();
+        }
+
+        // Clear button
+        const clearBtn = selectedEl.querySelector('.ccm-url-picker-clear');
+        if (clearBtn) clearBtn.addEventListener('click', clearSelection);
+
+        // Render dropdown results
+        function renderDropdown(results) {
+            currentResults = results;
+            if (!results.length) {
+                dropdown.innerHTML = '<div class="ccm-url-picker-empty">No pages found</div>';
+                dropdown.style.display = 'block';
+                return;
+            }
+            dropdown.innerHTML = results.map((r, i) => `
+                <div class="ccm-url-picker-item" data-index="${i}">
+                    <span class="ccm-url-picker-item-type">${r.type}</span>
+                    <span class="ccm-url-picker-item-title">${r.title}</span>
+                    <span class="ccm-url-picker-item-url">${r.url}</span>
+                </div>
+            `).join('');
+            dropdown.style.display = 'block';
+        }
+
+        // Fetch results
+        async function fetchPages(search) {
+            try {
+                const res = await ajax('ccm_tools_search_pages', { search });
+                renderDropdown(res.data || []);
+            } catch (e) {
+                dropdown.innerHTML = '<div class="ccm-url-picker-empty">Search failed</div>';
+                dropdown.style.display = 'block';
+            }
+        }
+
+        // Input event with debounce
+        searchInput.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => fetchPages(searchInput.value), 250);
+        });
+
+        // Show all pages on focus (if empty)
+        searchInput.addEventListener('focus', () => {
+            if (!searchInput.value && !dropdown.innerHTML) {
+                fetchPages('');
+            } else if (dropdown.innerHTML) {
+                dropdown.style.display = 'block';
+            }
+        });
+
+        // Item click
+        dropdown.addEventListener('click', (e) => {
+            const item = e.target.closest('.ccm-url-picker-item');
+            if (!item) return;
+            const idx = parseInt(item.dataset.index, 10);
+            const r = currentResults[idx];
+            if (r) showSelected(r.title, r.url, r.type);
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.ccm-url-picker')) {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        // Keyboard navigation
+        searchInput.addEventListener('keydown', (e) => {
+            const items = dropdown.querySelectorAll('.ccm-url-picker-item');
+            if (!items.length) return;
+
+            const active = dropdown.querySelector('.ccm-url-picker-item-active');
+            let idx = active ? parseInt(active.dataset.index, 10) : -1;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                idx = Math.min(idx + 1, items.length - 1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                idx = Math.max(idx - 1, 0);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (active) { active.click(); return; }
+                // If nothing selected and there's text, allow submitting the first result
+                if (items[0]) { items[0].click(); return; }
+            } else if (e.key === 'Escape') {
+                dropdown.style.display = 'none';
+                return;
+            } else {
+                return;
+            }
+
+            items.forEach(it => it.classList.remove('ccm-url-picker-item-active'));
+            if (items[idx]) {
+                items[idx].classList.add('ccm-url-picker-item-active');
+                items[idx].scrollIntoView({ block: 'nearest' });
+            }
+        });
     }
 
     // ─── Hub Connection ────────────

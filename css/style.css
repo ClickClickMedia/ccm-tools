@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.17.10
+ * Version: 7.17.11
  */
 
 /* ===================================
@@ -2680,6 +2680,138 @@ tr.ccm-front-page-row {
 .ccm-ai-controls .ccm-input {
     height: 2.5rem;
     box-sizing: border-box;
+}
+
+/* URL Picker (searchable page selector) */
+.ccm-url-picker {
+    position: relative;
+}
+
+.ccm-url-picker-selected {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.5rem;
+    padding: 0 0.75rem;
+    background: var(--ccm-bg-secondary, #f8fafc);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius, 6px);
+    font-size: var(--ccm-text-sm, 0.875rem);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.ccm-url-picker-badge {
+    flex-shrink: 0;
+    padding: 0.15rem 0.5rem;
+    background: var(--ccm-primary, #3b82f6);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.ccm-url-picker-url {
+    flex: 1;
+    color: var(--ccm-text-secondary, #64748b);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--ccm-font-mono, monospace);
+    font-size: 0.8rem;
+}
+
+.ccm-url-picker-clear {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--ccm-text-muted, #94a3b8);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+    opacity: 0.7;
+    transition: opacity 0.15s, color 0.15s;
+}
+.ccm-url-picker-clear:hover {
+    opacity: 1;
+    color: var(--ccm-error, #ef4444);
+}
+
+.ccm-url-picker-dropdown {
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    margin-top: 2px;
+    background: var(--ccm-bg, #fff);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius, 6px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 100;
+}
+
+.ccm-url-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: var(--ccm-text-sm, 0.875rem);
+    transition: background 0.1s;
+    border-bottom: 1px solid var(--ccm-border-light, #f1f5f9);
+}
+.ccm-url-picker-item:last-child {
+    border-bottom: none;
+}
+.ccm-url-picker-item:hover,
+.ccm-url-picker-item-active {
+    background: var(--ccm-bg-secondary, #f8fafc);
+}
+
+.ccm-url-picker-item-type {
+    flex-shrink: 0;
+    padding: 0.1rem 0.4rem;
+    background: var(--ccm-bg-tertiary, #e2e8f0);
+    color: var(--ccm-text-secondary, #64748b);
+    font-size: 0.65rem;
+    font-weight: 600;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    min-width: 3.5rem;
+    text-align: center;
+}
+
+.ccm-url-picker-item-title {
+    flex: 1;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ccm-url-picker-item-url {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--ccm-text-muted, #94a3b8);
+    font-family: var(--ccm-font-mono, monospace);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ccm-url-picker-empty {
+    padding: 0.75rem;
+    text-align: center;
+    color: var(--ccm-text-muted, #94a3b8);
+    font-size: var(--ccm-text-sm, 0.875rem);
 }
 
 /* Strategy tabs */

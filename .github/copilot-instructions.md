@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.17.10
+- **Current Version:** 7.17.11
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,18 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.17.11
+- **Searchable Page Picker for URL to Test**
+  - Replaced manual URL text input with a searchable dropdown that lists all published pages, posts, and custom post types
+  - Type-ahead search with 250ms debounce queries WordPress via new `ccm_tools_search_pages` AJAX handler
+  - Results show post type badge (Page, Post, Product, etc.), title, and URL
+  - Homepage always listed first when search is empty or matches "home/homepage"
+  - Keyboard navigation: Arrow Up/Down to browse, Enter to select, Escape to close
+  - Selected page shown as a pill with type badge, URL, and clear (×) button
+  - Clearing the selection re-shows the search input for a new search
+  - All public post types supported including WooCommerce Products, custom CPTs
+  - New CSS: `.ccm-url-picker`, `.ccm-url-picker-selected`, `.ccm-url-picker-dropdown`, `.ccm-url-picker-item`, etc.
 
 ### v7.17.10
 - **Visual Regression Detection — Fail-Safe Default + Stronger Prompt**
