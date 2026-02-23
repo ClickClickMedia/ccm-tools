@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.5
+- **Current Version:** 7.18.6
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,17 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.6
+- **Step Indicators All Fit on One Line**
+  - Removed `flex-wrap: wrap` → `flex-wrap: nowrap` on `.ccm-ai-steps` so all 12 steps stay on a single row
+  - Removed `min-width: 120px` → `min-width: 0` so steps can shrink freely with flex
+  - Reduced step padding from `0.75rem 0.5rem` → `0.6rem 0.25rem`
+  - Reduced step gap from `0.25rem` → `0.2rem`
+  - Reduced indicator circle from 28px → 24px
+  - Reduced label font-size from `0.75rem` → `0.68rem` with `word-break: break-word`
+  - Reduced status font-size from `0.7rem` → `0.62rem`
+  - Reduced icon `::after` font-size from `14px` → `12px` to fit smaller indicators
 
 ### v7.18.5
 - **Puppeteer Screenshot Capture — Full Page Load Before Capture**

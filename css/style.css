@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.18.5
+ * Version: 7.18.6
  */
 
 /* ===================================
@@ -2854,7 +2854,7 @@ tr.ccm-front-page-row {
 /* Step progress indicator */
 .ccm-ai-steps {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0;
     border: 1px solid var(--ccm-border);
     border-radius: var(--ccm-radius-md);
@@ -2863,12 +2863,12 @@ tr.ccm-front-page-row {
 
 .ccm-ai-step {
     flex: 1;
-    min-width: 120px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.75rem 0.5rem;
+    gap: 0.2rem;
+    padding: 0.6rem 0.25rem;
     background: var(--ccm-bg);
     border-right: 1px solid var(--ccm-border);
     text-align: center;
@@ -2880,8 +2880,8 @@ tr.ccm-front-page-row {
 }
 
 .ccm-ai-step-indicator {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     border: 2px solid var(--ccm-border);
     display: flex;
@@ -2895,15 +2895,18 @@ tr.ccm-front-page-row {
 }
 
 .ccm-ai-step-label {
-    font-size: 0.75rem;
+    font-size: 0.68rem;
     font-weight: 600;
     color: var(--ccm-text-muted);
+    word-break: break-word;
+    hyphens: auto;
 }
 
 .ccm-ai-step-status {
-    font-size: 0.7rem;
+    font-size: 0.62rem;
     color: var(--ccm-text-muted);
     min-height: 1em;
+    word-break: break-word;
 }
 
 /* Step states */
@@ -2938,7 +2941,7 @@ tr.ccm-front-page-row {
 .ccm-ai-step[data-status="done"] .ccm-ai-step-indicator::after {
     content: '✓';
     color: #fff;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
     line-height: 1;
     width: auto;
@@ -2959,7 +2962,7 @@ tr.ccm-front-page-row {
 .ccm-ai-step[data-status="error"] .ccm-ai-step-indicator::after {
     content: '✕';
     color: #fff;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
     line-height: 1;
     width: auto;
@@ -2979,7 +2982,7 @@ tr.ccm-front-page-row {
 .ccm-ai-step[data-status="skipped"] .ccm-ai-step-indicator::after {
     content: '—';
     color: var(--ccm-text-muted);
-    font-size: 14px;
+    font-size: 12px;
     line-height: 1;
     width: auto;
     height: auto;
