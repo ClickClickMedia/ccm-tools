@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.0
+- **Current Version:** 7.18.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.1
+- **AI API Token Optimization — Reduced Claude Input Token Usage by ~40%**
+  - **CSS Minification Before Sending to AI**: New `minifyCssForAi()` function strips CSS comments, `@keyframes` blocks, `@media print` rules, external `@font-face` declarations, and collapses whitespace before including CSS in AI prompts
+  - **Reduced CSS Cap**: Total CSS sent to AI reduced from 60KB → 40KB, per-file cap from 30KB → 25KB
+  - **Reduced Inline Styles Cap**: Inline `<style>` content cap reduced from 20KB → 10KB, now also minified
+  - **Reduced Image Lists**: Images sent to AI reduced from 20/15 → 10 in both analyze and optimize endpoints
+  - **URL Truncation**: New `truncateUrlForAi()` function strips query strings and shortens URLs >120 chars to domain + last 2 path segments, reducing token waste on long CDN/cache-busted URLs
+  - **Page Resource Caching in Optimize Sessions**: Page HTML/CSS fetched ONCE during the `start` action and stored in `ai_sessions.metadata` JSON column; retest iterations load cached resources instead of re-fetching (saves ~15-20K input tokens per iteration)
+  - New `ensureAiSessionsMetadataColumn()` auto-migration function adds `metadata` JSON column to `ai_sessions` table
+  - **Removed Plugin-Side Duplicate Learnings**: Plugin no longer sends `ccm_tools_build_learnings_context()` data in API calls for analyze, optimize, or chat — learnings are now handled centrally by the hub's `buildHubLearnings()` which includes both cross-site intelligence AND site-specific history
+  - **Merged AI Prompt Sections**: Combined duplicate "Previous Optimization History" and "Cross-Site Optimization Intelligence" prompt sections into a single unified section in both `ai-analyze.php` and `ai-optimize.php`
+  - `ccm_tools_build_learnings_context()` function preserved in plugin but no longer called (kept for potential local-only future use)
+  - Estimated savings: ~25,000-40,000 fewer input tokens per optimize session, ~8,000-15,000 fewer per single analyze call
 
 ### v7.18.0
 - **Cross-Site AI Learning — Hub-Centralized Optimization Intelligence**

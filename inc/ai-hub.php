@@ -318,11 +318,9 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
         $context .= 'WooCommerce site. ';
     }
 
-    // Add learnings from previous optimization runs
-    $learnings = ccm_tools_build_learnings_context($url);
-    if (!empty($learnings)) {
-        $context .= "\n" . $learnings;
-    }
+    // Note: Site-specific learnings are now handled centrally by the hub via
+    // buildHubLearnings(). No need to send plugin-side learnings here — eliminates
+    // duplicate data that was consuming ~1,000-2,000 extra tokens per request.
 
     // Add server-side tool status for AI context
     $toolStatus = ccm_tools_get_optimization_status();
@@ -386,11 +384,7 @@ function ccm_tools_ajax_ai_hub_ai_optimize(): void {
         $context = '';
         if (class_exists('WooCommerce')) $context .= 'WooCommerce site. ';
 
-        // Add learnings from previous optimization runs
-        $learnings = ccm_tools_build_learnings_context($url);
-        if (!empty($learnings)) {
-            $context .= "\n" . $learnings;
-        }
+        // Note: Learnings now handled centrally by hub's buildHubLearnings()
 
         $body['context'] = $context;
     }
@@ -872,11 +866,7 @@ function ccm_tools_ajax_ai_chat(): void {
         $context .= 'This is a WooCommerce site. ';
     }
 
-    // Add recent optimization history
-    $learnings = ccm_tools_build_learnings_context($siteUrl);
-    if (!empty($learnings)) {
-        $context .= "\n" . $learnings;
-    }
+    // Note: Learnings now handled centrally by hub's buildHubLearnings()
 
     // Read recent error log entries for AI context
     $errorLog = '';
