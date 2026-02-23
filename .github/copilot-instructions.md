@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.4
+- **Current Version:** 7.18.5
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,30 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.5
+- **Puppeteer Screenshot Capture — Full Page Load Before Capture**
+  - Replaced Chromium CLI `--screenshot` with a Puppeteer (Node.js) script for screenshot capture
+  - `waitUntil: 'networkidle0'` waits until no network requests for 500ms — ensures deferred fonts, async scripts and XHR calls complete before capture
+  - Programmatic scroll through the entire page triggers `IntersectionObserver` callbacks, firing lazy-loaded images, video facades, and below-fold content
+  - 2-second settle wait after scrolling for JS-populated content (animated elements, carousel items, etc.) to finish rendering
+  - Scrolls back to top before capture so above-fold content is the first thing visible
+  - `fullPage: true` — Puppeteer captures the complete page regardless of viewport height, replacing the tall `8192px / 12288px` viewport hack
+  - Uses `puppeteer-core` (no bundled Chromium download — reuses the existing Chromium binary found by `findChromiumBinary()`)
+  - Automatic fallback to Chromium CLI `--screenshot` if Node.js or `puppeteer-core` is not installed
+  - New files: `scripts/screenshot.js`, `scripts/package.json`
+  - New PHP helpers: `findNodeBinary()`, `canUsePuppeteer()`, `runPuppeteerCapture()`, `runChromiumCliCapture()` in `includes/screenshot.php`
+  - **Hub Installation (one-time, run on server):**
+    ```bash
+    # 1. Install Node.js (if not already installed)
+    sudo apt-get install -y nodejs npm
+    # or: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs
+
+    # 2. Install puppeteer-core
+    cd /path/to/hub/scripts
+    npm install
+    ```
+  - After install, `canUsePuppeteer()` auto-detects the setup and switches to Puppeteer automatically — no config changes needed
 
 ### v7.18.4
 - **Fixed Screenshot Capture Broken by --virtual-time-budget Flag**
