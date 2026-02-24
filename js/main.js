@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.18.6
+ * Version: 7.18.7
  */
 
 (function() {
@@ -4676,7 +4676,7 @@
             // Screenshot promise (runs in background)
             const screenshotPromise = (async () => {
                 try {
-                    const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url, phase: 'before' }, { timeout: 120000 });
+                    const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url, phase: 'before' }, { timeout: 300000 });
                     return ssRes.data || null;
                 } catch (e) {
                     aiLog(`Baseline screenshot capture failed: ${e.message} — continuing without visual comparison`, 'warn');
@@ -4935,7 +4935,7 @@
                         aiLog(`Capturing screenshot after iteration ${iteration}…`, 'info');
                         const iterSsParams = { url, phase: 'after' };
                         if (screenshotRunId) iterSsParams.run_id = screenshotRunId;
-                        const iterSsRes = await ajax('ccm_tools_ai_hub_screenshot', iterSsParams, { timeout: 120000 });
+                        const iterSsRes = await ajax('ccm_tools_ai_hub_screenshot', iterSsParams, { timeout: 300000 });
                         iterScreenshots = iterSsRes.data || null;
                         if (iterScreenshots?.desktop?.url || iterScreenshots?.desktop?.data_uri ||
                             iterScreenshots?.mobile?.url || iterScreenshots?.mobile?.data_uri) {
@@ -5195,7 +5195,7 @@
                     aiLog('Capturing final screenshots (post-rollback state)…', 'info');
                     const afterParams = { url, phase: 'after' };
                     if (screenshotRunId) afterParams.run_id = screenshotRunId;
-                    const afterSsRes = await ajax('ccm_tools_ai_hub_screenshot', afterParams, { timeout: 120000 });
+                    const afterSsRes = await ajax('ccm_tools_ai_hub_screenshot', afterParams, { timeout: 300000 });
                     const afterScreenshots = afterSsRes.data || null;
                     if (afterScreenshots?.desktop?.url || afterScreenshots?.desktop?.data_uri || afterScreenshots?.mobile?.url || afterScreenshots?.mobile?.data_uri) {
                         aiLog('Final screenshots captured (rolled-back state)', 'success');

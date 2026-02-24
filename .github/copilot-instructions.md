@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.6
+- **Current Version:** 7.18.7
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,40 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.7
+- **Robust Screenshot Capture — Retry Pipeline + Diagnostic Logging**
+  - **screenshot.js rewritten for reliability:**
+    - Global 120s process timeout — script self-terminates if hung, prevents zombie Chromium processes
+    - Step-by-step diagnostic logging to stderr at every stage (launch, navigate, scroll, image wait, capture)
+    - Smaller scroll steps (50% viewport) at 250ms intervals for better IntersectionObserver trigger coverage
+    - `page.waitForNetworkIdle({ idleTime: 1500 })` after scroll catches all post-scroll lazy image fetches
+    - Explicit `waitForImages()` waits for every `<img>` element's load event with per-image 10s timeout
+    - Reports detailed image load stats (total, already loaded, loaded after wait, errors, timeouts)
+    - Skips zero-size/hidden images to avoid waiting for tracking pixels
+    - Dismisses common cookie consent overlays before scrolling
+    - Output file verification: checks file exists AND is non-zero before reporting success
+    - `headless: 'new'` mode for Chrome 112+ with proper args including `--disable-software-rasterizer`
+  - **PHP retry pipeline (3 attempts before failure):**
+    - Attempt 1: Puppeteer (best quality — networkidle0, scroll, image wait)
+    - Attempt 2: Puppeteer retry with 2s cooldown (handles transient Chromium crashes)
+    - Attempt 3: Chromium CLI fallback with `--headless=new` → `--headless` retry
+    - Each attempt gets a fresh temp file to avoid stale state
+  - **New `diagnoseScreenshotCapability()` function:**
+    - Reports: Chromium path + version, Node.js path + version, puppeteer-core installed, proc_open available, /tmp writable + free space, GD library available
+    - Diagnostic data included in error responses when all attempts fail — no more "no output file produced" without context
+  - **Timeout increases across the stack:**
+    - Puppeteer PHP wrapper: 130s (was 50s) to accommodate the 120s JS global timeout
+    - `captureScreenshots()`: `set_time_limit(600)` (was 120s) for retry pipeline
+    - API endpoint: `set_time_limit(600)` (was 120s)
+    - Plugin AJAX handler: `set_time_limit(600)` (was 120s), HTTP timeout 300s (was 120s)
+    - JS AJAX timeout: 300s (was 120s)
+  - **Stricter AI Visual Comparison Prompt:**
+    - Added "GOLDEN RULE": Before screenshot is ground truth — anything visible in Before but absent in After is always a regression
+    - Removed "ignore lazy-loaded images/blank areas" instruction that was causing Claude to miss real regressions
+    - Explicit rule: hero image present in Before → blank in After = AUTOMATIC CRITICAL
+    - "NEVER IGNORE" section: blank areas in After that were filled in Before must always be reported
+    - Updated user message to stop telling AI to ignore lazy-loading placeholders
 
 ### v7.18.6
 - **Step Indicators All Fit on One Line**
