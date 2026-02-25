@@ -213,6 +213,81 @@ function ccm_tools_ajax_optimize_single_table(): void {
     wp_send_json_success($result);
 }
 
+/**
+ * AJAX handler to optimize a single table (lightweight — OPTIMIZE TABLE only)
+ * Used by the progressive optimization flow to avoid timeouts on large databases
+ */
+add_action('wp_ajax_ccm_tools_optimize_table_task', 'ccm_tools_ajax_optimize_table_task');
+function ccm_tools_ajax_optimize_table_task(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
+    }
+
+    $table_name = isset($_POST['table_name']) ? sanitize_text_field($_POST['table_name']) : '';
+    $do_optimize = !empty($_POST['optimize']);
+    $do_collation = !empty($_POST['collation']);
+
+    if (empty($table_name)) {
+        wp_send_json_error(__('No table name provided.', 'ccm-tools'));
+    }
+
+    if (!ccm_tools_validate_table_name_optimize($table_name)) {
+        wp_send_json_error(__('Invalid table name.', 'ccm-tools'));
+    }
+
+    global $wpdb;
+    $messages = array();
+    $success = true;
+
+    // OPTIMIZE TABLE
+    if ($do_optimize) {
+        $result = $wpdb->query("OPTIMIZE TABLE `{$table_name}`");
+        if ($result === false) {
+            $messages[] = 'Optimize failed';
+            $success = false;
+        } else {
+            $messages[] = 'Optimized';
+        }
+    }
+
+    // UPDATE COLLATION
+    if ($do_collation) {
+        $mysql_version = $wpdb->get_var("SELECT VERSION()");
+        $collation = ccm_tools_get_appropriate_collation_optimize($mysql_version);
+        $database_name = $wpdb->dbname;
+        if (empty($database_name)) {
+            $database_name = defined('DB_NAME') ? DB_NAME : '';
+        }
+
+        $table_status = null;
+        if (!empty($database_name)) {
+            $table_status = $wpdb->get_row(
+                $wpdb->prepare("SELECT TABLE_COLLATION as Collation FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s", $database_name, $table_name),
+                'OBJECT'
+            );
+        }
+
+        if ($table_status && $table_status->Collation !== $collation) {
+            $result = $wpdb->query("ALTER TABLE `{$table_name}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$collation}");
+            if ($result !== false) {
+                $messages[] = $table_status->Collation . ' → ' . $collation;
+            } else {
+                $messages[] = 'Collation update failed';
+                $success = false;
+            }
+        } else {
+            $messages[] = 'Collation OK';
+        }
+    }
+
+    wp_send_json_success(array(
+        'table' => $table_name,
+        'success' => $success,
+        'message' => implode('; ', $messages),
+    ));
+}
+
 // Display .htaccess
 add_action('wp_ajax_ccm_tools_display_htaccess', 'ccm_tools_ajax_display_htaccess');
 function ccm_tools_ajax_display_htaccess(): void {

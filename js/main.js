@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.18.8
+ * Version: 7.18.9
  */
 
 (function() {
@@ -796,6 +796,11 @@
         if (runButton) runButton.disabled = true;
         optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = true);
         
+        // Identify table-intensive tasks that need per-table progressive processing
+        const TABLE_TASKS = new Set(['optimize_tables', 'update_collation']);
+        const tableTasks = selected.filter(t => TABLE_TASKS.has(t.key));
+        const regularTasks = selected.filter(t => !TABLE_TASKS.has(t.key));
+        
         // Build initial results table
         resultsBox.style.display = 'block';
         let tableHtml = `
@@ -826,10 +831,10 @@
         let successCount = 0;
         let totalItems = 0;
         
-        for (const task of selected) {
+        // Helper: process a regular (non-table) task
+        async function processRegularTask(task) {
             const row = $(`#opt-row-${task.key}`);
             if (row) {
-                // Update row to show running
                 row.innerHTML = `
                     <td>${escapeHtml(task.label)}</td>
                     <td><span class="ccm-status-running"><div class="ccm-spinner ccm-spinner-small"></div> Running</span></td>
@@ -854,7 +859,6 @@
                     }
                 }
                 
-                // Update row with result
                 if (row) {
                     const statusIcon = success ? '✓' : '✗';
                     const statusClass = success ? 'success' : 'error';
@@ -869,7 +873,6 @@
             } catch (error) {
                 completed++;
                 
-                // Update row with error
                 if (row) {
                     row.innerHTML = `
                         <td>${escapeHtml(task.label)}</td>
@@ -886,6 +889,165 @@
             const progressText = $('#opt-progress-text');
             if (progressBar) progressBar.style.width = `${progressPercent}%`;
             if (progressText) progressText.textContent = `${completed}/${selected.length} completed`;
+        }
+        
+        // Helper: process table-intensive tasks progressively (table by table)
+        async function processTableTasks(tasks) {
+            if (tasks.length === 0) return;
+            
+            const doOptimize = tasks.some(t => t.key === 'optimize_tables');
+            const doCollation = tasks.some(t => t.key === 'update_collation');
+            
+            // Mark all table tasks as running
+            for (const task of tasks) {
+                const row = $(`#opt-row-${task.key}`);
+                if (row) {
+                    row.innerHTML = `
+                        <td>${escapeHtml(task.label)}</td>
+                        <td><span class="ccm-status-running"><div class="ccm-spinner ccm-spinner-small"></div> Running</span></td>
+                        <td>-</td>
+                        <td>-</td>
+                    `;
+                }
+            }
+            
+            // Get table list
+            let tables = [];
+            try {
+                const tablesResponse = await ajax('ccm_tools_get_tables_to_optimize', {}, { timeout: 30000 });
+                tables = tablesResponse?.data?.tables || [];
+            } catch (e) {
+                for (const task of tasks) {
+                    completed++;
+                    const row = $(`#opt-row-${task.key}`);
+                    if (row) {
+                        row.innerHTML = `
+                            <td>${escapeHtml(task.label)}</td>
+                            <td><span class="ccm-status-error"><span class="ccm-icon ccm-error">✗</span> Error</span></td>
+                            <td>Could not retrieve tables list</td>
+                            <td>-</td>
+                        `;
+                    }
+                }
+                return;
+            }
+            
+            if (tables.length === 0) {
+                for (const task of tasks) {
+                    completed++;
+                    successCount++;
+                    const row = $(`#opt-row-${task.key}`);
+                    if (row) {
+                        row.innerHTML = `
+                            <td>${escapeHtml(task.label)}</td>
+                            <td><span class="ccm-status-success"><span class="ccm-icon ccm-success">✓</span> Done</span></td>
+                            <td>No tables found</td>
+                            <td>0</td>
+                        `;
+                    }
+                }
+                return;
+            }
+            
+            // Insert a sub-progress row after the first table task row
+            const firstRow = $(`#opt-row-${tasks[0].key}`);
+            const subProgressId = 'opt-table-progress';
+            if (firstRow) {
+                firstRow.insertAdjacentHTML('afterend', `
+                    <tr id="${subProgressId}">
+                        <td colspan="4" class="ccm-subtask-progress">
+                            <div class="ccm-subtask-info">
+                                <span id="opt-table-current">Preparing...</span>
+                                <span id="opt-table-counter">0/${tables.length}</span>
+                            </div>
+                            <div class="ccm-progress-bar ccm-progress-bar-sm"><div class="ccm-progress-fill" id="opt-table-bar" style="width: 0%"></div></div>
+                        </td>
+                    </tr>
+                `);
+            }
+            
+            // Process each table
+            let tablesDone = 0;
+            let tablesSuccess = 0;
+            let tablesFailed = 0;
+            
+            for (const tableName of tables) {
+                // Update current table display
+                const currentEl = $(`#opt-table-current`);
+                if (currentEl) currentEl.textContent = tableName;
+                
+                try {
+                    const resp = await ajax('ccm_tools_optimize_table_task', {
+                        table_name: tableName,
+                        optimize: doOptimize ? '1' : '',
+                        collation: doCollation ? '1' : ''
+                    }, { timeout: 60000 });
+                    
+                    const r = resp?.data || {};
+                    if (r.success) {
+                        tablesSuccess++;
+                    } else {
+                        tablesFailed++;
+                    }
+                } catch (e) {
+                    tablesFailed++;
+                }
+                
+                tablesDone++;
+                const pct = Math.round((tablesDone / tables.length) * 100);
+                const counterEl = $(`#opt-table-counter`);
+                const barEl = $(`#opt-table-bar`);
+                if (counterEl) counterEl.textContent = `${tablesDone}/${tables.length}`;
+                if (barEl) barEl.style.width = `${pct}%`;
+            }
+            
+            // Remove sub-progress row
+            const subRow = $(`#${subProgressId}`);
+            if (subRow) subRow.remove();
+            
+            // Mark table tasks as complete
+            for (const task of tasks) {
+                completed++;
+                const row = $(`#opt-row-${task.key}`);
+                const allOk = tablesFailed === 0;
+                
+                if (allOk) successCount++;
+                if (task.key === 'optimize_tables' && doOptimize) {
+                    totalItems += tablesSuccess;
+                }
+                
+                const statusIcon = allOk ? '✓' : '⚠';
+                const statusClass = allOk ? 'success' : 'warning';
+                const msg = task.key === 'optimize_tables'
+                    ? `${tablesSuccess} tables optimized` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '')
+                    : `${tablesSuccess} tables processed` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                
+                if (row) {
+                    row.innerHTML = `
+                        <td>${escapeHtml(task.label)}</td>
+                        <td><span class="ccm-status-${statusClass}"><span class="ccm-icon ccm-${statusClass}">${statusIcon}</span> Done</span></td>
+                        <td>${escapeHtml(msg)}</td>
+                        <td>${tablesSuccess}</td>
+                    `;
+                }
+                
+                // Update main progress
+                const progressPercent = Math.round((completed / selected.length) * 100);
+                const progressBar = $('#opt-progress-bar');
+                const progressText = $('#opt-progress-text');
+                if (progressBar) progressBar.style.width = `${progressPercent}%`;
+                if (progressText) progressText.textContent = `${completed}/${selected.length} completed`;
+            }
+        }
+        
+        // Run regular tasks first, then table tasks
+        for (const task of regularTasks) {
+            await processRegularTask(task);
+        }
+        
+        // Run table-intensive tasks progressively
+        if (tableTasks.length > 0) {
+            await processTableTasks(tableTasks);
         }
         
         // Update header with final status

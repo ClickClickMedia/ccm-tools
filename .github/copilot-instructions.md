@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.8
+- **Current Version:** 7.18.9
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -172,6 +172,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_redis_enable` | `ccm_tools_ajax_redis_enable()` | Install Redis object-cache.php drop-in |
 | `ccm_tools_redis_disable` | `ccm_tools_ajax_redis_disable()` | Uninstall Redis object-cache.php drop-in |
 | `ccm_tools_redis_flush` | `ccm_tools_ajax_redis_flush()` | Flush Redis cache (param: `flush_type`) |
+| `ccm_tools_optimize_table_task` | `ccm_tools_ajax_optimize_table_task()` | Optimize/collate a single table (progressive) |
 | `ccm_tools_redis_test` | `ccm_tools_ajax_redis_test()` | Test Redis connection |
 | `ccm_tools_redis_save_settings` | `ccm_tools_ajax_redis_save_settings()` | Save Redis configuration settings |
 | `ccm_tools_redis_add_config` | `ccm_tools_ajax_redis_add_config()` | Add Redis constants to wp-config.php |
@@ -289,6 +290,23 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.9
+- **Progressive Per-Table Database Optimization (Timeout Prevention)**
+  - `optimize_tables` and `update_collation` tasks now process tables one-by-one via AJAX instead of in a single batch PHP call
+  - Previously ALL tables were optimized/collated in one `ccm_tools_optimization_optimize_tables()` call — caused timeouts on databases with 100+ tables
+  - New per-table sub-progress bar appears inline in the results table showing: current table name (monospace), counter (e.g. 47/156), and a compact progress bar
+  - Each table gets its own lightweight AJAX call to new `ccm_tools_optimize_table_task` handler (OPTIMIZE TABLE + optional ALTER TABLE COLLATE)
+  - Sub-progress row removed after completion; parent task row shows final tally
+  - Regular optimization tasks (transients, spam, meta cleanup) still run as single AJAX calls — only table-intensive tasks are split
+  - 60-second per-table timeout prevents any single large table from blocking the entire flow
+- **Fixed Redis Cache Statistics Not Showing on Large Instances**
+  - Root cause: `KEYS` command (O(N), blocks Redis server) was timing out or returning empty on Redis instances with large key spaces (e.g. 255MB+)
+  - Redis 6.0+ with millions of keys: `KEYS prefix*` can take seconds and block all other Redis operations
+  - Replaced `KEYS` with `SCAN` iterator throughout: `ccm_tools_redis_get_stats()` and `ccm_tools_redis_flush_cache()`
+  - `SCAN` is non-blocking, processes in batches of 200 keys, and is safe for production Redis servers
+  - Stats now correctly show Cached Keys, Estimated Memory, Cache Groups, and Avg. TTL even on large Redis instances
+  - Selective cache flush also uses `SCAN` + batch `DEL` instead of `KEYS` + bulk `DEL`
 
 ### v7.18.8
 - **Visual Regression Check — Layout Integrity is #1 Priority**

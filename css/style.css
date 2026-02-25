@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.18.8
+ * Version: 7.18.9
  */
 
 /* ===================================
@@ -506,6 +506,41 @@
 
 .ccm-progress-fill.ccm-progress-warning {
     background: linear-gradient(90deg, var(--ccm-warning), #fbbf24);
+}
+
+/* Sub-task progress (e.g. per-table optimization within a parent task) */
+.ccm-subtask-progress {
+    padding: var(--ccm-space-sm) var(--ccm-space-md) !important;
+    background: var(--ccm-primary-light);
+    border-left: 3px solid var(--ccm-primary);
+}
+
+.ccm-subtask-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text-muted);
+    margin-bottom: var(--ccm-space-xs);
+}
+
+.ccm-subtask-info #opt-table-current {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.8rem;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ccm-subtask-info #opt-table-counter {
+    font-weight: 600;
+    color: var(--ccm-text);
+}
+
+.ccm-progress-bar-sm {
+    height: 5px;
+    margin: 0;
 }
 
 /* Status indicators in tables */

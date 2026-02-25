@@ -555,13 +555,25 @@ function ccm_tools_redis_flush_cache($selective = true) {
         }
         
         if ($selective && !empty($settings['key_salt'])) {
-            // Selective flush - only keys with our prefix
+            // Selective flush - only keys with our prefix (using SCAN to avoid blocking)
             $pattern = $settings['key_salt'] . '*';
-            $keys = $redis->keys($pattern);
+            $deleted = 0;
+            $iterator = null;
             
-            if (!empty($keys)) {
-                $result['keys_deleted'] = $redis->del($keys);
+            while (true) {
+                $keys_batch = $redis->scan($iterator, $pattern, 200);
+                if ($keys_batch === false) {
+                    break;
+                }
+                if (!empty($keys_batch)) {
+                    $deleted += $redis->del($keys_batch);
+                }
+                if ($iterator === 0) {
+                    break;
+                }
             }
+            
+            $result['keys_deleted'] = $deleted;
             
             $result['success'] = true;
             $result['message'] = sprintf(
@@ -631,17 +643,36 @@ function ccm_tools_redis_get_stats() {
                 $redis->select($settings['database']);
             }
             
-            // Count keys for this site only
+            // Count keys for this site only using SCAN (non-blocking, safe for large Redis instances)
             if (!empty($settings['key_salt'])) {
                 $pattern = $settings['key_salt'] . '*';
-                $keys = $redis->keys($pattern);
-                $stats['keys'] = count($keys);
+                $key_count = 0;
+                $sample_keys = array();
+                $max_sample = 100;
+                $iterator = null;
                 
-                if (count($keys) > 0) {
-                    // Calculate memory usage and other stats
-                    // Sample up to 100 keys to estimate
-                    $sample_size = min(100, count($keys));
-                    $sample_keys = array_slice($keys, 0, $sample_size);
+                // Use SCAN to iterate keys without blocking Redis
+                while (true) {
+                    $keys_batch = $redis->scan($iterator, $pattern, 200);
+                    if ($keys_batch === false) {
+                        break;
+                    }
+                    $key_count += count($keys_batch);
+                    // Collect sample keys from early batches
+                    if (count($sample_keys) < $max_sample) {
+                        $remaining = $max_sample - count($sample_keys);
+                        $sample_keys = array_merge($sample_keys, array_slice($keys_batch, 0, $remaining));
+                    }
+                    if ($iterator === 0) {
+                        break;
+                    }
+                }
+                
+                $stats['keys'] = $key_count;
+                
+                if ($key_count > 0 && count($sample_keys) > 0) {
+                    // Calculate memory usage and other stats from sample
+                    $sample_size = count($sample_keys);
                     
                     $total_memory = 0;
                     $total_ttl = 0;
@@ -685,7 +716,7 @@ function ccm_tools_redis_get_stats() {
                     // Extrapolate memory for all keys
                     if ($sample_size > 0 && $total_memory > 0) {
                         $avg_size = $total_memory / $sample_size;
-                        $estimated_total = $avg_size * count($keys);
+                        $estimated_total = $avg_size * $key_count;
                         $stats['memory_bytes'] = $estimated_total;
                         $stats['memory_used'] = ccm_tools_redis_format_bytes($estimated_total);
                     }
