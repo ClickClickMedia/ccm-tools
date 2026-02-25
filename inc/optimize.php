@@ -42,23 +42,17 @@ function ccm_tools_validate_table_name_optimize($table_name) {
 }
 
 /**
- * Get appropriate collation based on MySQL/MariaDB version
+ * Get appropriate collation for WordPress databases.
+ *
+ * Always returns utf8mb4_unicode_520_ci to match WordPress core default.
+ * Using utf8mb4_0900_ai_ci on MySQL 8.0+ would cause "Illegal mix of collations"
+ * errors when JOINing with tables created by WordPress/plugins using 520_ci.
+ *
+ * @param string $version_string MySQL/MariaDB version (accepted for backward compat, ignored)
+ * @return string Always 'utf8mb4_unicode_520_ci'
  */
-function ccm_tools_get_appropriate_collation_optimize($version_string) {
-    // For MariaDB, use utf8mb4_unicode_520_ci as it's more widely supported
-    if (stripos($version_string, 'mariadb') !== false) {
-        // Extract MariaDB version number
-        if (preg_match('/(\d+\.\d+\.\d+)/', $version_string, $matches)) {
-            $version = $matches[1];
-            // MariaDB 10.6+ supports utf8mb4_0900_ai_ci, but utf8mb4_unicode_520_ci is more reliable
-            return 'utf8mb4_unicode_520_ci';
-        }
-        return 'utf8mb4_unicode_520_ci';
-    }
-    
-    // For MySQL, check if it's 8.0+
-    $is_mysql8_plus = version_compare($version_string, '8.0.0', '>=');
-    return $is_mysql8_plus ? 'utf8mb4_0900_ai_ci' : 'utf8mb4_unicode_520_ci';
+function ccm_tools_get_appropriate_collation_optimize($version_string = '') {
+    return 'utf8mb4_unicode_520_ci';
 }
 
 /**
@@ -1141,6 +1135,11 @@ function ccm_tools_get_optimization_stats() {
     
     // Table count
     $stats['table_count'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()");
+    
+    // Tables needing collation update (not already utf8mb4_unicode_520_ci)
+    $stats['tables_needing_collation'] = (int) $wpdb->get_var(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_COLLATION != 'utf8mb4_unicode_520_ci'"
+    );
     
     return $stats;
 }

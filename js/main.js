@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.18.9
+ * Version: 7.18.10
  */
 
 (function() {
@@ -688,6 +688,12 @@
             
             optionsContainer.innerHTML = html;
             
+            // Auto-uncheck 'Update table collations' if no tables need collation update
+            if (stats.tables_needing_collation === 0) {
+                const collationCb = optionsContainer.querySelector('#opt-update_collation');
+                if (collationCb) collationCb.checked = false;
+            }
+            
             // Enable run button
             if (runButton) {
                 runButton.disabled = false;
@@ -734,7 +740,7 @@
         const mapping = {
             'clear_transients': stats.transients,
             'optimize_tables': stats.table_count,
-            'update_collation': stats.table_count,
+            'update_collation': stats.tables_needing_collation,
             'clean_spam_comments': stats.spam_comments,
             'clean_trashed_comments': stats.trashed_comments,
             'clean_trashed_posts': stats.trashed_posts,

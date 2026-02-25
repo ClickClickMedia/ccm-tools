@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.9
+- **Current Version:** 7.18.10
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,19 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.10
+- **Standardized Collation to `utf8mb4_unicode_520_ci` (WordPress Core Match)**
+  - Both `ccm_tools_get_appropriate_collation()` and `ccm_tools_get_appropriate_collation_optimize()` now always return `utf8mb4_unicode_520_ci`
+  - Previously used `utf8mb4_0900_ai_ci` on MySQL 8.0+ — which caused "Illegal mix of collations" errors when JOINing with tables created by WordPress/plugins using the default `utf8mb4_unicode_520_ci`
+  - `utf8mb4_unicode_520_ci` (Unicode 5.2) is WordPress core's default since WP 4.6 — all core tables, plugin tables, and WooCommerce tables use it
+  - `utf8mb4_0900_ai_ci` (Unicode 9.0) is faster but MySQL 8.0-only, unavailable on MariaDB, and mixing collations in JOINs causes SQL errors
+  - Version string parameter kept for backward compatibility but is now ignored
+- **Smart "Update Table Collations" Checkbox — Auto-Uncheck When Already Correct**
+  - New `tables_needing_collation` stat counts tables where `TABLE_COLLATION != 'utf8mb4_unicode_520_ci'`
+  - "Update table collations" checkbox now shows the actual count of tables needing updates (was showing total table count)
+  - Checkbox automatically unchecked when 0 tables need collation update (e.g., after "Convert to InnoDB" has already converted them)
+  - Prevents redundant collation runs that do nothing
 
 ### v7.18.9
 - **Progressive Per-Table Database Optimization (Timeout Prevention)**
