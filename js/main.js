@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.18.7
+ * Version: 7.18.8
  */
 
 (function() {
@@ -4989,11 +4989,14 @@
                             const visualRes = await ajax('ccm_tools_ai_hub_visual_compare', visualParams, { timeout: 120000 });
                             const visualData = visualRes.data || {};
 
-                            if (visualData.layout_ok === false && visualData.severity === 'critical') {
+                            if (visualData.layout_ok === false) {
+                                // ANY layout_ok:false triggers rollback — severity doesn't matter
+                                // Layout integrity is MORE important than PageSpeed score
                                 hasLayoutRegression = true;
                                 const issueCount = (visualData.issues || []).length;
-                                aiUpdateStep('visual-check', 'error', `${issueCount} layout issue(s)`);
-                                aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED</strong>: ${visualData.summary}`, 'error');
+                                const sevLabel = visualData.severity || 'unknown';
+                                aiUpdateStep('visual-check', 'error', `${issueCount} issue(s) [${sevLabel}]`);
+                                aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${visualData.summary}`, 'error');
                                 (visualData.issues || []).forEach(issue => {
                                     aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description}`, 'error');
                                     if (issue.likely_cause) aiLog(`    Likely cause: ${issue.likely_cause}`, 'info');
@@ -5005,7 +5008,7 @@
                                         `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
                                     ).join('\n') +
                                     '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back. DO NOT re-enable settings that cause layout shifts.';
-                            } else if (visualData.severity === 'minor') {
+                            } else if (visualData.layout_ok === true && visualData.severity === 'minor') {
                                 aiUpdateStep('visual-check', 'done', 'Minor differences');
                                 aiLog(`Visual check: minor differences detected (acceptable) — ${visualData.summary}`, 'info');
                             } else {
@@ -5021,12 +5024,13 @@
                             if (visualAttempts < maxVisualAttempts) {
                                 aiLog(`Visual check attempt ${visualAttempts} failed: ${visualErr.message} — retrying…`, 'warn');
                             } else {
-                                aiLog(`Visual check failed after ${maxVisualAttempts} attempts: ${visualErr.message} — treating as potential regression for safety`, 'warn');
-                                // Fail-safe: treat failed visual check as potential issue so AI is cautious
-                                hasLayoutRegression = false; // don't force rollback, but warn
-                                aiUpdateStep('visual-check', 'error', 'Check failed');
+                                aiLog(`Visual check failed after ${maxVisualAttempts} attempts: ${visualErr.message} — ROLLING BACK for safety (cannot verify layout integrity)`, 'error');
+                                // FAIL-SAFE: Layout integrity is the #1 priority. If we can't verify,
+                                // assume regression and rollback. Better to lose score gains than ship broken layouts.
+                                hasLayoutRegression = true;
+                                aiUpdateStep('visual-check', 'error', 'Check failed — rollback');
                                 visualRegressionContext = 'VISUAL CHECK FAILED: Could not verify layout integrity via screenshot comparison. ' +
-                                    'Proceed with caution — avoid aggressive CSS/JS changes that could cause layout shifts.';
+                                    'Rolling back ALL changes for safety. Avoid aggressive CSS/JS changes that could cause layout shifts.';
                             }
                         }
                     }

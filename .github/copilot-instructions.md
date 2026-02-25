@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.7
+- **Current Version:** 7.18.8
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -289,6 +289,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.8
+- **Visual Regression Check — Layout Integrity is #1 Priority**
+  - **`layout_ok: false` now triggers rollback regardless of severity**: Previously required BOTH `layout_ok === false` AND `severity === 'critical'` — if Claude returned `layout_ok: false, severity: 'minor'`, changes were KEPT despite broken layout
+  - **Failed visual check now fails-safe to ROLLBACK**: Previously `hasLayoutRegression = false` when the visual compare API failed/timed out, letting broken layouts through. Now `hasLayoutRegression = true` — if we can't verify layout integrity, we assume regression
+  - **Fixed `severity: 'minor'` catch-all bypassing `layout_ok: false`**: The `else if (severity === 'minor')` branch was catching `layout_ok: false, severity: 'minor'` responses and treating them as acceptable. Now only `layout_ok: true` responses can be classified as minor
+  - **Hub severity fallback respects `layout_ok`**: When Claude omits `severity` from JSON, the fallback now defaults to `'critical'` when `layout_ok` is false (was defaulting to `'none'` unconditionally)
+  - **Philosophy change**: Layout integrity is now explicitly more important than PageSpeed scores — the system will sacrifice score improvements to protect visual integrity
 
 ### v7.18.7
 - **Robust Screenshot Capture — Retry Pipeline + Diagnostic Logging**
