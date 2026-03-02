@@ -664,12 +664,17 @@ function ccm_tools_get_disk_info(): array {
     }
 
     if (!empty($server_disk)) {
-        $server_disk['source'] = 'server';
-        $server_disk['source_label'] = __('Server Disk', 'ccm-tools');
-        if ($can_try_quota) {
-            $server_disk['source_notice'] = __('Quota data is temporarily unavailable; showing server disk totals.', 'ccm-tools');
+        // On cPanel / CloudLinux the kernel enforces quotas at the
+        // filesystem level, so disk_total_space() / disk_free_space()
+        // already return the account's quota — not the raw physical disk.
+        $is_cpanel = ccm_tools_get_cpanel_username() !== '';
+
+        if ($is_cpanel) {
+            $server_disk['source'] = 'quota';
+            $server_disk['source_label'] = __('Account Quota', 'ccm-tools');
         } else {
-            $server_disk['source_notice'] = __('Quota data is not available on this host; showing server disk totals.', 'ccm-tools');
+            $server_disk['source'] = 'server';
+            $server_disk['source_label'] = __('Server Disk', 'ccm-tools');
         }
     }
 
