@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.18.10
+ * Version: 7.18.12
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.18.10');
+    define('CCM_HELPER_VERSION', '7.18.12');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -703,6 +703,7 @@ class CCMSettings {
                     <?php
                     $disk_info = ccm_tools_get_disk_info();
                     if (!empty($disk_info)) {
+                        $source_label = !empty($disk_info['source_label']) ? $disk_info['source_label'] : __('Disk Usage', 'ccm-tools');
                         // Calculate a color based on disk usage (green to red)
                         $used_percent_value = floatval($disk_info['used_percent']);
                         $color_class = 'ccm-success';
@@ -719,9 +720,16 @@ class CCMSettings {
                                 </div>
                             </div>
                             <div class="ccm-disk-info">
+                                <p class="ccm-text-muted"><?php _e('Showing:', 'ccm-tools'); ?> <strong><?php echo esc_html($source_label); ?></strong></p>
+                                <?php if (!empty($disk_info['source_notice'])) : ?>
+                                    <p class="ccm-text-muted"><?php echo esc_html($disk_info['source_notice']); ?></p>
+                                <?php endif; ?>
                                 <p><?php _e('Used Space:', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['used']); ?></strong> (<?php echo esc_html($disk_info['used_percent']); ?>)</p>
                                 <p><?php _e('Free Space:', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['free']); ?></strong> (<?php echo esc_html($disk_info['free_percent']); ?>)</p>
                                 <p><?php _e('Total Space:', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['total']); ?></strong></p>
+                                <?php if (!empty($disk_info['server_total']) && !empty($disk_info['server_used']) && !empty($disk_info['server_used_percent'])) : ?>
+                                    <p class="ccm-text-muted"><?php _e('Server Disk (secondary):', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['server_used']); ?></strong> / <strong><?php echo esc_html($disk_info['server_total']); ?></strong> (<?php echo esc_html($disk_info['server_used_percent']); ?>)</p>
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php } else { ?>

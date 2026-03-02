@@ -646,28 +646,241 @@ function ccm_tools_check_wordpress_updates(): array {
  * @return array Disk space information
  */
 function ccm_tools_get_disk_info(): array {
-    $disk_info = array();
-    
-    // Get the disk space information for the WordPress installation directory
-    if (function_exists('disk_total_space') && function_exists('disk_free_space')) {
-        $disk_total = disk_total_space(ABSPATH);
-        $disk_free = disk_free_space(ABSPATH);
-        
-        if ($disk_total && $disk_free) {
-            $disk_used = $disk_total - $disk_free;
-            $disk_used_percent = ($disk_used / $disk_total) * 100;
-            
-            $disk_info = array(
-                'total' => ccm_tools_format_file_size($disk_total),
-                'used' => ccm_tools_format_file_size($disk_used),
-                'free' => ccm_tools_format_file_size($disk_free),
-                'used_percent' => round($disk_used_percent, 2) . '%',
-                'free_percent' => round(100 - $disk_used_percent, 2) . '%',
-            );
+    $server_disk = ccm_tools_get_server_disk_info();
+    $can_try_quota = ccm_tools_can_try_quota_lookup();
+    $quota_disk = $can_try_quota ? ccm_tools_get_cpanel_quota_disk_info() : array();
+
+    if (!empty($quota_disk)) {
+        $quota_disk['source'] = 'quota';
+        $quota_disk['source_label'] = __('Account Quota', 'ccm-tools');
+
+        if (!empty($server_disk)) {
+            $quota_disk['server_total'] = $server_disk['total'];
+            $quota_disk['server_used'] = $server_disk['used'];
+            $quota_disk['server_used_percent'] = $server_disk['used_percent'];
+        }
+
+        return $quota_disk;
+    }
+
+    if (!empty($server_disk)) {
+        $server_disk['source'] = 'server';
+        $server_disk['source_label'] = __('Server Disk', 'ccm-tools');
+        if ($can_try_quota) {
+            $server_disk['source_notice'] = __('Quota data is temporarily unavailable; showing server disk totals.', 'ccm-tools');
+        } else {
+            $server_disk['source_notice'] = __('Quota data is not available on this host; showing server disk totals.', 'ccm-tools');
         }
     }
-    
-    return $disk_info;
+
+    return $server_disk;
+}
+
+/**
+ * Determine if quota lookup can be attempted in the current environment.
+ *
+ * @return bool
+ */
+function ccm_tools_can_try_quota_lookup(): bool {
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        return false;
+    }
+
+    if (!function_exists('shell_exec')) {
+        return false;
+    }
+
+    $disabled_functions = ini_get('disable_functions');
+    if (is_string($disabled_functions) && strpos($disabled_functions, 'shell_exec') !== false) {
+        return false;
+    }
+
+    return ccm_tools_get_cpanel_username() !== '';
+}
+
+/**
+ * Get server-level disk information from the filesystem.
+ *
+ * @return array
+ */
+function ccm_tools_get_server_disk_info(): array {
+    if (!function_exists('disk_total_space') || !function_exists('disk_free_space')) {
+        return array();
+    }
+
+    $disk_total = @disk_total_space(ABSPATH);
+    $disk_free = @disk_free_space(ABSPATH);
+
+    if (!$disk_total || !$disk_free || $disk_total <= 0) {
+        return array();
+    }
+
+    $disk_used = max(0, $disk_total - $disk_free);
+    $disk_used_percent = min(100, ($disk_used / $disk_total) * 100);
+
+    return array(
+        'total' => ccm_tools_format_file_size($disk_total),
+        'used' => ccm_tools_format_file_size($disk_used),
+        'free' => ccm_tools_format_file_size($disk_free),
+        'used_percent' => round($disk_used_percent, 2) . '%',
+        'free_percent' => round(100 - $disk_used_percent, 2) . '%',
+    );
+}
+
+/**
+ * Get cPanel account quota information using Linux quota command.
+ *
+ * @return array
+ */
+function ccm_tools_get_cpanel_quota_disk_info(): array {
+    if (!ccm_tools_can_try_quota_lookup()) {
+        return array();
+    }
+
+    $cpanel_user = ccm_tools_get_cpanel_username();
+    if ($cpanel_user === '') {
+        return array();
+    }
+
+    $commands = array(
+        'quota -w -u ' . escapeshellarg($cpanel_user) . ' 2>/dev/null',
+        '/usr/bin/quota -w -u ' . escapeshellarg($cpanel_user) . ' 2>/dev/null',
+        'quota -s -u ' . escapeshellarg($cpanel_user) . ' 2>/dev/null',
+    );
+
+    foreach ($commands as $command) {
+        $output = @shell_exec($command);
+        if (!is_string($output) || trim($output) === '') {
+            continue;
+        }
+
+        $quota_info = ccm_tools_parse_quota_output($output);
+        if (!empty($quota_info)) {
+            return $quota_info;
+        }
+    }
+
+    return array();
+}
+
+/**
+ * Parse quota command output into byte values.
+ *
+ * @param string $output
+ * @return array
+ */
+function ccm_tools_parse_quota_output(string $output): array {
+    $lines = preg_split('/\r\n|\r|\n/', $output);
+    if (!is_array($lines)) {
+        return array();
+    }
+
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || strpos($line, '/') !== 0) {
+            continue;
+        }
+
+        $parts = preg_split('/\s+/', $line);
+        if (!is_array($parts) || count($parts) < 4) {
+            continue;
+        }
+
+        $used_bytes = ccm_tools_quota_token_to_bytes($parts[1]);
+        $quota_bytes = ccm_tools_quota_token_to_bytes($parts[2]);
+        $limit_bytes = ccm_tools_quota_token_to_bytes($parts[3]);
+
+        $total_bytes = $limit_bytes > 0 ? $limit_bytes : $quota_bytes;
+        if ($used_bytes <= 0 || $total_bytes <= 0) {
+            continue;
+        }
+
+        $used_bytes = min($used_bytes, $total_bytes);
+        $free_bytes = max(0, $total_bytes - $used_bytes);
+        $used_percent = min(100, ($used_bytes / $total_bytes) * 100);
+
+        return array(
+            'total' => ccm_tools_format_file_size($total_bytes),
+            'used' => ccm_tools_format_file_size($used_bytes),
+            'free' => ccm_tools_format_file_size($free_bytes),
+            'used_percent' => round($used_percent, 2) . '%',
+            'free_percent' => round(100 - $used_percent, 2) . '%',
+        );
+    }
+
+    return array();
+}
+
+/**
+ * Convert quota output token to bytes.
+ *
+ * @param string $token
+ * @return int
+ */
+function ccm_tools_quota_token_to_bytes(string $token): int {
+    $token = trim(str_replace('*', '', $token));
+    if ($token === '' || $token === '-' || $token === 'none') {
+        return 0;
+    }
+
+    if (preg_match('/^([0-9]+)$/', $token, $matches)) {
+        return (int) $matches[1] * 1024;
+    }
+
+    if (preg_match('/^([0-9]+(?:\.[0-9]+)?)([KMGTP])$/i', $token, $matches)) {
+        $value = (float) $matches[1];
+        $unit = strtoupper($matches[2]);
+        $map = array(
+            'K' => 1024,
+            'M' => 1024 * 1024,
+            'G' => 1024 * 1024 * 1024,
+            'T' => 1024 * 1024 * 1024 * 1024,
+            'P' => 1024 * 1024 * 1024 * 1024 * 1024,
+        );
+
+        if (isset($map[$unit])) {
+            return (int) round($value * $map[$unit]);
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Best-effort detection of cPanel username.
+ *
+ * @return string
+ */
+function ccm_tools_get_cpanel_username(): string {
+    $candidates = array();
+
+    if (!empty($_SERVER['CPANEL_USER'])) {
+        $candidates[] = (string) $_SERVER['CPANEL_USER'];
+    }
+
+    if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+        $pw_info = @posix_getpwuid(posix_geteuid());
+        if (is_array($pw_info) && !empty($pw_info['name'])) {
+            $candidates[] = (string) $pw_info['name'];
+        }
+    }
+
+    if (defined('ABSPATH') && preg_match('#^/home/([^/]+)/#', ABSPATH, $matches)) {
+        $candidates[] = (string) $matches[1];
+    }
+
+    foreach ($candidates as $candidate) {
+        $candidate = trim($candidate);
+        if ($candidate === '') {
+            continue;
+        }
+
+        if (preg_match('/^[a-zA-Z0-9._-]+$/', $candidate)) {
+            return $candidate;
+        }
+    }
+
+    return '';
 }
 
 /**
@@ -844,6 +1057,7 @@ function ccm_tools_ajax_get_system_info(): void {
     
     $output = '<h3>' . __('Disk Information', 'ccm-tools') . '</h3>';
     if (!empty($disk_info)) {
+        $source_label = !empty($disk_info['source_label']) ? $disk_info['source_label'] : __('Disk Usage', 'ccm-tools');
         // Calculate a color based on disk usage (green to red)
         $used_percent_value = floatval($disk_info['used_percent']);
         $color_class = 'ccm-success';
@@ -860,9 +1074,16 @@ function ccm_tools_ajax_get_system_info(): void {
         $output .= '</div></div>';
         
         $output .= '<div class="ccm-disk-info">';
+        $output .= '<p class="ccm-text-muted">' . __('Showing:', 'ccm-tools') . ' <strong>' . esc_html($source_label) . '</strong></p>';
+        if (!empty($disk_info['source_notice'])) {
+            $output .= '<p class="ccm-text-muted">' . esc_html($disk_info['source_notice']) . '</p>';
+        }
         $output .= '<p>' . __('Used Space:', 'ccm-tools') . ' <strong>' . esc_html($disk_info['used']) . '</strong> (' . esc_html($disk_info['used_percent']) . ')</p>';
         $output .= '<p>' . __('Free Space:', 'ccm-tools') . ' <strong>' . esc_html($disk_info['free']) . '</strong> (' . esc_html($disk_info['free_percent']) . ')</p>';
         $output .= '<p>' . __('Total Space:', 'ccm-tools') . ' <strong>' . esc_html($disk_info['total']) . '</strong></p>';
+        if (!empty($disk_info['server_total']) && !empty($disk_info['server_used']) && !empty($disk_info['server_used_percent'])) {
+            $output .= '<p class="ccm-text-muted">' . __('Server Disk (secondary):', 'ccm-tools') . ' <strong>' . esc_html($disk_info['server_used']) . '</strong> / <strong>' . esc_html($disk_info['server_total']) . '</strong> (' . esc_html($disk_info['server_used_percent']) . ')</p>';
+        }
         $output .= '</div></div>';
     } else {
         $output .= '<p class="ccm-warning"><span class="ccm-icon">⚠</span> ' . __('Disk information is not available.', 'ccm-tools') . '</p>';

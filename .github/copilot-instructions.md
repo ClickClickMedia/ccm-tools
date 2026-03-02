@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.10
+- **Current Version:** 7.18.12
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.18.12
+- **Disk Card Now Explains Quota Fallback Clearly**
+  - Added a user-facing note when quota data cannot be read so users know server disk is being shown intentionally
+  - Message distinguishes between temporary quota lookup failure and hosts where quota data is not available
+  - Applied to both Dashboard card and AJAX System Information output for consistent UX
+
+### v7.18.11
+- **Disk Information Now Prioritizes cPanel Account Quota (Actual Hosting Limit)**
+  - `ccm_tools_get_disk_info()` now tries to read per-account quota first (Linux `quota` command) instead of only filesystem totals
+  - Resolves cPanel mismatch where server disk can show lots of free space while account quota is already full
+  - Dashboard Disk card now shows `Account Quota` as the primary source when available
+  - Keeps server-level disk usage as secondary context (`Server Disk (secondary)`) so both perspectives remain visible
+  - Includes automatic fallback to server disk totals when quota data is unavailable (non-cPanel hosts or restricted shell functions)
 
 ### v7.18.10
 - **Standardized Collation to `utf8mb4_unicode_520_ci` (WordPress Core Match)**
