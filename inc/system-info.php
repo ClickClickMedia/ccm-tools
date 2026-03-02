@@ -642,7 +642,7 @@ function ccm_tools_check_wordpress_updates(): array {
 
 /**
  * Get disk space information
- * 
+ *
  * @return array Disk space information
  */
 function ccm_tools_get_disk_info(): array {
@@ -667,9 +667,7 @@ function ccm_tools_get_disk_info(): array {
         // On cPanel / CloudLinux the kernel enforces quotas at the
         // filesystem level, so disk_total_space() / disk_free_space()
         // already return the account's quota — not the raw physical disk.
-        $is_cpanel = ccm_tools_get_cpanel_username() !== '';
-
-        if ($is_cpanel) {
+        if (ccm_tools_is_cpanel_host()) {
             $server_disk['source'] = 'quota';
             $server_disk['source_label'] = __('Account Quota', 'ccm-tools');
         } else {
@@ -682,6 +680,38 @@ function ccm_tools_get_disk_info(): array {
 }
 
 /**
+ * Detect whether this server is a cPanel / CloudLinux environment.
+ *
+ * Pure filesystem and environment checks — no shell execution required.
+ *
+ * @return bool
+ */
+function ccm_tools_is_cpanel_host(): bool {
+    if (!empty($_SERVER['CPANEL_USER'])) {
+        return true;
+    }
+
+    if (@is_file('/usr/local/cpanel/version')) {
+        return true;
+    }
+
+    if (@is_file('/etc/cloudlinux-release')) {
+        return true;
+    }
+
+    $home = getenv('HOME');
+    if (is_string($home) && $home !== '' && @is_dir($home . '/.cpanel')) {
+        return true;
+    }
+
+    if (defined('ABSPATH') && preg_match('#^/home\d*/([^/]+)/#', ABSPATH)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
  * Determine if quota lookup can be attempted in the current environment.
  *
  * @return bool
@@ -691,16 +721,82 @@ function ccm_tools_can_try_quota_lookup(): bool {
         return false;
     }
 
-    if (!function_exists('shell_exec')) {
-        return false;
+    $exec_fns = array('shell_exec', 'exec', 'popen', 'proc_open');
+    $disabled = array_map('trim', explode(',', (string) ini_get('disable_functions')));
+    $has_exec = false;
+
+    foreach ($exec_fns as $fn) {
+        if (function_exists($fn) && !in_array($fn, $disabled, true)) {
+            $has_exec = true;
+            break;
+        }
     }
 
-    $disabled_functions = ini_get('disable_functions');
-    if (is_string($disabled_functions) && strpos($disabled_functions, 'shell_exec') !== false) {
+    if (!$has_exec) {
         return false;
     }
 
     return ccm_tools_get_cpanel_username() !== '';
+}
+
+/**
+ * Run a shell command using whichever execution function is available.
+ *
+ * Tries shell_exec, exec, popen, and proc_open in order.
+ *
+ * @param string $command
+ * @return string Command output or empty string on failure.
+ */
+function ccm_tools_run_command(string $command): string {
+    $disabled = array_map('trim', explode(',', (string) ini_get('disable_functions')));
+
+    if (function_exists('shell_exec') && !in_array('shell_exec', $disabled, true)) {
+        $result = @shell_exec($command);
+        if (is_string($result) && trim($result) !== '') {
+            return $result;
+        }
+    }
+
+    if (function_exists('exec') && !in_array('exec', $disabled, true)) {
+        $output = array();
+        $code = -1;
+        @exec($command, $output, $code);
+        if (!empty($output)) {
+            return implode("\n", $output);
+        }
+    }
+
+    if (function_exists('popen') && !in_array('popen', $disabled, true)) {
+        $fp = @popen($command, 'r');
+        if (is_resource($fp)) {
+            $result = @stream_get_contents($fp);
+            @pclose($fp);
+            if (is_string($result) && trim($result) !== '') {
+                return $result;
+            }
+        }
+    }
+
+    if (function_exists('proc_open') && !in_array('proc_open', $disabled, true)) {
+        $descriptors = array(
+            0 => array('pipe', 'r'),
+            1 => array('pipe', 'w'),
+            2 => array('pipe', 'w'),
+        );
+        $proc = @proc_open($command, $descriptors, $pipes);
+        if (is_resource($proc)) {
+            @fclose($pipes[0]);
+            $result = @stream_get_contents($pipes[1]);
+            @fclose($pipes[1]);
+            @fclose($pipes[2]);
+            @proc_close($proc);
+            if (is_string($result) && trim($result) !== '') {
+                return $result;
+            }
+        }
+    }
+
+    return '';
 }
 
 /**
@@ -754,8 +850,8 @@ function ccm_tools_get_cpanel_quota_disk_info(): array {
     );
 
     foreach ($commands as $command) {
-        $output = @shell_exec($command);
-        if (!is_string($output) || trim($output) === '') {
+        $output = ccm_tools_run_command($command);
+        if ($output === '') {
             continue;
         }
 
@@ -870,7 +966,20 @@ function ccm_tools_get_cpanel_username(): string {
         }
     }
 
-    if (defined('ABSPATH') && preg_match('#^/home/([^/]+)/#', ABSPATH, $matches)) {
+    // get_current_user() returns the owner of the current PHP script — no
+    // shell or POSIX extension required.
+    $script_owner = get_current_user();
+    if ($script_owner !== '') {
+        $candidates[] = $script_owner;
+    }
+
+    // Match /home/, /home2/, /home3/, etc.
+    if (defined('ABSPATH') && preg_match('#^/home\d*/([^/]+)/#', ABSPATH, $matches)) {
+        $candidates[] = (string) $matches[1];
+    }
+
+    $home = getenv('HOME');
+    if (is_string($home) && preg_match('#^/home\d*/([^/]+)$#', $home, $matches)) {
         $candidates[] = (string) $matches[1];
     }
 

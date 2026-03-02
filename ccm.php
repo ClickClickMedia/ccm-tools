@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.18.13
+ * Version: 7.18.14
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
