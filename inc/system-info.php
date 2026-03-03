@@ -185,8 +185,16 @@ function ccm_tools_check_redis_configuration(): array {
         // Get wp-config.php file path
         $wp_config_path = ABSPATH . 'wp-config.php';
         if (file_exists($wp_config_path) && is_readable($wp_config_path)) {
-            $config_content = file_get_contents($wp_config_path);
-            
+            global $wp_filesystem;
+            if (empty($wp_filesystem)) {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+                WP_Filesystem();
+            }
+            $config_content = $wp_filesystem ? $wp_filesystem->get_contents($wp_config_path) : false;
+            if ($config_content === false) {
+                return $config_status;
+            }
+
             // Check for Redis configuration in the file
             $has_host = preg_match('/define\s*\(\s*[\'"]WP_REDIS_HOST[\'"]/i', $config_content);
             $has_port = preg_match('/define\s*\(\s*[\'"]WP_REDIS_PORT[\'"]/i', $config_content);
@@ -263,12 +271,22 @@ function ccm_tools_add_redis_configuration() {
         return new WP_Error('config_not_found', __('wp-config.php file not found.', 'ccm-tools'));
     }
     
-    if (!is_writable($wp_config_path)) {
+    // Initialise WP_Filesystem for safe file operations
+    global $wp_filesystem;
+    if (empty($wp_filesystem)) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        WP_Filesystem();
+    }
+    if (!$wp_filesystem) {
+        return new WP_Error('filesystem_init', __('Could not initialise the WordPress filesystem API.', 'ccm-tools'));
+    }
+
+    if (!$wp_filesystem->is_writable($wp_config_path)) {
         return new WP_Error('config_not_writable', __('wp-config.php file not found or not writable.', 'ccm-tools'));
     }
-    
+
     // Read the config file
-    $config_content = file_get_contents($wp_config_path);
+    $config_content = $wp_filesystem->get_contents($wp_config_path);
     if ($config_content === false) {
         return new WP_Error('read_failed', __('Failed to read wp-config.php file.', 'ccm-tools'));
     }
@@ -385,17 +403,17 @@ function ccm_tools_add_redis_configuration() {
     
     // Create backup before writing
     $backup_content = $original_content;
-    
-    // Write changes back to the file
-    $bytes_written = file_put_contents($wp_config_path, $config_content);
-    if ($bytes_written !== false) {
+
+    // Write changes back to the file via WP_Filesystem
+    $written = $wp_filesystem->put_contents($wp_config_path, $config_content, FS_CHMOD_FILE);
+    if ($written) {
         // Clear any opcode cache
         if (function_exists('opcache_invalidate')) {
             opcache_invalidate($wp_config_path, true);
         }
-        
+
         // Verify the changes were written correctly
-        $verification_content = file_get_contents($wp_config_path);
+        $verification_content = $wp_filesystem->get_contents($wp_config_path);
         $verification_successful = true;
         
         foreach ($redis_config_lines as $line) {
@@ -412,8 +430,8 @@ function ccm_tools_add_redis_configuration() {
         if ($verification_successful) {
             return true;
         } else {
-            // Restore backup
-            file_put_contents($wp_config_path, $backup_content);
+            // Restore backup via WP_Filesystem
+            $wp_filesystem->put_contents($wp_config_path, $backup_content, FS_CHMOD_FILE);
             return new WP_Error('verification_failed', __('Configuration was written but verification failed. Changes have been reverted. Please check wp-config.php manually.', 'ccm-tools'));
         }
     } else {
@@ -721,18 +739,7 @@ function ccm_tools_can_try_quota_lookup(): bool {
         return false;
     }
 
-    $exec_fns = array('shell_exec', 'exec', 'popen', 'proc_open');
-    $disabled = array_map('trim', explode(',', (string) ini_get('disable_functions')));
-    $has_exec = false;
-
-    foreach ($exec_fns as $fn) {
-        if (function_exists($fn) && !in_array($fn, $disabled, true)) {
-            $has_exec = true;
-            break;
-        }
-    }
-
-    if (!$has_exec) {
+    if (!ccm_tools_has_exec()) {
         return false;
     }
 
@@ -740,63 +747,16 @@ function ccm_tools_can_try_quota_lookup(): bool {
 }
 
 /**
- * Run a shell command using whichever execution function is available.
+ * Check whether exec() is available for quota lookups.
  *
- * Tries shell_exec, exec, popen, and proc_open in order.
- *
- * @param string $command
- * @return string Command output or empty string on failure.
+ * @return bool
  */
-function ccm_tools_run_command(string $command): string {
+function ccm_tools_has_exec(): bool {
+    if (!function_exists('exec')) {
+        return false;
+    }
     $disabled = array_map('trim', explode(',', (string) ini_get('disable_functions')));
-
-    if (function_exists('shell_exec') && !in_array('shell_exec', $disabled, true)) {
-        $result = @shell_exec($command);
-        if (is_string($result) && trim($result) !== '') {
-            return $result;
-        }
-    }
-
-    if (function_exists('exec') && !in_array('exec', $disabled, true)) {
-        $output = array();
-        $code = -1;
-        @exec($command, $output, $code);
-        if (!empty($output)) {
-            return implode("\n", $output);
-        }
-    }
-
-    if (function_exists('popen') && !in_array('popen', $disabled, true)) {
-        $fp = @popen($command, 'r');
-        if (is_resource($fp)) {
-            $result = @stream_get_contents($fp);
-            @pclose($fp);
-            if (is_string($result) && trim($result) !== '') {
-                return $result;
-            }
-        }
-    }
-
-    if (function_exists('proc_open') && !in_array('proc_open', $disabled, true)) {
-        $descriptors = array(
-            0 => array('pipe', 'r'),
-            1 => array('pipe', 'w'),
-            2 => array('pipe', 'w'),
-        );
-        $proc = @proc_open($command, $descriptors, $pipes);
-        if (is_resource($proc)) {
-            @fclose($pipes[0]);
-            $result = @stream_get_contents($pipes[1]);
-            @fclose($pipes[1]);
-            @fclose($pipes[2]);
-            @proc_close($proc);
-            if (is_string($result) && trim($result) !== '') {
-                return $result;
-            }
-        }
-    }
-
-    return '';
+    return !in_array('exec', $disabled, true);
 }
 
 /**
@@ -843,15 +803,22 @@ function ccm_tools_get_cpanel_quota_disk_info(): array {
         return array();
     }
 
+    $safe_user = escapeshellarg($cpanel_user);
+
+    // Hardcoded quota command variations — not a generic runner.
     $commands = array(
-        'quota -w -u ' . escapeshellarg($cpanel_user) . ' 2>/dev/null',
-        '/usr/bin/quota -w -u ' . escapeshellarg($cpanel_user) . ' 2>/dev/null',
-        'quota -s -u ' . escapeshellarg($cpanel_user) . ' 2>/dev/null',
+        'quota -w -u ' . $safe_user . ' 2>/dev/null',
+        '/usr/bin/quota -w -u ' . $safe_user . ' 2>/dev/null',
+        'quota -s -u ' . $safe_user . ' 2>/dev/null',
     );
 
     foreach ($commands as $command) {
-        $output = ccm_tools_run_command($command);
-        if ($output === '') {
+        $lines = array();
+        $code  = -1;
+        exec($command, $lines, $code);
+
+        $output = implode("\n", $lines);
+        if (trim($output) === '') {
             continue;
         }
 
