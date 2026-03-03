@@ -665,32 +665,31 @@ function ccm_tools_check_wordpress_updates(): array {
  */
 function ccm_tools_get_disk_info(): array {
     $server_disk = ccm_tools_get_server_disk_info();
-    $can_try_quota = ccm_tools_can_try_quota_lookup();
-    $quota_disk = $can_try_quota ? ccm_tools_get_cpanel_quota_disk_info() : array();
 
-    if (!empty($quota_disk)) {
-        $quota_disk['source'] = 'quota';
-        $quota_disk['source_label'] = __('Account Quota', 'ccm-tools');
+    // Try cPanel UAPI quota (requires CCM_CPANEL_API_TOKEN in wp-config.php)
+    if (ccm_tools_is_cpanel_host()) {
+        $quota_disk = ccm_tools_get_cpanel_uapi_quota();
 
-        if (!empty($server_disk)) {
-            $quota_disk['server_total'] = $server_disk['total'];
-            $quota_disk['server_used'] = $server_disk['used'];
-            $quota_disk['server_used_percent'] = $server_disk['used_percent'];
+        if (!empty($quota_disk)) {
+            $quota_disk['source'] = 'quota';
+            $quota_disk['source_label'] = __('Account Quota', 'ccm-tools');
+
+            if (!empty($server_disk)) {
+                $quota_disk['server_total'] = $server_disk['total'];
+                $quota_disk['server_used'] = $server_disk['used'];
+                $quota_disk['server_used_percent'] = $server_disk['used_percent'];
+            }
+
+            return $quota_disk;
         }
-
-        return $quota_disk;
     }
 
     if (!empty($server_disk)) {
-        // On cPanel / CloudLinux the kernel enforces quotas at the
-        // filesystem level, so disk_total_space() / disk_free_space()
-        // already return the account's quota — not the raw physical disk.
-        if (ccm_tools_is_cpanel_host()) {
-            $server_disk['source'] = 'quota';
-            $server_disk['source_label'] = __('Account Quota', 'ccm-tools');
-        } else {
-            $server_disk['source'] = 'server';
-            $server_disk['source_label'] = __('Server Disk', 'ccm-tools');
+        $server_disk['source'] = 'server';
+        $server_disk['source_label'] = __('Server Disk', 'ccm-tools');
+
+        if (ccm_tools_is_cpanel_host() && !defined('CCM_CPANEL_API_TOKEN')) {
+            $server_disk['source_notice'] = __('For accurate account quota, define CCM_CPANEL_API_TOKEN in wp-config.php.', 'ccm-tools');
         }
     }
 
@@ -730,33 +729,60 @@ function ccm_tools_is_cpanel_host(): bool {
 }
 
 /**
- * Determine if quota lookup can be attempted in the current environment.
+ * Get cPanel account quota via the UAPI Quota::get_quota_info endpoint.
  *
- * @return bool
- */
-function ccm_tools_can_try_quota_lookup(): bool {
-    if (stripos(PHP_OS, 'WIN') === 0) {
-        return false;
-    }
-
-    if (!ccm_tools_has_exec()) {
-        return false;
-    }
-
-    return ccm_tools_get_cpanel_username() !== '';
-}
-
-/**
- * Check whether exec() is available for quota lookups.
+ * Requires the constant CCM_CPANEL_API_TOKEN to be defined in wp-config.php.
+ * Create a token in cPanel >> Security >> Manage API Tokens.
  *
- * @return bool
+ * @return array Quota information or empty array on failure.
  */
-function ccm_tools_has_exec(): bool {
-    if (!function_exists('exec')) {
-        return false;
+function ccm_tools_get_cpanel_uapi_quota(): array {
+    if (!defined('CCM_CPANEL_API_TOKEN') || CCM_CPANEL_API_TOKEN === '') {
+        return array();
     }
-    $disabled = array_map('trim', explode(',', (string) ini_get('disable_functions')));
-    return !in_array('exec', $disabled, true);
+
+    $username = ccm_tools_get_cpanel_username();
+    if ($username === '') {
+        return array();
+    }
+
+    $response = wp_remote_get('https://localhost:2083/execute/Quota/get_quota_info', array(
+        'timeout' => 5,
+        'sslverify' => false,
+        'headers' => array(
+            'Authorization' => 'cpanel ' . $username . ':' . CCM_CPANEL_API_TOKEN,
+        ),
+    ));
+
+    if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+        return array();
+    }
+
+    $data = json_decode(wp_remote_retrieve_body($response), true);
+    if (!isset($data['result']['data'])) {
+        return array();
+    }
+
+    $quota = $data['result']['data'];
+    $used_mb  = (float) ($quota['megabytes_used'] ?? 0);
+    $limit_mb = (float) ($quota['megabyte_limit'] ?? 0);
+
+    if ($limit_mb <= 0 || $used_mb < 0) {
+        return array();
+    }
+
+    $used_bytes  = $used_mb * 1024 * 1024;
+    $total_bytes = $limit_mb * 1024 * 1024;
+    $free_bytes  = max(0, $total_bytes - $used_bytes);
+    $used_percent = min(100, ($used_bytes / $total_bytes) * 100);
+
+    return array(
+        'total' => ccm_tools_format_file_size($total_bytes),
+        'used'  => ccm_tools_format_file_size($used_bytes),
+        'free'  => ccm_tools_format_file_size($free_bytes),
+        'used_percent' => round($used_percent, 2) . '%',
+        'free_percent' => round(100 - $used_percent, 2) . '%',
+    );
 }
 
 /**
@@ -786,132 +812,6 @@ function ccm_tools_get_server_disk_info(): array {
         'used_percent' => round($disk_used_percent, 2) . '%',
         'free_percent' => round(100 - $disk_used_percent, 2) . '%',
     );
-}
-
-/**
- * Get cPanel account quota information using Linux quota command.
- *
- * @return array
- */
-function ccm_tools_get_cpanel_quota_disk_info(): array {
-    if (!ccm_tools_can_try_quota_lookup()) {
-        return array();
-    }
-
-    $cpanel_user = ccm_tools_get_cpanel_username();
-    if ($cpanel_user === '') {
-        return array();
-    }
-
-    $safe_user = escapeshellarg($cpanel_user);
-
-    // Hardcoded quota command variations — not a generic runner.
-    $commands = array(
-        'quota -w -u ' . $safe_user . ' 2>/dev/null',
-        '/usr/bin/quota -w -u ' . $safe_user . ' 2>/dev/null',
-        'quota -s -u ' . $safe_user . ' 2>/dev/null',
-    );
-
-    foreach ($commands as $command) {
-        $lines = array();
-        $code  = -1;
-        exec($command, $lines, $code);
-
-        $output = implode("\n", $lines);
-        if (trim($output) === '') {
-            continue;
-        }
-
-        $quota_info = ccm_tools_parse_quota_output($output);
-        if (!empty($quota_info)) {
-            return $quota_info;
-        }
-    }
-
-    return array();
-}
-
-/**
- * Parse quota command output into byte values.
- *
- * @param string $output
- * @return array
- */
-function ccm_tools_parse_quota_output(string $output): array {
-    $lines = preg_split('/\r\n|\r|\n/', $output);
-    if (!is_array($lines)) {
-        return array();
-    }
-
-    foreach ($lines as $line) {
-        $line = trim($line);
-        if ($line === '' || strpos($line, '/') !== 0) {
-            continue;
-        }
-
-        $parts = preg_split('/\s+/', $line);
-        if (!is_array($parts) || count($parts) < 4) {
-            continue;
-        }
-
-        $used_bytes = ccm_tools_quota_token_to_bytes($parts[1]);
-        $quota_bytes = ccm_tools_quota_token_to_bytes($parts[2]);
-        $limit_bytes = ccm_tools_quota_token_to_bytes($parts[3]);
-
-        $total_bytes = $limit_bytes > 0 ? $limit_bytes : $quota_bytes;
-        if ($used_bytes <= 0 || $total_bytes <= 0) {
-            continue;
-        }
-
-        $used_bytes = min($used_bytes, $total_bytes);
-        $free_bytes = max(0, $total_bytes - $used_bytes);
-        $used_percent = min(100, ($used_bytes / $total_bytes) * 100);
-
-        return array(
-            'total' => ccm_tools_format_file_size($total_bytes),
-            'used' => ccm_tools_format_file_size($used_bytes),
-            'free' => ccm_tools_format_file_size($free_bytes),
-            'used_percent' => round($used_percent, 2) . '%',
-            'free_percent' => round(100 - $used_percent, 2) . '%',
-        );
-    }
-
-    return array();
-}
-
-/**
- * Convert quota output token to bytes.
- *
- * @param string $token
- * @return int
- */
-function ccm_tools_quota_token_to_bytes(string $token): int {
-    $token = trim(str_replace('*', '', $token));
-    if ($token === '' || $token === '-' || $token === 'none') {
-        return 0;
-    }
-
-    if (preg_match('/^([0-9]+)$/', $token, $matches)) {
-        return (int) $matches[1] * 1024;
-    }
-
-    if (preg_match('/^([0-9]+(?:\.[0-9]+)?)([KMGTP])$/i', $token, $matches)) {
-        $value = (float) $matches[1];
-        $unit = strtoupper($matches[2]);
-        $map = array(
-            'K' => 1024,
-            'M' => 1024 * 1024,
-            'G' => 1024 * 1024 * 1024,
-            'T' => 1024 * 1024 * 1024 * 1024,
-            'P' => 1024 * 1024 * 1024 * 1024 * 1024,
-        );
-
-        if (isset($map[$unit])) {
-            return (int) round($value * $map[$unit]);
-        }
-    }
-
-    return 0;
 }
 
 /**
