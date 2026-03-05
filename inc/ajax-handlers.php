@@ -3227,13 +3227,12 @@ function ccm_tools_ajax_redis_save_settings(): void {
     
     $saved = ccm_tools_redis_save_settings($settings);
     
-    if ($saved) {
-        wp_send_json_success(array(
-            'message' => __('Redis settings saved successfully.', 'ccm-tools')
-        ));
-    } else {
-        wp_send_json_error(__('Failed to save Redis settings.', 'ccm-tools'));
-    }
+    // update_option returns false when the value is unchanged, so treat that as success
+    wp_send_json_success(array(
+        'message' => $saved
+            ? __('Redis settings saved successfully.', 'ccm-tools')
+            : __('Settings unchanged.', 'ccm-tools')
+    ));
 }
 
 /**
