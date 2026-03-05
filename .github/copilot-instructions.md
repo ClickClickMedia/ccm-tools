@@ -294,11 +294,13 @@ After completing changes:
    ```
 5. **Create GitHub release** (required for WordPress auto-updates):
    ```powershell
-   & "C:\Program Files\GitHub CLI\gh.exe" release create vX.Y.Z "archive\ccm-tools-X.Y.Z.zip" --title "vX.Y.Z" --notes "## Changes in vX.Y.Z
+   & "C:\Program Files\GitHub CLI\gh.exe" release create vX.Y.Z "archive\ccm-tools-X.Y.Z.zip" "ccm-tools.zip" --title "vX.Y.Z" --notes "## Changes in vX.Y.Z
 
    - Change 1
    - Change 2"
    ```
+   > **Important:** Always include `ccm-tools.zip` (non-versioned) as an asset so the stable download URL works:
+   > `https://github.com/ClickClickMedia/ccm-tools/releases/latest/download/ccm-tools.zip`
 
 ### Release File Structure
 - `ccm-tools.zip` - Master zip in root (always latest version, git ignored)
