@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.18.12
+- **Current Version:** 7.19.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,41 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.19.0
+- **Redis Object Cache — Complete Rewrite (Object Cache Pro Feature Parity)**
+  - **Complete drop-in rewrite** (`assets/object-cache.php`): new `CCM_Redis_Object_Cache` class with modern architecture
+  - **SCAN-based flush**: `flush()` and `flush_group()` now use SCAN + batch DEL/UNLINK instead of dangerous `KEYS` command (production-safe, non-blocking)
+  - **Pipelined bulk operations**: `add_multiple()`, `set_multiple()`, `delete_multiple()` use Redis pipelines instead of looping one-by-one
+  - **Serializer support**: Configurable via `WP_REDIS_SERIALIZER` — supports `php` (default), `igbinary` (faster, smaller), and `msgpack` (compact binary)
+  - **Compression support**: Configurable via `WP_REDIS_COMPRESSION` — supports `none` (default), `lzf` (fast), `lz4` (very fast), and `zstd` (best ratio)
+  - **`wp_cache_has()` function**: WordPress 6.4+ support for checking key existence without fetching the value
+  - **Async flush (UNLINK)**: When `WP_REDIS_ASYNC_FLUSH` is true, uses non-blocking `UNLINK` and `FLUSHDB ASYNC` commands (Redis 4.0+)
+  - **ACL authentication**: Redis 6.0+ username support via `WP_REDIS_USERNAME` constant for ACL-based auth
+  - **Retry/reconnection logic**: Automatic retry with decorrelated jitter backoff on connection failures (configurable retries and interval)
+  - **Auto-reconnect**: `redis_call()` wrapper detects connection-level failures and attempts one transparent reconnect before returning error
+  - **Error tracking**: Runtime errors logged to `$wp_object_cache_errors` global and PHP error log; accessible via `get_errors()` method
+  - **HTML footnote**: Appends `<!-- CCM Redis Object Cache | hits: X, misses: Y, ratio: Z%, redis calls: N, redis time: Xms -->` comment to page output (configurable)
+  - **Flush logging**: Every cache flush records type, timestamp, and PHP backtrace for debugging (accessible via `get_flush_log()`)
+  - **`wp_cache_remember()` / `wp_cache_sear()`**: Get-or-set cache helper functions — if key doesn't exist, calls callback and stores result
+  - **Per-request timing**: Tracks total Redis time in milliseconds via `redis_time` stat for performance profiling
+  - **Wildcard non-persistent groups**: Supports fnmatch()-style patterns (e.g., `wc_cache_*`) in non-persistent and ignored group lists
+  - **TLS context options**: `WP_REDIS_TLS_OPTIONS` constant for custom TLS/SSL stream context (cert verification, CA bundle, etc.)
+  - **`wp_suspend_cache_addition()` check**: `add()` now respects WordPress's cache addition suspension flag
+  - **`wp_cache_supports()` function**: Reports supported features (add_multiple, set_multiple, get_multiple, delete_multiple, flush_runtime, flush_group)
+  - **KEEPTTL detection**: Detects Redis 6.0+ for future KEEPTTL support on incr/decr operations
+  - **Diagnostics**: `info()` method returns comprehensive diagnostic array (status, config, groups, errors, flush log, timing stats)
+  - **Clone-on-read consistency**: Objects cloned when stored and when retrieved to prevent reference mutations
+  - **Max TTL enforcement**: Caps all expiry times to `WP_REDIS_MAXTTL` when configured
+  - **Admin UI — Serializer/Compression/Async Flush controls**: New dropdowns and toggles in Redis settings page
+  - **Admin UI — ACL Username field**: New field in Advanced Settings for Redis 6.0+ ACL authentication
+  - **Admin UI — HTML Footnote toggle**: Enable/disable the HTML comment cache stats via checkbox
+  - **WordPress Site Health integration**: Three new health checks — Redis Connection (connected + version), Drop-In Status (installed + version), Eviction Policy (safe vs dangerous)
+  - **Transient cleanup on enable**: When the drop-in is installed, all database-stored transients are purged (Redis handles them now)
+  - **Drop-in version checking**: Compares installed drop-in `@version` tag with bundled version; shows update notice in admin bar and Redis status page
+  - **Drop-in update button**: One-click "Update Drop-In" button appears when installed version is outdated
+  - **Admin notice for outdated drop-in**: WordPress admin notice when drop-in version is behind plugin version
+  - **Active Configuration table**: Now shows serializer, compression, async_flush, and username constants alongside existing settings
 
 ### v7.18.12
 - **Disk Card Now Explains Quota Fallback Clearly**

@@ -69,6 +69,10 @@ function ccm_tools_redis_check_connection() {
         if ($settings['scheme'] === 'unix' && !empty($settings['path'])) {
             $connected = @$redis->connect($settings['path']);
             $status['host'] = $settings['path'];
+        } elseif ($settings['scheme'] === 'tls') {
+            $connected = @$redis->connect('tls://' . $host, $port, $timeout);
+            $status['host'] = $host;
+            $status['port'] = $port;
         } else {
             $connected = @$redis->connect($host, $port, $timeout);
             $status['host'] = $host;
@@ -80,9 +84,14 @@ function ccm_tools_redis_check_connection() {
             return $status;
         }
         
-        // Authenticate if password is set
+        // ACL auth (Redis 6.0+ username) or legacy auth
         if (!empty($password)) {
-            if (!@$redis->auth($password)) {
+            $username = isset($settings['username']) ? $settings['username'] : '';
+            if (defined('WP_REDIS_USERNAME')) {
+                $username = WP_REDIS_USERNAME;
+            }
+            $auth = $username ? [$username, $password] : $password;
+            if (!@$redis->auth($auth)) {
                 $status['error'] = __('Redis authentication failed.', 'ccm-tools');
                 return $status;
             }
@@ -134,6 +143,7 @@ function ccm_tools_redis_get_settings() {
         'path' => '',
         'scheme' => 'tcp',
         'database' => 0,
+        'username' => '',
         'password' => '',
         'timeout' => 1.0,
         'read_timeout' => 1.0,
@@ -141,7 +151,7 @@ function ccm_tools_redis_get_settings() {
         'max_ttl' => 0,
         'key_salt' => '',
         'disable_metrics' => true,
-        'disable_comment' => true,
+        'disable_comment' => false,
         'enabled' => false,
         'selective_flush' => true,
         'compression' => 'none',
@@ -215,6 +225,18 @@ function ccm_tools_redis_get_settings() {
     if (defined('WP_REDIS_GLOBAL_GROUPS')) {
         $config_settings['global_groups'] = WP_REDIS_GLOBAL_GROUPS;
     }
+    if (defined('WP_REDIS_USERNAME')) {
+        $config_settings['username'] = WP_REDIS_USERNAME;
+    }
+    if (defined('WP_REDIS_SERIALIZER')) {
+        $config_settings['serializer'] = strtolower(WP_REDIS_SERIALIZER);
+    }
+    if (defined('WP_REDIS_COMPRESSION')) {
+        $config_settings['compression'] = strtolower(WP_REDIS_COMPRESSION);
+    }
+    if (defined('WP_REDIS_ASYNC_FLUSH')) {
+        $config_settings['async_flush'] = (bool) WP_REDIS_ASYNC_FLUSH;
+    }
     
     // Get saved settings from database
     $saved_settings = get_option('ccm_tools_redis_settings', array());
@@ -250,6 +272,9 @@ function ccm_tools_redis_save_settings($settings) {
     }
     if (isset($settings['database'])) {
         $sanitized['database'] = absint($settings['database']);
+    }
+    if (isset($settings['username'])) {
+        $sanitized['username'] = sanitize_text_field($settings['username']);
     }
     if (isset($settings['password'])) {
         // Use wp_unslash to handle escaped characters, don't sanitize password content
@@ -451,6 +476,9 @@ function ccm_tools_redis_install_dropin($force = false) {
     if (function_exists('wp_cache_flush')) {
         wp_cache_flush();
     }
+    
+    // Cleanup database-stored transients (Redis handles them now)
+    ccm_tools_redis_cleanup_transients();
     
     $result['success'] = true;
     $result['message'] = __('Redis Object Cache installed and enabled successfully!', 'ccm-tools');
@@ -1045,6 +1073,16 @@ function ccm_tools_render_redis_page() {
                                 <?php if (!empty($dropin_status['version'])): ?>
                                     <span class="ccm-note">(v<?php echo esc_html($dropin_status['version']); ?>)</span>
                                 <?php endif; ?>
+                                <?php
+                                $version_check = ccm_tools_redis_dropin_version_check();
+                                if ($version_check['needs_update']): ?>
+                                    <span class="ccm-warning" style="margin-left: 8px;">
+                                        <?php printf(__('Update available: v%s', 'ccm-tools'), esc_html($version_check['bundled'])); ?>
+                                    </span>
+                                    <button type="button" id="redis-update-dropin" class="ccm-button ccm-button-small" style="margin-left: 8px;">
+                                        <?php _e('Update Drop-In', 'ccm-tools'); ?>
+                                    </button>
+                                <?php endif; ?>
                             <?php elseif ($dropin_status['is_other']): ?>
                                 <span class="ccm-warning"><?php _e('Other Plugin Active', 'ccm-tools'); ?></span>
                                 <span class="ccm-note">(<?php echo esc_html($dropin_status['other_plugin']); ?>)</span>
@@ -1272,6 +1310,65 @@ function ccm_tools_render_redis_page() {
                                 </div>
                             </div>
                         </div>
+                        
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label for="redis-username"><?php _e('Username (Redis 6.0+ ACL)', 'ccm-tools'); ?></label>
+                                <input type="text" id="redis-username" name="username" value="<?php echo esc_attr($settings['username'] ?? ''); ?>" placeholder="<?php esc_attr_e('Leave empty for default user', 'ccm-tools'); ?>">
+                                <span class="ccm-field-hint"><?php _e('Only required if your Redis server uses ACL authentication (Redis 6.0+)', 'ccm-tools'); ?></span>
+                            </div>
+                        </div>
+                        
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field">
+                                <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
+                                <select id="redis-serializer" name="serializer">
+                                    <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP (default)', 'ccm-tools'); ?></option>
+                                    <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary')); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('faster, smaller', 'ccm-tools') . ')'; ?></option>
+                                    <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack')); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
+                                </select>
+                                <span class="ccm-field-hint"><?php _e('igbinary uses less memory; changing serializer requires a cache flush', 'ccm-tools'); ?></span>
+                            </div>
+                            <div class="ccm-form-field">
+                                <label for="redis-compression"><?php _e('Compression', 'ccm-tools'); ?></label>
+                                <select id="redis-compression" name="compression">
+                                    <option value="none" <?php selected($settings['compression'], 'none'); ?>><?php _e('None (default)', 'ccm-tools'); ?></option>
+                                    <?php
+                                    $has_lzf  = defined('Redis::COMPRESSION_LZF');
+                                    $has_lz4  = defined('Redis::COMPRESSION_LZ4');
+                                    $has_zstd = defined('Redis::COMPRESSION_ZSTD');
+                                    ?>
+                                    <option value="lzf" <?php selected($settings['compression'], 'lzf'); ?> <?php disabled(!$has_lzf); ?>><?php _e('LZF', 'ccm-tools'); ?><?php echo !$has_lzf ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('fast', 'ccm-tools') . ')'; ?></option>
+                                    <option value="lz4" <?php selected($settings['compression'], 'lz4'); ?> <?php disabled(!$has_lz4); ?>><?php _e('LZ4', 'ccm-tools'); ?><?php echo !$has_lz4 ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('very fast', 'ccm-tools') . ')'; ?></option>
+                                    <option value="zstd" <?php selected($settings['compression'], 'zstd'); ?> <?php disabled(!$has_zstd); ?>><?php _e('Zstandard', 'ccm-tools'); ?><?php echo !$has_zstd ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('best ratio', 'ccm-tools') . ')'; ?></option>
+                                </select>
+                                <span class="ccm-field-hint"><?php _e('Reduces memory usage at the cost of CPU; changing compression requires a cache flush', 'ccm-tools'); ?></span>
+                            </div>
+                        </div>
+                        
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label class="ccm-checkbox-label">
+                                    <input type="checkbox" name="async_flush" <?php checked(!empty($settings['async_flush'])); ?>>
+                                    <span class="ccm-checkbox-text">
+                                        <strong><?php _e('Async Flush (UNLINK)', 'ccm-tools'); ?></strong>
+                                        <span class="ccm-field-hint"><?php _e('Use non-blocking UNLINK and FLUSHDB ASYNC commands for cache operations (Redis 4.0+)', 'ccm-tools'); ?></span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <label class="ccm-checkbox-label">
+                                    <input type="checkbox" name="disable_comment" <?php checked(empty($settings['disable_comment'])); ?>>
+                                    <span class="ccm-checkbox-text">
+                                        <strong><?php _e('HTML Footnote', 'ccm-tools'); ?></strong>
+                                        <span class="ccm-field-hint"><?php _e('Append an HTML comment with cache hit/miss stats and Redis timing to page output (useful for debugging)', 'ccm-tools'); ?></span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                     
                     <div class="ccm-form-actions">
@@ -1302,11 +1399,15 @@ function ccm_tools_render_redis_page() {
                             'WP_REDIS_PATH' => array('value' => $settings['path'], 'defined' => defined('WP_REDIS_PATH')),
                             'WP_REDIS_SCHEME' => array('value' => $settings['scheme'], 'defined' => defined('WP_REDIS_SCHEME')),
                             'WP_REDIS_DATABASE' => array('value' => $settings['database'], 'defined' => defined('WP_REDIS_DATABASE')),
+                            'WP_REDIS_USERNAME' => array('value' => !empty($settings['username']) ? $settings['username'] : '', 'defined' => defined('WP_REDIS_USERNAME')),
                             'WP_REDIS_PASSWORD' => array('value' => !empty($settings['password']) ? '******' : '', 'defined' => defined('WP_REDIS_PASSWORD')),
                             'WP_REDIS_TIMEOUT' => array('value' => $settings['timeout'], 'defined' => defined('WP_REDIS_TIMEOUT')),
                             'WP_REDIS_MAXTTL' => array('value' => $settings['max_ttl'], 'defined' => defined('WP_REDIS_MAXTTL')),
                             'WP_CACHE_KEY_SALT' => array('value' => $settings['key_salt'], 'defined' => defined('WP_CACHE_KEY_SALT')),
                             'WP_REDIS_SELECTIVE_FLUSH' => array('value' => $settings['selective_flush'] ? 'true' : 'false', 'defined' => defined('WP_REDIS_SELECTIVE_FLUSH')),
+                            'WP_REDIS_SERIALIZER' => array('value' => $settings['serializer'], 'defined' => defined('WP_REDIS_SERIALIZER')),
+                            'WP_REDIS_COMPRESSION' => array('value' => $settings['compression'], 'defined' => defined('WP_REDIS_COMPRESSION')),
+                            'WP_REDIS_ASYNC_FLUSH' => array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => defined('WP_REDIS_ASYNC_FLUSH')),
                         );
                         
                         foreach ($config_items as $constant => $item):
@@ -1468,3 +1569,282 @@ function ccm_tools_redis_set_product_cache($product_id, $data) {
     
     wp_cache_set('wc_product_' . $product_id, $data, 'ccm_wc_products', $ttl);
 }
+
+/* ────────────────────────────────────────────────────────────────
+ *  Transient Cleanup (on drop-in enable)
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Remove database-stored transients since Redis will handle them.
+ * Called when the drop-in is first installed.
+ */
+function ccm_tools_redis_cleanup_transients() {
+    global $wpdb;
+
+    $deleted = $wpdb->query(
+        "DELETE FROM {$wpdb->options}
+         WHERE option_name LIKE '\_transient\_%'
+            OR option_name LIKE '\_site_transient\_%'"
+    );
+
+    if ($deleted > 0) {
+        error_log('CCM Redis: Cleaned up ' . $deleted . ' database transients.');
+    }
+
+    return $deleted;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ *  Drop-in Version Check
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Compare installed drop-in version with bundled version.
+ *
+ * @return array  'needs_update' bool, 'installed' string, 'bundled' string
+ */
+function ccm_tools_redis_dropin_version_check() {
+    $result = array(
+        'needs_update' => false,
+        'installed'    => '',
+        'bundled'      => '',
+    );
+
+    $dropin_path  = WP_CONTENT_DIR . '/object-cache.php';
+    $bundled_path = CCM_HELPER_ROOT_PATH . 'assets/object-cache.php';
+
+    // Read installed drop-in version
+    if (file_exists($dropin_path)) {
+        $content = @file_get_contents($dropin_path);
+        if ($content && preg_match('/@version\s+([0-9.]+)/i', $content, $m)) {
+            $result['installed'] = $m[1];
+        }
+    }
+
+    // Read bundled version
+    if (file_exists($bundled_path)) {
+        $content = @file_get_contents($bundled_path);
+        if ($content && preg_match('/@version\s+([0-9.]+)/i', $content, $m)) {
+            $result['bundled'] = $m[1];
+        }
+    }
+
+    if ($result['installed'] && $result['bundled']
+        && version_compare($result['installed'], $result['bundled'], '<')
+    ) {
+        $result['needs_update'] = true;
+    }
+
+    return $result;
+}
+
+/* ────────────────────────────────────────────────────────────────
+ *  WordPress Site Health Integration
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Register Site Health tests.
+ */
+function ccm_tools_redis_site_health_tests($tests) {
+    if (!ccm_tools_redis_extension_available()) {
+        return $tests;
+    }
+
+    $tests['direct']['ccm_redis_connection'] = array(
+        'label' => __('Redis Connection', 'ccm-tools'),
+        'test'  => 'ccm_tools_redis_site_health_connection',
+    );
+
+    $tests['direct']['ccm_redis_dropin'] = array(
+        'label' => __('Redis Drop-In', 'ccm-tools'),
+        'test'  => 'ccm_tools_redis_site_health_dropin',
+    );
+
+    $tests['direct']['ccm_redis_eviction'] = array(
+        'label' => __('Redis Eviction Policy', 'ccm-tools'),
+        'test'  => 'ccm_tools_redis_site_health_eviction',
+    );
+
+    return $tests;
+}
+add_filter('site_status_tests', 'ccm_tools_redis_site_health_tests');
+
+/**
+ * Site Health: Redis connection test.
+ */
+function ccm_tools_redis_site_health_connection() {
+    $connection = ccm_tools_redis_check_connection();
+
+    if ($connection['connected']) {
+        return array(
+            'label'       => __('Redis is reachable', 'ccm-tools'),
+            'status'      => 'good',
+            'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'blue'),
+            'description' => sprintf(
+                '<p>%s</p>',
+                sprintf(
+                    __('Connected to Redis %s on %s. Uptime: %s.', 'ccm-tools'),
+                    esc_html($connection['version']),
+                    esc_html($connection['host'] . ($connection['port'] ? ':' . $connection['port'] : '')),
+                    esc_html(ccm_tools_redis_format_uptime($connection['uptime']))
+                )
+            ),
+            'actions'     => '',
+            'test'        => 'ccm_redis_connection',
+        );
+    }
+
+    return array(
+        'label'       => __('Redis is not reachable', 'ccm-tools'),
+        'status'      => 'critical',
+        'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'red'),
+        'description' => sprintf('<p>%s</p>', esc_html($connection['error'])),
+        'actions'     => '',
+        'test'        => 'ccm_redis_connection',
+    );
+}
+
+/**
+ * Site Health: Drop-in status test.
+ */
+function ccm_tools_redis_site_health_dropin() {
+    $dropin  = ccm_tools_redis_dropin_status();
+    $version = ccm_tools_redis_dropin_version_check();
+
+    if ($dropin['is_ccm'] && !$version['needs_update']) {
+        return array(
+            'label'       => __('Redis object cache drop-in is installed and up to date', 'ccm-tools'),
+            'status'      => 'good',
+            'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'blue'),
+            'description' => sprintf('<p>%s</p>', sprintf(__('Drop-in version: %s', 'ccm-tools'), esc_html($version['installed']))),
+            'actions'     => '',
+            'test'        => 'ccm_redis_dropin',
+        );
+    }
+
+    if ($dropin['is_ccm'] && $version['needs_update']) {
+        return array(
+            'label'       => __('Redis object cache drop-in needs an update', 'ccm-tools'),
+            'status'      => 'recommended',
+            'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'orange'),
+            'description' => sprintf(
+                '<p>%s</p>',
+                sprintf(
+                    __('Installed: %1$s — Available: %2$s. Visit the Redis page to update.', 'ccm-tools'),
+                    esc_html($version['installed']),
+                    esc_html($version['bundled'])
+                )
+            ),
+            'actions'     => '',
+            'test'        => 'ccm_redis_dropin',
+        );
+    }
+
+    return array(
+        'label'       => __('Redis object cache drop-in is not installed', 'ccm-tools'),
+        'status'      => 'recommended',
+        'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'orange'),
+        'description' => sprintf('<p>%s</p>', __('Enable the CCM Tools Redis object cache for better performance.', 'ccm-tools')),
+        'actions'     => '',
+        'test'        => 'ccm_redis_dropin',
+    );
+}
+
+/**
+ * Site Health: Redis eviction policy check.
+ */
+function ccm_tools_redis_site_health_eviction() {
+    $settings = ccm_tools_redis_get_settings();
+    $policy   = '';
+
+    try {
+        $redis = new Redis();
+        if ($settings['scheme'] === 'unix' && !empty($settings['path'])) {
+            @$redis->connect($settings['path']);
+        } elseif ($settings['scheme'] === 'tls') {
+            @$redis->connect('tls://' . $settings['host'], $settings['port'], $settings['timeout']);
+        } else {
+            @$redis->connect($settings['host'], $settings['port'], $settings['timeout']);
+        }
+        if (!empty($settings['password'])) {
+            $username = $settings['username'] ?? '';
+            if (defined('WP_REDIS_USERNAME')) $username = WP_REDIS_USERNAME;
+            @$redis->auth($username ? [$username, $settings['password']] : $settings['password']);
+        }
+        if ($settings['database'] > 0) $redis->select($settings['database']);
+
+        $info = $redis->info('server');
+        // CONFIG GET may be restricted; try it, fall back to INFO
+        try {
+            $cfg = $redis->rawCommand('CONFIG', 'GET', 'maxmemory-policy');
+            if (is_array($cfg) && isset($cfg[1])) {
+                $policy = $cfg[1];
+            }
+        } catch (Exception $e) {
+            // Restricted — parse from INFO memory instead
+            $mem_info = $redis->info('memory');
+            $policy = $mem_info['maxmemory_policy'] ?? '';
+        }
+        $redis->close();
+    } catch (Exception $e) {
+        return array(
+            'label'       => __('Could not check Redis eviction policy', 'ccm-tools'),
+            'status'      => 'recommended',
+            'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'orange'),
+            'description' => sprintf('<p>%s</p>', esc_html($e->getMessage())),
+            'actions'     => '',
+            'test'        => 'ccm_redis_eviction',
+        );
+    }
+
+    $safe_policies = array('noeviction', 'volatile-lru', 'volatile-lfu', 'volatile-ttl', 'volatile-random');
+
+    if (in_array($policy, $safe_policies, true)) {
+        return array(
+            'label'       => sprintf(__('Redis eviction policy is safe (%s)', 'ccm-tools'), $policy),
+            'status'      => 'good',
+            'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'blue'),
+            'description' => sprintf('<p>%s</p>', __('The current eviction policy protects persistent cache keys.', 'ccm-tools')),
+            'actions'     => '',
+            'test'        => 'ccm_redis_eviction',
+        );
+    }
+
+    return array(
+        'label'       => sprintf(__('Redis eviction policy may cause data loss (%s)', 'ccm-tools'), $policy ?: 'unknown'),
+        'status'      => 'recommended',
+        'badge'       => array('label' => __('Performance', 'ccm-tools'), 'color' => 'orange'),
+        'description' => sprintf(
+            '<p>%s</p>',
+            __('allkeys-* eviction policies can evict important cache keys. Consider using "volatile-lru" or "noeviction".', 'ccm-tools')
+        ),
+        'actions'     => '',
+        'test'        => 'ccm_redis_eviction',
+    );
+}
+
+/**
+ * Show admin notice when the Redis drop-in needs an update.
+ */
+function ccm_tools_redis_dropin_update_notice() {
+    if (!current_user_can('manage_options')) return;
+
+    $dropin = ccm_tools_redis_dropin_status();
+    if (!$dropin['is_ccm']) return;
+
+    $version = ccm_tools_redis_dropin_version_check();
+    if (!$version['needs_update']) return;
+
+    $redis_url = admin_url('admin.php?page=ccm-tools-redis');
+    printf(
+        '<div class="notice notice-warning"><p><strong>CCM Tools Redis:</strong> %s <a href="%s">%s</a></p></div>',
+        sprintf(
+            __('The object-cache.php drop-in (v%1$s) is outdated. A new version (v%2$s) is available.', 'ccm-tools'),
+            esc_html($version['installed']),
+            esc_html($version['bundled'])
+        ),
+        esc_url($redis_url),
+        __('Update now →', 'ccm-tools')
+    );
+}
+add_action('admin_notices', 'ccm_tools_redis_dropin_update_notice');

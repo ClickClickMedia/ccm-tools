@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.18.12
+ * Version: 7.19.0
  */
 
 (function() {
@@ -3375,6 +3375,24 @@
         const settingsForm = $('#redis-settings-form');
         const addConfigBtn = $('#add-to-wp-config');
         const schemeSelect = $('#redis-scheme');
+        const updateDropinBtn = $('#redis-update-dropin');
+        
+        // Update Drop-In (when version mismatch detected)
+        if (updateDropinBtn) {
+            updateDropinBtn.addEventListener('click', async () => {
+                updateDropinBtn.disabled = true;
+                updateDropinBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Updating...';
+                try {
+                    const response = await ajax('ccm_tools_redis_enable', { force: 'true' });
+                    showNotification(response.data.message || 'Drop-in updated successfully!', 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } catch (error) {
+                    showNotification(error.message, 'error');
+                    updateDropinBtn.disabled = false;
+                    updateDropinBtn.innerHTML = 'Update Drop-In';
+                }
+            });
+        }
         
         // Enable Redis Object Cache
         if (enableBtn) {
@@ -3499,6 +3517,7 @@
                     // List of checkbox fields
                     const checkboxFields = [
                         'selective_flush',
+                        'async_flush',
                         'wc_cache_cart_fragments',
                         'wc_persistent_cart',
                         'wc_session_cache'
@@ -3508,6 +3527,9 @@
                         if (checkboxFields.includes(key)) {
                             // Checkbox - convert to boolean string
                             data[key] = 'true';
+                        } else if (key === 'disable_comment') {
+                            // Inverted: checkbox checked = footnote ON = disable_comment false
+                            data['disable_comment'] = 'false';
                         } else {
                             data[key] = value;
                         }
@@ -3519,6 +3541,11 @@
                             data[field] = 'false';
                         }
                     });
+                    
+                    // Handle disable_comment inversion when unchecked
+                    if (!formData.has('disable_comment')) {
+                        data['disable_comment'] = 'true';
+                    }
                     
                     const response = await ajax('ccm_tools_redis_save_settings', data);
                     showNotification(response.data.message, 'success');

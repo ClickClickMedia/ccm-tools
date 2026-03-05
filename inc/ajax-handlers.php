@@ -3171,6 +3171,37 @@ function ccm_tools_ajax_redis_save_settings(): void {
         $settings['selective_flush'] = $_POST['selective_flush'] === 'true' || $_POST['selective_flush'] === '1';
     }
     
+    // Username (ACL auth, Redis 6.0+)
+    if (isset($_POST['username'])) {
+        $settings['username'] = sanitize_text_field($_POST['username']);
+    }
+    
+    // Serializer
+    if (isset($_POST['serializer'])) {
+        $ser = sanitize_text_field($_POST['serializer']);
+        if (in_array($ser, array('php', 'igbinary', 'msgpack'), true)) {
+            $settings['serializer'] = $ser;
+        }
+    }
+    
+    // Compression
+    if (isset($_POST['compression'])) {
+        $comp = sanitize_text_field($_POST['compression']);
+        if (in_array($comp, array('none', 'lzf', 'lz4', 'zstd'), true)) {
+            $settings['compression'] = $comp;
+        }
+    }
+    
+    // Async flush
+    if (isset($_POST['async_flush'])) {
+        $settings['async_flush'] = $_POST['async_flush'] === 'true' || $_POST['async_flush'] === '1';
+    }
+    
+    // Disable comment (HTML footnote) — inverted checkbox
+    if (isset($_POST['disable_comment'])) {
+        $settings['disable_comment'] = $_POST['disable_comment'] === 'true' || $_POST['disable_comment'] === '1';
+    }
+    
     // WooCommerce specific settings
     if (isset($_POST['wc_cache_cart_fragments'])) {
         $settings['wc_cache_cart_fragments'] = $_POST['wc_cache_cart_fragments'] === 'true' || $_POST['wc_cache_cart_fragments'] === '1';
