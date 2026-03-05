@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.19.0
+- **Current Version:** 7.19.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.19.1
+- **Redis Settings Form Visible When Disconnected**
+  - Configuration form, Active Configuration table, and Test Connection button now render even when Redis connection fails
+  - Previously the entire settings form was hidden behind `$connection['connected']` check, locking users out when they saved a bad config (e.g., wrong password)
+  - Enable/Disable Object Cache and Flush Cache buttons still require active connection
+  - Statistics card still requires active connection (no data to show without one)
+  - Test Connection button always visible so users can verify config changes without page reload
 
 ### v7.19.0
 - **Redis Object Cache — Complete Rewrite (Object Cache Pro Feature Parity)**

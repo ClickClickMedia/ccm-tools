@@ -1095,21 +1095,23 @@ function ccm_tools_render_redis_page() {
                     <?php endif; ?>
                 </table>
                 
-                <?php if ($extension_available && $connection['connected']): ?>
+                <?php if ($extension_available): ?>
                 <div class="ccm-button-group" style="margin-top: var(--ccm-space-md);">
-                    <?php if (!$dropin_status['is_ccm']): ?>
-                        <button type="button" id="redis-enable" class="ccm-button ccm-button-primary" <?php echo $dropin_status['is_other'] ? 'data-force="true"' : ''; ?>>
-                            <?php echo $dropin_status['is_other'] ? __('Replace & Enable', 'ccm-tools') : __('Enable Object Cache', 'ccm-tools'); ?>
-                        </button>
-                    <?php else: ?>
-                        <button type="button" id="redis-disable" class="ccm-button ccm-button-danger">
-                            <?php _e('Disable Object Cache', 'ccm-tools'); ?>
+                    <?php if ($connection['connected']): ?>
+                        <?php if (!$dropin_status['is_ccm']): ?>
+                            <button type="button" id="redis-enable" class="ccm-button ccm-button-primary" <?php echo $dropin_status['is_other'] ? 'data-force="true"' : ''; ?>>
+                                <?php echo $dropin_status['is_other'] ? __('Replace & Enable', 'ccm-tools') : __('Enable Object Cache', 'ccm-tools'); ?>
+                            </button>
+                        <?php else: ?>
+                            <button type="button" id="redis-disable" class="ccm-button ccm-button-danger">
+                                <?php _e('Disable Object Cache', 'ccm-tools'); ?>
+                            </button>
+                        <?php endif; ?>
+                        
+                        <button type="button" id="redis-flush" class="ccm-button">
+                            <?php _e('Flush Cache', 'ccm-tools'); ?>
                         </button>
                     <?php endif; ?>
-                    
-                    <button type="button" id="redis-flush" class="ccm-button">
-                        <?php _e('Flush Cache', 'ccm-tools'); ?>
-                    </button>
                     
                     <button type="button" id="redis-test" class="ccm-button">
                         <?php _e('Test Connection', 'ccm-tools'); ?>
@@ -1119,7 +1121,7 @@ function ccm_tools_render_redis_page() {
             </div>
             
             <?php if ($extension_available && $connection['connected']): ?>
-            <!-- Statistics Card -->
+            <!-- Statistics Card (only when connected) -->
             <div class="ccm-card">
                 <h2><?php _e('Site Cache Statistics', 'ccm-tools'); ?></h2>
                 <p class="ccm-note"><?php printf(__('Showing statistics for keys prefixed with: %s', 'ccm-tools'), '<code>' . esc_html($stats['key_prefix']) . '</code>'); ?></p>
@@ -1143,8 +1145,10 @@ function ccm_tools_render_redis_page() {
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
             
-            <!-- Configuration Card -->
+            <?php if ($extension_available): ?>
+            <!-- Configuration Card (always visible when extension available) -->
             <div class="ccm-card">
                 <h2><?php _e('Configuration', 'ccm-tools'); ?></h2>
                 
