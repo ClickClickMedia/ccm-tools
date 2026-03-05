@@ -498,13 +498,20 @@ class CCM_GitHub_Updater {
             return $source;
         }
 
-        // Already correct — nothing to do
-        $correct_dir = trailingslashit($remote_source) . 'ccm-tools/';
-        if ($source === $correct_dir) {
+        // Already correct — basename is 'ccm-tools'
+        if (basename(untrailingslashit($source)) === 'ccm-tools') {
             return $source;
         }
 
-        // Rename the folder
+        // Flat zip: source IS the working directory (no parent folder in zip).
+        // Files are at root level — WordPress copies contents directly to the
+        // destination plugin directory, so no rename is needed.
+        if (untrailingslashit($source) === untrailingslashit($remote_source)) {
+            return $source;
+        }
+
+        // Rename the folder (e.g. ccm-tools-7.20.5 → ccm-tools)
+        $correct_dir = trailingslashit($remote_source) . 'ccm-tools/';
         if ($wp_filesystem->move($source, $correct_dir)) {
             return $correct_dir;
         }

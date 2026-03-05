@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.20.4
+- **Current Version:** 7.20.5
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.20.5
+- **Fix Auto-Update Failing When Plugin Directory Already Named `ccm-tools`**
+  - `fix_source_dir()` filter tried to rename the source directory to `ccm-tools/` even when it was already correct or when the zip had a flat structure (no parent folder)
+  - Flat zips (like `ccm-tools.zip` built by `Compress-Archive`) extract files directly into the working directory — the filter then tried to move the working dir into a subdirectory of itself, which always fails
+  - Added early return when `basename($source)` is already `ccm-tools` — no rename needed
+  - Added early return when `$source === $remote_source` (flat zip) — WordPress copies contents directly to the destination plugin directory
+  - Rename now only fires when the extracted folder genuinely has a wrong name (e.g. `ccm-tools-7.20.5/` or `ClickClickMedia-ccm-tools-abc1234/`)
 
 ### v7.20.4
 - **Fix API Key Not Saving on Premium Page**
