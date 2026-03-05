@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.19.2
+- **Current Version:** 7.19.3
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.19.3
+- **Redis Settings Page Reload After Save**
+  - Page now reloads 800ms after saving Redis settings so the Active Configuration table reflects the new values immediately
+  - Previously the dropdown showed the new selection but the server-rendered Active Configuration table still displayed stale values from the initial page load
+  - Users had to manually reload the page to see updated compression, serializer, async flush, etc. in the Active Configuration table
+  - Also fixed plugin header `Version:` which was stuck at 7.19.0 since the v7.19.1 release
 
 ### v7.19.2
 - **Fixed Redis Password Field Browser Autofill**

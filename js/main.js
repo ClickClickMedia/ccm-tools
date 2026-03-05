@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.19.2
+ * Version: 7.19.3
  */
 
 (function() {
@@ -3549,6 +3549,7 @@
                     
                     const response = await ajax('ccm_tools_redis_save_settings', data);
                     showNotification(response.data.message, 'success');
+                    setTimeout(() => location.reload(), 800);
                 } catch (error) {
                     showNotification(error.message, 'error');
                 } finally {
