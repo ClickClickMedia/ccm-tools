@@ -103,6 +103,9 @@ function ccm_tools_ai_hub_request(string $endpoint, array $body = [], string $me
 
 // ─── AJAX Handlers ──────────────────────────────────────────────
 
+// ─── Premium-gated AJAX handlers ────────────────────────────────
+// save_settings and test_connection are allowed without premium
+// (users need to be able to configure the hub to check premium status)
 add_action('wp_ajax_ccm_tools_ai_hub_save_settings', 'ccm_tools_ajax_ai_hub_save_settings');
 add_action('wp_ajax_ccm_tools_ai_hub_test_connection', 'ccm_tools_ajax_ai_hub_test_connection');
 add_action('wp_ajax_ccm_tools_ai_hub_run_pagespeed', 'ccm_tools_ajax_ai_hub_run_pagespeed');
@@ -112,6 +115,18 @@ add_action('wp_ajax_ccm_tools_ai_hub_ai_optimize', 'ccm_tools_ajax_ai_hub_ai_opt
 add_action('wp_ajax_ccm_tools_ai_preflight', 'ccm_tools_ajax_ai_preflight');
 add_action('wp_ajax_ccm_tools_ai_enable_tool', 'ccm_tools_ajax_ai_enable_tool');
 add_action('wp_ajax_ccm_tools_ai_hub_get_latest_scores', 'ccm_tools_ajax_ai_hub_get_latest_scores');
+
+/**
+ * Defense-in-depth premium check for AI AJAX handlers.
+ * Returns true if the caller should abort (not premium).
+ */
+function ccm_tools_ai_require_premium(): bool {
+    if (function_exists('ccm_tools_has_premium_feature') && !ccm_tools_has_premium_feature('ai_performance')) {
+        wp_send_json_error(array('message' => __('This feature requires a CCM Tools Premium subscription.', 'ccm-tools'), 'premium_required' => true));
+        return true;
+    }
+    return false;
+}
 
 /**
  * Get latest PageSpeed scores for dashboard widget (lightweight)
@@ -226,6 +241,7 @@ function ccm_tools_ajax_ai_hub_test_connection(): void {
  */
 function ccm_tools_ajax_ai_hub_run_pagespeed(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
@@ -299,6 +315,7 @@ function ccm_tools_ajax_ai_hub_get_results(): void {
  */
 function ccm_tools_ajax_ai_hub_ai_analyze(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
@@ -361,6 +378,7 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
  */
 function ccm_tools_ajax_ai_hub_ai_optimize(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
@@ -702,6 +720,7 @@ add_action('wp_ajax_ccm_tools_ai_hub_console_check', 'ccm_tools_ajax_ai_hub_cons
  */
 function ccm_tools_ajax_ai_hub_console_check(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
@@ -735,6 +754,7 @@ add_action('wp_ajax_ccm_tools_ai_hub_screenshot', 'ccm_tools_ajax_ai_hub_screens
  */
 function ccm_tools_ajax_ai_hub_screenshot(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
@@ -777,6 +797,7 @@ add_action('wp_ajax_ccm_tools_ai_hub_visual_compare', 'ccm_tools_ajax_ai_hub_vis
  */
 function ccm_tools_ajax_ai_hub_visual_compare(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
@@ -823,6 +844,7 @@ add_action('wp_ajax_ccm_tools_ai_chat', 'ccm_tools_ajax_ai_chat');
  */
 function ccm_tools_ajax_ai_chat(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
@@ -1258,6 +1280,12 @@ function ccm_tools_ajax_ai_enable_tool(): void {
  * Render the AI Optimizer section (embedded in the Performance page)
  */
 function ccm_tools_render_ai_section(): void {
+    // ── Premium gate ────────────────────────────────────────────
+    if (function_exists('ccm_tools_has_premium_feature') && !ccm_tools_has_premium_feature('ai_performance')) {
+        ccm_tools_render_premium_upsell('ai_performance');
+        return;
+    }
+
     $settings = ccm_tools_ai_hub_get_settings();
     $hasKey = !empty($settings['api_key']);
     ?>

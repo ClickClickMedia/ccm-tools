@@ -1096,8 +1096,8 @@ function ccm_tools_render_redis_page() {
                 </table>
                 
                 <?php
-                // Runtime Diagnostics — query the live $wp_object_cache instance
-                if ($connection['connected'] && $dropin_status['is_ccm'] && function_exists('wp_cache_get')):
+                // Runtime Diagnostics — query the live $wp_object_cache instance (Premium)
+                if (ccm_tools_has_premium_feature('advanced_redis') && $connection['connected'] && $dropin_status['is_ccm'] && function_exists('wp_cache_get')):
                     global $wp_object_cache;
                     $runtime = (is_object($wp_object_cache) && method_exists($wp_object_cache, 'info'))
                         ? $wp_object_cache->info()
@@ -1312,6 +1312,7 @@ function ccm_tools_render_redis_page() {
                     </div>
                     
                     <?php if (class_exists('WooCommerce')): ?>
+                    <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
                     <div class="ccm-form-section ccm-form-section-woocommerce">
                         <h3><span class="dashicons dashicons-cart" style="margin-right: 8px;"></span><?php _e('WooCommerce Optimization', 'ccm-tools'); ?></h3>
                         <p class="ccm-note"><?php _e('WooCommerce detected! These settings optimize Redis caching for e-commerce performance.', 'ccm-tools'); ?></p>
@@ -1375,8 +1376,15 @@ function ccm_tools_render_redis_page() {
                             </ul>
                         </div>
                     </div>
-                    <?php endif; ?>
+                    <?php else: ?>
+                    <div class="ccm-form-section ccm-form-section-woocommerce">
+                        <h3><span class="dashicons dashicons-cart" style="margin-right: 8px;"></span><?php _e('WooCommerce Optimization', 'ccm-tools'); ?> <span class="ccm-premium-badge ccm-premium-badge-pro" style="font-size: 0.75rem;">Premium</span></h3>
+                        <?php ccm_tools_render_premium_upsell('advanced_redis', true); ?>
+                    </div>
+                    <?php endif; // premium ?>
+                    <?php endif; // WooCommerce ?>
                     
+                    <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
                     <div class="ccm-form-section">
                         <h3><?php _e('Advanced Settings', 'ccm-tools'); ?></h3>
                         
@@ -1456,6 +1464,12 @@ function ccm_tools_render_redis_page() {
                             </div>
                         </div>
                     </div>
+                    <?php else: ?>
+                    <div class="ccm-form-section">
+                        <h3><?php _e('Advanced Settings', 'ccm-tools'); ?> <span class="ccm-premium-badge ccm-premium-badge-pro" style="font-size: 0.75rem;">Premium</span></h3>
+                        <?php ccm_tools_render_premium_upsell('advanced_redis', true); ?>
+                    </div>
+                    <?php endif; ?>
                     
                     <div class="ccm-form-actions">
                         <button type="submit" class="ccm-button ccm-button-primary"><?php _e('Save Settings', 'ccm-tools'); ?></button>

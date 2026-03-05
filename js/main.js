@@ -3231,8 +3231,48 @@
                 loadDashboardPageSpeedScores();
             }
         } catch (e) { console.error('CCM: Dashboard PageSpeed init error', e); }
+
+        // Premium refresh handler
+        try {
+            initPremiumHandlers();
+        } catch (e) { console.error('CCM: Premium init error', e); }
     });
     
+    // ===================================
+    // Premium Subscription Handlers
+    // ===================================
+
+    /**
+     * Initialize premium-related UI handlers
+     */
+    function initPremiumHandlers() {
+        const refreshBtn = $('#premium-refresh-btn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', async () => {
+                refreshBtn.disabled = true;
+                refreshBtn.textContent = 'Checking…';
+                try {
+                    const res = await ajax('ccm_tools_premium_refresh', {});
+                    if (res.success) {
+                        showNotification(
+                            res.data.premium ? 'Premium subscription active!' : 'No active premium subscription.',
+                            res.data.premium ? 'success' : 'info'
+                        );
+                        // Reload to reflect updated premium status across all sections
+                        setTimeout(() => location.reload(), 800);
+                    } else {
+                        showNotification(res.data || 'Failed to check premium status.', 'error');
+                    }
+                } catch (e) {
+                    showNotification('Error checking premium status.', 'error');
+                } finally {
+                    refreshBtn.disabled = false;
+                    refreshBtn.textContent = 'Refresh Status';
+                }
+            });
+        }
+    }
+
     // ===================================
     // Dashboard PageSpeed Scores
     // ===================================

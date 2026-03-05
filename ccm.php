@@ -149,6 +149,7 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/webp-converter.php'; // Add WebP image converter
     require_once CCM_HELPER_ROOT_DIR . 'inc/performance-optimizer.php';
     require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php'; // Add Redis Object Cache
+    require_once CCM_HELPER_ROOT_DIR . 'inc/premium.php'; // Premium subscription management
     require_once CCM_HELPER_ROOT_DIR . 'inc/ai-hub.php'; // AI Performance Hub integration
     
     // Initialize plugin settings
@@ -192,7 +193,7 @@ function ccm_tools_render_header_nav($active_page = '') {
             </div>
         </nav>
         <div class="ccm-header-title">
-            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            <h1><?php echo esc_html(get_admin_page_title()); ?> <?php echo ccm_tools_render_premium_badge(); ?></h1>
         </div>
     </div>
     <?php
@@ -696,6 +697,13 @@ class CCMSettings {
                     </div>
                 </div>
                 <?php endif; ?>
+
+                <?php
+                // Premium subscription status card
+                if (function_exists('ccm_tools_render_premium_dashboard_card')) {
+                    ccm_tools_render_premium_dashboard_card();
+                }
+                ?>
 
                 <!-- Disk Information Card -->
                 <div class="ccm-card">

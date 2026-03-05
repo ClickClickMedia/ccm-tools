@@ -34,6 +34,7 @@ ccm-tools/
 │   ├── htaccess.php       # .htaccess optimization functions
 │   ├── optimize.php       # Database optimization tools
 │   ├── performance-optimizer.php # Performance optimizer (experimental)
+│   ├── premium.php        # Premium subscription management & feature gating
 │   ├── redis-object-cache.php # Redis object cache management
 │   ├── system-info.php    # System information gathering (TTFB, disk, etc.)
 │   ├── tableconverter.php # Database table conversion (InnoDB/utf8mb4)
@@ -93,6 +94,20 @@ ccm-tools/
 - Multisite support with separate prefixes per blog
 - Global cache groups for network-wide data
 - Automatic fallback to in-memory cache if Redis unavailable
+
+### 8. Premium Subscription System
+- **Free vs Premium feature gating** with clear upgrade paths
+- **Free tier:** System Info, Database Tools, .htaccess, Error Log, Debug, WebP, Performance Optimizer, Basic Redis (host/port/password/db/key_salt/max_ttl/selective_flush/enable/disable/flush)
+- **Premium tier:** AI Performance Hub (all features), Advanced Redis (serializer, compression, async_flush, ACL, TLS, WooCommerce Redis, timeouts, runtime diagnostics, HTML footnote)
+- **Premium status check flow:** wp-config.php constant override → transient cache (12h TTL) → hub API call
+- **Hub API:** `GET /api/v1/premium/status` with `X-Api-Key` header for subscription verification
+- **Stripe integration:** Recurring monthly payments, webhook-driven status updates on the hub
+- **Developer override:** `define('CCM_TOOLS_PREMIUM', true)` in wp-config.php for testing
+- **Defense-in-depth gating:** Both render-level (don't show UI) and AJAX-level (reject requests)
+- Premium badge in header (green "Premium" or amber "Free" link)
+- Dashboard comparison card showing Free vs Premium features
+- Upsell cards on locked sections with feature lists and upgrade CTA
+- Premium website: `CCM_TOOLS_PREMIUM_URL` constant (default: `https://tools.clickclickmedia.com.au`)
 
 ## Coding Conventions
 
@@ -199,6 +214,7 @@ document.addEventListener('click', (e) => {
 | `ccm_tools_ai_hub_visual_compare` | `ccm_tools_ajax_ai_hub_visual_compare()` | AI visual regression detection (before/after screenshots) |
 | `ccm_tools_ai_hub_console_check` | `ccm_tools_ajax_ai_hub_console_check()` | Check URL for JS console errors via headless Chromium |
 | `ccm_tools_ai_hub_get_latest_scores` | `ccm_tools_ajax_ai_hub_get_latest_scores()` | Get latest PageSpeed scores for dashboard widget |
+| `ccm_tools_premium_refresh` | `ccm_tools_ajax_premium_refresh()` | Clear cache and re-check premium subscription status |
 
 ## Performance Considerations
 
@@ -290,6 +306,22 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.20.0 (feature/premium-subscription branch)
+- **Premium Subscription System — Free vs Premium Feature Gating**
+  - New `inc/premium.php` module: subscription status checking, feature access control, upsell UI rendering, AJAX handlers
+  - **Three-tier premium status check:** wp-config.php `CCM_TOOLS_PREMIUM` constant (dev override) → transient cache (12h TTL) → hub API call `GET /api/v1/premium/status`
+  - **Free tier includes:** System Info, Database Tools, .htaccess, Error Log, Debug Mode, WebP Converter, Performance Optimizer, Basic Redis (host, port, password, database, key_salt, max_ttl, selective_flush, enable/disable, flush, stats)
+  - **Premium tier adds:** All AI Performance Hub features (PageSpeed, AI analysis, one-click optimize, visual regression, console check, AI chat), Advanced Redis (serializer, compression, async_flush, ACL username, TLS, WooCommerce optimization, timeouts, runtime diagnostics, HTML footnote)
+  - **Render-level gating:** AI section shows full upsell card, Redis advanced/WooCommerce sections show compact upsell with Premium badge, Runtime diagnostics hidden entirely
+  - **AJAX-level gating (defense-in-depth):** 7 AI hub AJAX handlers reject requests with JSON error if not premium — `run_pagespeed`, `ai_analyze`, `ai_optimize`, `console_check`, `screenshot`, `visual_compare`, `ai_chat`
+  - **Premium badge in header:** Green "Premium" badge when active, amber "Free" link to upgrade when inactive — rendered by `ccm_tools_render_premium_badge()`
+  - **Dashboard comparison card:** Shows active premium features or full Free vs Premium comparison grid with upgrade CTA
+  - **Upsell cards:** `ccm_tools_render_premium_upsell($feature_key, $compact)` — full card (AI section) or compact inline (Redis sections) with feature lists and upgrade button
+  - **JS premium refresh:** `#premium-refresh-btn` handler clears transient cache and re-checks hub, reloads page on status change
+  - Premium website URL configurable via `CCM_TOOLS_PREMIUM_URL` constant (default: `https://tools.clickclickmedia.com.au`)
+  - New AJAX handler: `ccm_tools_premium_refresh` — clears both `ccm_tools_premium_status` and `ccm_tools_premium_details` transients
+  - Hub API contract: `GET /api/v1/premium/status` with `X-Api-Key` header, returns `{ success: true, premium: bool, plan: string, expires: string, features: string[] }`
 
 ### v7.19.7
 - **Auto-Flush Redis Cache on Serializer or Compression Change**
