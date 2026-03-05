@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.20.0
+- **Current Version:** 7.20.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -306,6 +306,17 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.20.2
+- **Premium Menu Reorganization**
+  - Removed `⭐ Premium` tab from the horizontal top navigation bar — Premium page is now accessed only via the WordPress admin sidebar
+  - Moved `⭐ Premium` sidebar submenu item to the bottom of the CCM Tools menu (after Error Log)
+  - Previous sidebar order: ...Performance, Premium, WooCommerce, Error Log → New order: ...Performance, WooCommerce, Error Log, Premium
+
+### v7.20.1
+- Removed Premium dashboard card from System Info page
+- Updated Get Premium button URL to root `https://premium.clickclickmedia.com.au`
+- Added "Lost your API key?" login link on Premium settings page
 
 ### v7.20.0
 - **Dedicated Premium Admin Page — Hub API Key Connection Moved**
