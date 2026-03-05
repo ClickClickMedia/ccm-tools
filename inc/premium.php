@@ -251,7 +251,7 @@ function ccm_tools_premium_get_checkout_url(): string {
         'utm_source' => 'plugin',
         'utm_medium' => 'upgrade-cta',
         'site'       => urlencode(site_url()),
-    ), trailingslashit(CCM_TOOLS_PREMIUM_URL) . 'pricing');
+    ), trailingslashit(CCM_TOOLS_PREMIUM_URL));
 }
 
 /**
@@ -498,6 +498,11 @@ function ccm_tools_render_premium_page(): void {
                         <button type="button" id="ai-hub-test-btn" class="ccm-button ccm-button-secondary"><?php _e('Test Connection', 'ccm-tools'); ?></button>
                     </div>
                     <div id="ai-hub-test-result" style="margin-top: 0.5rem;"></div>
+                    <p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm); font-size: 0.85rem;">
+                        <?php _e('Lost your API key?', 'ccm-tools'); ?>
+                        <a href="<?php echo esc_url(trailingslashit(CCM_TOOLS_PREMIUM_URL) . 'login'); ?>" target="_blank" rel="noopener"><?php _e('Log in to your Premium account', 'ccm-tools'); ?></a>
+                        <?php _e('to retrieve it.', 'ccm-tools'); ?>
+                    </p>
                 </div>
             </div>
 
