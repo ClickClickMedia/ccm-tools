@@ -107,7 +107,7 @@ ccm-tools/
 - Premium badge in header (green "Premium" or amber "Free" link)
 - Dashboard comparison card showing Free vs Premium features
 - Upsell cards on locked sections with feature lists and upgrade CTA
-- Premium website: `CCM_TOOLS_PREMIUM_URL` constant (default: `https://tools.clickclickmedia.com.au`)
+- Premium website: `CCM_TOOLS_PREMIUM_URL` constant (default: `https://premium.clickclickmedia.com.au`)
 
 ## Coding Conventions
 
@@ -319,7 +319,7 @@ After completing changes:
   - **Dashboard comparison card:** Shows active premium features or full Free vs Premium comparison grid with upgrade CTA
   - **Upsell cards:** `ccm_tools_render_premium_upsell($feature_key, $compact)` — full card (AI section) or compact inline (Redis sections) with feature lists and upgrade button
   - **JS premium refresh:** `#premium-refresh-btn` handler clears transient cache and re-checks hub, reloads page on status change
-  - Premium website URL configurable via `CCM_TOOLS_PREMIUM_URL` constant (default: `https://tools.clickclickmedia.com.au`)
+  - Premium website URL configurable via `CCM_TOOLS_PREMIUM_URL` constant (default: `https://premium.clickclickmedia.com.au`)
   - New AJAX handler: `ccm_tools_premium_refresh` — clears both `ccm_tools_premium_status` and `ccm_tools_premium_details` transients
   - Hub API contract: `GET /api/v1/premium/status` with `X-Api-Key` header, returns `{ success: true, premium: bool, plan: string, expires: string, features: string[] }`
 

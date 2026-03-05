@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) exit;
 
 /** URL of the Premium website (pricing / checkout). Override in wp-config.php. */
 if (!defined('CCM_TOOLS_PREMIUM_URL')) {
-    define('CCM_TOOLS_PREMIUM_URL', 'https://tools.clickclickmedia.com.au');
+    define('CCM_TOOLS_PREMIUM_URL', 'https://premium.clickclickmedia.com.au');
 }
 
 /** Transient expiry for cached premium status (seconds). */
