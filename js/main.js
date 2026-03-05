@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.20.3
+ * Version: 7.20.4
  */
 
 (function() {
@@ -3231,6 +3231,13 @@
                 loadDashboardPageSpeedScores();
             }
         } catch (e) { console.error('CCM: Dashboard PageSpeed init error', e); }
+
+        // Initialize AI Hub handlers on Premium page (not nested in perf page)
+        try {
+            if (!$('#save-perf-settings') && $('#ai-hub-save-btn')) {
+                initAiHubHandlers();
+            }
+        } catch (e) { console.error('CCM: AI Hub standalone init error', e); }
 
         // Premium refresh handler
         try {

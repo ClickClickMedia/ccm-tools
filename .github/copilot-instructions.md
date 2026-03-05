@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.20.3
+- **Current Version:** 7.20.4
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.20.4
+- **Fix API Key Not Saving on Premium Page**
+  - `initAiHubHandlers()` was only called from `initPerfOptimizerHandlers()`, which is gated by `$('#save-perf-settings')` — an element that only exists on the Performance page
+  - On the dedicated Premium page (`ccm-tools-premium`), the Save and Test Connection buttons had no click handlers, so clicking them did nothing
+  - Added standalone `initAiHubHandlers()` call in the `ready()` block when on the Premium page (detected by `#ai-hub-save-btn` present without `#save-perf-settings`)
+  - Save, Test Connection buttons now work on both the Performance and Premium pages
 
 ### v7.20.3
 - **Fix GitHub Release Install Directory Name**
