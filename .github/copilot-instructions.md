@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.19.7
+- **Current Version:** 7.20.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -307,7 +307,17 @@ After completing changes:
 
 ## Change Log (Recent)
 
-### v7.20.0 (feature/premium-subscription branch)
+### v7.20.0
+- **Dedicated Premium Admin Page — Hub API Key Connection Moved**
+  - New `⭐ Premium` submenu page (`ccm-tools-premium`) with its own nav tab between Performance and WooCommerce
+  - Hub Connection card with API key input, Save, Test Connection buttons, and connection status badge
+  - Subscription Status card showing active subscription details (plan, renewal date, features) or Free vs Premium comparison table with upgrade CTA
+  - New `ccm_tools_render_premium_page()` function in `inc/premium.php` — renders the full admin page
+  - Hub Connection section removed from AI Performance section on the Performance page
+  - Performance page now shows a CTA box linking to Premium Settings when no API key is configured
+  - Hidden `#ai-hub-url` input kept on Performance page for JS compatibility
+  - Same HTML element IDs used on Premium page (`#ai-hub-key`, `#ai-hub-save-btn`, `#ai-hub-test-btn`, etc.) — existing JS handlers work without modification
+  - No JS changes needed — `initAiHubHandlers()` uses null-safe element binding that works on both pages
 - **Premium Subscription System — Free vs Premium Feature Gating**
   - New `inc/premium.php` module: subscription status checking, feature access control, upsell UI rendering, AJAX handlers
   - **Three-tier premium status check:** wp-config.php `CCM_TOOLS_PREMIUM` constant (dev override) → transient cache (12h TTL) → hub API call `GET /api/v1/premium/status`

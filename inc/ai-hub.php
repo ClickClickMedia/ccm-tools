@@ -1298,22 +1298,16 @@ function ccm_tools_render_ai_section(): void {
             <span id="ai-hub-status" class="ccm-badge <?php echo $hasKey ? 'ccm-badge-info' : 'ccm-badge-warning'; ?>"><?php echo $hasKey ? 'Configured' : 'Not Connected'; ?></span>
         </div>
         <div class="ccm-card-body">
-            <!-- Connection Settings (collapsible) -->
-            <details id="ai-connection-details"<?php echo $hasKey ? '' : ' open'; ?>>
-                <summary style="cursor: pointer; font-weight: 600; padding: 0.5rem 0;"><?php _e('Hub Connection', 'ccm-tools'); ?></summary>
-                <div style="padding: 0.75rem 0;">
-                    <input type="hidden" id="ai-hub-url" value="<?php echo esc_attr($settings['hub_url']); ?>">
-                    <div class="ccm-ai-connection-row">
-                        <div class="ccm-form-field">
-                            <label for="ai-hub-key"><?php _e('API Key', 'ccm-tools'); ?></label>
-                            <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key']); ?>" placeholder="ccm_xxxx..." class="ccm-input">
-                        </div>
-                        <button type="button" id="ai-hub-save-btn" class="ccm-button ccm-button-secondary"><?php _e('Save', 'ccm-tools'); ?></button>
-                        <button type="button" id="ai-hub-test-btn" class="ccm-button ccm-button-secondary"><?php _e('Test', 'ccm-tools'); ?></button>
-                    </div>
-                    <div id="ai-hub-test-result" style="margin-top: 0.5rem;"></div>
-                </div>
-            </details>
+            <?php if (!$hasKey): ?>
+            <!-- No API Key — point to Premium page -->
+            <div style="padding: var(--ccm-space-lg); text-align: center; background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); margin-bottom: var(--ccm-space-md);">
+                <p style="margin: 0 0 var(--ccm-space-sm) 0; font-size: 1rem;"><?php _e('Connect your Hub API key to enable AI-powered optimization.', 'ccm-tools'); ?></p>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-premium')); ?>" class="ccm-button ccm-button-primary">⭐ <?php _e('Configure in Premium Settings', 'ccm-tools'); ?></a>
+            </div>
+            <?php endif; ?>
+
+            <!-- Hidden fields for JS (still needed by save/test handlers on Premium page context) -->
+            <input type="hidden" id="ai-hub-url" value="<?php echo esc_attr($settings['hub_url']); ?>">
 
             <!-- URL & Action Controls -->
             <div class="ccm-ai-controls">

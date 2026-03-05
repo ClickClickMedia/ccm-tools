@@ -456,6 +456,98 @@ function ccm_tools_render_premium_dashboard_card(): void {
     <?php
 }
 
+// ─── Premium Admin Page ─────────────────────────────────────────
+
+/**
+ * Render the dedicated Premium admin page.
+ *
+ * Shows API key connection, premium status, and comparison table.
+ */
+function ccm_tools_render_premium_page(): void {
+    $settings    = function_exists('ccm_tools_ai_hub_get_settings') ? ccm_tools_ai_hub_get_settings() : [];
+    $hasKey      = !empty($settings['api_key']);
+    $is_premium  = ccm_tools_is_premium();
+    $status      = ccm_tools_premium_get_status();
+    $checkout_url = ccm_tools_premium_get_checkout_url();
+    $account_url  = ccm_tools_premium_get_account_url();
+    ?>
+    <div class="wrap ccm-tools ccm-tools-premium">
+        <?php
+        if (function_exists('ccm_tools_render_header_nav')) {
+            ccm_tools_render_header_nav('ccm-tools-premium');
+        }
+        ?>
+
+        <div class="ccm-content">
+
+            <!-- Hub Connection Card -->
+            <div class="ccm-card">
+                <div class="ccm-card-header" style="display: flex; align-items: center; justify-content: space-between;">
+                    <h2 style="margin: 0;"><?php _e('Hub Connection', 'ccm-tools'); ?></h2>
+                    <span id="ai-hub-status" class="ccm-badge <?php echo $hasKey ? 'ccm-badge-info' : 'ccm-badge-warning'; ?>"><?php echo $hasKey ? 'Connected' : 'Not Connected'; ?></span>
+                </div>
+                <div class="ccm-card-body">
+                    <p class="ccm-text-muted"><?php _e('Connect your site to the CCM Tools Hub to enable Premium features. Enter the API key provided when you added this site to your Premium account.', 'ccm-tools'); ?></p>
+                    <input type="hidden" id="ai-hub-url" value="<?php echo esc_attr($settings['hub_url'] ?? 'https://api.tools.clickclick.media'); ?>">
+                    <div class="ccm-ai-connection-row">
+                        <div class="ccm-form-field">
+                            <label for="ai-hub-key"><?php _e('API Key', 'ccm-tools'); ?></label>
+                            <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key'] ?? ''); ?>" placeholder="ccm_xxxx..." class="ccm-input">
+                        </div>
+                        <button type="button" id="ai-hub-save-btn" class="ccm-button ccm-button-secondary"><?php _e('Save', 'ccm-tools'); ?></button>
+                        <button type="button" id="ai-hub-test-btn" class="ccm-button ccm-button-secondary"><?php _e('Test Connection', 'ccm-tools'); ?></button>
+                    </div>
+                    <div id="ai-hub-test-result" style="margin-top: 0.5rem;"></div>
+                </div>
+            </div>
+
+            <!-- Premium Status Card -->
+            <div class="ccm-card ccm-card-premium">
+                <div class="ccm-card-header" style="display: flex; align-items: center; justify-content: space-between;">
+                    <h2 style="margin: 0;"><?php _e('Subscription Status', 'ccm-tools'); ?></h2>
+                    <?php if ($is_premium): ?>
+                        <span class="ccm-premium-badge ccm-premium-badge-pro">Active</span>
+                    <?php else: ?>
+                        <span class="ccm-premium-badge ccm-premium-badge-free">Free</span>
+                    <?php endif; ?>
+                </div>
+                <div class="ccm-card-body">
+                    <?php if ($is_premium): ?>
+                        <div class="ccm-premium-status-active">
+                            <p>Your premium subscription is <strong class="ccm-success">active</strong>.</p>
+                            <?php if (!empty($status['plan']) && $status['plan'] !== 'developer'): ?>
+                                <p>Plan: <strong><?php echo esc_html(ucfirst($status['plan'])); ?></strong></p>
+                            <?php endif; ?>
+                            <?php if (!empty($status['expires'])): ?>
+                                <p>Renews: <strong><?php echo esc_html(wp_date('F j, Y', strtotime($status['expires']))); ?></strong></p>
+                            <?php endif; ?>
+                            <div class="ccm-premium-active-features" style="margin-top: var(--ccm-space-md);">
+                                <h4><?php _e('Your Premium Features', 'ccm-tools'); ?></h4>
+                                <?php foreach (ccm_tools_premium_features() as $f): ?>
+                                    <div class="ccm-premium-active-feature">
+                                        <span><?php echo esc_html($f['icon']); ?></span>
+                                        <strong><?php echo esc_html($f['name']); ?></strong>
+                                        — <?php echo esc_html($f['description']); ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <p style="margin-top: var(--ccm-space-md);">
+                                <a href="<?php echo esc_url($account_url); ?>" class="ccm-button ccm-button-small" target="_blank" rel="noopener"><?php _e('Manage Subscription', 'ccm-tools'); ?></a>
+                                <button type="button" id="premium-refresh-btn" class="ccm-button ccm-button-small ccm-button-secondary" style="margin-left: 0.5rem;"><?php _e('Refresh Status', 'ccm-tools'); ?></button>
+                            </p>
+                        </div>
+                    <?php else: ?>
+                        <p class="ccm-text-muted" style="margin-bottom: var(--ccm-space-md);"><?php _e('Unlock the full power of your WordPress site with AI-driven optimisation and enterprise Redis caching.', 'ccm-tools'); ?></p>
+                        <?php ccm_tools_render_premium_comparison(); ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <?php
+}
+
 // ─── AJAX Handlers ──────────────────────────────────────────────
 
 /**
