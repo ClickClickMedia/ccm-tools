@@ -1195,7 +1195,7 @@ function ccm_tools_render_redis_page() {
                         <div class="ccm-form-grid">
                             <div class="ccm-form-field ccm-form-field-full">
                                 <label for="redis-password"><?php _e('Password', 'ccm-tools'); ?></label>
-                                <input type="password" id="redis-password" name="password" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>">
+                                <input type="password" id="redis-password" name="password" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>" autocomplete="new-password">
                             </div>
                         </div>
                     </div>

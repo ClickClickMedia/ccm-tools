@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.19.1
+- **Current Version:** 7.19.2
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,11 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.19.2
+- **Fixed Redis Password Field Browser Autofill**
+  - Added `autocomplete="new-password"` to the Redis password input to prevent browsers from injecting saved credentials
+  - Browser autofill was silently populating the password field, causing `ERR AUTH <password> called without any password configured` on default Redis setups that don't require authentication
 
 ### v7.19.1
 - **Redis Settings Form Visible When Disconnected**
