@@ -896,7 +896,7 @@ function ccm_tools_redis_add_config($config = array()) {
         if (is_bool($value)) {
             $value_str = $value ? 'true' : 'false';
             $config_lines[] = "define('{$constant}', {$value_str});";
-        } elseif (is_int($value)) {
+        } elseif (is_int($value) || is_float($value)) {
             $config_lines[] = "define('{$constant}', {$value});";
         } else {
             $config_lines[] = "define('{$constant}', '{$value}');";

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.19.5
+- **Current Version:** 7.19.6
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,16 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.19.6
+- **"Add to wp-config.php" Now Writes All Redis Settings**
+  - The drop-in (`object-cache.php`) loads before WordPress's options API is available, so it can ONLY read wp-config.php constants
+  - Previously "Add to wp-config.php" only wrote host, port, maxttl, key_salt, password, database, selective_flush
+  - Now also writes: `WP_REDIS_SERIALIZER`, `WP_REDIS_COMPRESSION`, `WP_REDIS_ASYNC_FLUSH`, `WP_REDIS_USERNAME`, `WP_REDIS_SCHEME`, `WP_REDIS_PATH`, `WP_REDIS_TIMEOUT`, `WP_REDIS_READ_TIMEOUT`, `WP_REDIS_DISABLE_COMMENT`
+  - Non-default values only — e.g. serializer only written when not `php`, compression only when not `none`
+  - Existing constants are skipped (safe to click again after changing settings)
+  - Float values (timeouts) now written as unquoted numbers instead of quoted strings
+  - Fixes the mismatch where settings form showed igbinary/LZ4/async_flush but the drop-in runtime showed php/none/false
 
 ### v7.19.5
 - **Drop-In Runtime Diagnostics Panel**

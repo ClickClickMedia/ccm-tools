@@ -3264,7 +3264,6 @@ function ccm_tools_ajax_redis_add_config(): void {
         'WP_REDIS_PORT' => absint($settings['port']),
         'WP_REDIS_MAXTTL' => absint($settings['max_ttl']) ?: 3600,
         'WP_REDIS_DISABLE_METRICS' => true,
-        'WP_REDIS_DISABLE_COMMENT' => true,
     );
     
     if (!empty($settings['key_salt'])) {
@@ -3276,12 +3275,56 @@ function ccm_tools_ajax_redis_add_config(): void {
         $config['WP_REDIS_PASSWORD'] = $settings['password'];
     }
     
+    if (!empty($settings['username'])) {
+        $config['WP_REDIS_USERNAME'] = sanitize_text_field($settings['username']);
+    }
+    
     if ($settings['database'] > 0) {
         $config['WP_REDIS_DATABASE'] = absint($settings['database']);
     }
     
+    if ($settings['scheme'] !== 'tcp') {
+        $config['WP_REDIS_SCHEME'] = sanitize_text_field($settings['scheme']);
+    }
+    
+    if (!empty($settings['path'])) {
+        $config['WP_REDIS_PATH'] = sanitize_text_field($settings['path']);
+    }
+    
     if ($settings['selective_flush']) {
         $config['WP_REDIS_SELECTIVE_FLUSH'] = true;
+    }
+    
+    // Serializer (only write if non-default)
+    if (!empty($settings['serializer']) && $settings['serializer'] !== 'php') {
+        $config['WP_REDIS_SERIALIZER'] = sanitize_text_field($settings['serializer']);
+    }
+    
+    // Compression (only write if non-default)
+    if (!empty($settings['compression']) && $settings['compression'] !== 'none') {
+        $config['WP_REDIS_COMPRESSION'] = sanitize_text_field($settings['compression']);
+    }
+    
+    // Async flush
+    if (!empty($settings['async_flush'])) {
+        $config['WP_REDIS_ASYNC_FLUSH'] = true;
+    }
+    
+    // Timeout (only write if non-default)
+    if (isset($settings['timeout']) && (float) $settings['timeout'] !== 1.0) {
+        $config['WP_REDIS_TIMEOUT'] = (float) $settings['timeout'];
+    }
+    
+    // Read timeout (only write if non-default)
+    if (isset($settings['read_timeout']) && (float) $settings['read_timeout'] !== 1.0) {
+        $config['WP_REDIS_READ_TIMEOUT'] = (float) $settings['read_timeout'];
+    }
+    
+    // HTML footnote — disable_comment === true means footnote disabled
+    if (empty($settings['disable_comment'])) {
+        $config['WP_REDIS_DISABLE_COMMENT'] = false;
+    } else {
+        $config['WP_REDIS_DISABLE_COMMENT'] = true;
     }
     
     $result = ccm_tools_redis_add_config($config);
