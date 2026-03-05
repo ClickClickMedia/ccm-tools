@@ -53,6 +53,7 @@ class CCM_GitHub_Updater {
         add_filter('pre_set_site_transient_update_plugins', array($this, 'modify_transient'), 5, 1);
         add_filter('plugins_api', array($this, 'plugin_popup'), 10, 3);
         add_filter('upgrader_post_install', array($this, 'after_install'), 10, 3);
+        add_filter('upgrader_source_selection', array($this, 'fix_source_dir'), 10, 4);
         add_filter('http_request_args', array($this, 'add_auth_to_request'), 10, 2);
         
         // Also hook into site_transient_update_plugins to catch already-set transients
@@ -466,6 +467,51 @@ class CCM_GitHub_Updater {
      * @param array $result Installation result
      * @return array Result
      */
+    /**
+     * Rename extracted source directory to 'ccm-tools' regardless of zip folder name.
+     *
+     * GitHub release zips extract to folders like 'ccm-tools-7.20.2/' or
+     * 'ClickClickMedia-ccm-tools-abc1234/'. This filter fires for ALL installs
+     * (manual upload + auto-update) and renames to 'ccm-tools/' so WordPress
+     * places files in the correct plugin directory.
+     *
+     * @param string $source        File source location (temp directory).
+     * @param string $remote_source Remote file source location.
+     * @param WP_Upgrader $upgrader WP_Upgrader instance.
+     * @param array  $hook_extra    Extra arguments passed to hooked filters.
+     * @return string|WP_Error Corrected source path or WP_Error on failure.
+     */
+    public function fix_source_dir($source, $remote_source, $upgrader, $hook_extra) {
+        global $wp_filesystem;
+
+        // Only act on our plugin (updates) or when the extracted folder looks like ours (fresh installs)
+        $source_dirname = trailingslashit(basename(untrailingslashit($source)));
+
+        // Check if this is our plugin update
+        $is_our_update = isset($hook_extra['plugin']) && $hook_extra['plugin'] === $this->plugin;
+
+        // Check if the extracted folder matches our naming pattern (covers manual upload)
+        $is_our_folder = (bool) preg_match('/^ccm-tools(-[\d.]+)?\/?$/i', $source_dirname)
+                      || (bool) preg_match('/^ClickClickMedia-ccm-tools-/i', $source_dirname);
+
+        if (!$is_our_update && !$is_our_folder) {
+            return $source;
+        }
+
+        // Already correct — nothing to do
+        $correct_dir = trailingslashit($remote_source) . 'ccm-tools/';
+        if ($source === $correct_dir) {
+            return $source;
+        }
+
+        // Rename the folder
+        if ($wp_filesystem->move($source, $correct_dir)) {
+            return $correct_dir;
+        }
+
+        return new WP_Error('rename_failed', 'Could not rename plugin directory to ccm-tools.');
+    }
+
     public function after_install($response, $hook_extra, $result) {
         global $wp_filesystem;
         
