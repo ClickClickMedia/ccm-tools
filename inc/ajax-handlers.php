@@ -3225,13 +3225,35 @@ function ccm_tools_ajax_redis_save_settings(): void {
         }
     }
     
+    // Detect serializer or compression changes — requires a cache flush to avoid deserialization crashes
+    $old_settings = ccm_tools_redis_get_settings();
+    $serializer_changed  = isset($settings['serializer'])  && ($settings['serializer']  !== ($old_settings['serializer']  ?? 'php'));
+    $compression_changed = isset($settings['compression']) && ($settings['compression'] !== ($old_settings['compression'] ?? 'none'));
+    
     $saved = ccm_tools_redis_save_settings($settings);
+    
+    // Auto-flush Redis when serializer or compression changed to prevent deserialization errors
+    $flushed = false;
+    if ($saved && ($serializer_changed || $compression_changed)) {
+        if (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+            $flushed = true;
+        }
+    }
+    
+    // Build response message
+    if (!$saved) {
+        $message = __('Settings unchanged.', 'ccm-tools');
+    } elseif ($flushed) {
+        $message = __('Redis settings saved. Cache flushed automatically because serializer or compression changed.', 'ccm-tools');
+    } else {
+        $message = __('Redis settings saved successfully.', 'ccm-tools');
+    }
     
     // update_option returns false when the value is unchanged, so treat that as success
     wp_send_json_success(array(
-        'message' => $saved
-            ? __('Redis settings saved successfully.', 'ccm-tools')
-            : __('Settings unchanged.', 'ccm-tools')
+        'message' => $message,
+        'cache_flushed' => $flushed,
     ));
 }
 

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.19.6
+- **Current Version:** 7.19.7
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,15 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.19.7
+- **Auto-Flush Redis Cache on Serializer or Compression Change**
+  - Changing the serializer (e.g., PHP → igbinary) or compression (e.g., none → LZ4) makes all existing cached data unreadable by the new deserializer
+  - This caused `PHP Fatal error: get_object_vars(): Argument #1 ($object) must be of type object, string given` and thousands of `foreach() argument must be of type array|object, string given` warnings
+  - WordPress received raw strings instead of deserialized objects/arrays for posts, textdomain registry, ACF field groups, etc.
+  - Save handler now compares old vs new serializer/compression values and automatically flushes the entire Redis cache when either changes
+  - Response message tells the user the cache was flushed and why
+  - Prevents the site-breaking deserialization crash that occurs when old cached data is read with a different serializer
 
 ### v7.19.6
 - **"Add to wp-config.php" Now Writes All Redis Settings**
