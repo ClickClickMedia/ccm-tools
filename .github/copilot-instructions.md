@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.19.4
+- **Current Version:** 7.19.5
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -290,6 +290,15 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.19.5
+- **Drop-In Runtime Diagnostics Panel**
+  - New "Drop-In Runtime" section in Redis Status card shows live values from the active `$wp_object_cache` instance
+  - Queries `$wp_object_cache->info()` to display what the drop-in is **actually using** (not just what's configured)
+  - Shows: status, serializer, compression, async flush, selective flush, max TTL, KEEPTTL support, key prefix, global groups
+  - Page-load cache stats: hits/misses with hit ratio, Redis calls count, total Redis time in ms
+  - Only renders when the CCM Tools drop-in is installed and Redis is connected
+  - Gives administrators concrete proof that igbinary/LZ4/etc. are active in the running cache
 
 ### v7.19.4
 - **Fixed False Error When Saving Unchanged Redis Settings**

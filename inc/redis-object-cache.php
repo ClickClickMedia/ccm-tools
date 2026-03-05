@@ -1095,6 +1095,88 @@ function ccm_tools_render_redis_page() {
                     <?php endif; ?>
                 </table>
                 
+                <?php
+                // Runtime Diagnostics — query the live $wp_object_cache instance
+                if ($connection['connected'] && $dropin_status['is_ccm'] && function_exists('wp_cache_get')):
+                    global $wp_object_cache;
+                    $runtime = (is_object($wp_object_cache) && method_exists($wp_object_cache, 'info'))
+                        ? $wp_object_cache->info()
+                        : null;
+                    if ($runtime):
+                ?>
+                <div style="margin-top: var(--ccm-space-md);">
+                    <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Drop-In Runtime', 'ccm-tools'); ?></h3>
+                    <p class="ccm-note"><?php _e('Live values from the active object-cache.php drop-in for this page load.', 'ccm-tools'); ?></p>
+                    <table class="ccm-table" style="margin-top: var(--ccm-space-sm);">
+                        <tr>
+                            <th><?php _e('Status', 'ccm-tools'); ?></th>
+                            <td>
+                                <?php if (!empty($runtime['status']) && $runtime['status'] === 'connected'): ?>
+                                    <span class="ccm-success"><?php _e('Connected', 'ccm-tools'); ?></span>
+                                <?php else: ?>
+                                    <span class="ccm-error"><?php echo esc_html($runtime['status'] ?? 'unknown'); ?></span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Serializer', 'ccm-tools'); ?></th>
+                            <td><code><?php echo esc_html($runtime['serializer'] ?? 'php'); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Compression', 'ccm-tools'); ?></th>
+                            <td><code><?php echo esc_html($runtime['compression'] ?? 'none'); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Async Flush (UNLINK)', 'ccm-tools'); ?></th>
+                            <td><code><?php echo !empty($runtime['async_flush']) ? 'true' : 'false'; ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Selective Flush', 'ccm-tools'); ?></th>
+                            <td><code><?php echo !empty($runtime['selective_flush']) ? 'true' : 'false'; ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Max TTL', 'ccm-tools'); ?></th>
+                            <td><code><?php echo intval($runtime['max_ttl'] ?? 0); ?>s</code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('KEEPTTL Support', 'ccm-tools'); ?></th>
+                            <td><code><?php echo !empty($runtime['supports_keepttl']) ? 'true' : 'false'; ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Key Prefix', 'ccm-tools'); ?></th>
+                            <td><code><?php echo esc_html($runtime['key_salt'] ?? ''); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Global Groups', 'ccm-tools'); ?></th>
+                            <td><code><?php echo esc_html(implode(', ', array_keys($runtime['global_groups'] ?? []))); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Page Hits / Misses', 'ccm-tools'); ?></th>
+                            <td>
+                                <code><?php echo intval($runtime['hits'] ?? 0); ?></code> / <code><?php echo intval($runtime['misses'] ?? 0); ?></code>
+                                <?php
+                                $h = intval($runtime['hits'] ?? 0);
+                                $m = intval($runtime['misses'] ?? 0);
+                                $total = $h + $m;
+                                if ($total > 0):
+                                    $ratio = round(($h / $total) * 100, 1);
+                                ?>
+                                    <span class="ccm-note">(<?php echo $ratio; ?>% hit ratio)</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Redis Calls', 'ccm-tools'); ?></th>
+                            <td><code><?php echo intval($runtime['redis_calls'] ?? 0); ?></code></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Redis Time', 'ccm-tools'); ?></th>
+                            <td><code><?php echo round(floatval($runtime['redis_time'] ?? 0) * 1000, 2); ?>ms</code></td>
+                        </tr>
+                    </table>
+                </div>
+                <?php endif; endif; ?>
+                
                 <?php if ($extension_available): ?>
                 <div class="ccm-button-group" style="margin-top: var(--ccm-space-md);">
                     <?php if ($connection['connected']): ?>
