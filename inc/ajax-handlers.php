@@ -3305,9 +3305,7 @@ function ccm_tools_ajax_redis_add_config(): void {
         $config['WP_REDIS_DATABASE'] = absint($settings['database']);
     }
     
-    if ($settings['scheme'] !== 'tcp') {
-        $config['WP_REDIS_SCHEME'] = sanitize_text_field($settings['scheme']);
-    }
+    $config['WP_REDIS_SCHEME'] = sanitize_text_field($settings['scheme']);
     
     if (!empty($settings['path'])) {
         $config['WP_REDIS_PATH'] = sanitize_text_field($settings['path']);
@@ -3332,15 +3330,9 @@ function ccm_tools_ajax_redis_add_config(): void {
         $config['WP_REDIS_ASYNC_FLUSH'] = true;
     }
     
-    // Timeout (only write if non-default)
-    if (isset($settings['timeout']) && (float) $settings['timeout'] !== 1.0) {
-        $config['WP_REDIS_TIMEOUT'] = (float) $settings['timeout'];
-    }
-    
-    // Read timeout (only write if non-default)
-    if (isset($settings['read_timeout']) && (float) $settings['read_timeout'] !== 1.0) {
-        $config['WP_REDIS_READ_TIMEOUT'] = (float) $settings['read_timeout'];
-    }
+    // Timeouts — always write so Active Configuration shows wp-config.php source
+    $config['WP_REDIS_TIMEOUT'] = (float) ($settings['timeout'] ?? 1);
+    $config['WP_REDIS_READ_TIMEOUT'] = (float) ($settings['read_timeout'] ?? 1);
     
     // HTML footnote — disable_comment === true means footnote disabled
     if (empty($settings['disable_comment'])) {

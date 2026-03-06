@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.20.7
+- **Current Version:** 7.20.8
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.20.8
+- **"Add to wp-config.php" Now Writes Scheme & Timeout Constants Always**
+  - `WP_REDIS_SCHEME`, `WP_REDIS_TIMEOUT`, and `WP_REDIS_READ_TIMEOUT` are now always written to wp-config.php regardless of whether they match defaults
+  - Previously these were skipped when at default values (`tcp`, `1`), causing the Active Configuration table to show "PLUGIN SETTINGS" instead of "WP-CONFIG.PHP"
+  - Ensures consistent source display and guarantees the drop-in reads explicit values from wp-config.php
+  - Existing constants are still skipped (safe to click again)
 
 ### v7.20.7
 - **Redis Key Prefix/Salt Generate Button**
