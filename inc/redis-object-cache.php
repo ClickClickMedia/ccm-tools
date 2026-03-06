@@ -1288,7 +1288,10 @@ function ccm_tools_render_redis_page() {
                         <div class="ccm-form-grid">
                             <div class="ccm-form-field ccm-form-field-wide">
                                 <label for="redis-key-salt"><?php _e('Key Prefix/Salt', 'ccm-tools'); ?></label>
-                                <input type="text" id="redis-key-salt" name="key_salt" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST)); ?>_">
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input type="text" id="redis-key-salt" name="key_salt" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST)); ?>_" style="flex: 1;">
+                                    <button type="button" id="redis-generate-salt" class="ccm-button ccm-button-small ccm-button-secondary"><?php _e('Generate', 'ccm-tools'); ?></button>
+                                </div>
                                 <span class="ccm-field-hint"><?php _e('Unique prefix for cache keys (essential for multisite)', 'ccm-tools'); ?></span>
                             </div>
                             <div class="ccm-form-field">

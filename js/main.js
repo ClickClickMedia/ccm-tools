@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.20.6
+ * Version: 7.20.7
  */
 
 (function() {
@@ -3437,6 +3437,21 @@
                     showNotification(error.message, 'error');
                     updateDropinBtn.disabled = false;
                     updateDropinBtn.innerHTML = 'Update Drop-In';
+                }
+            });
+        }
+        
+        // Generate Key Prefix/Salt
+        const generateSaltBtn = $('#redis-generate-salt');
+        if (generateSaltBtn) {
+            generateSaltBtn.addEventListener('click', () => {
+                const host = location.hostname.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                const rand = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+                const saltInput = $('#redis-key-salt');
+                if (saltInput) {
+                    saltInput.value = host + '_' + rand + '_';
+                    saltInput.focus();
                 }
             });
         }

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.20.6
+- **Current Version:** 7.20.7
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,13 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.20.7
+- **Redis Key Prefix/Salt Generate Button**
+  - Added "Generate" button next to the Key Prefix/Salt input field in Redis Cache Settings
+  - Generates a unique salt from the site hostname + 8 random hex characters (e.g. `example_com_a3f1b2c4_`)
+  - Uses `crypto.getRandomValues()` for cryptographically secure random bytes
+  - Eliminates guesswork for users who don't know what value to enter
 
 ### v7.20.6
 - **Dynamic Stripe Price on Premium Page**
