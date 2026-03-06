@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.20.8
+- **Current Version:** 7.21.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,37 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.21.0
+- **Smart Iteration Strategy — AI Learns From Within-Session Failures**
+  - **Root cause fix for "10 iterations, zero improvement"**: When the optimizer rolled back a batch of settings due to score regression (not console errors or visual issues), the AI received ZERO context about what was tried and failed. It recommended the identical settings every iteration in an infinite loop.
+  - New `sessionFailedBatches` array tracks every rolled-back batch within a single optimization session: which settings were tried, why they failed, and the exact score deltas
+  - New `buildSessionFailedContext()` function builds structured markdown context listing all failed settings with a "banned keys" list that the AI MUST NOT recommend again
+  - Context is passed to the hub's AI analyze endpoint on every retry, giving the AI full visibility into what was already attempted
+  - AI can now differentiate between "never tried" and "tried and failed" settings, enabling genuinely different recommendations on each iteration
+- **Hub AI Prompts — Iteration Strategy Rules (Max 5 Recommendations Per Batch)**
+  - Both `ai-analyze.php` and `ai-optimize.php` system prompts now include a "## Iteration Strategy — CRITICAL RULES" section
+  - **Max 5 recommendations per analysis** — smaller batches are safer; if one setting causes problems, fewer good settings are lost in the rollback
+  - **Sort by confidence/safety** — no-risk settings first (disable_emoji, remove_query_strings), medium-risk next (defer_js), high-risk last (delay_js, preload_css). Max 1 high-risk per batch
+  - **Failed settings enforcement** — AI instructed that settings in the FAILED SETTINGS context MUST NOT be recommended again
+  - **PreLoad CSS safety rule** — NEVER recommend `preload_css: true` without also providing `critical_css_code` (FOUC drops scores)
+  - **Delay JS safety rule** — only recommend when script list confirms no critical inline dependencies
+  - **First vs later iterations** — moderately aggressive on first attempt, VERY conservative (>95% confidence) on retries with failed context
+  - `risk` field added to ai-analyze.php response format (was already in ai-optimize.php)
+  - IMPORTANT sections in both prompts updated with max-5 limit, sort-by-risk instruction, and failed-settings exclusion rule
+- **Max Iterations Now Pulled From Hub (Not Hardcoded)**
+  - Plugin previously hardcoded `AI_MAX_ITERATIONS = 10` regardless of hub settings
+  - Hub's `max_optimization_iterations` setting (configurable in hub admin) was completely ignored by the plugin
+  - Now: hub health endpoint returns `max_iterations`, and the AI analyze response includes `max_iterations`
+  - Plugin reads `max_iterations` from the first analysis response and uses it for the loop limit
+  - Fallback to 10 only if hub doesn't provide a value
+  - Renamed constant to `AI_MAX_ITERATIONS_FALLBACK` to make intent clear
+- **Visual Check Timeout No Longer Forces Rollback When Scores Improved**
+  - Previously, if the visual comparison API timed out or errored after 2 retries, `hasLayoutRegression` was set to `true` unconditionally — forcing rollback even when scores improved significantly
+  - This was the single biggest cause of false-positive rollbacks: flaky screenshot infrastructure was throwing away genuine improvements
+  - Now checks scores at the point of visual check failure: if scores are stable/improved (within PSI_NOISE tolerance), proceeds with a warning instead of forcing rollback
+  - Only forces rollback when BOTH the visual check failed AND scores dropped
+  - Visual regression context updated to guide AI conservatively on CSS changes without blocking the entire optimization
 
 ### v7.20.8
 - **"Add to wp-config.php" Now Writes Scheme & Timeout Constants Always**

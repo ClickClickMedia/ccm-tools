@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.20.8
+ * Version: 7.21.0
  */
 
 (function() {
@@ -4790,8 +4790,31 @@
 
     // ─── One-Click Optimize (iterative improvement loop with rollback) ────────────
 
-    const AI_MAX_ITERATIONS = 10;
+    const AI_MAX_ITERATIONS_FALLBACK = 10; // Fallback if hub doesn't provide a value
     const PSI_NOISE = 3; // PageSpeed variance tolerance (±3 points is normal)
+
+    /**
+     * Build context about settings that failed in this session.
+     * This is CRITICAL for the AI to avoid recommending the same settings again.
+     */
+    function buildSessionFailedContext(failedBatches) {
+        if (!failedBatches.length) return '';
+        let ctx = '\n## FAILED SETTINGS IN THIS SESSION — DO NOT RECOMMEND THESE AGAIN\n';
+        ctx += 'The following settings were applied and ROLLED BACK because they caused score regression, console errors, or layout issues.\n';
+        ctx += '**You MUST NOT recommend any of these settings again.** Recommend DIFFERENT settings instead.\n\n';
+        const allFailedKeys = new Set();
+        failedBatches.forEach((batch, i) => {
+            ctx += `### Failed Iteration ${batch.iteration}: ${batch.reason}\n`;
+            ctx += `Score impact: Mobile ${batch.mobile_delta >= 0 ? '+' : ''}${batch.mobile_delta}, Desktop ${batch.desktop_delta >= 0 ? '+' : ''}${batch.desktop_delta}\n`;
+            batch.settings.forEach(s => {
+                ctx += `- \`${s.key}\`: set to ${JSON.stringify(s.to)} — **ROLLED BACK**\n`;
+                allFailedKeys.add(s.key);
+            });
+            ctx += '\n';
+        });
+        ctx += `**Banned setting keys for this session:** ${[...allFailedKeys].map(k => '`' + k + '`').join(', ')}\n\n`;
+        return ctx;
+    }
 
     async function aiOneClickOptimize() {
         const btn = $('#ai-one-click-btn');
@@ -4826,6 +4849,10 @@
         let lastManualActions = [];
         let allChanges = []; // accumulate across iterations
         let wasRolledBack = false;
+
+        // Session-level tracking of failed settings for AI context
+        const sessionFailedBatches = [];
+        let maxIterations = AI_MAX_ITERATIONS_FALLBACK;
 
         try {
             // ── Step 0: Pre-flight — Check & enable server-side tools ──
@@ -5043,11 +5070,11 @@
             let hasApplied = false;
 
             // ── Iterative improvement loop ──
-            while (iteration < AI_MAX_ITERATIONS) {
+            while (iteration < maxIterations) {
                 iteration++;
                 const iterLabel = iteration > 1 ? ` (Iter ${iteration})` : '';
                 if (iteration > 1) {
-                    aiLog(`── Iteration ${iteration}/${AI_MAX_ITERATIONS} ──`, 'step');
+                    aiLog(`── Iteration ${iteration}/${maxIterations} ──`, 'step');
                 }
 
                 // ── AI Analysis ──
@@ -5056,10 +5083,15 @@
                 const analysisLoading = $('#ai-analysis-loading');
                 if (analysisLoading) analysisLoading.style.display = 'block';
 
+                // Build comprehensive AI context: console errors + visual issues + failed settings
+                let aiSessionContext = consoleErrorContext || '';
+                const failedCtx = buildSessionFailedContext(sessionFailedBatches);
+                if (failedCtx) aiSessionContext += failedCtx;
+
                 const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
                     result_id: aiHubState.lastResultId,
                     url: url,
-                    console_errors: consoleErrorContext || '',
+                    console_errors: aiSessionContext,
                 }, { timeout: 120000 });
 
                 if (analysisLoading) analysisLoading.style.display = 'none';
@@ -5067,6 +5099,13 @@
                 const analysisData = analysisRes.data || {};
                 const analysis = analysisData.analysis || analysisData;
                 aiRenderAnalysis(analysisData);
+
+                // Read max_iterations from hub if provided (first iteration only)
+                if (iteration === 1 && analysisData.max_iterations && analysisData.max_iterations > 0) {
+                    maxIterations = analysisData.max_iterations;
+                    aiLog(`Hub max iterations: ${maxIterations}`, 'info');
+                }
+
                 const recCount = (analysis.recommendations || []).length;
                 const manualCount = (analysis.manual_actions || []).length;
                 lastManualActions = analysis.manual_actions || [];
@@ -5282,13 +5321,25 @@
                             if (visualAttempts < maxVisualAttempts) {
                                 aiLog(`Visual check attempt ${visualAttempts} failed: ${visualErr.message} — retrying…`, 'warn');
                             } else {
-                                aiLog(`Visual check failed after ${maxVisualAttempts} attempts: ${visualErr.message} — ROLLING BACK for safety (cannot verify layout integrity)`, 'error');
-                                // FAIL-SAFE: Layout integrity is the #1 priority. If we can't verify,
-                                // assume regression and rollback. Better to lose score gains than ship broken layouts.
-                                hasLayoutRegression = true;
-                                aiUpdateStep('visual-check', 'error', 'Check failed — rollback');
-                                visualRegressionContext = 'VISUAL CHECK FAILED: Could not verify layout integrity via screenshot comparison. ' +
-                                    'Rolling back ALL changes for safety. Avoid aggressive CSS/JS changes that could cause layout shifts.';
+                                // Visual check failed after retries. Only force rollback if scores ALSO dropped.
+                                // If scores are stable/improved, the failure is an infrastructure issue, not a layout problem.
+                                const vcMobileDelta = retestMobilePerf - snapshotMobilePerf;
+                                const vcDesktopDelta = retestDesktopPerf - snapshotDesktopPerf;
+                                const vcScoresOk = vcMobileDelta >= -PSI_NOISE && vcDesktopDelta >= -PSI_NOISE;
+
+                                if (vcScoresOk) {
+                                    aiLog(`Visual check failed: ${visualErr.message} — scores stable (M:${vcMobileDelta >= 0 ? '+' : ''}${vcMobileDelta}, D:${vcDesktopDelta >= 0 ? '+' : ''}${vcDesktopDelta}), proceeding with caution`, 'warn');
+                                    hasLayoutRegression = false;
+                                    aiUpdateStep('visual-check', 'done', 'Skipped (scores OK)');
+                                    visualRegressionContext = 'VISUAL CHECK COULD NOT COMPLETE (timeout/error) but scores are stable or improved. ' +
+                                        'Proceed with caution. Be conservative with CSS layout changes on next iteration.';
+                                } else {
+                                    aiLog(`Visual check failed AND scores dropped (M:${vcMobileDelta >= 0 ? '+' : ''}${vcMobileDelta}, D:${vcDesktopDelta >= 0 ? '+' : ''}${vcDesktopDelta}) — rolling back for safety`, 'error');
+                                    hasLayoutRegression = true;
+                                    aiUpdateStep('visual-check', 'error', 'Failed + scores down');
+                                    visualRegressionContext = 'VISUAL CHECK FAILED AND SCORES DROPPED. Cannot verify layout integrity and performance worsened. ' +
+                                        'Rolling back ALL changes. Avoid aggressive CSS/JS changes in next iteration.';
+                                }
                             }
                         }
                     }
@@ -5349,6 +5400,16 @@
                     showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
                     wasRolledBack = true;
 
+                    // Track this failed batch so AI avoids the same settings on next iteration
+                    sessionFailedBatches.push({
+                        iteration,
+                        settings: changes.map(c => ({ key: c.key, from: c.from, to: c.to })),
+                        reason: rollbackReason,
+                        mobile_delta: mobileChange,
+                        desktop_delta: desktopChange,
+                    });
+                    aiLog(`Session: ${sessionFailedBatches.length} failed batch(es) tracked — AI will avoid ${sessionFailedBatches.reduce((n, b) => n + b.settings.length, 0)} rolled-back settings`, 'info');
+
                     // Update page toggles to rolled-back state
                     try {
                         const snapRes = await ajax('ccm_tools_get_perf_settings', {}, { timeout: 10000 });
@@ -5358,10 +5419,10 @@
                     // Update result_id for next analysis (use the new retest result)
                     aiHubState.lastResultId = aiHubState.resultIds.mobile;
 
-                    if (iteration < AI_MAX_ITERATIONS) {
+                    if (iteration < maxIterations) {
                         // Save new snapshot and try again with conservative approach
                         await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
-                        aiUpdateStep('compare', 'done', `Rolled back — retrying (${iteration + 1}/${AI_MAX_ITERATIONS})`);
+                        aiUpdateStep('compare', 'done', `Rolled back — retrying (${iteration + 1}/${maxIterations})`);
                         aiLog(`Retrying with conservative approach (iteration ${iteration + 1})…`, 'step');
                         showNotification(`Attempting conservative approach (iteration ${iteration + 1})…`, 'info');
                         // Clear fix summary and reset remaining steps for next iteration
@@ -5398,7 +5459,7 @@
 
                 // Check if we should keep iterating
                 const bothAbove90 = retestMobilePerf >= 90 && retestDesktopPerf >= 90;
-                if (bothAbove90 || iteration >= AI_MAX_ITERATIONS) {
+                if (bothAbove90 || iteration >= maxIterations) {
                     const resultMsg = `M:${retestMobilePerf} D:${retestDesktopPerf}`;
                     aiUpdateStep('compare', 'done', resultMsg);
                     if (bothAbove90) {
