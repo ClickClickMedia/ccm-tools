@@ -190,6 +190,7 @@ function ccm_tools_premium_get_status(): array {
 function ccm_tools_premium_clear_cache(): void {
     delete_transient('ccm_tools_premium_status');
     delete_transient('ccm_tools_premium_details');
+    delete_transient('ccm_tools_premium_pricing');
 }
 
 // ─── Hub Communication ──────────────────────────────────────────
@@ -197,46 +198,68 @@ function ccm_tools_premium_clear_cache(): void {
 /**
  * Query the API hub for premium subscription status.
  *
+ * Uses the shared hub request function for consistent auth headers.
  * Expected hub response on success:
- *   { "success": true, "premium": true, "plan": "monthly", "expires": "2026-04-05T00:00:00Z", "features": [...] }
+ *   { "success": true, "premium": true, "plan": "monthly", "expires": "2026-04-05T00:00:00Z",
+ *     "features": [...], "price": { "amount": 4900, "currency": "aud", "formatted": "$49", "interval": "month" } }
  *
  * @return array|null  Parsed response data, or null on failure.
  */
 function ccm_tools_premium_check_with_hub(): ?array {
-    $hub_settings = get_option('ccm_tools_ai_hub_settings', array());
-    if (empty($hub_settings['api_key']) || empty($hub_settings['hub_url'])) {
+    if (!function_exists('ccm_tools_ai_hub_request')) {
         return null;
     }
 
-    $url = rtrim($hub_settings['hub_url'], '/') . '/api/v1/premium/status';
+    $result = ccm_tools_ai_hub_request('premium/status', [], 'GET', 15);
 
-    $response = wp_remote_get($url, array(
-        'headers' => array(
-            'X-CCM-Api-Key'  => $hub_settings['api_key'],
-            'X-CCM-Site-Url' => site_url(),
-            'Content-Type'   => 'application/json',
-            'Accept'         => 'application/json',
-        ),
-        'timeout'   => 15,
-        'sslverify' => false,
-    ));
-
-    if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+    if (is_wp_error($result) || !is_array($result)) {
         return null;
     }
 
-    $body = json_decode(wp_remote_retrieve_body($response), true);
-
-    if (!is_array($body)) {
-        return null;
-    }
-
-    // Hub may use { success: true, data: { ... } } or flat { success: true, premium: true, ... }
-    if (!empty($body['success'])) {
-        return $body['data'] ?? $body;
+    // Hub returns flat: { success: true, premium: true, ... } or { premium: true, ... }
+    if (!empty($result['success']) || isset($result['premium'])) {
+        // Cache pricing data separately if present
+        if (!empty($result['price']) && is_array($result['price'])) {
+            set_transient('ccm_tools_premium_pricing', $result['price'], CCM_TOOLS_PREMIUM_CACHE_TTL);
+        }
+        return $result;
     }
 
     return null;
+}
+
+/**
+ * Get the current Stripe subscription price.
+ *
+ * Pulls from cached pricing data (populated by the premium status check).
+ * Falls back to a dedicated pricing endpoint if no cached data.
+ *
+ * @return array { amount: int (cents), currency: string, formatted: string, interval: string } or empty.
+ */
+function ccm_tools_premium_get_pricing(): array {
+    $default = array(
+        'amount'    => 0,
+        'currency'  => 'aud',
+        'formatted' => '',
+        'interval'  => 'month',
+    );
+
+    // 1. Check transient cache
+    $cached = get_transient('ccm_tools_premium_pricing');
+    if ($cached && is_array($cached) && !empty($cached['formatted'])) {
+        return wp_parse_args($cached, $default);
+    }
+
+    // 2. Try fetching from hub pricing endpoint
+    if (function_exists('ccm_tools_ai_hub_request')) {
+        $result = ccm_tools_ai_hub_request('premium/pricing', [], 'GET', 10);
+        if (!is_wp_error($result) && is_array($result) && !empty($result['formatted'])) {
+            set_transient('ccm_tools_premium_pricing', $result, CCM_TOOLS_PREMIUM_CACHE_TTL);
+            return wp_parse_args($result, $default);
+        }
+    }
+
+    return $default;
 }
 
 // ─── Checkout / Upgrade URL ─────────────────────────────────────
@@ -330,10 +353,17 @@ function ccm_tools_render_premium_upsell(string $feature_key, bool $compact = fa
  * Render the Premium comparison table (Free vs Premium).
  */
 function ccm_tools_render_premium_comparison(): void {
+    // Never show comparison cards to premium subscribers
+    if (ccm_tools_is_premium()) {
+        return;
+    }
+
     $premium_features = ccm_tools_premium_features();
     $free_features    = ccm_tools_free_features();
     $checkout_url     = ccm_tools_premium_get_checkout_url();
-    $is_premium       = ccm_tools_is_premium();
+    $pricing          = ccm_tools_premium_get_pricing();
+    $price_display    = !empty($pricing['formatted']) ? esc_html($pricing['formatted']) : '$49';
+    $price_interval   = !empty($pricing['interval']) ? esc_html($pricing['interval']) : 'month';
     ?>
     <div class="ccm-premium-comparison">
         <div class="ccm-premium-comparison-grid">
@@ -364,15 +394,11 @@ function ccm_tools_render_premium_comparison(): void {
             </div>
 
             <!-- Premium Column -->
-            <div class="ccm-premium-plan ccm-premium-plan-premium <?php echo $is_premium ? 'ccm-premium-plan-active' : ''; ?>">
+            <div class="ccm-premium-plan ccm-premium-plan-premium">
                 <div class="ccm-premium-plan-header">
-                    <?php if ($is_premium): ?>
-                        <span class="ccm-premium-rec-badge">Active</span>
-                    <?php else: ?>
-                        <span class="ccm-premium-rec-badge">Recommended</span>
-                    <?php endif; ?>
+                    <span class="ccm-premium-rec-badge">Recommended</span>
                     <h4>Premium</h4>
-                    <div class="ccm-premium-plan-price">Contact&nbsp;Us<span>/month per site</span></div>
+                    <div class="ccm-premium-plan-price"><?php echo $price_display; ?><span>/<?php echo $price_interval; ?> per site</span></div>
                     <p>Full AI &amp; Redis power</p>
                 </div>
                 <ul class="ccm-premium-plan-features">
@@ -396,11 +422,9 @@ function ccm_tools_render_premium_comparison(): void {
                         <span><strong>Priority Support</strong></span>
                     </li>
                 </ul>
-                <?php if (!$is_premium): ?>
-                    <div class="ccm-premium-plan-cta">
-                        <a href="<?php echo esc_url($checkout_url); ?>" class="ccm-button ccm-button-premium" target="_blank" rel="noopener">Get Premium</a>
-                    </div>
-                <?php endif; ?>
+                <div class="ccm-premium-plan-cta">
+                    <a href="<?php echo esc_url($checkout_url); ?>" class="ccm-button ccm-button-premium" target="_blank" rel="noopener">Get Premium</a>
+                </div>
             </div>
         </div>
     </div>

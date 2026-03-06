@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.20.5
+- **Current Version:** 7.20.6
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,28 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.20.6
+- **Dynamic Stripe Price on Premium Page**
+  - Comparison cards now display the actual Stripe subscription price instead of hardcoded "Contact Us"
+  - New `ccm_tools_premium_get_pricing()` function fetches pricing from hub API (`GET /api/v1/premium/pricing`) with transient caching (12h TTL)
+  - Pricing also extracted from the premium status response when available (piggybacks on existing hub call)
+  - Falls back to `$49` if hub pricing data is unavailable
+  - Hub expected response: `{ formatted: "$49", amount: 4900, currency: "aud", interval: "month" }`
+  - Handles sales/promotions automatically — price updates whenever Stripe price changes
+- **Fixed Subscription Status Showing "Free" When Premium is Active**
+  - Root cause: saving the API key via `ccm_tools_ajax_ai_hub_save_settings` did NOT clear the premium status transient cache
+  - Flow: user visits Premium page (no key → cached as `inactive`) → saves API key → page reloads → stale transient returns `inactive` → shows "Free"
+  - Save settings handler now calls `ccm_tools_premium_clear_cache()` after saving, forcing a fresh hub check on next page load
+  - Also clears the new `ccm_tools_premium_pricing` transient alongside the existing status/details transients
+- **Hide Comparison Cards When Premium is Active**
+  - `ccm_tools_render_premium_comparison()` now returns early (renders nothing) when `ccm_tools_is_premium()` is true
+  - Removed stale `$is_premium` variable references from comparison rendering (dead code after early return)
+  - Premium subscribers see only the Subscription Status card with active features, manage subscription, and refresh button
+- **Refactored Hub Premium Check to Use Shared Request Function**
+  - `ccm_tools_premium_check_with_hub()` now uses `ccm_tools_ai_hub_request()` instead of duplicating HTTP call logic
+  - Ensures consistent auth headers (`X-CCM-Api-Key`, `X-CCM-Site-Url`) and error handling
+  - Eliminates redundant `wp_remote_get` code with separate header construction
 
 ### v7.20.5
 - **Fix Auto-Update Failing When Plugin Directory Already Named `ccm-tools`**

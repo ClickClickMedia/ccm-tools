@@ -209,6 +209,11 @@ function ccm_tools_ajax_ai_hub_save_settings(): void {
 
     ccm_tools_ai_hub_save_settings($settings);
 
+    // Clear premium status cache so it's re-checked with the new key
+    if (function_exists('ccm_tools_premium_clear_cache')) {
+        ccm_tools_premium_clear_cache();
+    }
+
     wp_send_json_success(['message' => 'Settings saved. Test the connection to verify.']);
 }
 
