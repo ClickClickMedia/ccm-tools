@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.22.0
+- **Current Version:** 7.22.1
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.22.1
+- **AI Troubleshooter Now Site-Specific — Fetches Live Page Data**
+  - Hub chat endpoint now calls `fetchPageResources()` + `fetchMainCssContent()` on the first message to get actual page structure
+  - System prompt receives: scripts (with IDs, defer/async flags), stylesheets, third-party domains, images, videos, above-fold HTML, full CSS content (~40KB), inline styles (~10KB)
+  - AI can now generate actual Critical CSS from the site's real HTML structure and CSS rules — no need for external tools
+  - AI can identify specific scripts to exclude (defer/delay) by their real URLs and IDs from the page
+  - AI can suggest preconnect/DNS prefetch domains from actual third-party resources found on the page
+  - AI can identify the LCP image from real page images
+  - System prompt rewritten with CRITICAL RULES: never redirect to external tools, always use live page data, give site-specific answers
+  - New "Capabilities You Have" prompt section explicitly lists what the AI can do with the page data
+  - Page data only fetched on first message or short conversations (≤2 prior messages) to avoid redundant fetches on follow-ups
+  - Claude timeout increased from 60s to 75s to accommodate larger system prompt with CSS data
+  - Max tokens increased from 8,192 to 16,384 for Critical CSS generation output
 
 ### v7.22.0
 - **Per-Setting Incremental Apply — Eliminates Batch Poisoning**
