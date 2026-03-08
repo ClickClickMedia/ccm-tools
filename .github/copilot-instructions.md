@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.21.0
+- **Current Version:** 7.22.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,25 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.22.0
+- **Per-Setting Incremental Apply — Eliminates Batch Poisoning**
+  - **Root cause fix for "good settings lost in rollback"**: Previously ALL AI recommendations were applied as a single batch. If 1 of 5 settings caused a score drop, ALL 5 were rolled back and ALL 5 were banned from future iterations. Good settings were permanently lost.
+  - **New incremental approach**: Each recommendation (or related group) is now applied individually with a quick mobile PageSpeed test between each
+  - For each setting: apply → wait 3s for caches → quick mobile-only PageSpeed test → keep if stable/improved, revert immediately if score drops > 5pts
+  - Related settings are grouped and tested together: parent toggles with their data keys (e.g. `preload_css` + `critical_css_code`, `preconnect` + `preconnect_urls`, `defer_js` + `defer_js_excludes`)
+  - New `groupRelatedFixes()` function with `SETTING_PARENT` map handles 11 parent-child relationships
+  - Settings that fail individual testing are reverted immediately and tracked in `sessionFailedBatches` individually (not as a batch)
+  - `SINGLE_SETTING_TOLERANCE = 5` pts — allows normal PSI variance (±3) while catching genuinely harmful settings
+  - If ALL settings fail individually: skips final validation, marks remaining steps as skipped, continues to next iteration with fresh AI context
+  - Surviving settings still go through full mobile + desktop retest, console error check, and visual regression check as final validation
+  - The full rollback (final validation failure) now only affects settings that passed individual testing — individually-failed ones are already tracked separately
+  - **Net result**: If AI recommends 5 settings and 1 is bad, the other 4 survive. Previously all 5 were lost.
+- **Hub AI Prompts Updated for Incremental Flow**
+  - Both `ai-analyze.php` and `ai-optimize.php` iteration strategy sections updated
+  - AI informed that settings are tested individually, not as a batch
+  - Added rule #8: related settings are grouped (parent toggle + data keys tested together)
+  - Failed settings context now indicates individual test failures, not batch rollbacks
 
 ### v7.21.0
 - **Smart Iteration Strategy — AI Learns From Within-Session Failures**

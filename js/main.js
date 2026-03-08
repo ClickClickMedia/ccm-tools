@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.21.0
+ * Version: 7.22.0
  */
 
 (function() {
@@ -4816,6 +4816,33 @@
         return ctx;
     }
 
+    /**
+     * Group related settings so paired toggles+data are tested together.
+     * e.g. preload_css + critical_css + critical_css_code applied as one unit.
+     */
+    function groupRelatedFixes(fixes) {
+        const SETTING_PARENT = {
+            'critical_css': 'preload_css',
+            'critical_css_code': 'preload_css',
+            'preload_css_excludes': 'preload_css',
+            'preconnect_urls': 'preconnect',
+            'dns_prefetch_urls': 'dns_prefetch',
+            'defer_js_excludes': 'defer_js',
+            'delay_js_excludes': 'delay_js',
+            'delay_js_timeout': 'delay_js',
+            'lcp_preload_url': 'lcp_preload',
+            'heartbeat_interval': 'reduce_heartbeat',
+            'speculation_eagerness': 'speculation_rules',
+        };
+        const groupMap = new Map();
+        for (const fix of fixes) {
+            const groupKey = SETTING_PARENT[fix.setting_key] || fix.setting_key;
+            if (!groupMap.has(groupKey)) groupMap.set(groupKey, []);
+            groupMap.get(groupKey).push(fix);
+        }
+        return [...groupMap.values()];
+    }
+
     async function aiOneClickOptimize() {
         const btn = $('#ai-one-click-btn');
         if (btn) { btn.disabled = true; btn.textContent = 'Optimizing…'; }
@@ -5136,35 +5163,137 @@
                     break;
                 }
 
-                // Log each fix being applied
-                selectedFixes.forEach(fix => {
-                    aiLog(`Queuing: <code>${fix.setting_key}</code> → <code>${aiFormatValue(fix.recommended_value)}</code>`, 'info');
-                });
+                // ── Incremental Per-Setting Apply (eliminates batch poisoning) ──
+                // Instead of applying all settings as one batch, test each setting (or
+                // related group) individually with a quick mobile PageSpeed check.
+                // Settings that hurt scores are reverted immediately and tracked as
+                // individually-failed — only surviving settings proceed to final validation.
+                const SINGLE_SETTING_TOLERANCE = 5; // pts drop allowed per individual setting (PSI variance is ~3)
+                const settingGroups = groupRelatedFixes(selectedFixes);
+                const keptChanges = [];
+                const revertedSettings = [];
+                let runningMobilePerf = snapshotMobilePerf;
 
-                // ── Apply Changes ──
-                aiUpdateStep('apply', 'active', `Applying${iterLabel}…`);
-                aiLog(`Applying <strong>${selectedFixes.length}</strong> changes${iterLabel}…`, 'step');
-                const applyRes = await ajax('ccm_tools_ai_apply_changes', {
-                    recommendations: JSON.stringify(selectedFixes),
-                }, { timeout: 30000 });
+                aiUpdateStep('apply', 'active', `Testing settings${iterLabel}…`);
+                aiLog(`Applying <strong>${selectedFixes.length}</strong> settings in <strong>${settingGroups.length}</strong> groups — testing each individually${iterLabel}…`, 'step');
 
-                const applyData = applyRes.data || {};
-                const changes = applyData.changes || [];
-                allChanges = allChanges.concat(changes);
-                aiUpdateStep('apply', 'done', `${changes.length} changed${iterLabel}`);
-                hasApplied = true;
-                aiLog(`<strong>${changes.length}</strong> settings changed successfully.`, 'success');
+                for (let gi = 0; gi < settingGroups.length; gi++) {
+                    const group = settingGroups[gi];
+                    const groupKeys = group.map(f => f.setting_key);
+                    const groupLabel = groupKeys.map(k => aiSettingLabel(k)).join(' + ');
+                    aiUpdateStep('apply', 'active', `${gi + 1}/${settingGroups.length}: ${groupLabel}`);
 
-                // Update on-page toggles in real time
-                if (applyData.settings) {
-                    aiUpdatePageToggles(applyData.settings);
+                    // Log what we're applying
+                    group.forEach(fix => {
+                        aiLog(`[${gi + 1}/${settingGroups.length}] Applying <code>${fix.setting_key}</code> → <code>${aiFormatValue(fix.recommended_value)}</code>`, 'info');
+                    });
+
+                    // Apply this group
+                    let groupApplyData;
+                    try {
+                        const groupApplyRes = await ajax('ccm_tools_ai_apply_changes', {
+                            recommendations: JSON.stringify(group),
+                        }, { timeout: 30000 });
+                        groupApplyData = groupApplyRes.data || {};
+                    } catch (applyErr) {
+                        aiLog(`  Failed to apply ${groupLabel}: ${applyErr.message}`, 'error');
+                        continue;
+                    }
+
+                    const groupChanges = groupApplyData.changes || [];
+                    if (!groupChanges.length) {
+                        aiLog(`  ${groupLabel} — no change (already at target value)`, 'info');
+                        continue;
+                    }
+
+                    // Update on-page toggles immediately
+                    if (groupApplyData.settings) aiUpdatePageToggles(groupApplyData.settings);
+
+                    // Wait for caches / server-side hooks to take effect
+                    await aiSleep(3000);
+
+                    // Quick mobile-only retest to detect harmful settings
+                    aiLog(`  Quick mobile test after ${groupLabel}…`, 'info');
+                    let quickMobile;
+                    try {
+                        quickMobile = await aiRunPageSpeed(url, 'mobile');
+                    } catch (testErr) {
+                        aiLog(`  Mobile test failed: ${testErr.message} — keeping setting (benefit of the doubt)`, 'warn');
+                        keptChanges.push(...groupChanges);
+                        continue;
+                    }
+
+                    const quickMobilePerf = quickMobile.scores?.performance ?? 0;
+                    const quickDelta = quickMobilePerf - runningMobilePerf;
+
+                    if (quickDelta < -SINGLE_SETTING_TOLERANCE) {
+                        // This setting/group hurt scores — revert it
+                        aiLog(`  ⚠ ${groupLabel} dropped mobile by ${quickDelta}pts (${runningMobilePerf} → ${quickMobilePerf}) — reverting`, 'error');
+
+                        // Build revert payload using original values from the changes
+                        const revertPayload = groupChanges.map(c => ({
+                            setting_key: c.key,
+                            recommended_value: c.from,
+                        }));
+                        try {
+                            const revertRes = await ajax('ccm_tools_ai_apply_changes', {
+                                recommendations: JSON.stringify(revertPayload),
+                            }, { timeout: 30000 });
+                            if (revertRes.data?.settings) aiUpdatePageToggles(revertRes.data.settings);
+                        } catch (revertErr) {
+                            aiLog(`  Revert failed: ${revertErr.message}`, 'error');
+                        }
+
+                        // Track each reverted setting individually in the session
+                        groupChanges.forEach(c => {
+                            revertedSettings.push({ key: c.key, from: c.from, to: c.to, delta: quickDelta });
+                            sessionFailedBatches.push({
+                                iteration,
+                                settings: [{ key: c.key, from: c.from, to: c.to }],
+                                reason: `Single-setting mobile test: dropped ${Math.abs(quickDelta)}pts`,
+                                mobile_delta: quickDelta,
+                                desktop_delta: 0,
+                            });
+                        });
+                    } else {
+                        // Setting is OK — keep it
+                        const indicator = quickDelta > 0 ? `+${quickDelta}` : quickDelta === 0 ? '±0' : `${quickDelta}`;
+                        aiLog(`  ✓ ${groupLabel} — mobile ${indicator}pts (${runningMobilePerf} → ${quickMobilePerf}) — keeping`, 'success');
+                        keptChanges.push(...groupChanges);
+                        runningMobilePerf = quickMobilePerf; // update running baseline
+                    }
                 }
 
-                showNotification(`Applied ${changes.length} change(s).${iterLabel}`, 'success');
+                // Incremental summary
+                const keptCount = keptChanges.length;
+                const revertedCount = revertedSettings.length;
+                aiLog(`Incremental apply done: <strong>${keptCount}</strong> kept, <strong>${revertedCount}</strong> reverted`, keptCount > 0 ? 'success' : 'warn');
+                if (revertedCount > 0) {
+                    aiLog('Reverted: ' + revertedSettings.map(s => `<code>${s.key}</code> (${s.delta}pts)`).join(', '), 'warn');
+                }
 
-                // Wait for caches to clear
-                aiLog('Waiting 5s for caches to clear…', 'info');
-                await aiSleep(5000);
+                // backward-compat: rest of loop references `changes`
+                const changes = keptChanges;
+                allChanges = allChanges.concat(changes);
+                hasApplied = changes.length > 0;
+
+                // If ALL settings were individually reverted, skip final validation
+                if (keptCount === 0) {
+                    aiUpdateStep('apply', 'done', `0 survived${iterLabel}`);
+                    ['retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'skipped', 'Skipped'));
+                    showNotification('All settings caused individual score drops — retrying', 'warning');
+                    aiLog(`All ${selectedFixes.length} settings failed individually — requesting different approach`, 'step');
+                    // Reset steps for next iteration
+                    ['analyze', 'apply', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'pending', ''));
+                    continue; // next iteration — AI will see sessionFailedBatches and try something new
+                }
+
+                aiUpdateStep('apply', 'done', `${keptCount} kept, ${revertedCount} reverted${iterLabel}`);
+                showNotification(`${keptCount} of ${selectedFixes.length} settings kept after individual testing.`, 'success');
+
+                // Wait for final cache propagation before full validation
+                aiLog('Waiting 3s before final validation…', 'info');
+                await aiSleep(3000);
 
                 // ── Re-test Mobile ──
                 aiUpdateStep('retest-mobile', 'active', `Re-testing${iterLabel}…`);
