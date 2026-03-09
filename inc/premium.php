@@ -273,7 +273,7 @@ function ccm_tools_premium_get_checkout_url(): string {
     return add_query_arg(array(
         'utm_source' => 'plugin',
         'utm_medium' => 'upgrade-cta',
-        'site'       => urlencode(site_url()),
+        'site'       => urlencode(function_exists('ccm_tools_normalize_site_url') ? ccm_tools_normalize_site_url(site_url()) : site_url()),
     ), trailingslashit(CCM_TOOLS_PREMIUM_URL));
 }
 

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.22.1
+ * Version: 7.22.4
  */
 
 (function() {
@@ -3412,6 +3412,38 @@
     }
     
     /**
+     * Live-update the Active Configuration table from AJAX response data.
+     * @param {Object} config  Keys are constant names, values are {value, defined}
+     */
+    function updateRedisActiveConfigTable(config) {
+        const table = document.getElementById('redis-active-config-table');
+        if (!table) return;
+
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+
+        // Rebuild rows from the response — matches PHP rendering logic exactly
+        let html = '';
+        for (const [constant, info] of Object.entries(config)) {
+            const val = info.value !== '' && info.value !== null && info.value !== undefined ? String(info.value) : '';
+
+            // PHP: if (empty($item['value']) && !$item['defined']) continue;
+            if (!val && !info.defined) continue;
+
+            const badge = info.defined
+                ? '<span class="ccm-badge ccm-badge-info">wp-config.php</span>'
+                : '<span class="ccm-badge">Plugin Settings</span>';
+
+            html += '<tr>'
+                  + '<td><code>' + constant + '</code></td>'
+                  + '<td>' + (val || '') + '</td>'
+                  + '<td>' + badge + '</td>'
+                  + '</tr>';
+        }
+        tbody.innerHTML = html;
+    }
+
+    /**
      * Initialize Redis Object Cache page handlers
      */
     function initRedisObjectCacheHandlers() {
@@ -3611,7 +3643,11 @@
                     
                     const response = await ajax('ccm_tools_redis_save_settings', data);
                     showNotification(response.data.message, 'success');
-                    setTimeout(() => location.reload(), 800);
+
+                    // Live-update the Active Configuration table from the AJAX response
+                    if (response.data.active_config) {
+                        updateRedisActiveConfigTable(response.data.active_config);
+                    }
                 } catch (error) {
                     showNotification(error.message, 'error');
                 } finally {

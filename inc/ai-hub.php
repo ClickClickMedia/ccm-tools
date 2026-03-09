@@ -17,6 +17,19 @@ if (!defined('ABSPATH')) {
 // ─── Settings & Constants ────────────────────────────────────────
 
 /**
+ * Normalize a site URL by stripping the "www." prefix from the host.
+ *
+ * Ensures www.example.com and example.com resolve to the same identity
+ * when the hub matches a site against its registered API key.
+ *
+ * @param string $url A full URL (e.g. https://www.example.com).
+ * @return string      URL with www. removed from the host.
+ */
+function ccm_tools_normalize_site_url(string $url): string {
+    return preg_replace('#^(https?://)www\.#i', '$1', $url);
+}
+
+/**
  * Get AI Hub settings
  * 
  * @return array Current settings
@@ -29,7 +42,7 @@ function ccm_tools_ai_hub_get_settings(): array {
         'enabled'  => false,
         'hub_url'  => 'https://api.tools.clickclick.media',
         'api_key'  => '', // ccm_xxxx... stored encrypted in WP options
-        'site_url' => site_url(),
+        'site_url' => ccm_tools_normalize_site_url(site_url()),
     ];
 
     $settings = get_option('ccm_tools_ai_hub_settings', []);
@@ -199,7 +212,7 @@ function ccm_tools_ajax_ai_hub_save_settings(): void {
     $settings = ccm_tools_ai_hub_get_settings();
     $settings['enabled'] = !empty($_POST['enabled']);
     $settings['hub_url'] = esc_url_raw(rtrim(sanitize_text_field($_POST['hub_url'] ?? ''), '/'));
-    $settings['site_url'] = site_url();
+    $settings['site_url'] = ccm_tools_normalize_site_url(site_url());
 
     // Only update API key if provided (don't blank it)
     $newKey = sanitize_text_field($_POST['api_key'] ?? '');

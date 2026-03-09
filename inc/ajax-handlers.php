@@ -3250,10 +3250,30 @@ function ccm_tools_ajax_redis_save_settings(): void {
         $message = __('Redis settings saved successfully.', 'ccm-tools');
     }
     
+    // Re-read settings after save so the response contains the freshest merged values
+    $fresh = ccm_tools_redis_get_settings();
+    $active_config = array(
+        'WP_REDIS_HOST'            => array('value' => $fresh['host'],                                          'defined' => defined('WP_REDIS_HOST')),
+        'WP_REDIS_PORT'            => array('value' => $fresh['port'],                                          'defined' => defined('WP_REDIS_PORT')),
+        'WP_REDIS_PATH'            => array('value' => $fresh['path'],                                          'defined' => defined('WP_REDIS_PATH')),
+        'WP_REDIS_SCHEME'          => array('value' => $fresh['scheme'],                                        'defined' => defined('WP_REDIS_SCHEME')),
+        'WP_REDIS_DATABASE'        => array('value' => $fresh['database'],                                      'defined' => defined('WP_REDIS_DATABASE')),
+        'WP_REDIS_USERNAME'        => array('value' => !empty($fresh['username']) ? $fresh['username'] : '',    'defined' => defined('WP_REDIS_USERNAME')),
+        'WP_REDIS_PASSWORD'        => array('value' => !empty($fresh['password']) ? '******' : '',              'defined' => defined('WP_REDIS_PASSWORD')),
+        'WP_REDIS_TIMEOUT'         => array('value' => $fresh['timeout'],                                       'defined' => defined('WP_REDIS_TIMEOUT')),
+        'WP_REDIS_MAXTTL'          => array('value' => $fresh['max_ttl'],                                       'defined' => defined('WP_REDIS_MAXTTL')),
+        'WP_CACHE_KEY_SALT'        => array('value' => $fresh['key_salt'],                                      'defined' => defined('WP_CACHE_KEY_SALT')),
+        'WP_REDIS_SELECTIVE_FLUSH' => array('value' => $fresh['selective_flush'] ? 'true' : 'false',            'defined' => defined('WP_REDIS_SELECTIVE_FLUSH')),
+        'WP_REDIS_SERIALIZER'      => array('value' => $fresh['serializer'],                                    'defined' => defined('WP_REDIS_SERIALIZER')),
+        'WP_REDIS_COMPRESSION'     => array('value' => $fresh['compression'],                                   'defined' => defined('WP_REDIS_COMPRESSION')),
+        'WP_REDIS_ASYNC_FLUSH'     => array('value' => !empty($fresh['async_flush']) ? 'true' : 'false',       'defined' => defined('WP_REDIS_ASYNC_FLUSH')),
+    );
+
     // update_option returns false when the value is unchanged, so treat that as success
     wp_send_json_success(array(
-        'message' => $message,
+        'message'       => $message,
         'cache_flushed' => $flushed,
+        'active_config' => $active_config,
     ));
 }
 

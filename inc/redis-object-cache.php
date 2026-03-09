@@ -867,6 +867,14 @@ function ccm_tools_redis_add_config($config = array()) {
         return $result;
     }
     
+    // ── Remove any existing CCM Tools Redis Configuration block ──
+    // This makes the operation idempotent — always fresh, no duplicates.
+    $config_content = preg_replace(
+        '/\n?\/\*\s*CCM Tools Redis Configuration\s*\*\/.*?\/\*\s*End CCM Tools Redis Configuration\s*\*\/\n?/is',
+        "\n",
+        $config_content
+    );
+    
     // Default configuration
     $defaults = array(
         'WP_REDIS_HOST' => '127.0.0.1',
@@ -888,7 +896,7 @@ function ccm_tools_redis_add_config($config = array()) {
     $config_lines = array("\n/* CCM Tools Redis Configuration */");
     
     foreach ($config as $constant => $value) {
-        // Skip if already defined
+        // Skip if defined OUTSIDE our block (e.g. manually added by user)
         if (preg_match('/define\s*\(\s*[\'"]' . preg_quote($constant, '/') . '[\'"]/i', $config_content)) {
             continue;
         }
@@ -958,7 +966,7 @@ function ccm_tools_redis_add_config($config = array()) {
     }
     
     $result['success'] = true;
-    $result['message'] = __('Redis configuration added to wp-config.php successfully.', 'ccm-tools');
+    $result['message'] = __('Redis configuration saved to wp-config.php successfully.', 'ccm-tools');
     $result['backup_path'] = $backup_path;
     
     return $result;
@@ -1486,7 +1494,7 @@ function ccm_tools_render_redis_page() {
                 <h2><?php _e('Active Configuration', 'ccm-tools'); ?></h2>
                 <p class="ccm-note"><?php _e('These are the currently active settings, including any constants defined in wp-config.php.', 'ccm-tools'); ?></p>
                 
-                <table class="ccm-table ccm-table-striped">
+                <table class="ccm-table ccm-table-striped" id="redis-active-config-table">
                     <thead>
                         <tr>
                             <th><?php _e('Setting', 'ccm-tools'); ?></th>

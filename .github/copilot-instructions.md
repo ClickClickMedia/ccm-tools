@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.22.1
+- **Current Version:** 7.22.4
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,36 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.22.4
+- **Fix Duplicate Redis Constants in wp-config.php — Idempotent "Add to wp-config.php"**
+  - Root cause: `ccm_tools_redis_add_config()` only checked for individual existing constants via regex, but never removed the previous CCM Tools Redis Configuration block
+  - When settings changed (e.g., serializer switched from default to non-default), new constants were added in additional blocks while old constants remained in the previous block
+  - Re-running "Add to wp-config.php" could accumulate multiple `/* CCM Tools Redis Configuration */` blocks
+  - If a constant's value needed updating (e.g., host changed), the old define stayed and the function skipped it — leaving stale values
+  - In edge cases, duplicate `define()` calls for the same constant caused PHP fatal error (500) — "Cannot redeclare constant"
+  - Fix: Added `preg_replace()` to strip the entire existing `/* CCM Tools Redis Configuration */.../* End CCM Tools Redis Configuration */` block before building and inserting a fresh one
+  - The per-constant regex check is preserved to skip constants defined OUTSIDE the CCM block (e.g., manually added by the user)
+  - Clicking "Add to wp-config.php" is now fully idempotent — always produces a clean, current configuration block
+  - The success message now says "saved" instead of "added" to reflect update-or-add behavior
+
+### v7.22.3
+- **Redis Active Configuration Table Now Updates Live on Save Settings**
+  - Root cause: `location.reload()` after saving Redis settings served the browser-cached page, so the Active Configuration table still showed old values (e.g. old serializer/compression) until a hard refresh (Ctrl+F5)
+  - AJAX save handler now returns the full `active_config` array in the response — each constant's fresh value and `defined` status
+  - New `updateRedisActiveConfigTable()` JS function rebuilds the table `<tbody>` from response data, matching the PHP rendering logic exactly (same skip rules, badge classes, and label text)
+  - Added `id="redis-active-config-table"` to the Active Configuration `<table>` for DOM targeting
+  - Removed `setTimeout(() => location.reload(), 800)` — no page reload needed, table updates instantly
+  - Settings form values remain as-is (they were already correct from user input); only the server-rendered config table needed updating
+
+### v7.22.2
+- **WWW / Non-WWW Site URL Normalization — Same API Key Works for Both**
+  - Sites registered as `example.com` now match requests from `www.example.com` and vice versa
+  - Root cause: hub `normalizeSiteUrl()` lowercased the host and stripped trailing slashes but did NOT strip the `www.` prefix — causing `authenticateApiRequest()` URL mismatch (403) and premium status returning "Free"
+  - **Hub fix**: `normalizeSiteUrl()` in `includes/functions.php` now strips `www.` from the host before comparison
+  - **Plugin fix**: New `ccm_tools_normalize_site_url()` helper in `inc/ai-hub.php` strips `www.` from the `X-CCM-Site-Url` header sent to the hub
+  - Applied in: `ccm_tools_ai_hub_get_settings()` default, `ccm_tools_ajax_ai_hub_save_settings()`, and premium checkout URL in `inc/premium.php`
+  - Both sides now normalize independently — works even if only one side is updated first
 
 ### v7.22.1
 - **AI Troubleshooter Now Site-Specific — Fetches Live Page Data**
