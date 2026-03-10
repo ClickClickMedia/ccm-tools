@@ -728,6 +728,64 @@ function ccm_tools_ajax_ai_rollback_settings(): void {
     ]);
 }
 
+// ─── AI Optimizer — Flush All Caches ─────────────────────────────
+
+add_action('wp_ajax_ccm_tools_ai_flush_caches', 'ccm_tools_ajax_ai_flush_caches');
+
+/**
+ * Flush all caches before PageSpeed retesting so PSI sees an uncached page.
+ * Flushes: Redis object cache (if active), WP object cache, and all known
+ * page cache plugins (WP Rocket, W3TC, LiteSpeed, WP Super Cache, etc.).
+ */
+function ccm_tools_ajax_ai_flush_caches(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $flushed = [];
+    $errors  = [];
+
+    // 1. Flush Redis object cache (CCM drop-in, if installed)
+    if (function_exists('ccm_tools_redis_flush_cache')) {
+        $drop_in = WP_CONTENT_DIR . '/object-cache.php';
+        if (file_exists($drop_in) && str_contains((string) @file_get_contents($drop_in), 'CCM_Redis_Object_Cache')) {
+            $r = ccm_tools_redis_flush_cache(true);
+            if (!empty($r['success'])) {
+                $flushed[] = 'Redis (' . (int) ($r['keys_deleted'] ?? 0) . ' keys)';
+            } else {
+                $errors[] = 'Redis: ' . ($r['message'] ?? 'unknown error');
+            }
+        }
+    }
+
+    // 2. WordPress built-in object cache
+    wp_cache_flush();
+    $flushed[] = 'WP object cache';
+
+    // 3. Page cache plugins — function-based
+    if (function_exists('rocket_clean_domain'))       { rocket_clean_domain();         $flushed[] = 'WP Rocket'; }
+    if (function_exists('w3tc_flush_all'))            { w3tc_flush_all();              $flushed[] = 'W3 Total Cache'; }
+    if (function_exists('wp_cache_clear_cache'))      { wp_cache_clear_cache();        $flushed[] = 'WP Super Cache'; }
+    if (function_exists('sg_cachepress_purge_cache')) { sg_cachepress_purge_cache();   $flushed[] = 'SG Optimizer'; }
+
+    // 4. Page cache plugins — action-based (no-ops when plugin is inactive)
+    do_action('litespeed_purge_all');
+    do_action('autoptimize_action_cachepurged');
+    do_action('cache_enabler_clear_complete_cache');
+    do_action('wpfc_clear_all_cache');
+    do_action('swift_performance_purge_all_cache');
+    do_action('breeze_clear_all_cache');
+    do_action('nitropack_integration_purge_cache');
+    do_action('wphb_clear_page_cache');
+
+    wp_send_json_success([
+        'message' => 'Caches flushed: ' . implode(', ', $flushed),
+        'flushed' => $flushed,
+        'errors'  => $errors,
+    ]);
+}
+
 // ─── AI Chat — Troubleshooting Assistant ─────────────────────────
 
 add_action('wp_ajax_ccm_tools_ai_hub_console_check', 'ccm_tools_ajax_ai_hub_console_check');

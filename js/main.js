@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.22.4
+ * Version: 7.22.5
  */
 
 (function() {
@@ -4419,6 +4419,7 @@
         { id: 'test-desktop',   label: 'Test Desktop' },
         { id: 'analyze',        label: 'AI Analysis' },
         { id: 'apply',          label: 'Apply Changes' },
+        { id: 'flush-cache',    label: 'Flush Caches' },
         { id: 'retest-mobile',  label: 'Re-test Mobile' },
         { id: 'retest-desktop', label: 'Re-test Desktop' },
         { id: 'console-check',  label: 'Console Check' },
@@ -4879,6 +4880,55 @@
         return [...groupMap.values()];
     }
 
+    /**
+     * HTTP smoke test — fetches the URL bypassing all caches and checks:
+     *   1. HTTP 200 response
+     *   2. No PHP fatal/parse errors in the body
+     *   3. Page contains </html> (not truncated)
+     *   4. Body size is ≥ 40% of the baseline (not a blank/error page)
+     *
+     * @param {string} url              The page URL to test
+     * @param {number} baselineBodySize Byte count from pre-optimization baseline (0 == skip size check)
+     * @returns {Promise<{ok: boolean, reason: string}>}
+     */
+    async function aiHttpSmokeTest(url, baselineBodySize = 0) {
+        try {
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 30000);
+            const bustUrl = url + (url.includes('?') ? '&' : '?') + '_ccm_nc=' + Date.now();
+            const res = await fetch(bustUrl, {
+                signal:  controller.signal,
+                headers: { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
+                cache:   'no-store',
+            });
+            clearTimeout(tid);
+
+            if (res.status !== 200) {
+                return { ok: false, reason: `HTTP ${res.status}` };
+            }
+
+            const body = await res.text();
+
+            if (/Fatal error:|Parse error:|Uncaught Error:/i.test(body)) {
+                const m = body.match(/(Fatal error:|Parse error:|Uncaught Error:)[^\n<]*/i);
+                return { ok: false, reason: `PHP error: ${m ? m[0].trim() : 'detected'}` };
+            }
+
+            if (!body.includes('</html>')) {
+                return { ok: false, reason: 'Missing </html> — page may be truncated' };
+            }
+
+            if (baselineBodySize > 0 && body.length < baselineBodySize * 0.4) {
+                return { ok: false, reason: `Body too small: ${body.length.toLocaleString()}B vs baseline ${baselineBodySize.toLocaleString()}B` };
+            }
+
+            return { ok: true, reason: `HTTP 200, ${Math.round(body.length / 1024)}KB` };
+        } catch (err) {
+            if (err.name === 'AbortError') return { ok: false, reason: 'Timeout (30s)' };
+            return { ok: false, reason: `Fetch failed: ${err.message}` };
+        }
+    }
+
     async function aiOneClickOptimize() {
         const btn = $('#ai-one-click-btn');
         if (btn) { btn.disabled = true; btn.textContent = 'Optimizing…'; }
@@ -5132,6 +5182,15 @@
             let iteration = 0;
             let hasApplied = false;
 
+            // Capture baseline body size for HTTP smoke-test comparison
+            let baselineBodySize = 0;
+            try {
+                const bsRes = await fetch(url + (url.includes('?') ? '&' : '?') + '_ccm_nc=' + Date.now(), { cache: 'no-store' });
+                const bsText = await bsRes.text();
+                baselineBodySize = bsText.length;
+                aiLog(`Baseline body size: ${Math.round(baselineBodySize / 1024)}KB`, 'info');
+            } catch (_) { /* non-fatal — smoke test will skip size check */ }
+
             // ── Iterative improvement loop ──
             while (iteration < maxIterations) {
                 iteration++;
@@ -5248,6 +5307,43 @@
                     // Wait for caches / server-side hooks to take effect
                     await aiSleep(3000);
 
+                    // Flush all caches so the retest hits live PHP output
+                    aiUpdateStep('flush-cache', 'active', `Flushing after ${groupLabel}…`);
+                    try {
+                        await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
+                        aiLog(`  Caches flushed after ${groupLabel}`, 'info');
+                    } catch (flushErr) {
+                        aiLog(`  Cache flush failed: ${flushErr.message} — continuing`, 'warn');
+                    }
+                    aiUpdateStep('flush-cache', 'done', 'Flushed');
+
+                    // HTTP smoke test — verify site is still responding before triggering PageSpeed
+                    aiLog(`  Smoke-testing ${url} after ${groupLabel}…`, 'info');
+                    const groupSmokeResult = await aiHttpSmokeTest(url, baselineBodySize);
+                    if (!groupSmokeResult.ok) {
+                        aiLog(`  ⛔ Smoke test FAILED after ${groupLabel}: ${groupSmokeResult.reason} — reverting immediately`, 'error');
+                        aiUpdateStep('flush-cache', 'error', `Smoke fail: ${groupSmokeResult.reason.substring(0, 30)}`);
+                        const revertPayload = groupChanges.map(c => ({ setting_key: c.key, recommended_value: c.from }));
+                        try {
+                            const revertRes = await ajax('ccm_tools_ai_apply_changes', { recommendations: JSON.stringify(revertPayload) }, { timeout: 30000 });
+                            if (revertRes.data?.settings) aiUpdatePageToggles(revertRes.data.settings);
+                        } catch (revertErr) {
+                            aiLog(`  Smoke-test revert failed: ${revertErr.message}`, 'error');
+                        }
+                        groupChanges.forEach(c => {
+                            revertedSettings.push({ key: c.key, from: c.from, to: c.to, delta: -99 });
+                            sessionFailedBatches.push({
+                                iteration,
+                                settings: [{ key: c.key, from: c.from, to: c.to }],
+                                reason: `Smoke test failed: ${groupSmokeResult.reason}`,
+                                mobile_delta: -99,
+                                desktop_delta: 0,
+                            });
+                        });
+                        continue;
+                    }
+                    aiLog(`  Smoke test OK: ${groupSmokeResult.reason}`, 'success');
+
                     // Quick mobile-only retest to detect harmful settings
                     aiLog(`  Quick mobile test after ${groupLabel}…`, 'info');
                     let quickMobile;
@@ -5316,11 +5412,11 @@
                 // If ALL settings were individually reverted, skip final validation
                 if (keptCount === 0) {
                     aiUpdateStep('apply', 'done', `0 survived${iterLabel}`);
-                    ['retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'skipped', 'Skipped'));
+                    ['flush-cache', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'skipped', 'Skipped'));
                     showNotification('All settings caused individual score drops — retrying', 'warning');
                     aiLog(`All ${selectedFixes.length} settings failed individually — requesting different approach`, 'step');
                     // Reset steps for next iteration
-                    ['analyze', 'apply', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'pending', ''));
+                    ['analyze', 'apply', 'flush-cache', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'pending', ''));
                     continue; // next iteration — AI will see sessionFailedBatches and try something new
                 }
 
@@ -5330,6 +5426,48 @@
                 // Wait for final cache propagation before full validation
                 aiLog('Waiting 3s before final validation…', 'info');
                 await aiSleep(3000);
+
+                // Flush all caches before final PageSpeed tests
+                aiUpdateStep('flush-cache', 'active', 'Flushing before final retest…');
+                try {
+                    await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
+                    aiLog('Caches flushed before final validation', 'info');
+                } catch (flushErr) {
+                    aiLog(`Cache flush failed: ${flushErr.message} — continuing`, 'warn');
+                }
+                aiUpdateStep('flush-cache', 'done', 'Flushed ✓');
+
+                // HTTP smoke test before committing to full PageSpeed run
+                aiLog(`Smoke-testing ${url} before final validation…`, 'info');
+                const finalSmokeResult = await aiHttpSmokeTest(url, baselineBodySize);
+                if (!finalSmokeResult.ok) {
+                    aiLog(`⛔ Smoke test FAILED before final validation: ${finalSmokeResult.reason} — rolling back`, 'error');
+                    aiUpdateStep('flush-cache', 'error', `Smoke fail: ${finalSmokeResult.reason.substring(0, 30)}`);
+                    await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 10000 });
+                    aiLog('Rolled back due to smoke test failure before final validation.', 'warn');
+                    wasRolledBack = true;
+                    // Flush after rollback
+                    try {
+                        await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
+                        aiLog('Caches flushed after rollback (smoke test path)', 'info');
+                    } catch (_) {}
+                    showNotification(`Site health check failed — rolled back: ${finalSmokeResult.reason}`, 'warning');
+                    sessionFailedBatches.push({
+                        iteration,
+                        settings: changes.map(c => ({ key: c.key, from: c.from, to: c.to })),
+                        reason: `Final smoke test failed: ${finalSmokeResult.reason}`,
+                        mobile_delta: -99,
+                        desktop_delta: -99,
+                    });
+                    if (iteration < maxIterations) {
+                        await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
+                        ['analyze', 'apply', 'flush-cache', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'pending', ''));
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+                aiLog(`Smoke test OK: ${finalSmokeResult.reason}`, 'success');
 
                 // ── Re-test Mobile ──
                 aiUpdateStep('retest-mobile', 'active', `Re-testing${iterLabel}…`);
@@ -5562,8 +5700,35 @@
 
                     await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 10000 });
                     aiLog('Settings rolled back to snapshot.', 'warn');
-                    showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
                     wasRolledBack = true;
+
+                    // Flush caches after rollback so the confirmation test sees rolled-back state
+                    aiUpdateStep('flush-cache', 'active', 'Flushing after rollback…');
+                    try {
+                        await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
+                        aiLog('Caches flushed after rollback', 'info');
+                    } catch (flushErr) {
+                        aiLog(`Post-rollback cache flush failed: ${flushErr.message}`, 'warn');
+                    }
+                    aiUpdateStep('flush-cache', 'done', 'Flushed ✓');
+
+                    // Confirmation PSI test — verify rollback actually restored scores
+                    aiLog('Running post-rollback confirmation PSI test…', 'step');
+                    try {
+                        const confirmMobile = await aiRunPageSpeed(url, 'mobile');
+                        const confirmPerf = confirmMobile.scores?.performance ?? 0;
+                        const confirmDelta = confirmPerf - snapshotMobilePerf;
+                        if (confirmDelta < -5) {
+                            aiLog(`⚠ Rollback confirmation: mobile score ${confirmPerf} is ${Math.abs(confirmDelta)}pts below pre-iteration snapshot (${snapshotMobilePerf}) — rollback may not have fully restored settings`, 'error');
+                            showNotification(`Warning: post-rollback score (${confirmPerf}) is ${Math.abs(confirmDelta)}pts below snapshot — check settings manually`, 'warning');
+                        } else {
+                            aiLog(`Rollback confirmed: mobile score ${confirmPerf} (snapshot was ${snapshotMobilePerf}, Δ${confirmDelta >= 0 ? '+' : ''}${confirmDelta})`, 'success');
+                        }
+                    } catch (confirmErr) {
+                        aiLog(`Post-rollback confirmation test failed: ${confirmErr.message}`, 'warn');
+                    }
+
+                    showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
 
                     // Track this failed batch so AI avoids the same settings on next iteration
                     sessionFailedBatches.push({
@@ -5598,6 +5763,7 @@
                         }
                         aiUpdateStep('analyze', 'pending', '');
                         aiUpdateStep('apply', 'pending', '');
+                        aiUpdateStep('flush-cache', 'pending', '');
                         aiUpdateStep('retest-mobile', 'pending', '');
                         aiUpdateStep('retest-desktop', 'pending', '');
                         aiUpdateStep('console-check', 'pending', '');
