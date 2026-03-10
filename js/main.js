@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.23.0
+ * Version: 7.24.0
  */
 
 (function() {
@@ -2756,6 +2756,14 @@
                 // Video optimizations
                 video_lazy_load: $('#perf-video-lazy-load')?.checked ? '1' : '',
                 video_preload_none: $('#perf-video-preload-none')?.checked ? '1' : '',
+                // Image optimizations (v7.23.0)
+                lazy_load_images: $('#perf-lazy-load-images')?.checked ? '1' : '',
+                image_decoding_async: $('#perf-image-decoding-async')?.checked ? '1' : '',
+                prefetch_on_hover: $('#perf-prefetch-on-hover')?.checked ? '1' : '',
+                // Head bloat removal (v7.24.0)
+                remove_generator_tag: $('#perf-remove-generator-tag')?.checked ? '1' : '',
+                remove_adjacent_post_links: $('#perf-remove-adjacent-post-links')?.checked ? '1' : '',
+                disable_admin_bar: $('#perf-disable-admin-bar')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -4017,6 +4025,7 @@
         'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
         'video_lazy_load', 'video_preload_none',
         'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
+        'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4563,6 +4572,9 @@
             lazy_load_images: 'Lazy Load Images',
             image_decoding_async: 'Image Decoding: Async',
             prefetch_on_hover: 'Prefetch on Hover',
+            remove_generator_tag: 'Remove Generator Tag',
+            remove_adjacent_post_links: 'Remove Adjacent Post Links',
+            disable_admin_bar: 'Disable Admin Bar (Frontend)',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }

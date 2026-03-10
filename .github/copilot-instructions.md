@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.23.0
+- **Current Version:** 7.24.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,19 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.24.0
+- **Head Cleanup — Remove Generator Tag, Disable Admin Bar (Frontend), Remove Adjacent Post Links**
+  - **Remove Generator Tag**: Calls `remove_action('wp_head', 'wp_generator')` to strip the WordPress version meta tag from `<head>` — prevents version fingerprinting by bots and security scanners
+  - **Disable Admin Bar (Frontend)**: Adds `add_filter('show_admin_bar', '__return_false')` — hides the admin toolbar on the public-facing site for all logged-in users including admins; fires before the `is_admin()` early return so it correctly affects frontend page loads (comes with an info note in the UI warning that admins will also be affected)
+  - **Remove Adjacent Post Links**: Calls `remove_action('wp_head', 'adjacent_posts_rel_link_wp_head', 10)` and `remove_action('wp_head', 'feed_links_extra', 3)` to remove prev/next `<link>` tags and category/tag feed discovery links from `<head>` — these are rarely used and add unnecessary HTTP header bloat
+  - All three toggles added to the existing **Head Cleanup** section of the Performance Optimizer page
+  - Settings persist via existing save/import/export pipeline; AI optimization history fully supported via `aiSettingLabel()` entries
+  - `disable_admin_bar` filter hooked first (before `is_admin()` early return) by moving `$settings = ccm_tools_perf_get_settings()` to the very top of `ccm_tools_perf_init()`
+- **Bug Fix: v7.23.0 Image Settings Not Saving**
+  - `lazy_load_images`, `image_decoding_async`, and `prefetch_on_hover` toggles were present in the PHP UI but never added to the `savePerfSettings()` data object in `js/main.js`
+  - Enabling these settings via the UI appeared to work but the values were never sent to the server on Save — settings reset to off on next page load
+  - Fixed: all three fields now included in the `savePerfSettings()` POST data alongside the new v7.24.0 fields
 
 ### v7.23.0
 - **New Image Optimization Settings in Performance Optimizer**

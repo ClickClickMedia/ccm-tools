@@ -1959,6 +1959,10 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'lazy_load_images'     => !empty($_POST['lazy_load_images']),
         'image_decoding_async' => !empty($_POST['image_decoding_async']),
         'prefetch_on_hover'    => !empty($_POST['prefetch_on_hover']),
+        // Head bloat removal
+        'remove_generator_tag'       => !empty($_POST['remove_generator_tag']),
+        'remove_adjacent_post_links' => !empty($_POST['remove_adjacent_post_links']),
+        'disable_admin_bar'          => !empty($_POST['disable_admin_bar']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2063,7 +2067,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
         'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
         'video_lazy_load', 'video_preload_none',
-        'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover'
+        'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
+        'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar'
     );
     
     foreach ($boolean_keys as $key) {

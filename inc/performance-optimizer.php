@@ -75,6 +75,10 @@ function ccm_tools_perf_get_settings() {
         'lazy_load_images'     => false,
         'image_decoding_async' => false,
         'prefetch_on_hover'    => false,
+        // Head bloat removal for v7.24.0
+        'remove_generator_tag'       => false,
+        'remove_adjacent_post_links' => false,
+        'disable_admin_bar'          => false,
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -119,10 +123,16 @@ function ccm_tools_perf_is_enabled() {
  * Initialize performance optimizer hooks
  */
 function ccm_tools_perf_init() {
+    $settings = ccm_tools_perf_get_settings();
+
+    // Disable frontend admin bar — must run before is_admin() check to affect all users on public pages
+    if (!empty($settings['enabled']) && !empty($settings['disable_admin_bar'])) {
+        add_filter('show_admin_bar', '__return_false');
+    }
+
     // Only run on frontend (except heartbeat which also helps in admin)
     if (is_admin()) {
         // In admin, only apply heartbeat reduction
-        $settings = ccm_tools_perf_get_settings();
         if (!empty($settings['enabled']) && !empty($settings['reduce_heartbeat'])) {
             add_filter('heartbeat_settings', 'ccm_tools_perf_reduce_heartbeat');
         }
@@ -134,8 +144,6 @@ function ccm_tools_perf_init() {
     if (current_user_can('manage_options') && empty($_GET['ccm_test_perf'])) {
         return;
     }
-    
-    $settings = ccm_tools_perf_get_settings();
     
     if (empty($settings['enabled'])) {
         return;
@@ -294,6 +302,17 @@ function ccm_tools_perf_init() {
     // Prefetch on hover
     if (!empty($settings['prefetch_on_hover'])) {
         add_action('wp_footer', 'ccm_tools_perf_prefetch_on_hover', 98);
+    }
+
+    // Remove WordPress generator meta tag
+    if (!empty($settings['remove_generator_tag'])) {
+        remove_action('wp_head', 'wp_generator');
+    }
+
+    // Remove adjacent post links and extra feed links from <head>
+    if (!empty($settings['remove_adjacent_post_links'])) {
+        remove_action('wp_head', 'adjacent_posts_rel_link_wp_head', 10);
+        remove_action('wp_head', 'feed_links_extra', 3);
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -1968,7 +1987,7 @@ body { margin: 0; }
                 </div>
                 
                 <!-- Disable oEmbed -->
-                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
                     <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
                         <div style="flex: 1;">
                             <strong><?php _e('Disable oEmbed Discovery', 'ccm-tools'); ?></strong>
@@ -1976,6 +1995,49 @@ body { margin: 0; }
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-disable-oembed" <?php checked(!empty($settings['disable_oembed'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Remove WordPress Generator Tag -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Remove Generator Tag', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes the WordPress version meta tag from the &lt;head&gt; (e.g. &lt;meta name="generator" content="WordPress 6.x"&gt;). Minor security and cleanliness improvement — hides the CMS version from automated scanners.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-remove-generator-tag" <?php checked(!empty($settings['remove_generator_tag'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Disable Admin Bar on Frontend -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Disable Admin Bar (Frontend)', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Hides the WordPress admin bar on public-facing pages for all users. Removes the inline admin bar CSS and JS, saving 2+ HTTP requests per page load.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">ℹ <?php _e('Affects all logged-in users including administrators when viewing the frontend.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-admin-bar" <?php checked(!empty($settings['disable_admin_bar'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Remove Adjacent Post Links -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Remove Adjacent Post Links', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes previous/next post rel links and extra feed links (e.g. comment feeds) from the &lt;head&gt;. Rarely used by search engines and adds unnecessary head bloat.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-remove-adjacent-post-links" <?php checked(!empty($settings['remove_adjacent_post_links'])); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </div>
