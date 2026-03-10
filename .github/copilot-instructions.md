@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.22.4
+- **Current Version:** 7.23.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,16 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.23.0
+- **New Image Optimization Settings in Performance Optimizer**
+  - **Lazy Load Images**: Adds `loading="lazy"` to all non-LCP images via `wp_get_attachment_image_attributes` (priority 10, after LCP handler) and `the_content` filter — covers page builder and theme template images that bypass WP's own lazy-loading
+  - **Async Image Decoding**: Adds `decoding="async"` to all non-LCP images, allowing the browser to decode images off the main thread and reduce layout jank
+  - **Prefetch on Hover**: Injects a lightweight inline script that fires `<link rel="prefetch" as="document">` 100ms after a user hovers/touches a same-origin link — pages appear to load instantly on click; respects `navigator.connection.saveData` and skips external, admin, and anchor-only links
+  - LCP images are automatically excluded from lazy/async handling (LCP handler runs at priority 5, new handler at priority 10; checks for `fetchpriority="high"` attribute)
+  - Three new PHP functions: `ccm_tools_perf_image_attributes()`, `ccm_tools_perf_image_lazydecode_content()`, `ccm_tools_perf_prefetch_on_hover()`
+  - New "Image Optimizations" UI card added to Performance Optimizer page (between LCP Optimization and Additional Optimizations sections)
+  - Settings persist, export/import correctly, and appear in AI optimization history
 
 ### v7.22.4
 - **Fix Duplicate Redis Constants in wp-config.php — Idempotent "Add to wp-config.php"**

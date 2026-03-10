@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.22.5
+ * Version: 7.23.0
  */
 
 (function() {
@@ -4016,6 +4016,7 @@
         'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
         'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
         'video_lazy_load', 'video_preload_none',
+        'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4559,6 +4560,9 @@
             disable_shortlink: 'Remove Shortlink', disable_rest_api_links: 'Remove REST API Link',
             disable_oembed: 'Disable oEmbed', enabled: 'Performance Optimizer',
             video_lazy_load: 'Video Lazy Load', video_preload_none: 'Video Preload: None',
+            lazy_load_images: 'Lazy Load Images',
+            image_decoding_async: 'Image Decoding: Async',
+            prefetch_on_hover: 'Prefetch on Hover',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }

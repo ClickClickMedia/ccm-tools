@@ -1955,6 +1955,10 @@ function ccm_tools_ajax_save_perf_settings(): void {
         // Video optimizations
         'video_lazy_load' => !empty($_POST['video_lazy_load']),
         'video_preload_none' => !empty($_POST['video_preload_none']),
+        // Image optimizations
+        'lazy_load_images'     => !empty($_POST['lazy_load_images']),
+        'image_decoding_async' => !empty($_POST['image_decoding_async']),
+        'prefetch_on_hover'    => !empty($_POST['prefetch_on_hover']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2058,7 +2062,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'speculation_rules', 'critical_css', 'disable_jquery_migrate', 'disable_block_css',
         'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
         'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
-        'video_lazy_load', 'video_preload_none'
+        'video_lazy_load', 'video_preload_none',
+        'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover'
     );
     
     foreach ($boolean_keys as $key) {

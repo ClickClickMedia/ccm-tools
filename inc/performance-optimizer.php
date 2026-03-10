@@ -71,6 +71,10 @@ function ccm_tools_perf_get_settings() {
         // Video optimizations for v7.16.0
         'video_lazy_load' => false,
         'video_preload_none' => false,
+        // Image optimizations for v7.23.0
+        'lazy_load_images'     => false,
+        'image_decoding_async' => false,
+        'prefetch_on_hover'    => false,
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -279,6 +283,17 @@ function ccm_tools_perf_init() {
     // Video preload none (set preload="none" on non-autoplay videos)
     if (!empty($settings['video_preload_none'])) {
         add_filter('the_content', 'ccm_tools_perf_video_preload_none', 97);
+    }
+
+    // Image lazy loading and async decoding (priority 10 — runs after LCP handler at priority 5)
+    if (!empty($settings['lazy_load_images']) || !empty($settings['image_decoding_async'])) {
+        add_filter('wp_get_attachment_image_attributes', 'ccm_tools_perf_image_attributes', 10, 3);
+        add_filter('the_content', 'ccm_tools_perf_image_lazydecode_content', 99);
+    }
+
+    // Prefetch on hover
+    if (!empty($settings['prefetch_on_hover'])) {
+        add_action('wp_footer', 'ccm_tools_perf_prefetch_on_hover', 98);
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -943,6 +958,120 @@ function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) 
 }
 
 /**
+ * Add lazy loading and/or async decoding to images loaded via wp_get_attachment_image().
+ * Runs at priority 10, after the LCP fetchpriority handler at priority 5, so the LCP
+ * image already has fetchpriority="high" and we can safely skip it here.
+ *
+ * @param array  $attr       Image HTML attributes.
+ * @param object $attachment Attachment post object.
+ * @param mixed  $size       Requested image size.
+ * @return array Modified attributes.
+ */
+function ccm_tools_perf_image_attributes( $attr, $attachment, $size ) {
+    // Skip the LCP image — it must not be lazy-loaded.
+    if ( isset( $attr['fetchpriority'] ) && $attr['fetchpriority'] === 'high' ) {
+        return $attr;
+    }
+
+    $settings = ccm_tools_perf_get_settings();
+
+    if ( ! empty( $settings['lazy_load_images'] ) && ! isset( $attr['loading'] ) ) {
+        $attr['loading'] = 'lazy';
+    }
+
+    if ( ! empty( $settings['image_decoding_async'] ) && ! isset( $attr['decoding'] ) ) {
+        $attr['decoding'] = 'async';
+    }
+
+    return $attr;
+}
+
+/**
+ * Add lazy loading and/or async decoding to raw <img> tags in post content.
+ * Catches images that bypass wp_get_attachment_image() (classic editor HTML, page
+ * builders whose output passes through the_content).
+ *
+ * @param string $content Post content HTML.
+ * @return string Modified HTML.
+ */
+function ccm_tools_perf_image_lazydecode_content( $content ) {
+    if ( empty( $content ) || stripos( $content, '<img' ) === false ) {
+        return $content;
+    }
+
+    $settings   = ccm_tools_perf_get_settings();
+    $add_lazy   = ! empty( $settings['lazy_load_images'] );
+    $add_decode = ! empty( $settings['image_decoding_async'] );
+
+    if ( ! $add_lazy && ! $add_decode ) {
+        return $content;
+    }
+
+    $content = preg_replace_callback(
+        '/<img\b([^>]*)>/i',
+        function ( $m ) use ( $add_lazy, $add_decode ) {
+            $attrs = $m[1];
+
+            // Skip the LCP image which already has fetchpriority="high".
+            if ( preg_match( '/\bfetchpriority\s*=\s*["\']?high/i', $attrs ) ) {
+                return $m[0];
+            }
+
+            if ( $add_lazy && stripos( $attrs, 'loading=' ) === false ) {
+                $attrs .= ' loading="lazy"';
+            }
+
+            if ( $add_decode && stripos( $attrs, 'decoding=' ) === false ) {
+                $attrs .= ' decoding="async"';
+            }
+
+            return '<img' . $attrs . '>';
+        },
+        $content
+    );
+
+    return $content;
+}
+
+/**
+ * Output a small inline script that prefetches same-origin pages on hover/touch.
+ * Uses a 100 ms debounce to avoid prefetching links the user only glances at.
+ * Automatically disabled when the browser/OS reports data-saving mode.
+ */
+function ccm_tools_perf_prefetch_on_hover() {
+    ?>
+    <script id="ccm-prefetch-on-hover">
+    (function(){
+        if ('connection' in navigator && navigator.connection.saveData) return;
+        var prefetched = new Set(), timer = null;
+        function prefetch(url) {
+            if (prefetched.has(url)) return;
+            prefetched.add(url);
+            var link = document.createElement('link');
+            link.rel  = 'prefetch';
+            link.href = url;
+            link.as   = 'document';
+            document.head.appendChild(link);
+        }
+        function onIntent(e) {
+            var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+            if (!a) return;
+            var url = a.href;
+            if (!url || a.origin !== location.origin) return;
+            if (url === location.href) return;
+            var h = a.getAttribute('href') || '';
+            if (h.startsWith('#') || h.startsWith('javascript:')) return;
+            clearTimeout(timer);
+            timer = setTimeout(function(){ prefetch(url); }, 100);
+        }
+        document.addEventListener('mouseover',  onIntent);
+        document.addEventListener('touchstart', onIntent, {passive: true});
+    })();
+    </script>
+    <?php
+}
+
+/**
  * Preload the LCP image if URL is specified
  */
 function ccm_tools_perf_lcp_preload() {
@@ -1539,7 +1668,58 @@ body { margin: 0; }
                     </div>
                 </div>
             </div>
-            
+
+            <!-- Image Optimizations -->
+            <div class="ccm-card" id="image-optimization">
+                <h2><?php _e('Image Optimizations', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Native browser attributes that improve image loading performance. The LCP (first) image is always excluded automatically so these settings are safe to enable together with LCP Optimization above.', 'ccm-tools'); ?></p>
+
+                <!-- Lazy Load Images -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Lazy Load Images', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds <code>loading="lazy"</code> to images so below-fold images are deferred until the user scrolls near them. Reduces initial page weight and improves LCP.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">ℹ <?php _e('WordPress already adds <code>loading="lazy"</code> to images inserted via the Block/Classic editor. This setting also covers images output by page builders and theme templates.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-lazy-load-images" <?php checked( ! empty( $settings['lazy_load_images'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Async Image Decoding -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Async Image Decoding', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds <code>decoding="async"</code> to images, allowing the browser to decode them off the main thread. Can reduce Total Blocking Time (TBT) and improve INP (Interaction to Next Paint) scores.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-success);">✓ <?php _e('Safe — has no visible effect on layout. The browser simply decodes images asynchronously instead of in-line with rendering.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-image-decoding-async" <?php checked( ! empty( $settings['image_decoding_async'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Prefetch on Hover -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Prefetch on Hover', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('When a visitor hovers over an internal link for 100ms the browser silently pre-downloads that page in the background. Navigation feels near-instant.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">ℹ <?php _e('Only prefetches same-origin links. Automatically skipped for visitors who have data-saver mode enabled on their device.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-prefetch-on-hover" <?php checked( ! empty( $settings['prefetch_on_hover'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <!-- Additional Optimizations -->
             <div class="ccm-card" id="additional-optimizations">
                 <h2><?php _e('Additional Optimizations', 'ccm-tools'); ?></h2>
