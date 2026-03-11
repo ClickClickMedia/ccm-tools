@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.24.0
+ * Version: 7.25.0
  */
 
 (function() {
@@ -2764,6 +2764,13 @@
                 remove_generator_tag: $('#perf-remove-generator-tag')?.checked ? '1' : '',
                 remove_adjacent_post_links: $('#perf-remove-adjacent-post-links')?.checked ? '1' : '',
                 disable_admin_bar: $('#perf-disable-admin-bar')?.checked ? '1' : '',
+                // Script/style inlining (v7.25.0)
+                inline_small_scripts: $('#perf-inline-small-scripts')?.checked ? '1' : '',
+                inline_small_styles: $('#perf-inline-small-styles')?.checked ? '1' : '',
+                inline_threshold_kb: $('#perf-inline-threshold-kb')?.value || '2',
+                // Image attribute injection (v7.25.0)
+                inject_image_dimensions: $('#perf-inject-image-dimensions')?.checked ? '1' : '',
+                inject_srcset: $('#perf-inject-srcset')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -4026,6 +4033,8 @@
         'video_lazy_load', 'video_preload_none',
         'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
         'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
+        'inline_small_scripts', 'inline_small_styles', 'inline_threshold_kb',
+        'inject_image_dimensions', 'inject_srcset',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4575,6 +4584,11 @@
             remove_generator_tag: 'Remove Generator Tag',
             remove_adjacent_post_links: 'Remove Adjacent Post Links',
             disable_admin_bar: 'Disable Admin Bar (Frontend)',
+            inline_small_scripts: 'Inline Small Scripts',
+            inline_small_styles: 'Inline Small Styles',
+            inline_threshold_kb: 'Inline Threshold (KB)',
+            inject_image_dimensions: 'Inject Image Dimensions',
+            inject_srcset: 'Inject Responsive srcset',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }

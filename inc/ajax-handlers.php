@@ -1963,6 +1963,13 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'remove_generator_tag'       => !empty($_POST['remove_generator_tag']),
         'remove_adjacent_post_links' => !empty($_POST['remove_adjacent_post_links']),
         'disable_admin_bar'          => !empty($_POST['disable_admin_bar']),
+        // Script/style inlining (v7.25.0)
+        'inline_small_scripts'    => !empty($_POST['inline_small_scripts']),
+        'inline_small_styles'     => !empty($_POST['inline_small_styles']),
+        'inline_threshold_kb'     => max(1, min(50, absint($_POST['inline_threshold_kb'] ?? 2))),
+        // Image attribute injection (v7.25.0)
+        'inject_image_dimensions' => !empty($_POST['inject_image_dimensions']),
+        'inject_srcset'           => !empty($_POST['inject_srcset']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2068,7 +2075,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
         'video_lazy_load', 'video_preload_none',
         'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
-        'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar'
+        'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
+        'inline_small_scripts', 'inline_small_styles', 'inject_image_dimensions', 'inject_srcset'
     );
     
     foreach ($boolean_keys as $key) {

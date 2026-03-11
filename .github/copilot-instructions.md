@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.24.0
+- **Current Version:** 7.25.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,25 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.25.0
+- **Inline Small Scripts & Styles — Eliminate Per-Asset HTTP Requests**
+  - **Inline Small Scripts**: New toggle reads the file size of each registered script before output; if it falls under the configurable threshold (default 2 KB, range 1–50 KB), replaces the `<script src>` tag with an inline `<script>` block — eliminates a browser round-trip for small assets; external scripts and admin pages are always skipped
+  - **Inline Small Styles**: Same approach for stylesheets — replaces `<link rel="stylesheet">` with an inline `<style>` block when the file is under threshold; media attribute preserved; improves render-blocking elimination when paired with Critical CSS
+  - **Threshold KB input**: Single shared number input (`1`–`50`) controls the inlining threshold for both scripts and styles simultaneously
+  - New `ccm_tools_perf_url_to_path()` helper converts local URLs to absolute filesystem paths for file-size checks
+  - New "Script & Style Inlining" card added to Performance Optimizer page (between Image Optimizations and Additional Optimizations)
+- **Inject Image Dimensions — Eliminate CLS from Images Without width/height**
+  - New toggle adds `width` and `height` attributes to local `<img>` tags in post content that are missing them
+  - Looks up attachment ID from `src` URL and reads metadata (including correct dimensions for cropped/resized variants like `-300x200.jpg`)
+  - Prevents browser reflow and eliminates Cumulative Layout Shift (CLS) — a Core Web Vital that directly impacts PageSpeed scores
+  - Skips images that already have explicit width/height attributes
+- **Inject Responsive srcset — Restore srcset on Images Missing It**
+  - New toggle adds `srcset` and `sizes` attributes to local `<img>` tags in post content that are missing them
+  - Uses WordPress's `wp_get_attachment_image_srcset()` and `wp_get_attachment_image_sizes()` to generate correct responsive image sets
+  - Allows the browser to select the most appropriate image size for each viewport — reduces wasted bandwidth on mobile
+  - Skips images that already have a `srcset` attribute
+  - Both dimension and srcset injection use `preg_replace_callback` on `the_content` at priorities 20 and 21
 
 ### v7.24.0
 - **Head Cleanup — Remove Generator Tag, Disable Admin Bar (Frontend), Remove Adjacent Post Links**

@@ -79,6 +79,13 @@ function ccm_tools_perf_get_settings() {
         'remove_generator_tag'       => false,
         'remove_adjacent_post_links' => false,
         'disable_admin_bar'          => false,
+        // Script/style inlining for v7.25.0
+        'inline_small_scripts'   => false,
+        'inline_small_styles'    => false,
+        'inline_threshold_kb'    => 2,
+        // Image attribute injection for v7.25.0
+        'inject_image_dimensions' => false,
+        'inject_srcset'           => false,
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -313,6 +320,26 @@ function ccm_tools_perf_init() {
     if (!empty($settings['remove_adjacent_post_links'])) {
         remove_action('wp_head', 'adjacent_posts_rel_link_wp_head', 10);
         remove_action('wp_head', 'feed_links_extra', 3);
+    }
+
+    // Inline small scripts below the configured threshold
+    if (!empty($settings['inline_small_scripts'])) {
+        add_filter('script_loader_tag', 'ccm_tools_perf_inline_small_scripts', 5, 3);
+    }
+
+    // Inline small stylesheets below the configured threshold
+    if (!empty($settings['inline_small_styles'])) {
+        add_filter('style_loader_tag', 'ccm_tools_perf_inline_small_styles', 5, 4);
+    }
+
+    // Inject missing width/height on local images (CLS fix)
+    if (!empty($settings['inject_image_dimensions'])) {
+        add_filter('the_content', 'ccm_tools_perf_inject_image_dimensions', 20);
+    }
+
+    // Inject missing srcset/sizes on local images
+    if (!empty($settings['inject_srcset'])) {
+        add_filter('the_content', 'ccm_tools_perf_inject_srcset', 21);
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -1389,6 +1416,210 @@ function ccm_tools_perf_get_registered_styles() {
 }
 
 /**
+ * Helper: Convert a local URL to an absolute filesystem path.
+ *
+ * @param string $url Local URL (with or without query string).
+ * @return string|false Absolute path, or false if the URL is external.
+ */
+function ccm_tools_perf_url_to_path( $url ) {
+    $url        = strtok( $url, '?' );
+    $site_url   = rtrim( site_url( '/' ), '/' );
+    $abspath    = rtrim( ABSPATH, '/\\' );
+
+    if ( strpos( $url, $site_url ) === 0 ) {
+        return $abspath . '/' . ltrim( substr( $url, strlen( $site_url ) ), '/' );
+    }
+    // Handle protocol-relative URLs
+    $url_no_scheme  = preg_replace( '#^https?:#', '', $url );
+    $site_no_scheme = preg_replace( '#^https?:#', '', $site_url );
+    if ( strpos( $url_no_scheme, $site_no_scheme ) === 0 ) {
+        return $abspath . '/' . ltrim( substr( $url_no_scheme, strlen( $site_no_scheme ) ), '/' );
+    }
+    return false;
+}
+
+/**
+ * Inline small local scripts below the configured KB threshold.
+ * Eliminates individual HTTP round-trips for tiny assets.
+ *
+ * @param string $tag    Full <script> tag HTML.
+ * @param string $handle Registered script handle.
+ * @param string $src    Script URL.
+ * @return string Original tag or inline <script> block.
+ */
+function ccm_tools_perf_inline_small_scripts( $tag, $handle, $src ) {
+    if ( empty( $src ) || strpos( $src, 'wp-admin' ) !== false ) {
+        return $tag;
+    }
+    $settings  = ccm_tools_perf_get_settings();
+    $threshold = max( 1, intval( $settings['inline_threshold_kb'] ) ) * 1024;
+
+    // Skip external scripts
+    $site_url       = site_url( '/' );
+    $url_no_scheme  = preg_replace( '#^https?:#', '', $src );
+    $site_no_scheme = preg_replace( '#^https?:#', '', $site_url );
+    if ( strpos( $url_no_scheme, $site_no_scheme ) !== 0 ) {
+        return $tag;
+    }
+
+    $path = ccm_tools_perf_url_to_path( $src );
+    if ( ! $path || ! is_file( $path ) ) {
+        return $tag;
+    }
+    $size = @filesize( $path );
+    if ( $size === false || $size > $threshold ) {
+        return $tag;
+    }
+    $content = @file_get_contents( $path );
+    if ( $content === false || $content === '' ) {
+        return $tag;
+    }
+    return '<script id="' . esc_attr( $handle ) . '-inline">' . "\n" . $content . "\n" . '</script>' . "\n";
+}
+
+/**
+ * Inline small local stylesheets below the configured KB threshold.
+ * Eliminates render-blocking HTTP requests for tiny CSS files.
+ *
+ * @param string $tag    Full <link> tag HTML.
+ * @param string $handle Registered style handle.
+ * @param string $href   Stylesheet URL.
+ * @param string $media  Media attribute value.
+ * @return string Original tag or inline <style> block.
+ */
+function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
+    if ( empty( $href ) || strpos( $href, 'wp-admin' ) !== false ) {
+        return $tag;
+    }
+    $settings  = ccm_tools_perf_get_settings();
+    $threshold = max( 1, intval( $settings['inline_threshold_kb'] ) ) * 1024;
+
+    // Skip external stylesheets
+    $site_url       = site_url( '/' );
+    $url_no_scheme  = preg_replace( '#^https?:#', '', $href );
+    $site_no_scheme = preg_replace( '#^https?:#', '', $site_url );
+    if ( strpos( $url_no_scheme, $site_no_scheme ) !== 0 ) {
+        return $tag;
+    }
+
+    $path = ccm_tools_perf_url_to_path( $href );
+    if ( ! $path || ! is_file( $path ) ) {
+        return $tag;
+    }
+    $size = @filesize( $path );
+    if ( $size === false || $size > $threshold ) {
+        return $tag;
+    }
+    $content = @file_get_contents( $path );
+    if ( $content === false || $content === '' ) {
+        return $tag;
+    }
+    $media_attr = ( $media && $media !== 'all' ) ? ' media="' . esc_attr( $media ) . '"' : '';
+    return '<style id="' . esc_attr( $handle ) . '-inline"' . $media_attr . '>' . "\n" . $content . "\n" . '</style>' . "\n";
+}
+
+/**
+ * Inject missing width and height attributes on local <img> tags in post content.
+ * Prevents Cumulative Layout Shift (CLS) by reserving space before images load.
+ *
+ * @param string $content Post content HTML.
+ * @return string Modified content.
+ */
+function ccm_tools_perf_inject_image_dimensions( $content ) {
+    if ( empty( $content ) || ! is_string( $content ) ) {
+        return $content;
+    }
+    return preg_replace_callback( '/<img\s[^>]+>/i', function ( $matches ) {
+        $tag        = $matches[0];
+        $has_width  = (bool) preg_match( '/\bwidth\s*=/i', $tag );
+        $has_height = (bool) preg_match( '/\bheight\s*=/i', $tag );
+        if ( $has_width && $has_height ) {
+            return $tag;
+        }
+        if ( ! preg_match( '/\bsrc\s*=\s*["\']([^"\']+)["\']/', $tag, $src_m ) ) {
+            return $tag;
+        }
+        $src         = $src_m[1];
+        $upload_dir  = wp_upload_dir();
+        $upload_base = $upload_dir['baseurl'];
+        if ( strpos( $src, $upload_base ) === false && strpos( $src, '/wp-content/uploads/' ) === false ) {
+            return $tag;
+        }
+        $src_clean     = strtok( $src, '?' );
+        $attachment_id = attachment_url_to_postid( $src_clean );
+        if ( ! $attachment_id ) {
+            return $tag;
+        }
+        $meta = wp_get_attachment_metadata( $attachment_id );
+        if ( empty( $meta['width'] ) || empty( $meta['height'] ) ) {
+            return $tag;
+        }
+        $width  = (int) $meta['width'];
+        $height = (int) $meta['height'];
+        // For resized images (e.g. image-300x200.jpg), use the cropped dimensions
+        if ( preg_match( '/-([0-9]+)x([0-9]+)\.[a-z]{2,5}$/i', $src_clean, $size_m ) ) {
+            $width  = (int) $size_m[1];
+            $height = (int) $size_m[2];
+        }
+        if ( ! $has_width ) {
+            $tag = preg_replace( '/(<img\s)/i', '$1width="' . $width . '" ', $tag, 1 );
+        }
+        if ( ! $has_height ) {
+            $tag = preg_replace( '/(<img\s)/i', '$1height="' . $height . '" ', $tag, 1 );
+        }
+        return $tag;
+    }, $content );
+}
+
+/**
+ * Inject missing srcset and sizes attributes on local <img> tags in post content.
+ * Ensures the browser downloads the right image size for each viewport,
+ * even for images output by page builders that bypass wp_get_attachment_image().
+ *
+ * @param string $content Post content HTML.
+ * @return string Modified content.
+ */
+function ccm_tools_perf_inject_srcset( $content ) {
+    if ( empty( $content ) || ! is_string( $content ) ) {
+        return $content;
+    }
+    return preg_replace_callback( '/<img\s[^>]+>/i', function ( $matches ) {
+        $tag = $matches[0];
+        // Skip if already has srcset
+        if ( preg_match( '/\bsrcset\s*=/i', $tag ) ) {
+            return $tag;
+        }
+        if ( ! preg_match( '/\bsrc\s*=\s*["\']([^"\']+)["\']/', $tag, $src_m ) ) {
+            return $tag;
+        }
+        $src         = $src_m[1];
+        $upload_dir  = wp_upload_dir();
+        $upload_base = $upload_dir['baseurl'];
+        if ( strpos( $src, $upload_base ) === false && strpos( $src, '/wp-content/uploads/' ) === false ) {
+            return $tag;
+        }
+        $src_clean     = strtok( $src, '?' );
+        $attachment_id = attachment_url_to_postid( $src_clean );
+        if ( ! $attachment_id ) {
+            return $tag;
+        }
+        $srcset = wp_get_attachment_image_srcset( $attachment_id );
+        if ( ! $srcset ) {
+            return $tag;
+        }
+        // Determine sizes from width attribute, otherwise use full-width fallback
+        $sizes = '100vw';
+        if ( preg_match( '/\bwidth\s*=\s*["\']([0-9]+)["\']/', $tag, $w_m ) ) {
+            $w     = (int) $w_m[1];
+            $sizes = '(max-width: ' . $w . 'px) 100vw, ' . $w . 'px';
+        }
+        // Inject before the closing >
+        $tag = preg_replace( '/(\s*\/?>)$/', ' srcset="' . esc_attr( $srcset ) . '" sizes="' . esc_attr( $sizes ) . '"$1', $tag, 1 );
+        return $tag;
+    }, $content );
+}
+
+/**
  * Render the Performance Optimizer admin page
  */
 function ccm_tools_render_perf_page() {
@@ -1733,6 +1964,84 @@ body { margin: 0; }
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-prefetch-on-hover" <?php checked( ! empty( $settings['prefetch_on_hover'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Inject Image Dimensions (CLS) -->
+                <div class="ccm-setting-row" style="border-top: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Inject Image Dimensions', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds missing <code>width</code> and <code>height</code> attributes to local images in post content. Prevents Cumulative Layout Shift (CLS) by reserving the correct space before images load.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-success);">✓ <?php _e('Only processes images from the WordPress media library. Images that already have both attributes are not modified.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-inject-image-dimensions" <?php checked( ! empty( $settings['inject_image_dimensions'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Inject Responsive srcset -->
+                <div class="ccm-setting-row" style="border-top: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Inject Responsive srcset', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds missing <code>srcset</code> and <code>sizes</code> attributes to local images so the browser downloads the right size for each screen. Reduces bandwidth on mobile devices.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">ℹ <?php _e('WordPress already adds srcset to editor-inserted images. This covers images output by page builders and theme templates that bypass WordPress image functions.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-inject-srcset" <?php checked( ! empty( $settings['inject_srcset'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Script & Style Inlining -->
+            <div class="ccm-card" id="script-style-inlining">
+                <h2><?php _e('Script & Style Inlining', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Inline tiny local scripts and stylesheets directly into the page HTML, eliminating the HTTP round-trip overhead for each small file.', 'ccm-tools'); ?></p>
+
+                <!-- Inline Threshold -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: center; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Inline Threshold', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Files smaller than this size will be inlined. Files at or above this size are kept as separate requests. Default: 2 KB.', 'ccm-tools'); ?></p>
+                        </div>
+                        <input type="number" id="perf-inline-threshold-kb" class="ccm-input" min="1" max="50" step="1" value="<?php echo esc_attr( max( 1, intval( $settings['inline_threshold_kb'] ) ) ); ?>" style="width: 80px;">
+                        <span class="ccm-text-muted">KB</span>
+                    </div>
+                </div>
+
+                <!-- Inline Small Scripts -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Inline Small Scripts', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Replaces small local <code>&lt;script src="…"&gt;</code> tags with their inline content. Removes the HTTP request overhead for tiny scripts.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-warning);">⚠ <?php _e('Only local scripts are affected. External CDN scripts are never inlined. Test thoroughly — deferred/async scripts become synchronous when inlined.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-inline-small-scripts" <?php checked( ! empty( $settings['inline_small_scripts'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Inline Small Styles -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Inline Small Styles', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Replaces small local <code>&lt;link rel="stylesheet"&gt;</code> tags with inline <code>&lt;style&gt;</code> blocks. Removes the render-blocking HTTP request for tiny stylesheets.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">ℹ <?php _e('Only local stylesheets are affected. External stylesheets (Google Fonts, CDNs) are never inlined.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-inline-small-styles" <?php checked( ! empty( $settings['inline_small_styles'] ) ); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </div>
