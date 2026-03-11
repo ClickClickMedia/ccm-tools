@@ -1,6 +1,6 @@
 # Performance Audit TODO — AI Reference Doc
 > Auto-updated after each version. Restart-safe: agent can read this file to resume work.
-> Last updated: v7.27.0 released ✅
+> Last updated: v7.30.0 released ✅
 
 ---
 
@@ -14,8 +14,8 @@
 | v7.26.0 | #7, #8, #9, #11 | ✅ Released |
 | v7.27.0 | #13, #16, #17 | ✅ Released |
 | v7.28.0 | #18, #19, #20, #21 | ✅ Released |
-| v7.29.0 | #22, #23, #25 | ⬜ Pending |
-| v7.30.0 | #27, #28 | ⬜ Pending |
+| v7.29.0 | #22, #25 (#23 skipped — duplicate of remove_query_strings) | ✅ Released |
+| v7.30.0 | #27, #28 | ✅ Released |
 
 **Permanently skipped:** #2 (ES module type="module"), #3 (modulepreload) — unsafe for arbitrary WP scripts.
 
@@ -138,9 +138,9 @@ Setting: `self_host_google_fonts`
 
 ---
 
-## ⬜ v7.29.0 — WP Cleanup & Miscellaneous
+## ✅ v7.29.0 — WP Cleanup & Miscellaneous (Released)
 
-### ⬜ #22 — Optimize WordPress Cron
+### ✅ #22 — Optimize WordPress Cron
 **Setting key:** `disable_wp_cron` (boolean), `cron_interval` (select: 5/10/30/60 min)
 **Type:** toggle + select
 **Implementation:** When enabled, defines `DISABLE_WP_CRON` to `true` in a way that can be set from the plugin (by writing to wp-config.php similar to Redis constants). Also shows instructions for setting up a real server cron. Alternatively: `add_filter('cron_schedules', ...)` to reduce check frequency.
@@ -148,15 +148,10 @@ Setting: `self_host_google_fonts`
 **Impact:** Eliminates cron overhead (~50ms) on every page request. Real cron is more reliable.
 **Safety:** Medium. Cron tasks stop running if server cron isn't configured. Clear warning required.
 
-### ⬜ #23 — Remove WordPress Version from Scripts & Styles
-**Setting key:** `remove_asset_versions`
-**Type:** boolean toggle
-**Implementation:** Hook `style_loader_src` and `script_loader_src` filters — remove the `?ver=X.Y.Z` query string from all WordPress-generated asset URLs. Complements `remove_query_strings` but specifically targets the WP version number.
-**Note:** Check if this overlaps with existing `remove_query_strings`. If `remove_query_strings` already handles this fully, merge UI and skip separate setting.
-**Impact:** CDNs and proxies cache `style.css?ver=6.4.2` and `style.css?ver=6.4.3` as separate files. Removing version = better CDN cache hit ratio. Also removes a fingerprinting vector.
-**Safety:** Very safe. Browser and CDN caches are still populated by URL.
+### ~~#23 — Remove WordPress Version from Scripts & Styles~~ — SKIPPED (duplicate)
+**Reason:** Confirmed duplicate of existing `remove_query_strings` setting which already removes `?ver=` via `remove_query_arg('ver', $src)` on `style_loader_src` / `script_loader_src`. No separate setting needed. AI hub prompts corrected to remove the erroneous `remove_asset_versions` reference.
 
-### ⬜ #25 — Disable Author Archive Pages
+### ✅ #25 — Disable Author Archive Pages
 **Setting key:** `disable_author_archives`
 **Type:** boolean toggle
 **Implementation:** `add_action('template_redirect', function() { if (is_author()) { wp_redirect(home_url(), 301); exit; } });`
@@ -165,16 +160,16 @@ Setting: `self_host_google_fonts`
 
 ---
 
-## ⬜ v7.30.0 — INP / Interaction Optimizations
+## ✅ v7.30.0 — INP / Interaction Optimizations (Released)
 
-### ⬜ #27 — Passive Event Listeners
+### ✅ #27 — Passive Event Listeners
 **Setting key:** `passive_event_listeners`
 **Type:** boolean toggle
 **Implementation:** Inject a small inline script in `wp_head` that overrides `addEventListener` globally to add `{ passive: true }` for scroll, wheel, touchstart, touchmove events — unless the handler calls `preventDefault()`. Uses the standard overriding pattern.
 **Impact:** Fixes "Does not use passive listeners to improve scrolling performance" PageSpeed audit. Improves scroll smoothness and INP score.
 **Safety:** Medium. Some plugins rely on non-passive scroll listeners for parallax/sticky effects. These may break. Add option to exclude specific scripts.
 
-### ⬜ #28 — Reduce DOM Size
+### ✅ #28 — Reduce DOM Size
 **Setting key:** `warn_dom_size` (info-only, no toggle)
 **Type:** Informational panel showing current DOM node count (measured via async AJAX)
 **Implementation:** New card in the Performance Optimizer page showing DOM statistics: total nodes, deepest nesting level, largest subtree. Fetches stats via a PHP function that parses the frontend HTML. Not a toggle — provides actionable guidance only (PageSpeed Insights recommendation: keep DOM < 1500 nodes).

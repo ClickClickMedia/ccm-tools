@@ -108,6 +108,9 @@ function ccm_tools_perf_get_settings() {
         'disable_wp_cron'         => false,
         'cron_interval'           => 60,
         'disable_author_archives' => false,
+        // INP / Interaction Optimizations (v7.30.0)
+        'passive_event_listeners' => false,
+        'warn_dom_size'           => false,
     );
 
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -418,6 +421,11 @@ function ccm_tools_perf_init() {
     // Disable author archive pages (v7.29.0)
     if (!empty($settings['disable_author_archives'])) {
         add_action('template_redirect', 'ccm_tools_perf_disable_author_archives');
+    }
+
+    // Passive event listeners (v7.30.0)
+    if (!empty($settings['passive_event_listeners'])) {
+        add_action('wp_head', 'ccm_tools_perf_passive_event_listeners', 1);
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -2078,6 +2086,33 @@ function ccm_tools_perf_disable_author_archives() {
 }
 
 /**
+ * Force passive event listeners for scroll/wheel/touch on the frontend.
+ * Fixes PageSpeed "Does not use passive listeners to improve scrolling performance" audit.
+ * ⚠ May conflict with parallax or scroll-hijack plugins — test after enabling.
+ */
+function ccm_tools_perf_passive_event_listeners() {
+    ?>
+    <script>
+    (function(){
+        if (typeof EventTarget !== 'undefined' && EventTarget.prototype.addEventListener) {
+            var orig = EventTarget.prototype.addEventListener;
+            EventTarget.prototype.addEventListener = function(type, fn, opts) {
+                if (['scroll','wheel','touchstart','touchmove'].indexOf(type) !== -1) {
+                    if (typeof opts === 'object' && opts !== null) {
+                        opts.passive = (opts.passive !== false);
+                    } else {
+                        opts = {passive: true, capture: opts === true};
+                    }
+                }
+                return orig.call(this, type, fn, opts);
+            };
+        }
+    })();
+    </script>
+    <?php
+}
+
+/**
  * Render the Performance Optimizer admin page
  */
 function ccm_tools_render_perf_page() {
@@ -3052,6 +3087,34 @@ body { margin: 0; }
                     </div>
                     <label class="ccm-toggle">
                         <input type="checkbox" id="perf-disable-author-archives" <?php checked(!empty($settings['disable_author_archives'])); ?>>
+                        <span class="ccm-toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- INP / Interaction Optimizations (v7.30.0) -->
+            <div class="ccm-card">
+                <h2><?php _e('INP &amp; Interaction Optimizations', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Improve Interaction to Next Paint (INP) and scrolling performance scores.', 'ccm-tools'); ?></p>
+
+                <div class="ccm-setting-row">
+                    <div style="flex: 1;">
+                        <strong><?php _e('Passive Event Listeners', 'ccm-tools'); ?></strong>
+                        <p class="ccm-text-muted"><?php _e('Overrides <code>addEventListener</code> to force <code>{passive: true}</code> for <code>scroll</code>, <code>wheel</code>, <code>touchstart</code>, and <code>touchmove</code> events. Fixes the PageSpeed \'Does not use passive listeners to improve scrolling performance\' audit. <strong>⚠ Test carefully</strong> — may conflict with parallax scrolling, scroll-hijack animations, or sticky-nav plugins that call <code>e.preventDefault()</code> on these events.', 'ccm-tools'); ?></p>
+                    </div>
+                    <label class="ccm-toggle">
+                        <input type="checkbox" id="perf-passive-event-listeners" <?php checked(!empty($settings['passive_event_listeners'])); ?>>
+                        <span class="ccm-toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="ccm-setting-row" style="margin-top: var(--ccm-space-md);">
+                    <div style="flex: 1;">
+                        <strong><?php _e('DOM Size Warning', 'ccm-tools'); ?></strong>
+                        <p class="ccm-text-muted"><?php _e('When enabled, the AI optimizer will flag excessive DOM size (over 1,500 nodes) in its analysis and additional notes. Oversized DOMs increase memory usage, slow style recalculations, and degrade INP. No frontend changes are made — this is an informational flag only.', 'ccm-tools'); ?></p>
+                    </div>
+                    <label class="ccm-toggle">
+                        <input type="checkbox" id="perf-warn-dom-size" <?php checked(!empty($settings['warn_dom_size'])); ?>>
                         <span class="ccm-toggle-slider"></span>
                     </label>
                 </div>

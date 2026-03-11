@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.29.0
+ * Version: 7.30.0
  */
 
 (function() {
@@ -2793,6 +2793,9 @@
                 disable_wp_cron: $('#perf-disable-wp-cron')?.checked ? '1' : '',
                 cron_interval: parseInt($('#perf-cron-interval')?.value) || 60,
                 disable_author_archives: $('#perf-disable-author-archives')?.checked ? '1' : '',
+                // INP / Interaction Optimizations (v7.30.0)
+                passive_event_listeners: $('#perf-passive-event-listeners')?.checked ? '1' : '',
+                warn_dom_size: $('#perf-warn-dom-size')?.checked ? '1' : '',,
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -4062,6 +4065,7 @@
         'delay_third_party', 'delay_third_party_domains',
         'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate',
         'disable_wp_cron', 'cron_interval', 'disable_author_archives',
+        'passive_event_listeners', 'warn_dom_size',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4635,6 +4639,9 @@
             disable_wp_cron: 'Throttle WP Cron',
             cron_interval: 'Cron Check Interval',
             disable_author_archives: 'Disable Author Archives',
+            // v7.30.0
+            passive_event_listeners: 'Passive Event Listeners',
+            warn_dom_size: 'DOM Size Warning',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }

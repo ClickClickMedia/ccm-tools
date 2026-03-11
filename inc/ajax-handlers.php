@@ -1992,6 +1992,9 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'disable_wp_cron'         => !empty($_POST['disable_wp_cron']),
         'cron_interval'           => absint($_POST['cron_interval'] ?? 60) ?: 60,
         'disable_author_archives' => !empty($_POST['disable_author_archives']),
+        // INP / Interaction Optimizations (v7.30.0)
+        'passive_event_listeners' => !empty($_POST['passive_event_listeners']),
+        'warn_dom_size'           => !empty($_POST['warn_dom_size']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2102,7 +2105,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'minify_html', 'preload_key_requests', 'disable_wp_embed', 'self_host_google_fonts',
         'preload_css_bg_image', 'priority_hints_above_fold', 'delay_third_party',
         'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate',
-        'disable_wp_cron', 'disable_author_archives'
+        'disable_wp_cron', 'disable_author_archives',
+        'passive_event_listeners', 'warn_dom_size'
     );
     
     foreach ($boolean_keys as $key) {

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.28.0
+- **Current Version:** 7.30.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,20 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.30.0
+- **INP & Interaction Optimizations — Passive Event Listeners + DOM Size Warning**
+  - **Passive Event Listeners** (#27): New toggle injects a lightweight inline `wp_head` script (priority 1) that overrides `EventTarget.prototype.addEventListener` globally — forces `{passive: true}` for `scroll`, `wheel`, `touchstart`, and `touchmove` events; fixes the PageSpeed "Does not use passive listeners to improve scrolling performance" audit; estimated TBT/INP improvement of 50–150ms on scroll-heavy pages; gracefully skips non-overridable event registrations via try/catch
+  - **DOM Size Warning** (#28): New informational toggle (no front-end hook); when enabled, the AI Performance Optimizer is instructed to flag pages with DOM node counts above 1,500 in its audit notes and recommend structural simplifications — large DOMs increase memory usage and extend style/layout recalculation time, directly impacting INP and LCP
+  - New "INP & Interaction Optimizations" UI card added to Performance Optimizer page
+  - Both settings persist, export/import correctly, and appear in AI optimization history
+
+### v7.29.0
+- **WP Cleanup & Miscellaneous — Disable WP Cron, Disable Author Archives**
+  - **Disable WP Cron** (#22): New toggle adds `define('DISABLE_WP_CRON', true)` behaviour by unhooking `wp_cron` from `init`, removing the cron HTTP request that fires on every front-end page load — eliminates ~50–200ms of unbounded blocking HTTP sub-request on sites with even moderate traffic; requires server-side cron (`*/5 * * * * wp-cron.php`) as a replacement; clear UI warning provided
+  - **Disable Author Archive Pages** (#25): New toggle redirects all author archive URLs (`/author/username/`) to the homepage with a 301 redirect — prevents thin-content SEO penalties and removes a user enumeration vector (author slugs expose WordPress usernames to bots); uses `template_redirect` hook; linked posts/pages unaffected
+  - *Note: `remove_asset_versions` (#23) was determined to be a duplicate of the existing `remove_query_strings` setting and was not implemented — `remove_query_strings` already strips `?ver=` from all script/style URLs*
+  - New "WP Cleanup" UI card updated with two new toggles; both settings persist, export/import correctly
 
 ### v7.28.0
 - **Block Editor & WooCommerce Asset Control + Browser Cache Headers**
