@@ -13,7 +13,7 @@
 | v7.25.0 | #1, #4, #6 | ✅ Released |
 | v7.26.0 | #7, #8, #9, #11 | ✅ Released |
 | v7.27.0 | #13, #16, #17 | ✅ Released |
-| v7.28.0 | #18, #19, #20, #21 | ⬜ Pending |
+| v7.28.0 | #18, #19, #20, #21 | ✅ Released |
 | v7.29.0 | #22, #23, #25 | ⬜ Pending |
 | v7.30.0 | #27, #28 | ⬜ Pending |
 
@@ -104,9 +104,9 @@ Setting: `self_host_google_fonts`
 
 ---
 
-## ⬜ v7.28.0 — More Third-party & Caching (NEXT)
+## ✅ v7.28.0 — More Third-party & Caching
 
-### ⬜ #18 — Disable Gutenberg Block Editor Assets on Frontend
+### ✅ #18 — Disable Gutenberg Block Editor Assets on Frontend
 **Setting key:** `disable_gutenberg_frontend`
 **Type:** boolean toggle
 **Implementation:** `add_action('wp_enqueue_scripts', function() { wp_dequeue_style('wp-block-library'); wp_dequeue_style('wp-block-library-theme'); wp_dequeue_style('global-styles'); wp_dequeue_style('classic-theme-styles'); }, 100);`
@@ -114,14 +114,14 @@ Setting: `self_host_google_fonts`
 **Impact:** ~36 KB stylesheet removed. Strong PageSpeed "Eliminate render-blocking resources" win.
 **Safety:** Medium. Sites using Gutenberg blocks need this OFF. Add clear warning in UI.
 
-### ⬜ #19 — WooCommerce Scripts Only on Shop Pages
+### ✅ #19 — WooCommerce Scripts Only on Shop Pages
 **Setting key:** `woo_scripts_shop_only`
 **Type:** boolean toggle  
 **Implementation:** `add_action('wp_enqueue_scripts', function() { if (is_woocommerce() || is_cart() || is_checkout() || is_account_page()) return; wp_dequeue_script('wc-cart-fragments'); wp_dequeue_script('woocommerce'); wp_dequeue_script('wc-add-to-cart'); wp_dequeue_style('woocommerce-general'); ... }, 99);` — only shows when WooCommerce is active.
 **Impact:** Removes ~100–200 KB of scripts/styles from all non-shop pages. Major win for content/blog heavy WooCommerce sites.
 **Safety:** Medium. Test carefully with page builders that embed WC shortcodes on non-shop pages.
 
-### ⬜ #20 — Browser Cache Policy via Meta (No-htaccess Alternative)
+### ✅ #20 — Browser Cache Policy via Meta (No-htaccess Alternative)
 **Setting key:** `cache_control_meta`
 **Type:** boolean toggle (only relevant when .htaccess is not used/writable)
 **Implementation:** `add_action('send_headers', function() { header('Cache-Control: public, max-age=31536000, immutable'); });` for static assets OR via `wp_headers` filter. Primarily useful on Nginx/LiteSpeed where .htaccess cache rules don't apply.
@@ -129,7 +129,7 @@ Setting: `self_host_google_fonts`
 **Impact:** Fixes "Serve static assets with an efficient cache policy" warning on non-Apache hosts.
 **Safety:** Low when scoped to static files only.
 
-### ⬜ #21 — Stale-While-Revalidate Cache Header
+### ✅ #21 — Stale-While-Revalidate Cache Header
 **Setting key:** `stale_while_revalidate`
 **Type:** boolean toggle
 **Implementation:** Add `stale-while-revalidate=86400` to the `Cache-Control` header for HTML pages via `send_headers` action. Allows browsers to serve stale cached pages while fetching fresh in background.

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.27.0
+- **Current Version:** 7.28.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,15 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.28.0
+- **Block Editor & WooCommerce Asset Control + Browser Cache Headers**
+  - **Disable Gutenberg Frontend Assets**: New toggle dequeues `wp-block-library`, `wp-block-library-theme`, `global-styles`, and `classic-theme-styles` on the frontend — saves ~35-50 KB for sites not using Gutenberg blocks on the public site; clear ⚠ warning in UI advising to test before enabling
+  - **WooCommerce Assets on Shop Pages Only**: New toggle dequeues WooCommerce scripts and styles (`wc-cart-fragments`, `woocommerce`, `wc-add-to-cart`, `wc-single-product`, `woocommerce-general`, `woocommerce-layout`, `woocommerce-smallscreen`) on non-shop/cart/checkout/account pages — eliminates 100–200 KB of WC overhead from blog posts, landing pages, and other non-commerce pages; only shown in UI when WooCommerce is active
+  - **Cache-Control Header**: New toggle sends `Cache-Control: public, max-age=3600` HTTP header on frontend pages for logged-out users via `send_headers` action — instructs browsers and CDNs to cache HTML pages for 1 hour; complement to .htaccess caching that works on Nginx/LiteSpeed hosts; skips admin pages and logged-in users
+  - **Stale-While-Revalidate**: New sub-toggle appends `stale-while-revalidate=86400` to the Cache-Control header — allows browsers to serve stale cached content immediately while fetching a fresh version in the background (24-hour revalidation window); reduces perceived TTFB for repeat visitors; gracefully ignored by unsupported browsers
+  - New "Block Editor & WooCommerce Assets" UI card (with WooCommerce section conditionally shown via `<?php if (class_exists('WooCommerce')): ?>`) and "Browser Cache Headers" UI card added to Performance Optimizer page
+  - All 4 settings persist, export/import correctly, and appear in AI optimization history
 
 ### v7.27.0
 - **Resource Hints & Third-party Delay — Preload LCP CSS BG Image, Priority Hints, Delay Third-party Scripts**
