@@ -1,6 +1,6 @@
 # Performance Audit TODO — AI Reference Doc
 > Auto-updated after each version. Restart-safe: agent can read this file to resume work.
-> Last updated: v7.26.0 released ✅
+> Last updated: v7.27.0 released ✅
 
 ---
 
@@ -12,7 +12,7 @@
 | v7.24.0 | #12, #24, #26 + JS bugfix | ✅ Released |
 | v7.25.0 | #1, #4, #6 | ✅ Released |
 | v7.26.0 | #7, #8, #9, #11 | ✅ Released |
-| v7.27.0 | #13, #16, #17 | ⬜ Next |
+| v7.27.0 | #13, #16, #17 | ✅ Released |
 | v7.28.0 | #18, #19, #20, #21 | ⬜ Pending |
 | v7.29.0 | #22, #23, #25 | ⬜ Pending |
 | v7.30.0 | #27, #28 | ⬜ Pending |
@@ -79,23 +79,23 @@ Setting: `self_host_google_fonts`
 
 ---
 
-## ⬜ v7.27.0 — Resource Hints & Third-party (NEXT)
+## ✅ v7.27.0 — Resource Hints & Third-party (Released)
 
-### #13 — Preload LCP Background Image
+### ✅ #13 — Preload LCP Background Image
 **Setting key:** `preload_css_bg_image` (boolean), `preload_css_bg_url` (string URL)
 **Type:** toggle + URL input
 **Implementation:** Output `<link rel="preload" as="image" href="..." fetchpriority="high">` in `wp_head` priority 1. Targets background-image LCP elements that `lcp_preload` misses (which only handles `<img>` tags).
 **Impact:** Fixes "Largest Contentful Paint image was not preloaded" for hero sections using CSS background-image instead of `<img>`. Can improve LCP by 200–1000ms.
 **Safety:** Low. Only affects pages that use this. No side effects if URL is wrong (browser just ignores it).
 
-### ⬜ #16 — Priority Hints on Multiple Above-Fold Images
+### ✅ #16 — Priority Hints on Multiple Above-Fold Images
 **Setting key:** `priority_hints_above_fold` (boolean), `priority_hints_selectors` (string, CSS selectors)
 **Type:** toggle + textarea for CSS selectors
 **Implementation:** Output buffer — scan HTML for `<img>` tags matching configured selectors OR first N images in hero/banner containers; add `fetchpriority="high"` and remove `loading="lazy"`. Different from `lcp_fetchpriority` which only handles the very first image.
 **Impact:** Above-fold images in carousels, grid thumbnails, product images — each gets priority hints. Improves FID/LCP for image-heavy above-fold layouts.
 **Safety:** Low. Only adds an attribute; doesn't change loading behaviour for unsupported browsers.
 
-### ⬜ #17 — Delay Third-party Scripts Until User Interaction
+### ✅ #17 — Delay Third-party Scripts Until User Interaction
 **Setting key:** `delay_third_party` (boolean), `delay_third_party_domains` (array)
 **Type:** toggle + textarea (domains to delay; defaults: analytics, advertising networks)
 **Implementation:** Output buffer — wrap matching `<script src="...">` external tags in the same "delay until interaction" logic used by `delay_js`, but scoped by domain instead of handle. Default domains: `googletagmanager.com`, `google-analytics.com`, `facebook.net`, `hotjar.com`, `intercom.io`, `crisp.chat`, `tawk.to`.
@@ -104,7 +104,7 @@ Setting: `self_host_google_fonts`
 
 ---
 
-## ⬜ v7.28.0 — More Third-party & Caching
+## ⬜ v7.28.0 — More Third-party & Caching (NEXT)
 
 ### ⬜ #18 — Disable Gutenberg Block Editor Assets on Frontend
 **Setting key:** `disable_gutenberg_frontend`

@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.26.0
+- **Current Version:** 7.27.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,14 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.27.0
+- **Resource Hints & Third-party Delay — Preload LCP CSS BG Image, Priority Hints, Delay Third-party Scripts**
+  - **Preload LCP CSS Background Image**: New toggle + URL field that emits `<link rel="preload" as="image" fetchpriority="high">` in `<head>` (priority 1) for a CSS `background-image` that is the LCP element — critical for hero/banner sections set via CSS rather than `<img>` tags; fixes "LCP image was not preloaded" for CSS backgrounds; 200–1000ms LCP improvement
+  - **Priority Hints (Above-fold Images)**: New toggle + optional CSS-selector textarea; output buffer scans `<img>` tags matching configured selectors (or first 3 images when no selectors given); adds `fetchpriority="high"` and removes `loading="lazy"` — tells the browser to fetch above-fold images at highest network priority; improves FID/LCP for carousels and image-heavy above-fold layouts
+  - **Delay Third-party Scripts**: New toggle + domain list textarea; output buffer rewrites matching `<script src>` tags to `type="text/plain" data-ccm-delay-src` and injects a lightweight inline runner that restores and executes the scripts on first user interaction (scroll/click/touch/keydown) or a 5-second fallback timeout — eliminates third-party analytics/chat/tracking from TBT/TTI calculations; can reduce TBT by 200–2000ms
+  - New "Resource Hints & Third-party Delay" UI card on Performance Optimizer page with 3 setting rows (toggle + URL input, toggle + selector textarea, toggle + domain textarea)
+  - All 6 settings persist, export/import correctly, and appear in AI optimization history
 
 ### v7.26.0
 - **HTML & Font Optimisations — Minify HTML, Preload Key Requests, Remove wp-embed, Self-host Google Fonts**
