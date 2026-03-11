@@ -4946,6 +4946,9 @@
             'lcp_preload_url': 'lcp_preload',
             'heartbeat_interval': 'reduce_heartbeat',
             'speculation_eagerness': 'speculation_rules',
+            'priority_hints_selectors': 'priority_hints_above_fold',
+            'preload_key_urls': 'preload_key_requests',
+            'delay_third_party_domains': 'delay_third_party',
         };
         const groupMap = new Map();
         for (const fix of fixes) {
@@ -5328,10 +5331,19 @@
                 const autoFixes = aiRenderFixSummary(analysis.recommendations || [], analysis.manual_actions || []);
                 const selectedFixes = autoFixes || [];
 
-                if (!selectedFixes.length) {
-                    aiLog('No auto-fixable recommendations found — only manual fixes.', 'warn');
+                // Merge exclude_suggestions (arrays of handles) into fix list
+                const excludeSuggFixes = Object.entries(analysis.exclude_suggestions || {})
+                    .filter(([k, v]) => Array.isArray(v) && v.length > 0 && PERF_SETTING_KEYS.has(k))
+                    .map(([k, v]) => ({ setting_key: k, recommended_value: v, reason: 'AI exclude suggestion', estimated_impact: 'low', risk: 'none' }));
+                const allFixes = [...selectedFixes, ...excludeSuggFixes];
+
+                if (!allFixes.length) {
+                    aiLog('No auto-fixable recommendations found - only manual fixes.', 'warn');
                     showNotification('No auto-fixable recommendations found.', 'info');
                     break;
+                }
+                if (excludeSuggFixes.length) {
+                    aiLog(`Merging <strong>${excludeSuggFixes.length}</strong> AI exclude suggestion(s) into fix list...`, 'info');
                 }
 
                 // ── Incremental Per-Setting Apply (eliminates batch poisoning) ──
@@ -5340,13 +5352,13 @@
                 // Settings that hurt scores are reverted immediately and tracked as
                 // individually-failed — only surviving settings proceed to final validation.
                 const SINGLE_SETTING_TOLERANCE = 5; // pts drop allowed per individual setting (PSI variance is ~3)
-                const settingGroups = groupRelatedFixes(selectedFixes);
+                const settingGroups = groupRelatedFixes(allFixes);
                 const keptChanges = [];
                 const revertedSettings = [];
                 let runningMobilePerf = snapshotMobilePerf;
 
                 aiUpdateStep('apply', 'active', `Testing settings${iterLabel}…`);
-                aiLog(`Applying <strong>${selectedFixes.length}</strong> settings in <strong>${settingGroups.length}</strong> groups — testing each individually${iterLabel}…`, 'step');
+                aiLog(`Applying <strong>${allFixes.length}</strong> settings in <strong>${settingGroups.length}</strong> groups — testing each individually${iterLabel}…`, 'step');
 
                 for (let gi = 0; gi < settingGroups.length; gi++) {
                     const group = settingGroups[gi];
@@ -5965,6 +5977,14 @@
             const errMsg = err.message || 'Optimization failed.';
             aiLog(`Error: ${errMsg}`, 'error');
             showNotification(errMsg, 'error');
+            // Best-effort rollback of any changes applied before the error
+            if (allChanges.length > 0 && !wasRolledBack) {
+                aiLog('Attempting rollback due to unexpected error...', 'warn');
+                try {
+                    await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 15000 });
+                    aiLog('Settings rolled back to snapshot.', 'info');
+                } catch (_) { /* ignore */ }
+            }
             // Mark current active step as error with details, remaining as skipped
             AI_STEPS.forEach(s => {
                 const el = $(`#ai-step-${s.id}`);

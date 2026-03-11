@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * AI Performance Hub Integration
  * 
@@ -473,16 +473,19 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
         'preconnect_urls'    => 'preconnect',
         'dns_prefetch_urls'  => 'dns_prefetch',
         'lcp_preload_url'    => 'lcp_preload',
+        'preload_key_urls'           => 'preload_key_requests',
+        'delay_third_party_domains'  => 'delay_third_party',
+        'priority_hints_selectors'   => 'priority_hints_above_fold',
     ];
 
     // Keys that contain CSS code — must NOT use sanitize_text_field (it strips tags/newlines)
-    $css_keys = ['critical_css_code'];
+    $css_keys = ['critical_css_code', 'priority_hints_selectors'];
 
     // Keys that contain URLs — sanitize individually as URLs
-    $url_array_keys = ['preconnect_urls', 'dns_prefetch_urls'];
+    $url_array_keys = ['preconnect_urls', 'dns_prefetch_urls', 'preload_key_urls'];
 
     // Keys that contain string arrays (handles, URL fragments) — sanitize individually
-    $string_array_keys = ['defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes'];
+    $string_array_keys = ['defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes', 'delay_third_party_domains'];
 
     // Keys that contain a single URL
     $url_keys = ['lcp_preload_url'];
@@ -749,7 +752,7 @@ function ccm_tools_ajax_ai_flush_caches(): void {
     // 1. Flush Redis object cache (CCM drop-in, if installed)
     if (function_exists('ccm_tools_redis_flush_cache')) {
         $drop_in = WP_CONTENT_DIR . '/object-cache.php';
-        if (file_exists($drop_in) && str_contains((string) @file_get_contents($drop_in), 'CCM_Redis_Object_Cache')) {
+        if (file_exists($drop_in) && strpos((string) @file_get_contents($drop_in), 'CCM_Redis_Object_Cache') !== false) {
             $r = ccm_tools_redis_flush_cache(true);
             if (!empty($r['success'])) {
                 $flushed[] = 'Redis (' . (int) ($r['keys_deleted'] ?? 0) . ' keys)';
@@ -1265,6 +1268,9 @@ function ccm_tools_ajax_ai_preflight(): void {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
 
+    if (!ccm_tools_is_premium()) {
+        wp_send_json_error(['message' => 'Premium subscription required.']);
+    }
     wp_send_json_success(ccm_tools_get_optimization_status());
 }
 
@@ -1278,6 +1284,9 @@ function ccm_tools_ajax_ai_enable_tool(): void {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
 
+    if (!ccm_tools_is_premium()) {
+        wp_send_json_error(['message' => 'Premium subscription required.']);
+    }
     $tool = sanitize_text_field($_POST['tool'] ?? '');
     $result = ['tool' => $tool, 'success' => false, 'message' => 'Unknown tool'];
 
