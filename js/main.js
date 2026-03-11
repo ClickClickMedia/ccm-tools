@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.25.0
+ * Version: 7.26.0
  */
 
 (function() {
@@ -2771,6 +2771,12 @@
                 // Image attribute injection (v7.25.0)
                 inject_image_dimensions: $('#perf-inject-image-dimensions')?.checked ? '1' : '',
                 inject_srcset: $('#perf-inject-srcset')?.checked ? '1' : '',
+                // HTML & font optimizations (v7.26.0)
+                minify_html: $('#perf-minify-html')?.checked ? '1' : '',
+                preload_key_requests: $('#perf-preload-key-requests')?.checked ? '1' : '',
+                preload_key_urls: $('#perf-preload-key-urls')?.value || '',
+                disable_wp_embed: $('#perf-disable-wp-embed')?.checked ? '1' : '',
+                self_host_google_fonts: $('#perf-self-host-google-fonts')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -4035,6 +4041,7 @@
         'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
         'inline_small_scripts', 'inline_small_styles', 'inline_threshold_kb',
         'inject_image_dimensions', 'inject_srcset',
+        'minify_html', 'preload_key_requests', 'preload_key_urls', 'disable_wp_embed', 'self_host_google_fonts',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4589,6 +4596,11 @@
             inline_threshold_kb: 'Inline Threshold (KB)',
             inject_image_dimensions: 'Inject Image Dimensions',
             inject_srcset: 'Inject Responsive srcset',
+            minify_html: 'Minify HTML Output',
+            preload_key_requests: 'Preload Key Requests',
+            preload_key_urls: 'Preload Key URLs',
+            disable_wp_embed: 'Disable wp-embed Script',
+            self_host_google_fonts: 'Self-host Google Fonts',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }

@@ -1970,6 +1970,12 @@ function ccm_tools_ajax_save_perf_settings(): void {
         // Image attribute injection (v7.25.0)
         'inject_image_dimensions' => !empty($_POST['inject_image_dimensions']),
         'inject_srcset'           => !empty($_POST['inject_srcset']),
+        // HTML & font optimizations (v7.26.0)
+        'minify_html'            => !empty($_POST['minify_html']),
+        'preload_key_requests'   => !empty($_POST['preload_key_requests']),
+        'preload_key_urls'       => ccm_tools_perf_sanitize_urls($_POST['preload_key_urls'] ?? ''),
+        'disable_wp_embed'       => !empty($_POST['disable_wp_embed']),
+        'self_host_google_fonts' => !empty($_POST['self_host_google_fonts']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2076,7 +2082,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'video_lazy_load', 'video_preload_none',
         'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
         'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
-        'inline_small_scripts', 'inline_small_styles', 'inject_image_dimensions', 'inject_srcset'
+        'inline_small_scripts', 'inline_small_styles', 'inject_image_dimensions', 'inject_srcset',
+        'minify_html', 'preload_key_requests', 'disable_wp_embed', 'self_host_google_fonts'
     );
     
     foreach ($boolean_keys as $key) {
@@ -2084,7 +2091,7 @@ function ccm_tools_ajax_import_perf_settings(): void {
     }
     
     // Array settings (comma-separated lists)
-    $array_keys = array('defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes');
+    $array_keys = array('defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes', 'preload_key_urls');
     foreach ($array_keys as $key) {
         if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
             $sanitized_settings[$key] = array_map('sanitize_key', $imported_settings[$key]);

@@ -86,6 +86,12 @@ function ccm_tools_perf_get_settings() {
         // Image attribute injection for v7.25.0
         'inject_image_dimensions' => false,
         'inject_srcset'           => false,
+        // HTML & font optimizations (v7.26.0)
+        'minify_html'            => false,
+        'preload_key_requests'   => false,
+        'preload_key_urls'       => array(),
+        'disable_wp_embed'       => false,
+        'self_host_google_fonts' => false,
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -340,6 +346,27 @@ function ccm_tools_perf_init() {
     // Inject missing srcset/sizes on local images
     if (!empty($settings['inject_srcset'])) {
         add_filter('the_content', 'ccm_tools_perf_inject_srcset', 21);
+    }
+
+    // Minify HTML output (v7.26.0)
+    if (!empty($settings['minify_html'])) {
+        add_action('template_redirect', 'ccm_tools_perf_minify_html_start', 0);
+    }
+
+    // Preload key requests (v7.26.0)
+    if (!empty($settings['preload_key_requests']) && !empty($settings['preload_key_urls'])) {
+        add_action('wp_head', 'ccm_tools_perf_preload_key_requests', 1);
+    }
+
+    // Disable wp-embed script (v7.26.0) — different from disable_oembed which only removes discovery links
+    if (!empty($settings['disable_wp_embed'])) {
+        add_action('wp_enqueue_scripts', 'ccm_tools_perf_disable_wp_embed', 100);
+        remove_action('wp_head', 'wp_oembed_add_host_js');
+    }
+
+    // Self-host Google Fonts (v7.26.0)
+    if (!empty($settings['self_host_google_fonts'])) {
+        add_filter('style_loader_src', 'ccm_tools_perf_self_host_google_fonts_src', 10, 2);
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -1620,6 +1647,158 @@ function ccm_tools_perf_inject_srcset( $content ) {
 }
 
 /**
+ * Start HTML minification output buffer (v7.26.0)
+ */
+function ccm_tools_perf_minify_html_start() {
+    ob_start( 'ccm_tools_perf_minify_html_callback' );
+}
+
+/**
+ * Minify HTML — strips whitespace/comments; preserves pre, textarea, script, style (v7.26.0)
+ *
+ * @param string $html Raw HTML output.
+ * @return string Minified HTML.
+ */
+function ccm_tools_perf_minify_html_callback( $html ) {
+    $preserve = array();
+    $i        = 0;
+    // Extract pre/textarea/script/style and replace with placeholders
+    $html = preg_replace_callback(
+        '/<(pre|textarea|script|style)[^>]*>.*?<\/\1>/si',
+        function ( $matches ) use ( &$preserve, &$i ) {
+            $key          = '<!--CCM_PRESERVE_' . $i . '-->';
+            $preserve[$i] = $matches[0];
+            $i++;
+            return $key;
+        },
+        $html
+    );
+    // Remove HTML comments (keep IE conditionals <!--[if)
+    $html = preg_replace( '/<!--(?!\[if\s)(?!<!)[^\[>].*?-->/si', '', $html );
+    // Collapse whitespace between tags
+    $html = preg_replace( '/>\s+</', '><', $html );
+    // Strip leading/trailing whitespace per line
+    $html = preg_replace( '/^\s+|\s+$/m', '', $html );
+    // Restore preserved blocks
+    foreach ( $preserve as $idx => $content ) {
+        $html = str_replace( '<!--CCM_PRESERVE_' . $idx . '-->', $content, $html );
+    }
+    return $html;
+}
+
+/**
+ * Output <link rel="preload"> tags for configured key-request URLs (v7.26.0)
+ */
+function ccm_tools_perf_preload_key_requests() {
+    $settings = ccm_tools_perf_get_settings();
+    $urls     = isset( $settings['preload_key_urls'] ) ? (array) $settings['preload_key_urls'] : array();
+    foreach ( $urls as $url ) {
+        $url = esc_url( trim( $url ) );
+        if ( empty( $url ) ) {
+            continue;
+        }
+        $path        = wp_parse_url( $url, PHP_URL_PATH );
+        $ext         = strtolower( pathinfo( $path ?? '', PATHINFO_EXTENSION ) );
+        $as          = 'fetch';
+        $crossorigin = '';
+        if ( in_array( $ext, array( 'woff', 'woff2', 'ttf', 'otf', 'eot' ), true ) ) {
+            $as          = 'font';
+            $crossorigin = ' crossorigin="anonymous"';
+        } elseif ( 'css' === $ext ) {
+            $as = 'style';
+        } elseif ( 'js' === $ext ) {
+            $as = 'script';
+        } elseif ( in_array( $ext, array( 'jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'svg' ), true ) ) {
+            $as = 'image';
+        } elseif ( in_array( $ext, array( 'mp4', 'webm', 'ogg' ), true ) ) {
+            $as = 'video';
+        }
+        echo '<link rel="preload" href="' . $url . '" as="' . esc_attr( $as ) . '"' . $crossorigin . ">\n";
+    }
+}
+
+/**
+ * Deregister the wp-embed script (v7.26.0)
+ */
+function ccm_tools_perf_disable_wp_embed() {
+    wp_deregister_script( 'wp-embed' );
+}
+
+/**
+ * Rewrite Google Fonts stylesheet URLs to locally-hosted copies (v7.26.0)
+ *
+ * @param string $src    Stylesheet src URL.
+ * @param string $handle Stylesheet handle.
+ * @return string        Local URL if downloaded successfully, otherwise original $src.
+ */
+function ccm_tools_perf_self_host_google_fonts_src( $src, $handle ) {
+    if ( strpos( $src, 'fonts.googleapis.com' ) === false ) {
+        return $src;
+    }
+    $local = ccm_tools_perf_fetch_local_google_font( $src );
+    return $local ?: $src;
+}
+
+/**
+ * Download Google Fonts CSS + font files to uploads/ccm-fonts/ and return the local CSS URL.
+ * Cached for 30 days. Returns false on any download failure.
+ *
+ * @param string $fonts_url Original Google Fonts API URL.
+ * @return string|false     Local CSS URL or false.
+ */
+function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
+    $upload_dir     = wp_upload_dir();
+    $fonts_dir      = $upload_dir['basedir'] . '/ccm-fonts';
+    $fonts_url_base = $upload_dir['baseurl'] . '/ccm-fonts';
+    if ( ! file_exists( $fonts_dir ) ) {
+        wp_mkdir_p( $fonts_dir );
+        file_put_contents( $fonts_dir . '/.htaccess', 'Options -Indexes' );
+        file_put_contents( $fonts_dir . '/index.php', '<?php // Silence is golden.' );
+    }
+    $cache_key = md5( $fonts_url );
+    $css_file  = $fonts_dir . '/' . $cache_key . '.css';
+    $css_url   = $fonts_url_base . '/' . $cache_key . '.css';
+    // Return cached CSS if less than 30 days old
+    if ( file_exists( $css_file ) && ( time() - filemtime( $css_file ) ) < 30 * DAY_IN_SECONDS ) {
+        return $css_url;
+    }
+    // Fetch Google Fonts CSS with a modern Chrome UA to receive WOFF2 format
+    $response = wp_remote_get( $fonts_url, array(
+        'timeout' => 10,
+        'headers' => array(
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        ),
+    ) );
+    if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+        return false;
+    }
+    $css_content = wp_remote_retrieve_body( $response );
+    // Download individual font files from fonts.gstatic.com and rewrite to local URLs
+    $css_content = preg_replace_callback(
+        '/url\((["\']?)(\bhttps?:\/\/fonts\.gstatic\.com\/[^)"\' \t]+)\1\)/i',
+        function ( $matches ) use ( $fonts_dir, $fonts_url_base ) {
+            $font_url   = $matches[2];
+            $font_ext   = pathinfo( wp_parse_url( $font_url, PHP_URL_PATH ) ?? '', PATHINFO_EXTENSION );
+            $font_file  = md5( $font_url ) . '.' . $font_ext;
+            $local_path = $fonts_dir . '/' . $font_file;
+            $local_url  = $fonts_url_base . '/' . $font_file;
+            if ( ! file_exists( $local_path ) ) {
+                $font_response = wp_remote_get( $font_url, array( 'timeout' => 15 ) );
+                if ( ! is_wp_error( $font_response ) && 200 === (int) wp_remote_retrieve_response_code( $font_response ) ) {
+                    file_put_contents( $local_path, wp_remote_retrieve_body( $font_response ) );
+                } else {
+                    return $matches[0];
+                }
+            }
+            return 'url(' . $local_url . ')';
+        },
+        $css_content
+    );
+    file_put_contents( $css_file, $css_content );
+    return $css_url;
+}
+
+/**
  * Render the Performance Optimizer admin page
  */
 function ccm_tools_render_perf_page() {
@@ -2042,6 +2221,75 @@ body { margin: 0; }
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-inline-small-styles" <?php checked( ! empty( $settings['inline_small_styles'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HTML & Font Optimisations (v7.26.0) -->
+            <div class="ccm-card" id="html-font-optimisations">
+                <h2><?php _e('HTML &amp; Font Optimisations', 'ccm-tools'); ?></h2>
+
+                <!-- Minify HTML -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Minify HTML Output', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Strips unnecessary whitespace and HTML comments from the page source. Reduces page transfer size.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">&#8505; <?php _e('Pre, textarea, script, and style blocks are preserved intact. IE conditional comments are also kept.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-minify-html" <?php checked( ! empty( $settings['minify_html'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Preload Key Requests -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Preload Key Requests', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds <code>&lt;link rel="preload"&gt;</code> hints to <code>&lt;head&gt;</code> for critical assets (hero images, fonts, key CSS). Tells the browser to fetch them early, reducing LCP and render-blocking time.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">&#8505; <?php _e('The <code>as</code> attribute is detected automatically from the file extension (font, image, style, script).', 'ccm-tools'); ?></p>
+                            <div style="margin-top: var(--ccm-space-sm);">
+                                <label style="display: block; font-weight: 500; margin-bottom: 4px;"><?php _e('URLs to preload (one per line):', 'ccm-tools'); ?></label>
+                                <textarea id="perf-preload-key-urls" rows="4" class="widefat" style="font-family: monospace; font-size: 0.85em;"><?php echo esc_textarea( is_array( $settings['preload_key_urls'] ) ? implode( "\n", $settings['preload_key_urls'] ) : $settings['preload_key_urls'] ); ?></textarea>
+                            </div>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-preload-key-requests" <?php checked( ! empty( $settings['preload_key_requests'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Disable wp-embed -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Remove wp-embed Script', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes <code>wp-embed.min.js</code> (~3 KB) that WordPress loads on every page. This script powers the &ldquo;embed this post&rdquo; feature used by other WordPress sites.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-warning);">&#9888; <?php _e('Disable only if you do not need other sites to embed your posts as rich oEmbed cards.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-wp-embed" <?php checked( ! empty( $settings['disable_wp_embed'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Self-host Google Fonts -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Self-host Google Fonts', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Downloads Google Fonts CSS and font files to <code>uploads/ccm-fonts/</code> and rewrites the stylesheet URLs to serve them locally. Eliminates the third-party DNS lookup and connection to <code>fonts.googleapis.com</code>.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-info);">&#8505; <?php _e('Font files are refreshed every 30 days. Works with any theme or plugin that enqueues Google Fonts via <code>wp_enqueue_style</code>.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-self-host-google-fonts" <?php checked( ! empty( $settings['self_host_google_fonts'] ) ); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </div>
