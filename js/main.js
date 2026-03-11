@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.26.0
+ * Version: 7.27.0
  */
 
 (function() {
@@ -2777,6 +2777,13 @@
                 preload_key_urls: $('#perf-preload-key-urls')?.value || '',
                 disable_wp_embed: $('#perf-disable-wp-embed')?.checked ? '1' : '',
                 self_host_google_fonts: $('#perf-self-host-google-fonts')?.checked ? '1' : '',
+                // Resource hints & third-party delay (v7.27.0)
+                preload_css_bg_image: $('#perf-preload-css-bg-image')?.checked ? '1' : '',
+                preload_css_bg_url: $('#perf-preload-css-bg-url')?.value || '',
+                priority_hints_above_fold: $('#perf-priority-hints-above-fold')?.checked ? '1' : '',
+                priority_hints_selectors: $('#perf-priority-hints-selectors')?.value || '',
+                delay_third_party: $('#perf-delay-third-party')?.checked ? '1' : '',
+                delay_third_party_domains: $('#perf-delay-third-party-domains')?.value || '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -4042,6 +4049,8 @@
         'inline_small_scripts', 'inline_small_styles', 'inline_threshold_kb',
         'inject_image_dimensions', 'inject_srcset',
         'minify_html', 'preload_key_requests', 'preload_key_urls', 'disable_wp_embed', 'self_host_google_fonts',
+        'preload_css_bg_image', 'preload_css_bg_url', 'priority_hints_above_fold', 'priority_hints_selectors',
+        'delay_third_party', 'delay_third_party_domains',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4601,6 +4610,12 @@
             preload_key_urls: 'Preload Key URLs',
             disable_wp_embed: 'Disable wp-embed Script',
             self_host_google_fonts: 'Self-host Google Fonts',
+            preload_css_bg_image: 'Preload LCP CSS Background Image',
+            preload_css_bg_url: 'LCP Background Image URL',
+            priority_hints_above_fold: 'Priority Hints (Above-fold Images)',
+            priority_hints_selectors: 'Priority Hints CSS Selectors',
+            delay_third_party: 'Delay Third-party Scripts',
+            delay_third_party_domains: 'Third-party Domains to Delay',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }

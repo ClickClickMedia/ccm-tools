@@ -1976,6 +1976,13 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'preload_key_urls'       => ccm_tools_perf_sanitize_urls($_POST['preload_key_urls'] ?? ''),
         'disable_wp_embed'       => !empty($_POST['disable_wp_embed']),
         'self_host_google_fonts' => !empty($_POST['self_host_google_fonts']),
+        // Resource hints & third-party delay (v7.27.0)
+        'preload_css_bg_image'      => !empty($_POST['preload_css_bg_image']),
+        'preload_css_bg_url'        => esc_url_raw($_POST['preload_css_bg_url'] ?? ''),
+        'priority_hints_above_fold' => !empty($_POST['priority_hints_above_fold']),
+        'priority_hints_selectors'  => sanitize_textarea_field($_POST['priority_hints_selectors'] ?? ''),
+        'delay_third_party'         => !empty($_POST['delay_third_party']),
+        'delay_third_party_domains' => array_values(array_filter(array_map('sanitize_text_field', preg_split('/[\r\n,]+/', $_POST['delay_third_party_domains'] ?? '')))),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2083,7 +2090,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
         'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
         'inline_small_scripts', 'inline_small_styles', 'inject_image_dimensions', 'inject_srcset',
-        'minify_html', 'preload_key_requests', 'disable_wp_embed', 'self_host_google_fonts'
+        'minify_html', 'preload_key_requests', 'disable_wp_embed', 'self_host_google_fonts',
+        'preload_css_bg_image', 'priority_hints_above_fold', 'delay_third_party'
     );
     
     foreach ($boolean_keys as $key) {
@@ -2114,7 +2122,20 @@ function ccm_tools_ajax_import_perf_settings(): void {
     $sanitized_settings['lcp_preload_url'] = isset($imported_settings['lcp_preload_url']) 
         ? esc_url_raw($imported_settings['lcp_preload_url']) 
         : $defaults['lcp_preload_url'];
-    
+
+    // Resource hints & third-party delay (v7.27.0)
+    $sanitized_settings['preload_css_bg_url'] = isset($imported_settings['preload_css_bg_url'])
+        ? esc_url_raw($imported_settings['preload_css_bg_url'])
+        : $defaults['preload_css_bg_url'];
+
+    $sanitized_settings['priority_hints_selectors'] = isset($imported_settings['priority_hints_selectors'])
+        ? sanitize_textarea_field($imported_settings['priority_hints_selectors'])
+        : $defaults['priority_hints_selectors'];
+
+    $sanitized_settings['delay_third_party_domains'] = isset($imported_settings['delay_third_party_domains']) && is_array($imported_settings['delay_third_party_domains'])
+        ? array_values(array_filter(array_map('sanitize_text_field', $imported_settings['delay_third_party_domains'])))
+        : $defaults['delay_third_party_domains'];
+
     $sanitized_settings['speculation_eagerness'] = isset($imported_settings['speculation_eagerness']) && 
         in_array($imported_settings['speculation_eagerness'], array('conservative', 'moderate', 'eager'))
         ? $imported_settings['speculation_eagerness']

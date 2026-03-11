@@ -4,7 +4,7 @@
 
 **CCM Tools** is a WordPress utility plugin designed for site administrators to monitor and optimize their WordPress installations. It provides comprehensive system information, database management tools, and .htaccess optimization features.
 
-- **Current Version:** 7.25.0
+- **Current Version:** 7.26.0
 - **Requires WordPress:** 6.0+
 - **Requires PHP:** 7.4+
 - **Tested up to:** WordPress 6.8.2
@@ -308,6 +308,15 @@ After completing changes:
   - `ccm-tools-X.Y.Z.zip` - Versioned releases for GitHub
 
 ## Change Log (Recent)
+
+### v7.26.0
+- **HTML & Font Optimisations — Minify HTML, Preload Key Requests, Remove wp-embed, Self-host Google Fonts**
+  - **Minify HTML Output**: Output buffer strips HTML comments and redundant inter-tag whitespace; preserves `<pre>`, `<textarea>`, `<script>`, `<style>` blocks intact; reduces payload by 5–25 KB on complex pages
+  - **Preload Key Requests**: Outputs `<link rel="preload">` tags in `wp_head` (priority 1) for configured URLs; auto-detects `as` attribute from file extension (font → WOFF2 + crossorigin, style, image, video, script); eliminates render-blocking resource discovery delay
+  - **Remove wp-embed.min.js**: Deregisters `wp-embed` script and removes `wp_oembed_add_host_js` from `wp_head`; removes ~3.5 KB script from every frontend page load; distinct from the existing `disable_oembed` setting
+  - **Self-host Google Fonts**: Detects `fonts.googleapis.com` stylesheet URLs via `style_loader_src` filter; downloads CSS + WOFF2 font files to `uploads/ccm-fonts/` using Chrome 120 UA; rewrites all font URLs to local copies; MD5 cache key per URL; 30-day freshness check; directory protected with `.htaccess` + `index.php`; eliminates external DNS lookup and fixes Google Fonts cache-policy warning
+  - New "HTML & Font Optimisations" UI card on Performance Optimizer page with toggles, URL textarea, and help text
+  - All 4 settings persist, export/import correctly, and appear in AI optimization history
 
 ### v7.25.0
 - **Inline Small Scripts & Styles — Eliminate Per-Asset HTTP Requests**

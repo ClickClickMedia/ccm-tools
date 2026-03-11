@@ -1,6 +1,6 @@
 # Performance Audit TODO — AI Reference Doc
 > Auto-updated after each version. Restart-safe: agent can read this file to resume work.
-> Last updated: v7.25.0 released ✅
+> Last updated: v7.26.0 released ✅
 
 ---
 
@@ -11,8 +11,8 @@
 | v7.23.0 | #5, #10, #15 | ✅ Released |
 | v7.24.0 | #12, #24, #26 + JS bugfix | ✅ Released |
 | v7.25.0 | #1, #4, #6 | ✅ Released |
-| v7.26.0 | #7, #8, #9, #11 | ⬜ Next |
-| v7.27.0 | #13, #16, #17 | ⬜ Pending |
+| v7.26.0 | #7, #8, #9, #11 | ✅ Released |
+| v7.27.0 | #13, #16, #17 | ⬜ Next |
 | v7.28.0 | #18, #19, #20, #21 | ⬜ Pending |
 | v7.29.0 | #22, #23, #25 | ⬜ Pending |
 | v7.30.0 | #27, #28 | ⬜ Pending |
@@ -61,45 +61,27 @@ Setting: `disable_admin_bar`
 Setting: `remove_adjacent_post_links`
 - Removes prev/next `<link>` tags and feed discovery links from `<head>`
 
----
+### ✅ #7 — Minify HTML Output (v7.26.0)
+Setting: `minify_html`
+- Output buffer strips HTML comments and redundant whitespace; preserves pre/textarea/script/style
 
-## ⬜ v7.26.0 — Medium Impact (NEXT)
+### ✅ #8 — Preload Key Requests (v7.26.0)
+Settings: `preload_key_requests` (toggle), `preload_key_urls` (array)
+- Adds `<link rel="preload">` in `wp_head` for configured URLs; auto-detects `as` type from extension
 
-### ⬜ #7 — Minify HTML Output
-**Setting key:** `minify_html`
-**Type:** boolean toggle
-**Implementation:** Output buffer (`ob_start` / `ob_get_clean`) strips HTML comments, redundant whitespace between tags, and leading/trailing whitespace on lines.
-**Exclusions:** Never minify inside `<pre>`, `<textarea>`, `<script>`, `<style>` blocks.
-**Impact:** Typical saving 5–25 KB (2–8%) on complex pages; reduces TTFB payload.
-**Safety:** Low risk. Add an exclude-comments option (some HTML comments are required by plugins).
+### ✅ #9 — Remove wp-embed.min.js (v7.26.0)
+Setting: `disable_wp_embed`
+- Deregisters `wp-embed` script and removes `wp_oembed_add_host_js` from `wp_head`
 
-### ⬜ #8 — Preload Key Requests (Web Fonts)
-**Setting key:** `preload_key_requests` (boolean), `preload_key_urls` (array of URLs)
-**Type:** toggle + textarea (comma- or newline-separated URLs)  
-**Implementation:** Outputs `<link rel="preload" as="font|style|image" crossorigin href="...">` in `wp_head` at priority 1 for each configured URL. Auto-detect `as` attribute from URL extension (.woff2 → font, .css → style, .jpg/.png/.webp → image).
-**Impact:** Eliminates render-blocking font/resource discovery delay; can save 200–800ms FCP.
-**Safety:** Low risk. Non-existent URLs are simply ignored by the browser.
-
-### ⬜ #9 — Remove wp-embed.min.js
-**Setting key:** `disable_wp_embed`
-**Type:** boolean toggle
-**Implementation:** `remove_action('wp_head', 'wp_oembed_add_discovery_links'); remove_action('wp_head', 'wp_oembed_add_host_js');` then also `wp_deregister_script('wp-embed');` — removes the ~3.5 KB script from all frontend pages.
-**Note:** Different from `disable_oembed` which removes oEmbed discovery links but leaves the JS. This removes the JS too.
-**Impact:** ~3.5 KB script removed from every page load.
-**Safety:** Very safe. Only breaks embedding *other sites' posts* via oEmbed (rare need).
-
-### ⬜ #11 — Self-host Google Fonts
-**Setting key:** `self_host_google_fonts`
-**Type:** boolean toggle
-**Implementation:** Hook `wp_print_styles` / output buffer — detect `fonts.googleapis.com` URLs in enqueued stylesheets, download the CSS + font files to `wp-content/uploads/ccm-fonts/`, rewrite URLs to point locally. Cache downloaded fonts indefinitely. Provide a "Re-download Fonts" button in the UI.
-**Impact:** Eliminates Google Fonts connection (saves 1 DNS lookup + 1 TCP connection + privacy win); ~100–300ms TTFB improvement. Also fixes "Serve static assets with an efficient cache policy" warning for Google Fonts.
-**Safety:** Medium risk. Fonts need re-downloading if the Google Fonts CSS changes. Add staleness check (re-fetch if > 30 days old).
+### ✅ #11 — Self-host Google Fonts (v7.26.0)
+Setting: `self_host_google_fonts`
+- Downloads Google Fonts CSS + WOFF2 files to `uploads/ccm-fonts/`; rewrites URLs locally; 30-day cache
 
 ---
 
-## ⬜ v7.27.0 — Resource Hints & Third-party
+## ⬜ v7.27.0 — Resource Hints & Third-party (NEXT)
 
-### ⬜ #13 — Preload LCP Background Image in CSS
+### #13 — Preload LCP Background Image
 **Setting key:** `preload_css_bg_image` (boolean), `preload_css_bg_url` (string URL)
 **Type:** toggle + URL input
 **Implementation:** Output `<link rel="preload" as="image" href="..." fetchpriority="high">` in `wp_head` priority 1. Targets background-image LCP elements that `lcp_preload` misses (which only handles `<img>` tags).

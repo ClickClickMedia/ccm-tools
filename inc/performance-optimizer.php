@@ -92,6 +92,13 @@ function ccm_tools_perf_get_settings() {
         'preload_key_urls'       => array(),
         'disable_wp_embed'       => false,
         'self_host_google_fonts' => false,
+        // Resource hints & third-party delay (v7.27.0)
+        'preload_css_bg_image'        => false,
+        'preload_css_bg_url'          => '',
+        'priority_hints_above_fold'   => false,
+        'priority_hints_selectors'    => '',
+        'delay_third_party'           => false,
+        'delay_third_party_domains'   => array(),
     );
     
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -367,6 +374,21 @@ function ccm_tools_perf_init() {
     // Self-host Google Fonts (v7.26.0)
     if (!empty($settings['self_host_google_fonts'])) {
         add_filter('style_loader_src', 'ccm_tools_perf_self_host_google_fonts_src', 10, 2);
+    }
+
+    // Preload LCP CSS background image (v7.27.0)
+    if (!empty($settings['preload_css_bg_image']) && !empty($settings['preload_css_bg_url'])) {
+        add_action('wp_head', 'ccm_tools_perf_preload_css_bg_image', 1);
+    }
+
+    // Priority hints for above-fold images (v7.27.0)
+    if (!empty($settings['priority_hints_above_fold'])) {
+        add_action('template_redirect', 'ccm_tools_perf_priority_hints_start_buffer');
+    }
+
+    // Delay third-party scripts (v7.27.0)
+    if (!empty($settings['delay_third_party'])) {
+        add_action('template_redirect', 'ccm_tools_perf_delay_third_party_start_buffer');
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -1799,6 +1821,158 @@ function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
 }
 
 /**
+ * Preload LCP CSS background image (v7.27.0)
+ * Outputs a high-priority preload link for a CSS background image that is the LCP element.
+ */
+function ccm_tools_perf_preload_css_bg_image() {
+    $settings = ccm_tools_perf_get_settings();
+    $url = esc_url( $settings['preload_css_bg_url'] ?? '' );
+    if ( empty( $url ) ) return;
+    echo '<link rel="preload" as="image" href="' . $url . '" fetchpriority="high">' . "\n";
+}
+
+/**
+ * Priority hints for above-fold images — start output buffer (v7.27.0)
+ */
+function ccm_tools_perf_priority_hints_start_buffer() {
+    if ( is_admin() ) return;
+    ob_start( 'ccm_tools_perf_priority_hints_process_buffer' );
+}
+
+/**
+ * Priority hints for above-fold images — process output buffer (v7.27.0)
+ * Adds fetchpriority="high" and removes loading="lazy" from matching images.
+ */
+function ccm_tools_perf_priority_hints_process_buffer( $html ) {
+    $settings = ccm_tools_perf_get_settings();
+    $selectors_raw = $settings['priority_hints_selectors'] ?? '';
+
+    // Parse selectors — split by comma or newline
+    $selectors = array();
+    if ( ! empty( $selectors_raw ) ) {
+        foreach ( preg_split( '/[\r\n,]+/', $selectors_raw ) as $s ) {
+            $s = trim( $s );
+            if ( $s !== '' ) $selectors[] = $s;
+        }
+    }
+
+    $count = 0;
+    $limit = empty( $selectors ) ? 3 : PHP_INT_MAX;
+
+    $html = preg_replace_callback(
+        '/<img\s[^>]+>/is',
+        function ( $matches ) use ( &$count, $limit, $selectors ) {
+            if ( $count >= $limit ) return $matches[0];
+            $tag = $matches[0];
+
+            // Class-based selector matching (e.g. .hero-image)
+            if ( ! empty( $selectors ) ) {
+                preg_match( '/\bclass=["\']([\'"]*)["\']/', $tag, $class_match );
+                preg_match( '/\bclass=["\']([^"\']*)["\']/', $tag, $class_match );
+                $classes = isset( $class_match[1] ) ? array_filter( array_map( 'trim', explode( ' ', $class_match[1] ) ) ) : array();
+                $matched = false;
+                foreach ( $selectors as $selector ) {
+                    if ( strpos( $selector, '.' ) === 0 ) {
+                        $cls = ltrim( $selector, '.' );
+                        if ( in_array( $cls, $classes, true ) ) {
+                            $matched = true;
+                            break;
+                        }
+                    }
+                }
+                if ( ! $matched ) return $tag;
+            }
+
+            // Skip if already has fetchpriority
+            if ( stripos( $tag, 'fetchpriority' ) !== false ) return $tag;
+
+            // Remove loading="lazy"
+            $tag = preg_replace( '/\s*loading=["\']lazy["\']/', '', $tag );
+
+            // Add fetchpriority="high" before the closing >
+            $tag = preg_replace( '/\s*\/?>\s*$/', ' fetchpriority="high">', $tag );
+
+            $count++;
+            return $tag;
+        },
+        $html
+    );
+
+    return $html;
+}
+
+/**
+ * Delay third-party scripts — start output buffer (v7.27.0)
+ */
+function ccm_tools_perf_delay_third_party_start_buffer() {
+    if ( is_admin() ) return;
+    ob_start( 'ccm_tools_perf_delay_third_party_process_buffer' );
+}
+
+/**
+ * Delay third-party scripts — process output buffer (v7.27.0)
+ * Wraps matching external script tags to defer loading until first user interaction.
+ */
+function ccm_tools_perf_delay_third_party_process_buffer( $html ) {
+    $settings = ccm_tools_perf_get_settings();
+    $domains = $settings['delay_third_party_domains'] ?? array();
+
+    // Default domains if none configured
+    if ( empty( $domains ) ) {
+        $domains = array(
+            'googletagmanager.com', 'google-analytics.com', 'facebook.net',
+            'hotjar.com', 'intercom.io', 'crisp.chat', 'tawk.to',
+        );
+    }
+
+    $modified = false;
+
+    $html = preg_replace_callback(
+        '/<script\b([^>]*)>/i',
+        function ( $matches ) use ( $domains, &$modified ) {
+            $attrs_str = $matches[1];
+
+            // Must have a src attribute
+            if ( ! preg_match( '/\bsrc=["\']([^"\']+)["\']/', $attrs_str, $src_match ) ) {
+                return $matches[0];
+            }
+            $src = $src_match[1];
+
+            // Only delay external scripts matching configured domains
+            $is_match = false;
+            $host = wp_parse_url( $src, PHP_URL_HOST );
+            if ( $host ) {
+                foreach ( $domains as $domain ) {
+                    $domain = trim( (string) $domain );
+                    if ( $domain !== '' && strpos( $host, $domain ) !== false ) {
+                        $is_match = true;
+                        break;
+                    }
+                }
+            }
+
+            if ( ! $is_match ) return $matches[0];
+
+            $modified = true;
+
+            // Replace src with data-ccm-delay-src and change type to text/plain
+            $new_attrs = preg_replace( '/\btype=["\'][^"\']*["\']/', '', $attrs_str );
+            $new_attrs = preg_replace( '/\bsrc=["\'][^"\']+["\']/', 'type="text/plain" data-ccm-delay-src="' . esc_attr( $src ) . '"', $new_attrs );
+            $new_attrs = preg_replace( '/\s+/', ' ', trim( $new_attrs ) );
+
+            return '<script ' . $new_attrs . '>';
+        },
+        $html
+    );
+
+    if ( $modified ) {
+        $html .= '<script>(function(){var loaded=false;function loadDelayed(){if(loaded)return;loaded=true;document.querySelectorAll("script[data-ccm-delay-src]").forEach(function(el){var s=document.createElement("script");["async","defer","crossorigin","integrity","nonce","id"].forEach(function(a){if(el.hasAttribute(a))s.setAttribute(a,el.getAttribute(a));});s.src=el.getAttribute("data-ccm-delay-src");el.parentNode.replaceChild(s,el);});}["keydown","mousemove","touchstart","scroll","click"].forEach(function(e){document.addEventListener(e,loadDelayed,{once:true,passive:true});});setTimeout(loadDelayed,5000);})();</script>';
+    }
+
+    return $html;
+}
+
+/**
  * Render the Performance Optimizer admin page
  */
 function ccm_tools_render_perf_page() {
@@ -2292,6 +2466,66 @@ body { margin: 0; }
                             <input type="checkbox" id="perf-self-host-google-fonts" <?php checked( ! empty( $settings['self_host_google_fonts'] ) ); ?>>
                             <span class="ccm-toggle-slider"></span>
                         </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resource Hints & Third-party Delay (v7.27.0) -->
+            <div class="ccm-card" id="resource-hints-delay">
+                <h2><?php _e('Resource Hints &amp; Third-party Delay', 'ccm-tools'); ?></h2>
+
+                <!-- Preload LCP CSS Background Image -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Preload LCP CSS Background Image', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Outputs a <code>&lt;link rel="preload" as="image" fetchpriority="high"&gt;</code> tag for a CSS background image that is your Largest Contentful Paint element. Enter the exact image URL below.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-preload-css-bg-image" <?php checked( ! empty( $settings['preload_css_bg_image'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div style="margin-top: var(--ccm-space-sm);">
+                        <label for="perf-preload-css-bg-url" style="font-size: 0.85rem; color: var(--ccm-text-muted); display: block; margin-bottom: 4px;"><?php _e('LCP background image URL', 'ccm-tools'); ?></label>
+                        <input type="url" id="perf-preload-css-bg-url" value="<?php echo esc_attr( $settings['preload_css_bg_url'] ?? '' ); ?>" placeholder="https://example.com/wp-content/uploads/hero.jpg" style="width: 100%; max-width: 600px;">
+                    </div>
+                </div>
+
+                <!-- Priority Hints for Above-Fold Images -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Priority Hints for Above-Fold Images', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds <code>fetchpriority="high"</code> and removes <code>loading="lazy"</code> from above-fold images. If no CSS selectors are provided, applies to the first 3 images on the page. Enter dot-prefixed class selectors (e.g. <code>.hero-image, .wp-block-cover__image-background</code>), one per line or comma-separated.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-priority-hints-above-fold" <?php checked( ! empty( $settings['priority_hints_above_fold'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div style="margin-top: var(--ccm-space-sm);">
+                        <label for="perf-priority-hints-selectors" style="font-size: 0.85rem; color: var(--ccm-text-muted); display: block; margin-bottom: 4px;"><?php _e('CSS class selectors (optional — leave blank to target first 3 images)', 'ccm-tools'); ?></label>
+                        <textarea id="perf-priority-hints-selectors" rows="3" placeholder=".hero-image&#10;.wp-block-cover__image-background" style="width: 100%; max-width: 600px; font-family: monospace; font-size: 0.85rem;"><?php echo esc_textarea( $settings['priority_hints_selectors'] ?? '' ); ?></textarea>
+                    </div>
+                </div>
+
+                <!-- Delay Third-party Scripts -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Delay Third-party Scripts', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Delays loading of third-party scripts (analytics, chat widgets, tag managers) until the first user interaction or 5 seconds — whichever comes first. Significantly reduces Total Blocking Time (TBT) and improves INP scores.', 'ccm-tools'); ?></p>
+                            <p class="ccm-text-muted" style="color: var(--ccm-warning);">&#9888; <?php _e('Test carefully. Payment processors and login widgets must load immediately.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-delay-third-party" <?php checked( ! empty( $settings['delay_third_party'] ) ); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div style="margin-top: var(--ccm-space-sm);">
+                        <label for="perf-delay-third-party-domains" style="font-size: 0.85rem; color: var(--ccm-text-muted); display: block; margin-bottom: 4px;"><?php _e('Domains to delay — one per line (leave blank for defaults: Google Tag Manager, Analytics, Facebook, Hotjar, Intercom, Crisp, Tawk)', 'ccm-tools'); ?></label>
+                        <textarea id="perf-delay-third-party-domains" rows="4" placeholder="googletagmanager.com&#10;google-analytics.com&#10;facebook.net&#10;hotjar.com" style="width: 100%; max-width: 600px; font-family: monospace; font-size: 0.85rem;"><?php echo esc_textarea( implode( "\n", (array) ( $settings['delay_third_party_domains'] ?? array() ) ) ); ?></textarea>
                     </div>
                 </div>
             </div>
