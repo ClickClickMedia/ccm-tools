@@ -1988,6 +1988,10 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'woo_scripts_shop_only'      => !empty($_POST['woo_scripts_shop_only']),
         'cache_control_meta'         => !empty($_POST['cache_control_meta']),
         'stale_while_revalidate'     => !empty($_POST['stale_while_revalidate']),
+        // WordPress Cron / Author Archives (v7.29.0)
+        'disable_wp_cron'         => !empty($_POST['disable_wp_cron']),
+        'cron_interval'           => absint($_POST['cron_interval'] ?? 60) ?: 60,
+        'disable_author_archives' => !empty($_POST['disable_author_archives']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2097,7 +2101,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'inline_small_scripts', 'inline_small_styles', 'inject_image_dimensions', 'inject_srcset',
         'minify_html', 'preload_key_requests', 'disable_wp_embed', 'self_host_google_fonts',
         'preload_css_bg_image', 'priority_hints_above_fold', 'delay_third_party',
-        'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate'
+        'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate',
+        'disable_wp_cron', 'disable_author_archives'
     );
     
     foreach ($boolean_keys as $key) {

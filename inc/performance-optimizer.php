@@ -104,6 +104,10 @@ function ccm_tools_perf_get_settings() {
         'woo_scripts_shop_only'      => false,
         'cache_control_meta'         => false,
         'stale_while_revalidate'     => false,
+        // WordPress Cron / Author Archives (v7.29.0)
+        'disable_wp_cron'         => false,
+        'cron_interval'           => 60,
+        'disable_author_archives' => false,
     );
 
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -410,8 +414,33 @@ function ccm_tools_perf_init() {
     if (!empty($settings['cache_control_meta']) || !empty($settings['stale_while_revalidate'])) {
         add_action('send_headers', 'ccm_tools_perf_cache_headers');
     }
+
+    // Disable author archive pages (v7.29.0)
+    if (!empty($settings['disable_author_archives'])) {
+        add_action('template_redirect', 'ccm_tools_perf_disable_author_archives');
+    }
 }
 add_action('init', 'ccm_tools_perf_init');
+
+/**
+ * Early cron throttle — registers on plugins_loaded so it fires before wp_cron() at init priority 10.
+ * Using pre_option_cron: returning array() makes wp_get_ready_crons() see no events, so wp_cron() exits early.
+ */
+add_action('plugins_loaded', 'ccm_tools_perf_cron_early_init', 5);
+function ccm_tools_perf_cron_early_init() {
+    $settings = ccm_tools_perf_get_settings();
+    if (empty($settings['disable_wp_cron'])) {
+        return;
+    }
+    $interval = max(1, (int)($settings['cron_interval'] ?? 60)) * MINUTE_IN_SECONDS;
+    add_filter('pre_option_cron', function($pre) use ($interval) {
+        if (false !== get_transient('ccm_cron_throttle')) {
+            return array(); // Within throttle window — skip cron this request
+        }
+        set_transient('ccm_cron_throttle', 1, $interval);
+        return $pre; // First request in window — allow cron to run
+    });
+}
 
 /**
  * Defer JavaScript files
@@ -2038,6 +2067,17 @@ function ccm_tools_perf_cache_headers() {
 }
 
 /**
+ * 301-redirect all author archive pages to the homepage.
+ * Eliminates thin/duplicate content and reduces crawl-budget waste.
+ */
+function ccm_tools_perf_disable_author_archives() {
+    if (is_author()) {
+        wp_redirect(home_url('/'), 301);
+        exit;
+    }
+}
+
+/**
  * Render the Performance Optimizer admin page
  */
 function ccm_tools_render_perf_page() {
@@ -2966,6 +3006,54 @@ body { margin: 0; }
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </div>
+                </div>
+            </div>
+
+            <!-- WordPress Cron Optimization (v7.29.0) -->
+            <div class="ccm-card">
+                <h2><?php _e('WordPress Cron Optimization', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e("WordPress's built-in pseudo-cron fires on every page request, adding ~50ms of overhead per page load. Throttle it to reduce server load while keeping scheduled tasks working.", 'ccm-tools'); ?></p>
+                <div class="ccm-setting-row">
+                    <div style="flex: 1;">
+                        <strong><?php _e('Throttle WP Cron', 'ccm-tools'); ?></strong>
+                        <p class="ccm-text-muted"><?php _e('Limits WP cron to run at most once per the selected interval instead of on every page request. <strong>⚠ Warning:</strong> Time-sensitive background tasks (scheduled posts, WooCommerce order emails, backup plugins) may be delayed by up to the interval. Set up a real server cron job (instructions below) before enabling.', 'ccm-tools'); ?></p>
+                    </div>
+                    <label class="ccm-toggle">
+                        <input type="checkbox" id="perf-disable-wp-cron" <?php checked(!empty($settings['disable_wp_cron'])); ?>>
+                        <span class="ccm-toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="ccm-setting-row">
+                    <div style="flex: 1;">
+                        <strong><?php _e('Cron Check Interval', 'ccm-tools'); ?></strong>
+                        <p class="ccm-text-muted"><?php _e('How frequently WP cron is allowed to run. Only applies when throttling is enabled above.', 'ccm-tools'); ?></p>
+                    </div>
+                    <select id="perf-cron-interval" style="height:2.2rem;padding:0 0.5rem;border:1px solid var(--ccm-border);border-radius:var(--ccm-radius-sm);background:var(--ccm-bg);">
+                        <?php foreach ([5 => '5 minutes', 10 => '10 minutes', 30 => '30 minutes', 60 => '1 hour'] as $val => $label): ?>
+                        <option value="<?php echo $val; ?>" <?php selected((int)($settings['cron_interval'] ?? 60), $val); ?>><?php echo esc_html($label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div style="margin-top:var(--ccm-space-md);padding:var(--ccm-space-md);background:var(--ccm-bg-alt);border-radius:var(--ccm-radius);border-left:3px solid var(--ccm-info);">
+                    <strong style="display:block;margin-bottom:var(--ccm-space-xs);"><?php _e('&#128161; Recommended: Set up a real server cron job', 'ccm-tools'); ?></strong>
+                    <p class="ccm-text-muted" style="margin-bottom:var(--ccm-space-xs);"><?php _e('For reliable scheduled tasks, add this to your server crontab (via cPanel Cron Jobs or SSH). Runs every 5 minutes:', 'ccm-tools'); ?></p>
+                    <code style="display:block;padding:var(--ccm-space-sm);background:var(--ccm-bg);border-radius:var(--ccm-radius-sm);font-size:0.8rem;word-break:break-all;">*/5 * * * * wget -q -O /dev/null &quot;<?php echo esc_url(site_url('wp-cron.php?doing_wp_cron')); ?>&quot; &gt; /dev/null 2&gt;&amp;1</code>
+                </div>
+            </div>
+
+            <!-- Disable Author Archive Pages (v7.29.0) -->
+            <div class="ccm-card">
+                <h2><?php _e('Author Archive Pages', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('WordPress generates an archive page for each author (e.g. <code>/author/admin/</code>). On single-author sites these pages duplicate content and waste crawl budget.', 'ccm-tools'); ?></p>
+                <div class="ccm-setting-row">
+                    <div style="flex: 1;">
+                        <strong><?php _e('Disable Author Archive Pages', 'ccm-tools'); ?></strong>
+                        <p class="ccm-text-muted"><?php _e('Sends a 301 redirect from all author archive URLs to the homepage. Eliminates thin/duplicate content flagged by Google Search Console. <strong>⚠ Disable on multi-author sites</strong> where author pages are genuinely useful — visitors arriving via author archive links will be redirected to the homepage instead.', 'ccm-tools'); ?></p>
+                    </div>
+                    <label class="ccm-toggle">
+                        <input type="checkbox" id="perf-disable-author-archives" <?php checked(!empty($settings['disable_author_archives'])); ?>>
+                        <span class="ccm-toggle-slider"></span>
+                    </label>
                 </div>
             </div>
 

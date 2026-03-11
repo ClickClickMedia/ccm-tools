@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.28.0
+ * Version: 7.29.0
  */
 
 (function() {
@@ -2789,6 +2789,10 @@
                 woo_scripts_shop_only: $('#perf-woo-scripts-shop-only')?.checked ? '1' : '',
                 cache_control_meta: $('#perf-cache-control-meta')?.checked ? '1' : '',
                 stale_while_revalidate: $('#perf-stale-while-revalidate')?.checked ? '1' : '',
+                // WordPress Cron / Author Archives (v7.29.0)
+                disable_wp_cron: $('#perf-disable-wp-cron')?.checked ? '1' : '',
+                cron_interval: parseInt($('#perf-cron-interval')?.value) || 60,
+                disable_author_archives: $('#perf-disable-author-archives')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -4057,6 +4061,7 @@
         'preload_css_bg_image', 'preload_css_bg_url', 'priority_hints_above_fold', 'priority_hints_selectors',
         'delay_third_party', 'delay_third_party_domains',
         'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate',
+        'disable_wp_cron', 'cron_interval', 'disable_author_archives',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4626,6 +4631,10 @@
             woo_scripts_shop_only: 'WooCommerce Assets on Shop Pages Only',
             cache_control_meta: 'Enable Cache-Control Header',
             stale_while_revalidate: 'Stale-While-Revalidate',
+            // v7.29.0
+            disable_wp_cron: 'Throttle WP Cron',
+            cron_interval: 'Cron Check Interval',
+            disable_author_archives: 'Disable Author Archives',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
