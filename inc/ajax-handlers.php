@@ -1983,6 +1983,11 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'priority_hints_selectors'  => sanitize_textarea_field($_POST['priority_hints_selectors'] ?? ''),
         'delay_third_party'         => !empty($_POST['delay_third_party']),
         'delay_third_party_domains' => array_values(array_filter(array_map('sanitize_text_field', preg_split('/[\r\n,]+/', $_POST['delay_third_party_domains'] ?? '')))),
+        // Gutenberg / WooCommerce / Cache headers (v7.28.0)
+        'disable_gutenberg_frontend' => !empty($_POST['disable_gutenberg_frontend']),
+        'woo_scripts_shop_only'      => !empty($_POST['woo_scripts_shop_only']),
+        'cache_control_meta'         => !empty($_POST['cache_control_meta']),
+        'stale_while_revalidate'     => !empty($_POST['stale_while_revalidate']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2091,7 +2096,8 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
         'inline_small_scripts', 'inline_small_styles', 'inject_image_dimensions', 'inject_srcset',
         'minify_html', 'preload_key_requests', 'disable_wp_embed', 'self_host_google_fonts',
-        'preload_css_bg_image', 'priority_hints_above_fold', 'delay_third_party'
+        'preload_css_bg_image', 'priority_hints_above_fold', 'delay_third_party',
+        'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate'
     );
     
     foreach ($boolean_keys as $key) {

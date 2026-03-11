@@ -99,8 +99,13 @@ function ccm_tools_perf_get_settings() {
         'priority_hints_selectors'    => '',
         'delay_third_party'           => false,
         'delay_third_party_domains'   => array(),
+        // Gutenberg / WooCommerce / Cache headers (v7.28.0)
+        'disable_gutenberg_frontend' => false,
+        'woo_scripts_shop_only'      => false,
+        'cache_control_meta'         => false,
+        'stale_while_revalidate'     => false,
     );
-    
+
     $settings = get_option('ccm_tools_perf_settings', array());
     $cached = wp_parse_args($settings, $defaults);
     return $cached;
@@ -389,6 +394,21 @@ function ccm_tools_perf_init() {
     // Delay third-party scripts (v7.27.0)
     if (!empty($settings['delay_third_party'])) {
         add_action('template_redirect', 'ccm_tools_perf_delay_third_party_start_buffer');
+    }
+
+    // Disable Gutenberg block editor assets on frontend (v7.28.0)
+    if (!empty($settings['disable_gutenberg_frontend'])) {
+        add_action('wp_enqueue_scripts', 'ccm_tools_perf_disable_gutenberg_frontend', 100);
+    }
+
+    // WooCommerce scripts/styles only on shop pages (v7.28.0)
+    if (!empty($settings['woo_scripts_shop_only']) && class_exists('WooCommerce')) {
+        add_action('wp_enqueue_scripts', 'ccm_tools_perf_woo_scripts_shop_only', 99);
+    }
+
+    // Browser cache headers (v7.28.0)
+    if (!empty($settings['cache_control_meta']) || !empty($settings['stale_while_revalidate'])) {
+        add_action('send_headers', 'ccm_tools_perf_cache_headers');
     }
 }
 add_action('init', 'ccm_tools_perf_init');
@@ -1973,6 +1993,51 @@ function ccm_tools_perf_delay_third_party_process_buffer( $html ) {
 }
 
 /**
+ * Disable Gutenberg block editor stylesheets on the frontend (v7.28.0)
+ */
+function ccm_tools_perf_disable_gutenberg_frontend() {
+    wp_dequeue_style('wp-block-library');
+    wp_dequeue_style('wp-block-library-theme');
+    wp_dequeue_style('global-styles');
+    wp_dequeue_style('classic-theme-styles');
+}
+
+/**
+ * Dequeue WooCommerce scripts/styles on non-shop pages (v7.28.0)
+ */
+function ccm_tools_perf_woo_scripts_shop_only() {
+    if (is_woocommerce() || is_cart() || is_checkout() || is_account_page()) {
+        return;
+    }
+    wp_dequeue_script('wc-cart-fragments');
+    wp_dequeue_script('woocommerce');
+    wp_dequeue_script('wc-add-to-cart');
+    wp_dequeue_script('wc-add-to-cart-variation');
+    wp_dequeue_script('wc-single-product');
+    wp_dequeue_style('woocommerce-general');
+    wp_dequeue_style('woocommerce-layout');
+    wp_dequeue_style('woocommerce-smallscreen');
+}
+
+/**
+ * Emit Cache-Control headers for logged-out WordPress HTML responses (v7.28.0)
+ */
+function ccm_tools_perf_cache_headers() {
+    if (is_admin() || is_user_logged_in()) {
+        return;
+    }
+    $settings = ccm_tools_perf_get_settings();
+    if (empty($settings['cache_control_meta']) && empty($settings['stale_while_revalidate'])) {
+        return;
+    }
+    $parts = array('public', 'max-age=3600');
+    if (!empty($settings['stale_while_revalidate'])) {
+        $parts[] = 'stale-while-revalidate=86400';
+    }
+    header('Cache-Control: ' . implode(', ', $parts));
+}
+
+/**
  * Render the Performance Optimizer admin page
  */
 function ccm_tools_render_perf_page() {
@@ -2834,7 +2899,76 @@ body { margin: 0; }
                     </div>
                 </div>
             </div>
-            
+
+            <!-- Block Editor & WooCommerce Assets (v7.28.0) -->
+            <div class="ccm-card" id="block-editor-woocommerce">
+                <h2><?php _e('Block Editor &amp; WooCommerce Assets', 'ccm-tools'); ?></h2>
+
+                <!-- Disable Gutenberg Frontend Assets (#18) -->
+                <div class="ccm-setting-row" style="<?php echo class_exists('WooCommerce') ? 'border-bottom: 1px solid var(--ccm-border); ' : ''; ?>padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Disable Gutenberg Block Editor Assets', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Removes Gutenberg/block editor stylesheets from the frontend — <code>wp-block-library</code>, <code>global-styles</code>, <code>classic-theme-styles</code>. Saves ~36 KB of render-blocking CSS. <strong>⚠ Only enable if your site does not use Gutenberg blocks on the frontend.</strong>', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-disable-gutenberg-frontend" <?php checked(!empty($settings['disable_gutenberg_frontend'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <?php if (class_exists('WooCommerce')): ?>
+                <!-- Load WooCommerce Assets Only on Shop Pages (#19) -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Load WooCommerce Assets Only on Shop Pages', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Dequeues WooCommerce scripts and styles on pages that are not shop, cart, checkout, or account pages. Removes ~120 KB of JS/CSS from all non-WooCommerce pages. <strong>⚠ Test carefully if you embed WooCommerce shortcodes on non-shop pages.</strong>', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-woo-scripts-shop-only" <?php checked(!empty($settings['woo_scripts_shop_only'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- Browser Cache Headers (v7.28.0) -->
+            <div class="ccm-card" id="cache-headers">
+                <h2><?php _e('Browser Cache Headers', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted" style="margin-bottom: var(--ccm-space-md);"><?php _e('Send HTTP <code>Cache-Control</code> headers via PHP for WordPress HTML responses. Useful for <strong>Nginx / LiteSpeed</strong> hosts where <code>.htaccess</code> cache rules do not apply. Headers are only sent for logged-out frontend visitors.', 'ccm-tools'); ?></p>
+
+                <!-- Enable Cache-Control Header (#20) -->
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Enable Cache-Control Header', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds <code>Cache-Control: public, max-age=3600</code> to WordPress HTML responses. Fixes the "Serve static assets with an efficient cache policy" audit on Nginx/LiteSpeed. Skips admin pages and logged-in users.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-cache-control-meta" <?php checked(!empty($settings['cache_control_meta'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Stale-While-Revalidate (#21) -->
+                <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Stale-While-Revalidate', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Adds <code>stale-while-revalidate=86400</code> (24 h) to the Cache-Control header. Allows browsers to immediately serve a stale cached page while fetching a fresh copy in the background — making repeat visits feel instant. Can be used independently or alongside the toggle above. Ignored by unsupported browsers.', 'ccm-tools'); ?></p>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" id="perf-stale-while-revalidate" <?php checked(!empty($settings['stale_while_revalidate'])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <!-- Save Button -->
             <div class="ccm-card">
                 <div style="display: flex; gap: var(--ccm-space-md); align-items: center; flex-wrap: wrap;">

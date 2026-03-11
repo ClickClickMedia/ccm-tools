@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.27.0
+ * Version: 7.28.0
  */
 
 (function() {
@@ -2784,6 +2784,11 @@
                 priority_hints_selectors: $('#perf-priority-hints-selectors')?.value || '',
                 delay_third_party: $('#perf-delay-third-party')?.checked ? '1' : '',
                 delay_third_party_domains: $('#perf-delay-third-party-domains')?.value || '',
+                // Gutenberg / WooCommerce / Cache headers (v7.28.0)
+                disable_gutenberg_frontend: $('#perf-disable-gutenberg-frontend')?.checked ? '1' : '',
+                woo_scripts_shop_only: $('#perf-woo-scripts-shop-only')?.checked ? '1' : '',
+                cache_control_meta: $('#perf-cache-control-meta')?.checked ? '1' : '',
+                stale_while_revalidate: $('#perf-stale-while-revalidate')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
@@ -4051,6 +4056,7 @@
         'minify_html', 'preload_key_requests', 'preload_key_urls', 'disable_wp_embed', 'self_host_google_fonts',
         'preload_css_bg_image', 'preload_css_bg_url', 'priority_hints_above_fold', 'priority_hints_selectors',
         'delay_third_party', 'delay_third_party_domains',
+        'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate',
         // Deep analysis data keys (auto-applied by apply_recommendations)
         'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
         'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
@@ -4616,6 +4622,10 @@
             priority_hints_selectors: 'Priority Hints CSS Selectors',
             delay_third_party: 'Delay Third-party Scripts',
             delay_third_party_domains: 'Third-party Domains to Delay',
+            disable_gutenberg_frontend: 'Disable Gutenberg Frontend Assets',
+            woo_scripts_shop_only: 'WooCommerce Assets on Shop Pages Only',
+            cache_control_meta: 'Enable Cache-Control Header',
+            stale_while_revalidate: 'Stale-While-Revalidate',
         };
         return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
