@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.30.1
+ * Version: 7.30.2
  */
 
 (function() {
@@ -5690,19 +5690,48 @@
                                 hasLayoutRegression = true;
                                 const issueCount = (visualData.issues || []).length;
                                 const sevLabel = visualData.severity || 'unknown';
-                                aiUpdateStep('visual-check', 'error', `${issueCount} issue(s) [${sevLabel}]`);
-                                aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${visualData.summary}`, 'error');
+
+                                // Check if any issues are screenshot capture inconsistencies
+                                const captureIssues = (visualData.issues || []).filter(i => i.likely_cause === 'screenshot_capture_inconsistency');
+                                const isInconsistentCapture = captureIssues.length > 0;
+
+                                if (isInconsistentCapture) {
+                                    aiUpdateStep('visual-check', 'error', `Screenshot inconsistency`);
+                                    aiLog(`⚠ <strong>SCREENSHOT CAPTURE INCONSISTENCY</strong>: Screenshots were not captured in a consistent state — hero/banner content appeared in one but not the other. Rolling back for safety.`, 'error');
+                                } else {
+                                    aiUpdateStep('visual-check', 'error', `${issueCount} issue(s) [${sevLabel}]`);
+                                    aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${visualData.summary}`, 'error');
+                                }
                                 (visualData.issues || []).forEach(issue => {
                                     aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description}`, 'error');
                                     if (issue.likely_cause) aiLog(`    Likely cause: ${issue.likely_cause}`, 'info');
                                     if (issue.suggested_fix) aiLog(`    Suggested fix: ${issue.suggested_fix}`, 'info');
                                 });
+
+                                // Log pixel check data if available
+                                if (visualData.pixel_check) {
+                                    const pc = visualData.pixel_check;
+                                    if (pc.desktop?.diff_percent >= 0) {
+                                        aiLog(`  Pixel pre-check: Desktop above-fold diff = ${pc.desktop.diff_percent}%`, 'info');
+                                    }
+                                    if (pc.mobile?.diff_percent >= 0) {
+                                        aiLog(`  Pixel pre-check: Mobile above-fold diff = ${pc.mobile.diff_percent}%`, 'info');
+                                    }
+                                }
+
                                 // Build context for next AI iteration
-                                visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
-                                    (visualData.issues || []).map(i =>
-                                        `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
-                                    ).join('\n') +
-                                    '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back. DO NOT re-enable settings that cause layout shifts.';
+                                if (isInconsistentCapture) {
+                                    visualRegressionContext = 'SCREENSHOT CAPTURE INCONSISTENCY: Before/after screenshots were not captured in a consistent state ' +
+                                        '(hero/banner content visible in one but not the other). This is NOT a performance regression — it is a screenshot timing issue. ' +
+                                        'Rolling back for safety. DO NOT change settings based on this — the current settings may be fine. ' +
+                                        'The system will retry with improved screenshot timing.';
+                                } else {
+                                    visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
+                                        (visualData.issues || []).map(i =>
+                                            `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
+                                        ).join('\n') +
+                                        '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back. DO NOT re-enable settings that cause layout shifts.';
+                                }
                             } else if (visualData.layout_ok === true && visualData.severity === 'minor') {
                                 aiUpdateStep('visual-check', 'done', 'Minor differences');
                                 aiLog(`Visual check: minor differences detected (acceptable) — ${visualData.summary}`, 'info');
