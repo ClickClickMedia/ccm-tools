@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.30.0
+ * Version: 7.30.1
  */
 
 (function() {
@@ -2795,7 +2795,7 @@
                 disable_author_archives: $('#perf-disable-author-archives')?.checked ? '1' : '',
                 // INP / Interaction Optimizations (v7.30.0)
                 passive_event_listeners: $('#perf-passive-event-listeners')?.checked ? '1' : '',
-                warn_dom_size: $('#perf-warn-dom-size')?.checked ? '1' : '',,
+                warn_dom_size: $('#perf-warn-dom-size')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);
