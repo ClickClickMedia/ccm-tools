@@ -1,6 +1,6 @@
 ﻿# CCM Tools — Copilot Instructions
 
-WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version: 7.30.0**
+WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version: 7.32.0**
 
 > **Related projects in this workspace:** `ccm-api-hub` (AI/PageSpeed proxy API) · `ccm-premium` (subscription management)
 > **File structure:** [.file-structure.md](../.file-structure.md) *(local-only, git-ignored — update this file whenever files are added or deleted)*
@@ -18,6 +18,7 @@ WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version
 | Performance Optimizer | 30+ toggles: defer/delay JS+CSS, lazy load, image dims, fonts, HTML minify |
 | WooCommerce Tools | Admin payment toggle, cart/session tools |
 | Redis Object Cache | Custom drop-in, TCP/TLS/Unix, pipeline bulk ops, WooCommerce TTL caching |
+| Cloudflare | CF detection, API token connection, cache purge, dev mode toggle, zone status dashboard |
 | AI Performance Hub *(Premium)* | PageSpeed AI loop, visual regression, console error check, AI chat, rollback |
 | Premium | Feature gating via `ccm_tools_is_premium()`; `define('CCM_TOOLS_PREMIUM', true)` for dev override |
 
@@ -85,4 +86,5 @@ All handlers in `inc/ajax-handlers.php`. Hook pattern: `add_action('wp_ajax_ccm_
 | Performance | `save_perf_settings`, `get_perf_settings` |
 | AI Hub | `ai_hub_save_settings`, `ai_hub_test_connection`, `ai_hub_run_pagespeed`, `ai_hub_get_results`, `ai_hub_ai_analyze`, `ai_hub_ai_optimize`, `ai_hub_visual_compare`, `ai_hub_console_check`, `ai_hub_get_latest_scores` |
 | AI Session | `ai_apply_changes`, `ai_save_run`, `ai_preflight`, `ai_enable_tool`, `ai_chat` |
+| Cloudflare | `cf_connect`, `cf_disconnect`, `cf_get_status`, `cf_purge_all`, `cf_purge_urls`, `cf_dev_mode` |
 | Premium | `premium_refresh` |

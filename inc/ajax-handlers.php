@@ -3521,3 +3521,141 @@ function ccm_tools_ajax_search_pages(): void {
 
     wp_send_json_success($results);
 }
+
+// ===================================
+// Cloudflare AJAX Handlers
+// ===================================
+
+add_action('wp_ajax_ccm_tools_cf_connect', 'ccm_tools_ajax_cf_connect');
+function ccm_tools_ajax_cf_connect(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $token   = sanitize_text_field($_POST['api_token'] ?? '');
+    $zone_id = sanitize_text_field($_POST['zone_id'] ?? '');
+
+    if (empty($token)) {
+        wp_send_json_error(array('message' => __('API Token is required.', 'ccm-tools')));
+    }
+
+    $result = ccm_tools_cf_verify_token($token, $zone_id);
+    if (is_wp_error($result)) {
+        wp_send_json_error(array('message' => $result->get_error_message()));
+    }
+
+    // Save verified settings
+    ccm_tools_cf_save_settings(array(
+        'api_token' => $token,
+        'zone_id'   => $result['id'] ?? $zone_id,
+        'connected' => true,
+    ));
+
+    // Clear detection transient so tab shows immediately
+    delete_transient('ccm_tools_cf_detected');
+
+    wp_send_json_success(array(
+        'message' => __('Connected to Cloudflare successfully!', 'ccm-tools'),
+        'zone'    => array(
+            'id'   => $result['id'] ?? '',
+            'name' => $result['name'] ?? '',
+            'plan' => $result['plan']['name'] ?? 'Unknown',
+        ),
+    ));
+}
+
+add_action('wp_ajax_ccm_tools_cf_disconnect', 'ccm_tools_ajax_cf_disconnect');
+function ccm_tools_ajax_cf_disconnect(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    delete_option('ccm_tools_cf_settings');
+    delete_transient('ccm_tools_cf_detected');
+
+    wp_send_json_success(array('message' => __('Cloudflare disconnected.', 'ccm-tools')));
+}
+
+add_action('wp_ajax_ccm_tools_cf_get_status', 'ccm_tools_ajax_cf_get_status');
+function ccm_tools_ajax_cf_get_status(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $status = ccm_tools_cf_get_zone_status();
+    if (is_wp_error($status)) {
+        wp_send_json_error(array('message' => $status->get_error_message()));
+    }
+
+    wp_send_json_success($status);
+}
+
+add_action('wp_ajax_ccm_tools_cf_purge_all', 'ccm_tools_ajax_cf_purge_all');
+function ccm_tools_ajax_cf_purge_all(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $result = ccm_tools_cf_purge_all();
+    if (is_wp_error($result)) {
+        wp_send_json_error(array('message' => $result->get_error_message()));
+    }
+
+    wp_send_json_success(array('message' => __('Cache purged successfully!', 'ccm-tools')));
+}
+
+add_action('wp_ajax_ccm_tools_cf_purge_urls', 'ccm_tools_ajax_cf_purge_urls');
+function ccm_tools_ajax_cf_purge_urls(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $raw_urls = sanitize_textarea_field($_POST['urls'] ?? '');
+    $urls = array_filter(array_map('trim', explode("\n", $raw_urls)));
+
+    if (empty($urls)) {
+        wp_send_json_error(array('message' => __('No URLs provided.', 'ccm-tools')));
+    }
+
+    // Validate each URL
+    foreach ($urls as $url) {
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            wp_send_json_error(array('message' => sprintf(__('Invalid URL: %s', 'ccm-tools'), $url)));
+        }
+    }
+
+    $result = ccm_tools_cf_purge_urls($urls);
+    if (is_wp_error($result)) {
+        wp_send_json_error(array('message' => $result->get_error_message()));
+    }
+
+    wp_send_json_success(array(
+        'message' => sprintf(__('%d URL(s) purged successfully!', 'ccm-tools'), count($urls)),
+    ));
+}
+
+add_action('wp_ajax_ccm_tools_cf_dev_mode', 'ccm_tools_ajax_cf_dev_mode');
+function ccm_tools_ajax_cf_dev_mode(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $enable = !empty($_POST['enable']);
+    $result = ccm_tools_cf_toggle_dev_mode($enable);
+    if (is_wp_error($result)) {
+        wp_send_json_error(array('message' => $result->get_error_message()));
+    }
+
+    wp_send_json_success(array(
+        'message' => $enable
+            ? __('Development Mode enabled (auto-disables in 3 hours).', 'ccm-tools')
+            : __('Development Mode disabled.', 'ccm-tools'),
+        'enabled' => $enable,
+    ));
+}

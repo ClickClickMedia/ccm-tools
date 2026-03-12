@@ -2316,7 +2316,6 @@ function ccm_tools_render_perf_page() {
                         <div style="flex: 1;">
                             <strong><?php _e('Inline Critical CSS', 'ccm-tools'); ?></strong>
                             <p class="ccm-text-muted"><?php _e('Inlines critical above-the-fold CSS directly in the HTML head. Eliminates render-blocking for initial content.', 'ccm-tools'); ?></p>
-                            <p class="ccm-text-muted" style="color: var(--ccm-info);"><span class="ccm-icon">ℹ</span> <?php _e('Use tools like critical.js or Penthouse to generate critical CSS.', 'ccm-tools'); ?></p>
                         </div>
                         <label class="ccm-toggle">
                             <input type="checkbox" id="perf-critical-css" <?php checked(!empty($settings['critical_css'])); ?>>

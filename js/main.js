@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.31.2
+ * Version: 7.32.0
  */
 
 (function() {
@@ -3343,12 +3343,304 @@
             }
         } catch (e) { console.error('CCM: AI Hub standalone init error', e); }
 
+        // Initialize Cloudflare handlers if on CF page
+        try {
+            if ($('#cf-connection-form')) {
+                initCloudflareHandlers();
+            }
+        } catch (e) { console.error('CCM: Cloudflare init error', e); }
+
         // Premium refresh handler
         try {
             initPremiumHandlers();
         } catch (e) { console.error('CCM: Premium init error', e); }
     });
     
+    // ===================================
+    // Cloudflare Integration Handlers
+    // ===================================
+
+    function initCloudflareHandlers() {
+        const connectBtn    = $('#cf-connect-btn');
+        const disconnectBtn = $('#cf-disconnect-btn');
+        const tokenInput    = $('#cf-api-token');
+        const zoneInput     = $('#cf-zone-id');
+        const toggleToken   = $('#cf-toggle-token');
+        const statusSpan    = $('#cf-connection-status');
+        const purgeAllBtn   = $('#cf-purge-all');
+        const purgeUrlsBtn  = $('#cf-purge-urls-btn');
+        const devToggle     = $('#cf-dev-mode-toggle');
+
+        // Toggle token visibility
+        if (toggleToken && tokenInput) {
+            toggleToken.addEventListener('click', () => {
+                tokenInput.type = tokenInput.type === 'password' ? 'text' : 'password';
+            });
+        }
+
+        // Connect
+        if (connectBtn) {
+            connectBtn.addEventListener('click', async () => {
+                const token  = tokenInput ? tokenInput.value.trim() : '';
+                const zoneId = zoneInput ? zoneInput.value.trim() : '';
+
+                if (!token) {
+                    showNotification('Please enter an API Token.', 'error');
+                    return;
+                }
+
+                connectBtn.disabled = true;
+                connectBtn.textContent = 'Connecting…';
+                if (statusSpan) statusSpan.textContent = '';
+
+                try {
+                    const res = await ajax('ccm_tools_cf_connect', {
+                        api_token: token,
+                        zone_id: zoneId,
+                    });
+
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                        if (statusSpan) {
+                            statusSpan.innerHTML = '<span class="ccm-success">✓ Connected — ' +
+                                escHtml(res.data.zone.name) + ' (' + escHtml(res.data.zone.plan) + ')</span>';
+                        }
+                        // Reload to show full dashboard
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        showNotification(res.data.message || 'Connection failed.', 'error');
+                        if (statusSpan) statusSpan.innerHTML = '<span class="ccm-error">✗ ' + escHtml(res.data.message) + '</span>';
+                    }
+                } catch (err) {
+                    showNotification('Connection failed: ' + err.message, 'error');
+                } finally {
+                    connectBtn.disabled = false;
+                    connectBtn.textContent = 'Connect';
+                }
+            });
+        }
+
+        // Disconnect
+        if (disconnectBtn) {
+            disconnectBtn.addEventListener('click', async () => {
+                if (!confirm('Disconnect from Cloudflare? This will remove your API token.')) return;
+
+                disconnectBtn.disabled = true;
+                try {
+                    const res = await ajax('ccm_tools_cf_disconnect');
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showNotification(res.data.message || 'Disconnect failed.', 'error');
+                    }
+                } catch (err) {
+                    showNotification('Disconnect failed: ' + err.message, 'error');
+                } finally {
+                    disconnectBtn.disabled = false;
+                }
+            });
+        }
+
+        // Load zone status on page load
+        const statusCard = $('#cf-zone-status');
+        if (statusCard) {
+            loadCloudflareStatus(statusCard, devToggle);
+        }
+
+        // Purge All Cache
+        if (purgeAllBtn) {
+            purgeAllBtn.addEventListener('click', async () => {
+                if (!confirm('Purge ALL Cloudflare cached files? This may temporarily slow your site.')) return;
+
+                purgeAllBtn.disabled = true;
+                purgeAllBtn.textContent = 'Purging…';
+
+                try {
+                    const res = await ajax('ccm_tools_cf_purge_all');
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                    } else {
+                        showNotification(res.data.message || 'Purge failed.', 'error');
+                    }
+                } catch (err) {
+                    showNotification('Purge failed: ' + err.message, 'error');
+                } finally {
+                    purgeAllBtn.disabled = false;
+                    purgeAllBtn.textContent = 'Purge Everything';
+                }
+            });
+        }
+
+        // Purge Specific URLs
+        if (purgeUrlsBtn) {
+            purgeUrlsBtn.addEventListener('click', async () => {
+                const textarea = $('#cf-purge-urls');
+                const urls = textarea ? textarea.value.trim() : '';
+
+                if (!urls) {
+                    showNotification('Please enter at least one URL.', 'error');
+                    return;
+                }
+
+                purgeUrlsBtn.disabled = true;
+                purgeUrlsBtn.textContent = 'Purging…';
+
+                try {
+                    const res = await ajax('ccm_tools_cf_purge_urls', { urls });
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                        if (textarea) textarea.value = '';
+                    } else {
+                        showNotification(res.data.message || 'Purge failed.', 'error');
+                    }
+                } catch (err) {
+                    showNotification('Purge failed: ' + err.message, 'error');
+                } finally {
+                    purgeUrlsBtn.disabled = false;
+                    purgeUrlsBtn.textContent = 'Purge URLs';
+                }
+            });
+        }
+
+        // Development Mode toggle
+        if (devToggle) {
+            devToggle.addEventListener('change', async () => {
+                const enable = devToggle.checked;
+                devToggle.disabled = true;
+
+                try {
+                    const res = await ajax('ccm_tools_cf_dev_mode', {
+                        enable: enable ? '1' : '0',
+                    });
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                        updateDevModeStatus(enable);
+                    } else {
+                        showNotification(res.data.message || 'Failed to toggle Dev Mode.', 'error');
+                        devToggle.checked = !enable; // Revert
+                    }
+                } catch (err) {
+                    showNotification('Failed: ' + err.message, 'error');
+                    devToggle.checked = !enable;
+                } finally {
+                    devToggle.disabled = false;
+                }
+            });
+        }
+    }
+
+    /**
+     * Load Cloudflare zone status and render the status panel.
+     */
+    async function loadCloudflareStatus(container, devToggle) {
+        try {
+            const res = await ajax('ccm_tools_cf_get_status');
+            if (!res.success) {
+                container.innerHTML = '<p class="ccm-error">' + escHtml(res.data.message || 'Failed to load status.') + '</p>';
+                return;
+            }
+
+            const zone = res.data.zone || {};
+            const features = res.data.features || {};
+
+            let html = '<table class="ccm-table">';
+            html += cfStatusRow('Zone', zone.name || '—');
+            html += cfStatusRow('Zone ID', '<code style="font-size: 0.85em;">' + escHtml(zone.id) + '</code>');
+            html += cfStatusRow('Status', zone.status === 'active'
+                ? '<span class="ccm-success">✓ Active</span>'
+                : '<span class="ccm-error">' + escHtml(zone.status) + '</span>');
+            html += cfStatusRow('Plan', escHtml(zone.plan));
+
+            // Feature statuses
+            const featureMap = {
+                'apo': 'Automatic Platform Optimization (APO)',
+                'polish': 'Polish (Image Optimization)',
+                'webp': 'WebP Conversion',
+                'minify': 'Auto Minify',
+                'rocket_loader': 'Rocket Loader',
+                'always_online': 'Always Online',
+                'browser_cache_ttl': 'Browser Cache TTL',
+            };
+
+            html += '<tr><td colspan="2" style="padding-top: var(--ccm-space-md);"><strong>Features</strong></td></tr>';
+
+            for (const [key, label] of Object.entries(featureMap)) {
+                const val = features[key];
+                if (val === undefined) continue;
+
+                if (key === 'browser_cache_ttl') {
+                    html += cfStatusRow(label, val === 0 ? 'Respect Existing Headers' : val + ' seconds');
+                } else if (key === 'apo') {
+                    const enabled = val && val.enabled;
+                    html += cfStatusRow(label, enabled
+                        ? '<span class="ccm-success">✓ Enabled</span>'
+                        : '<span class="ccm-text-muted">Disabled</span>');
+                } else if (key === 'minify') {
+                    const parts = [];
+                    if (val.js && val.js === 'on') parts.push('JS');
+                    if (val.css && val.css === 'on') parts.push('CSS');
+                    if (val.html && val.html === 'on') parts.push('HTML');
+                    html += cfStatusRow(label, parts.length > 0
+                        ? '<span class="ccm-success">✓ ' + parts.join(', ') + '</span>'
+                        : '<span class="ccm-text-muted">Disabled</span>');
+                } else {
+                    html += cfStatusRow(label, val === 'on'
+                        ? '<span class="ccm-success">✓ Enabled</span>'
+                        : '<span class="ccm-text-muted">Disabled</span>');
+                }
+            }
+
+            // Development mode
+            const devMode = features.development_mode;
+            if (devMode !== undefined) {
+                html += cfStatusRow('Development Mode', devMode === 'on'
+                    ? '<span style="color: var(--ccm-warning);">⚡ Active (auto-disables in 3h)</span>'
+                    : '<span class="ccm-text-muted">Off</span>');
+
+                // Sync toggle
+                if (devToggle) {
+                    devToggle.checked = devMode === 'on';
+                    updateDevModeStatus(devMode === 'on');
+                }
+            }
+
+            html += '</table>';
+
+            // Overlap warnings
+            if (features.polish === 'on' || features.webp === 'on') {
+                html += '<div class="ccm-notice" style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-warning-bg, #fff8e1); border-left: 3px solid var(--ccm-warning); border-radius: var(--ccm-radius);">';
+                html += '<span class="ccm-icon">⚠</span> ';
+                html += '<strong>Note:</strong> Cloudflare is handling image optimization (Polish/WebP). The CCM Tools WebP converter may not be needed for this site.';
+                html += '</div>';
+            }
+
+            if (features.minify && (features.minify.js === 'on' || features.minify.css === 'on' || features.minify.html === 'on')) {
+                html += '<div class="ccm-notice" style="margin-top: var(--ccm-space-sm); padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-warning-bg, #fff8e1); border-left: 3px solid var(--ccm-warning); border-radius: var(--ccm-radius);">';
+                html += '<span class="ccm-icon">⚠</span> ';
+                html += '<strong>Note:</strong> Cloudflare Auto Minify is enabled. This may conflict with CCM\'s HTML/CSS/JS minification in Performance settings.';
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+
+        } catch (err) {
+            container.innerHTML = '<p class="ccm-error">Failed to load zone status: ' + escHtml(err.message) + '</p>';
+        }
+    }
+
+    function cfStatusRow(label, value) {
+        return '<tr><th>' + escHtml(label) + '</th><td>' + value + '</td></tr>';
+    }
+
+    function updateDevModeStatus(enabled) {
+        const el = $('#cf-dev-mode-status');
+        if (!el) return;
+        el.innerHTML = enabled
+            ? '<span style="color: var(--ccm-warning);">⚡ Development Mode is active — caching bypassed for 3 hours.</span>'
+            : '';
+    }
+
     // ===================================
     // Premium Subscription Handlers
     // ===================================
@@ -4436,8 +4728,9 @@
      * Escape HTML for safe insertion.
      */
     function escHtml(str) {
+        if (!str && str !== 0) return '';
         const div = document.createElement('div');
-        div.appendChild(document.createTextNode(str));
+        div.appendChild(document.createTextNode(String(str)));
         return div.innerHTML;
     }
 

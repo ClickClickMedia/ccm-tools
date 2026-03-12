@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.31.2
+ * Version: 7.32.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.31.2');
+    define('CCM_HELPER_VERSION', '7.32.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -179,6 +179,7 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php'; // Add Redis Object Cache
     require_once CCM_HELPER_ROOT_DIR . 'inc/premium.php'; // Premium subscription management
     require_once CCM_HELPER_ROOT_DIR . 'inc/ai-hub.php'; // AI Performance Hub integration
+    require_once CCM_HELPER_ROOT_DIR . 'inc/cloudflare.php'; // Cloudflare integration
     
     // Initialize plugin settings
     global $ccm_tools;
@@ -195,6 +196,7 @@ function ccm_tools_render_header_nav($active_page = '') {
     $webp_available = function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available();
     $redis_available = function_exists('ccm_tools_redis_extension_available') && ccm_tools_redis_extension_available();
     $woocommerce_active = class_exists('WooCommerce');
+    $cf_detected = function_exists('ccm_tools_cf_detect') ? ccm_tools_cf_detect() : array('detected' => false);
     ?>
     <div class="ccm-header">
         <div class="ccm-header-logo">
@@ -214,6 +216,9 @@ function ccm_tools_render_header_nav($active_page = '') {
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-webp')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-webp' ? 'active' : ''; ?>"><?php _e('WebP', 'ccm-tools'); ?></a>
                 <?php endif; ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-perf')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-perf' ? 'active' : ''; ?>"><?php _e('Performance', 'ccm-tools'); ?></a>
+                <?php if ($cf_detected['detected'] || !empty(ccm_tools_cf_get_settings()['connected'])): ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-cloudflare')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-cloudflare' ? 'active' : ''; ?>"><?php _e('Cloudflare', 'ccm-tools'); ?></a>
+                <?php endif; ?>
                 <?php if ($woocommerce_active): ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-woocommerce' ? 'active' : ''; ?>"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                 <?php endif; ?>
@@ -329,6 +334,20 @@ class CCMSettings {
             );
         }
         
+        // Add Cloudflare submenu (if CF detected or already connected)
+        $cf_detected = function_exists('ccm_tools_cf_detect') ? ccm_tools_cf_detect() : array('detected' => false);
+        $cf_settings = function_exists('ccm_tools_cf_get_settings') ? ccm_tools_cf_get_settings() : array();
+        if (!empty($cf_detected['detected']) || !empty($cf_settings['connected'])) {
+            add_submenu_page(
+                'ccm-tools',
+                'Cloudflare',
+                'Cloudflare',
+                'manage_options',
+                'ccm-tools-cloudflare',
+                'ccm_tools_render_cloudflare_page'
+            );
+        }
+
         // Add Error Log submenu
         add_submenu_page(
             'ccm-tools',
@@ -1079,6 +1098,26 @@ class CCMSettings {
                         <tr>
                             <th><?php _e('Server Port', 'ccm-tools'); ?></th>
                             <td><?php echo isset($_SERVER['SERVER_PORT']) ? esc_html($_SERVER['SERVER_PORT']) : ''; ?></td>
+                        </tr>
+                        <tr>
+                            <th><?php _e('Cloudflare', 'ccm-tools'); ?></th>
+                            <td>
+                                <?php
+                                $cf_info = function_exists('ccm_tools_cf_detect') ? ccm_tools_cf_detect() : array('detected' => false);
+                                if ($cf_info['detected']) {
+                                    echo '<span class="ccm-success">✓ ' . esc_html__('Detected', 'ccm-tools') . '</span>';
+                                    if (!empty($cf_info['ray_id'])) {
+                                        echo ' <small style="color: var(--ccm-text-muted);">(Ray: ' . esc_html($cf_info['ray_id']) . ')</small>';
+                                    }
+                                    $cf_s = function_exists('ccm_tools_cf_get_settings') ? ccm_tools_cf_get_settings() : array();
+                                    if (empty($cf_s['connected'])) {
+                                        echo ' — <a href="' . esc_url(admin_url('admin.php?page=ccm-tools-cloudflare')) . '">' . esc_html__('Connect API', 'ccm-tools') . '</a>';
+                                    }
+                                } else {
+                                    echo '<span class="ccm-text-muted">' . esc_html__('Not detected', 'ccm-tools') . '</span>';
+                                }
+                                ?>
+                            </td>
                         </tr>
                     </table>
                 </div>
