@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.30.2
+ * Version: 7.30.4
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.30.2');
+    define('CCM_HELPER_VERSION', '7.30.4');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -121,6 +121,27 @@ function ccmtools_load_textdomain() {
 }
 
 
+/**
+ * Detect whether the current request is a WordPress REST API request.
+ * Used to skip heavy plugin loading on REST endpoints — our plugin is
+ * entirely admin-facing, so REST consumers (e.g. headless frontends)
+ * gain no benefit from loading 12 include files on every API call.
+ *
+ * @return bool
+ */
+function ccm_tools_is_rest_request(): bool {
+    if (defined('REST_REQUEST') && REST_REQUEST) {
+        return true;
+    }
+    if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/') !== false) {
+        return true;
+    }
+    if (isset($_GET['rest_route'])) {
+        return true;
+    }
+    return false;
+}
+
 // Main plugin initialization - AFTER PLUGINS_LOADED HOOK
 add_action('plugins_loaded', 'ccm_initialize_plugin', 10);
 
@@ -132,6 +153,13 @@ function ccm_initialize_plugin() {
     // Remove the problematic class check that's preventing initialization
     // and use our improved duplicate detection instead
     if (isset($GLOBALS['ccm_is_duplicate']) && $GLOBALS['ccm_is_duplicate'] === true) {
+        return;
+    }
+
+    // Skip heavy loading on REST API requests.
+    // CCM Tools is admin-only — loading 12 include files adds unnecessary
+    // overhead to REST responses consumed by headless frontends.
+    if (ccm_tools_is_rest_request()) {
         return;
     }
     

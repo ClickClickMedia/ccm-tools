@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.30.2
+ * Version: 7.30.4
  */
 
 (function() {
@@ -4295,12 +4295,86 @@
             if (resultEl) resultEl.innerHTML = html;
             const oneClickBtn = $('#ai-one-click-btn');
             if (oneClickBtn) oneClickBtn.disabled = false;
+
+            // Refresh subscription status after successful connection test
+            refreshSubscriptionStatus();
         } catch (err) {
             if (statusBadge) { statusBadge.textContent = 'Disconnected'; statusBadge.className = 'ccm-badge ccm-badge-error'; }
             if (resultEl) resultEl.innerHTML = `<div class="ccm-error">❌ ${err.message || 'Connection failed'}</div>`;
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
         }
+    }
+
+    /**
+     * Refresh the Subscription Status card via AJAX without a full page reload.
+     */
+    async function refreshSubscriptionStatus() {
+        try {
+            const res = await ajax('ccm_tools_premium_refresh', {});
+            if (!res.success) return;
+
+            const card = document.querySelector('.ccm-card-premium');
+            if (!card) return;
+
+            const headerBadge = card.querySelector('.ccm-card-header .ccm-premium-badge');
+            const body = card.querySelector('.ccm-card-body');
+            if (!body) return;
+
+            if (res.data.premium) {
+                // Update badge to Active
+                if (headerBadge) {
+                    headerBadge.textContent = 'Active';
+                    headerBadge.className = 'ccm-premium-badge ccm-premium-badge-pro';
+                }
+
+                // Also update the nav bar premium badge
+                const navBadge = document.querySelector('.ccm-premium-badge-free');
+                if (navBadge && navBadge.closest('.ccm-header-nav, .ccm-nav, nav')) {
+                    navBadge.textContent = 'Premium';
+                    navBadge.className = 'ccm-premium-badge ccm-premium-badge-pro';
+                    navBadge.removeAttribute('href');
+                }
+
+                const status = res.data.status || {};
+                let html = '<div class="ccm-premium-status-active">';
+                html += '<p>Your premium subscription is <strong class="ccm-success">active</strong>.</p>';
+                if (status.plan && status.plan !== 'developer') {
+                    html += `<p>Plan: <strong>${escHtml(status.plan.charAt(0).toUpperCase() + status.plan.slice(1))}</strong></p>`;
+                }
+                if (status.expires) {
+                    const expDate = new Date(status.expires);
+                    const formatted = expDate.toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
+                    html += `<p>Renews: <strong>${escHtml(formatted)}</strong></p>`;
+                }
+                html += '<div class="ccm-premium-active-features" style="margin-top: var(--ccm-space-md);">';
+                html += '<h4>Your Premium Features</h4>';
+                html += '<div class="ccm-premium-active-feature"><span>🤖</span> <strong>AI Performance Hub</strong> — AI-powered PageSpeed analysis and automated optimization</div>';
+                html += '<div class="ccm-premium-active-feature"><span>⚡</span> <strong>Advanced Redis Configuration</strong> — Enterprise-grade Redis object cache tuning</div>';
+                html += '</div>';
+                html += '<p style="margin-top: var(--ccm-space-md);">';
+                html += '<button type="button" id="premium-refresh-btn" class="ccm-button ccm-button-small ccm-button-secondary">Refresh Status</button>';
+                html += '</p>';
+                html += '</div>';
+                body.innerHTML = html;
+
+                // Re-attach refresh handler
+                initPremiumHandlers();
+
+                showNotification('Premium subscription active!', 'success');
+            }
+        } catch (e) {
+            // Silent fail — subscription status simply stays as-is
+        }
+    }
+
+    /**
+     * Escape HTML for safe insertion.
+     */
+    function escHtml(str) {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
     }
 
     // ─── PageSpeed render helpers ────────────
