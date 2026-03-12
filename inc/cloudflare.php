@@ -317,13 +317,15 @@ function ccm_tools_render_cloudflare_page(): void {
                 <h2><?php _e('Cloudflare Connection', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Connect your Cloudflare account using an API Token. Use a token with Zone:Read + Zone:Cache Purge + Zone Settings:Read permissions.', 'ccm-tools'); ?></p>
 
-                <div id="cf-connection-form">
+                <div id="cf-connection-form" autocomplete="off">
                     <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
                         <label for="cf-api-token" style="display: block; margin-bottom: var(--ccm-space-xs);">
                             <strong><?php _e('API Token', 'ccm-tools'); ?></strong>
                         </label>
                         <div style="display: flex; gap: var(--ccm-space-sm); align-items: center;">
                             <input type="password" id="cf-api-token"
+                                   name="cf_api_token"
+                                   autocomplete="new-password"
                                    value="<?php echo esc_attr($settings['api_token']); ?>"
                                    placeholder="<?php esc_attr_e('Enter your Cloudflare API Token', 'ccm-tools'); ?>"
                                    style="flex: 1; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace;">
@@ -339,6 +341,8 @@ function ccm_tools_render_cloudflare_page(): void {
                             <span class="ccm-text-muted" style="font-weight: normal;"> — <?php _e('leave blank to auto-detect from your domain', 'ccm-tools'); ?></span>
                         </label>
                         <input type="text" id="cf-zone-id"
+                               name="cf_zone_id"
+                               autocomplete="off"
                                value="<?php echo esc_attr($settings['zone_id']); ?>"
                                placeholder="<?php esc_attr_e('e.g. a1b2c3d4e5f6...', 'ccm-tools'); ?>"
                                style="width: 100%; max-width: 500px; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace;">
