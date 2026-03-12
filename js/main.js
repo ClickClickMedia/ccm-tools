@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.30.4
+ * Version: 7.31.0
  */
 
 (function() {
@@ -688,10 +688,31 @@
             
             optionsContainer.innerHTML = html;
             
-            // Auto-uncheck 'Update table collations' if no tables need collation update
-            if (stats.tables_needing_collation === 0) {
-                const collationCb = optionsContainer.querySelector('#opt-update_collation');
-                if (collationCb) collationCb.checked = false;
+            // Disable and annotate options that are already applied
+            const alreadyApplied = {
+                'update_collation': stats.tables_needing_collation === 0,
+                'add_postmeta_index': !!stats.index_postmeta_exists,
+                'add_usermeta_index': !!stats.index_usermeta_exists,
+                'add_commentmeta_index': !!stats.index_commentmeta_exists,
+                'add_termmeta_index': !!stats.index_termmeta_exists,
+            };
+            for (const [optKey, isApplied] of Object.entries(alreadyApplied)) {
+                if (!isApplied) continue;
+                const cb = optionsContainer.querySelector(`#opt-${optKey}`);
+                if (!cb) continue;
+                cb.checked = false;
+                cb.disabled = true;
+                const descEl = cb.closest('.ccm-opt-item')?.querySelector('.ccm-opt-item-desc');
+                if (descEl) {
+                    descEl.innerHTML = '<span style="color:var(--ccm-success)">✓ Already applied</span>';
+                }
+                // Replace stat badge with a check
+                const statEl = cb.closest('.ccm-opt-item')?.querySelector('.ccm-opt-item-stat');
+                if (statEl) {
+                    statEl.textContent = '✓';
+                    statEl.className = 'ccm-opt-item-stat';
+                    statEl.style.color = 'var(--ccm-success)';
+                }
             }
             
             // Enable run button
@@ -2425,6 +2446,49 @@
                         statusEl.textContent = 'Performance optimizations are INACTIVE';
                     }
                 }
+            });
+        }
+
+        // Safe Optimisations: sync safe toggles ↔ advanced toggles
+        document.querySelectorAll('.safe-opt-toggle').forEach(safeCb => {
+            const targetId = safeCb.getAttribute('data-target');
+            const advancedCb = targetId ? document.getElementById(targetId) : null;
+            if (!advancedCb) return;
+
+            // Safe → Advanced
+            safeCb.addEventListener('change', () => {
+                advancedCb.checked = safeCb.checked;
+                advancedCb.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            // Advanced → Safe
+            advancedCb.addEventListener('change', () => {
+                safeCb.checked = advancedCb.checked;
+            });
+        });
+
+        // Enable All Safe / Disable All Safe buttons
+        const enableAllSafe = $('#safe-enable-all');
+        const disableAllSafe = $('#safe-disable-all');
+        if (enableAllSafe) {
+            enableAllSafe.addEventListener('click', () => {
+                document.querySelectorAll('.safe-opt-toggle').forEach(cb => {
+                    if (!cb.checked) {
+                        cb.checked = true;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                showNotification('All safe optimisations enabled. Press Save Settings to apply.', 'success');
+            });
+        }
+        if (disableAllSafe) {
+            disableAllSafe.addEventListener('click', () => {
+                document.querySelectorAll('.safe-opt-toggle').forEach(cb => {
+                    if (cb.checked) {
+                        cb.checked = false;
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                });
+                showNotification('All safe optimisations disabled. Press Save Settings to apply.', 'info');
             });
         }
         

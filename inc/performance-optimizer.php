@@ -2164,7 +2164,63 @@ function ccm_tools_render_perf_page() {
                 </div>
                 <?php endif; ?>
             </div>
-            
+
+            <!-- Safe Optimisations -->
+            <div class="ccm-card" id="safe-optimisations">
+                <h2><?php _e('Safe Optimisations', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('These optimisations have zero impact on page layout or visual appearance. Safe to enable on any site without testing.', 'ccm-tools'); ?></p>
+
+                <div style="display: flex; gap: var(--ccm-space-sm); margin-bottom: var(--ccm-space-lg); flex-wrap: wrap;">
+                    <button type="button" id="safe-enable-all" class="ccm-button ccm-button-primary ccm-button-small"><?php _e('Enable All Safe', 'ccm-tools'); ?></button>
+                    <button type="button" id="safe-disable-all" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Disable All Safe', 'ccm-tools'); ?></button>
+                </div>
+
+                <?php
+                $safe_options = array(
+                    array('id' => 'perf-remove-query-strings', 'key' => 'remove_query_strings', 'label' => __('Remove Query Strings', 'ccm-tools'), 'desc' => __('Removes ?ver= from static resources. Improves CDN caching.', 'ccm-tools')),
+                    array('id' => 'perf-disable-emoji', 'key' => 'disable_emoji', 'label' => __('Disable WordPress Emojis', 'ccm-tools'), 'desc' => __('Removes emoji script (~10 KB). Native browser emojis still work.', 'ccm-tools')),
+                    array('id' => 'perf-disable-dashicons', 'key' => 'disable_dashicons', 'label' => __('Disable Dashicons (Frontend)', 'ccm-tools'), 'desc' => __('Removes Dashicons (~35 KB) for logged-out visitors.', 'ccm-tools')),
+                    array('id' => 'perf-disable-rsd-wlw', 'key' => 'disable_rsd_wlw', 'label' => __('Remove RSD & WLW Links', 'ccm-tools'), 'desc' => __('Removes rarely-used discovery links from &lt;head&gt;.', 'ccm-tools')),
+                    array('id' => 'perf-disable-shortlink', 'key' => 'disable_shortlink', 'label' => __('Remove Shortlink', 'ccm-tools'), 'desc' => __('Removes WordPress shortlink (?p=123) from &lt;head&gt;.', 'ccm-tools')),
+                    array('id' => 'perf-disable-rest-api-links', 'key' => 'disable_rest_api_links', 'label' => __('Remove REST API Link', 'ccm-tools'), 'desc' => __('Removes REST API discovery link. API still works.', 'ccm-tools')),
+                    array('id' => 'perf-remove-generator-tag', 'key' => 'remove_generator_tag', 'label' => __('Remove Generator Tag', 'ccm-tools'), 'desc' => __('Hides WordPress version meta tag. Minor security improvement.', 'ccm-tools')),
+                    array('id' => 'perf-remove-adjacent-post-links', 'key' => 'remove_adjacent_post_links', 'label' => __('Remove Adjacent Post Links', 'ccm-tools'), 'desc' => __('Removes prev/next post rel links from &lt;head&gt;.', 'ccm-tools')),
+                    array('id' => 'perf-disable-wp-embed', 'key' => 'disable_wp_embed', 'label' => __('Remove wp-embed Script', 'ccm-tools'), 'desc' => __('Removes wp-embed.min.js (~3 KB) from every page.', 'ccm-tools')),
+                    array('id' => 'perf-minify-html', 'key' => 'minify_html', 'label' => __('Minify HTML', 'ccm-tools'), 'desc' => __('Strips whitespace and comments. Pre/textarea/script preserved.', 'ccm-tools')),
+                    array('id' => 'perf-lcp-fetchpriority', 'key' => 'lcp_fetchpriority', 'label' => __('Auto fetchpriority="high"', 'ccm-tools'), 'desc' => __('Prioritises the first image on each page for faster LCP.', 'ccm-tools')),
+                    array('id' => 'perf-image-decoding-async', 'key' => 'image_decoding_async', 'label' => __('Async Image Decoding', 'ccm-tools'), 'desc' => __('Decodes images off the main thread. No visual change.', 'ccm-tools')),
+                    array('id' => 'perf-font-display-swap', 'key' => 'font_display_swap', 'label' => __('Font Display: Swap', 'ccm-tools'), 'desc' => __('Shows fallback text while fonts load. Fixes webfont audit.', 'ccm-tools')),
+                    array('id' => 'perf-lazy-load-iframes', 'key' => 'lazy_load_iframes', 'label' => __('Lazy Load Iframes', 'ccm-tools'), 'desc' => __('Native lazy loading for offscreen iframes.', 'ccm-tools')),
+                    array('id' => 'perf-video-preload-none', 'key' => 'video_preload_none', 'label' => __('Video Preload: None', 'ccm-tools'), 'desc' => __('Prevents video data download until user clicks play.', 'ccm-tools')),
+                    array('id' => 'perf-cache-control-meta', 'key' => 'cache_control_meta', 'label' => __('Cache-Control Header', 'ccm-tools'), 'desc' => __('Sends efficient cache headers for HTML responses.', 'ccm-tools')),
+                    array('id' => 'perf-stale-while-revalidate', 'key' => 'stale_while_revalidate', 'label' => __('Stale-While-Revalidate', 'ccm-tools'), 'desc' => __('Serves stale cache while fetching fresh copy. Instant repeat visits.', 'ccm-tools')),
+                );
+                foreach ($safe_options as $opt) :
+                ?>
+                <div class="ccm-setting-row" style="border-bottom: 1px solid var(--ccm-border); padding: var(--ccm-space-sm) 0;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php echo $opt['label']; ?></strong>
+                            <span class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin-left: var(--ccm-space-sm);"><?php echo $opt['desc']; ?></span>
+                        </div>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" class="safe-opt-toggle" id="safe-<?php echo esc_attr($opt['key']); ?>" data-target="<?php echo esc_attr($opt['id']); ?>" <?php checked(!empty($settings[$opt['key']])); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+
+                <div style="margin-top: var(--ccm-space-md);">
+                    <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm);">
+                        <?php _e('Changes here also update the corresponding toggles in the Advanced sections below. Press <strong>Save Settings</strong> to apply.', 'ccm-tools'); ?>
+                    </p>
+                </div>
+            </div>
+
+            <h2 style="margin: var(--ccm-space-xl) 0 var(--ccm-space-md); color: var(--ccm-text); font-size: 1.3em;"><?php _e('Advanced Optimisations', 'ccm-tools'); ?></h2>
+            <p class="ccm-text-muted" style="margin-bottom: var(--ccm-space-lg);"><?php _e('These optimisations can improve scores significantly but may affect layout or functionality. Test thoroughly after enabling.', 'ccm-tools'); ?></p>
+
             <!-- JavaScript Optimizations -->
             <div class="ccm-card" id="js-optimizations">
                 <h2><?php _e('JavaScript Optimizations', 'ccm-tools'); ?></h2>

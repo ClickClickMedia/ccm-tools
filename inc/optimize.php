@@ -1141,5 +1141,28 @@ function ccm_tools_get_optimization_stats() {
         "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND TABLE_COLLATION != 'utf8mb4_unicode_520_ci'"
     );
     
+    // Index existence checks for each meta table
+    $index_length = ccm_tools_get_safe_index_length();
+    $index_name = 'ccm_meta_key';
+    $meta_tables = array(
+        'postmeta'    => $wpdb->postmeta,
+        'usermeta'    => $wpdb->usermeta,
+        'commentmeta' => $wpdb->commentmeta,
+        'termmeta'    => $wpdb->termmeta,
+    );
+    foreach ($meta_tables as $key => $table) {
+        $stats["index_{$key}_exists"] = false;
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists) {
+            $indexes = $wpdb->get_results("SHOW INDEX FROM `{$table}` WHERE Key_name = '{$index_name}'");
+            foreach ($indexes as $idx) {
+                if ($idx->Sub_part == $index_length) {
+                    $stats["index_{$key}_exists"] = true;
+                    break;
+                }
+            }
+        }
+    }
+    
     return $stats;
 }
