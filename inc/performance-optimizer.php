@@ -1754,8 +1754,9 @@ function ccm_tools_perf_minify_html_callback( $html ) {
     );
     // Remove HTML comments (keep IE conditionals <!--[if)
     $html = preg_replace( '/<!--(?!\[if\s)(?!<!)[^\[>].*?-->/si', '', $html );
-    // Collapse whitespace between tags
-    $html = preg_replace( '/>\s+</', '><', $html );
+    // Collapse runs of whitespace between tags to a single space
+    // Preserves the space that inline elements need (a, span, button, img, etc.)
+    $html = preg_replace( '/>\s+</', '> <', $html );
     // Strip leading/trailing whitespace per line
     $html = preg_replace( '/^\s+|\s+$/m', '', $html );
     // Restore preserved blocks
@@ -2186,7 +2187,6 @@ function ccm_tools_render_perf_page() {
                     array('id' => 'perf-remove-generator-tag', 'key' => 'remove_generator_tag', 'label' => __('Remove Generator Tag', 'ccm-tools'), 'desc' => __('Hides WordPress version meta tag. Minor security improvement.', 'ccm-tools')),
                     array('id' => 'perf-remove-adjacent-post-links', 'key' => 'remove_adjacent_post_links', 'label' => __('Remove Adjacent Post Links', 'ccm-tools'), 'desc' => __('Removes prev/next post rel links from &lt;head&gt;.', 'ccm-tools')),
                     array('id' => 'perf-disable-wp-embed', 'key' => 'disable_wp_embed', 'label' => __('Remove wp-embed Script', 'ccm-tools'), 'desc' => __('Removes wp-embed.min.js (~3 KB) from every page.', 'ccm-tools')),
-                    array('id' => 'perf-minify-html', 'key' => 'minify_html', 'label' => __('Minify HTML', 'ccm-tools'), 'desc' => __('Strips whitespace and comments. Pre/textarea/script preserved.', 'ccm-tools')),
                     array('id' => 'perf-lcp-fetchpriority', 'key' => 'lcp_fetchpriority', 'label' => __('Auto fetchpriority="high"', 'ccm-tools'), 'desc' => __('Prioritises the first image on each page for faster LCP.', 'ccm-tools')),
                     array('id' => 'perf-image-decoding-async', 'key' => 'image_decoding_async', 'label' => __('Async Image Decoding', 'ccm-tools'), 'desc' => __('Decodes images off the main thread. No visual change.', 'ccm-tools')),
                     array('id' => 'perf-font-display-swap', 'key' => 'font_display_swap', 'label' => __('Font Display: Swap', 'ccm-tools'), 'desc' => __('Shows fallback text while fonts load. Fixes webfont audit.', 'ccm-tools')),
