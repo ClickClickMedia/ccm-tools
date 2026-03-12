@@ -108,11 +108,11 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
         'timeout' => 15,
         'headers' => array(
             'Authorization' => 'Bearer ' . $token,
-            'Content-Type'  => 'application/json',
         ),
     );
 
     if (!empty($body) && in_array($args['method'], array('POST', 'PUT', 'PATCH'), true)) {
+        $args['headers']['Content-Type'] = 'application/json';
         $args['body'] = wp_json_encode($body);
     }
 
@@ -122,12 +122,13 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
     }
 
     $code = wp_remote_retrieve_response_code($response);
-    $data = json_decode(wp_remote_retrieve_body($response), true);
+    $raw  = wp_remote_retrieve_body($response);
+    $data = json_decode($raw, true);
 
     if ($code < 200 || $code >= 300 || empty($data['success'])) {
-        $msg = 'Cloudflare API error';
+        $msg = 'Cloudflare API error (HTTP ' . $code . ')';
         if (!empty($data['errors'][0]['message'])) {
-            $msg = $data['errors'][0]['message'];
+            $msg = $data['errors'][0]['message'] . ' (HTTP ' . $code . ')';
         }
         return new WP_Error('cf_api_error', $msg, array('status' => $code, 'response' => $data));
     }
@@ -143,6 +144,12 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
  * @return array|WP_Error  Zone details on success.
  */
 function ccm_tools_cf_verify_token(string $token, string $zone_id = '') {
+    // First verify the token itself is valid
+    $verify = ccm_tools_cf_api('user/tokens/verify', 'GET', array(), $token);
+    if (is_wp_error($verify)) {
+        return new WP_Error('token_invalid', __('API Token verification failed: ', 'ccm-tools') . $verify->get_error_message());
+    }
+
     // If zone_id supplied, verify it directly
     if (!empty($zone_id)) {
         $data = ccm_tools_cf_api('zones/' . $zone_id, 'GET', array(), $token);
@@ -359,8 +366,8 @@ function ccm_tools_render_cloudflare_page(): void {
                                    value="<?php echo esc_attr($settings['api_token']); ?>"
                                    placeholder="<?php esc_attr_e('Enter your Cloudflare API Token', 'ccm-tools'); ?>"
                                    style="flex: 1; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace;">
-                            <button type="button" id="cf-toggle-token" class="ccm-btn ccm-btn-secondary" style="padding: var(--ccm-space-sm) var(--ccm-space-md);" title="<?php esc_attr_e('Show/hide token', 'ccm-tools'); ?>">
-                                <span class="ccm-icon">👁</span>
+                            <button type="button" id="cf-toggle-token" class="ccm-button ccm-button-secondary" style="padding: var(--ccm-space-sm) var(--ccm-space-md);" title="<?php esc_attr_e('Show/hide token', 'ccm-tools'); ?>">
+                                <span class="ccm-button-icon">👁</span>
                             </button>
                         </div>
                     </div>
@@ -379,11 +386,11 @@ function ccm_tools_render_cloudflare_page(): void {
                     </div>
 
                     <div style="display: flex; gap: var(--ccm-space-sm); align-items: center; padding-top: var(--ccm-space-sm);">
-                        <button type="button" id="cf-connect-btn" class="ccm-btn ccm-btn-primary">
+                        <button type="button" id="cf-connect-btn" class="ccm-button">
                             <?php echo $connected ? __('Reconnect', 'ccm-tools') : __('Connect', 'ccm-tools'); ?>
                         </button>
                         <?php if ($connected): ?>
-                        <button type="button" id="cf-disconnect-btn" class="ccm-btn ccm-btn-secondary" style="color: var(--ccm-danger);">
+                        <button type="button" id="cf-disconnect-btn" class="ccm-button ccm-button-secondary" style="color: var(--ccm-danger);">
                             <?php _e('Disconnect', 'ccm-tools'); ?>
                         </button>
                         <?php endif; ?>
@@ -410,7 +417,7 @@ function ccm_tools_render_cloudflare_page(): void {
                         <strong><?php _e('Purge All Cache', 'ccm-tools'); ?></strong>
                         <p class="ccm-text-muted"><?php _e('Clears all cached files from Cloudflare\'s edge servers. Your origin server will be hit for all requests until the cache is rebuilt.', 'ccm-tools'); ?></p>
                     </div>
-                    <button type="button" id="cf-purge-all" class="ccm-btn ccm-btn-primary">
+                    <button type="button" id="cf-purge-all" class="ccm-button">
                         <?php _e('Purge Everything', 'ccm-tools'); ?>
                     </button>
                 </div>
@@ -423,7 +430,7 @@ function ccm_tools_render_cloudflare_page(): void {
                                   placeholder="<?php echo esc_attr(home_url('/example-page/')); ?>"
                                   style="width: 100%; max-width: 600px; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace; margin-top: var(--ccm-space-sm);"></textarea>
                     </div>
-                    <button type="button" id="cf-purge-urls-btn" class="ccm-btn ccm-btn-secondary" style="align-self: flex-start; margin-top: var(--ccm-space-md);">
+                    <button type="button" id="cf-purge-urls-btn" class="ccm-button ccm-button-secondary" style="align-self: flex-start; margin-top: var(--ccm-space-md);">
                         <?php _e('Purge URLs', 'ccm-tools'); ?>
                     </button>
                 </div>
