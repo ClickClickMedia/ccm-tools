@@ -91,9 +91,11 @@ function ccm_tools_cf_detect(): array {
  * @param array  $body      Request body (will be JSON-encoded for POST/PUT/PATCH).
  * @return array|WP_Error   Decoded JSON body, or WP_Error.
  */
-function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body = array()) {
-    $settings = ccm_tools_cf_get_settings();
-    $token    = $settings['api_token'];
+function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body = array(), string $token = '') {
+    if (empty($token)) {
+        $settings = ccm_tools_cf_get_settings();
+        $token    = $settings['api_token'];
+    }
 
     if (empty($token)) {
         return new WP_Error('no_token', __('Cloudflare API token is not configured.', 'ccm-tools'));
@@ -141,16 +143,10 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
  * @return array|WP_Error  Zone details on success.
  */
 function ccm_tools_cf_verify_token(string $token, string $zone_id = '') {
-    // Temporarily store token for the API call
-    $old = ccm_tools_cf_get_settings();
-    ccm_tools_cf_save_settings(array_merge($old, array('api_token' => $token)));
-
     // If zone_id supplied, verify it directly
     if (!empty($zone_id)) {
-        $data = ccm_tools_cf_api('zones/' . $zone_id);
+        $data = ccm_tools_cf_api('zones/' . $zone_id, 'GET', array(), $token);
         if (is_wp_error($data)) {
-            // Restore old settings on failure
-            ccm_tools_cf_save_settings($old);
             return $data;
         }
         return $data['result'] ?? $data;
@@ -165,15 +161,13 @@ function ccm_tools_cf_verify_token(string $token, string $zone_id = '') {
     $parts = explode('.', $domain);
     while (count($parts) >= 2) {
         $try = implode('.', $parts);
-        $data = ccm_tools_cf_api('zones?name=' . urlencode($try) . '&status=active');
+        $data = ccm_tools_cf_api('zones?name=' . urlencode($try) . '&status=active', 'GET', array(), $token);
         if (!is_wp_error($data) && !empty($data['result'][0]['id'])) {
             return $data['result'][0];
         }
         array_shift($parts);
     }
 
-    // Restore old settings on failure
-    ccm_tools_cf_save_settings($old);
     return new WP_Error('zone_not_found', __('Could not find a Cloudflare zone for this domain. Please enter the Zone ID manually.', 'ccm-tools'));
 }
 
@@ -307,15 +301,51 @@ function ccm_tools_cf_toggle_dev_mode(bool $enable) {
 function ccm_tools_render_cloudflare_page(): void {
     $settings  = ccm_tools_cf_get_settings();
     $connected = !empty($settings['connected']) && !empty($settings['zone_id']);
+    $cf_detected = get_transient('ccm_tools_cf_detected');
     ?>
     <div class="wrap ccm-tools">
         <?php ccm_tools_render_header_nav('ccm-tools-cloudflare'); ?>
 
-        <div class="ccm-dashboard">
+        <div class="ccm-content">
+            <!-- Status Overview -->
+            <div class="ccm-card">
+                <h2><?php _e('Cloudflare Status', 'ccm-tools'); ?></h2>
+                <table class="ccm-table">
+                    <tr>
+                        <th><?php _e('Cloudflare Detected', 'ccm-tools'); ?></th>
+                        <td>
+                            <?php if ($cf_detected): ?>
+                                <span class="ccm-success"><?php _e('Yes', 'ccm-tools'); ?></span>
+                            <?php elseif ($cf_detected === false): ?>
+                                <span class="ccm-warning"><?php _e('Not detected', 'ccm-tools'); ?></span>
+                            <?php else: ?>
+                                <span class="ccm-text-muted"><?php _e('Unknown (not checked yet)', 'ccm-tools'); ?></span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><?php _e('API Connection', 'ccm-tools'); ?></th>
+                        <td>
+                            <?php if ($connected): ?>
+                                <span class="ccm-success"><?php _e('Connected', 'ccm-tools'); ?></span>
+                            <?php else: ?>
+                                <span class="ccm-warning"><?php _e('Not connected', 'ccm-tools'); ?></span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php if ($connected): ?>
+                    <tr>
+                        <th><?php _e('Zone ID', 'ccm-tools'); ?></th>
+                        <td><code><?php echo esc_html($settings['zone_id']); ?></code></td>
+                    </tr>
+                    <?php endif; ?>
+                </table>
+            </div>
+
             <!-- Connection Settings -->
             <div class="ccm-card">
-                <h2><?php _e('Cloudflare Connection', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted"><?php _e('Connect your Cloudflare account using an API Token. Use a token with Zone:Read + Zone:Cache Purge + Zone Settings:Read permissions.', 'ccm-tools'); ?></p>
+                <h2><?php _e('Connection Settings', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Connect using an API Token with Zone:Read, Cache Purge, and Zone Settings:Read permissions.', 'ccm-tools'); ?></p>
 
                 <div id="cf-connection-form" autocomplete="off">
                     <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
@@ -363,15 +393,15 @@ function ccm_tools_render_cloudflare_page(): void {
             </div>
 
             <?php if ($connected): ?>
-            <!-- Zone Status -->
+            <!-- Zone Features -->
             <div class="ccm-card" id="cf-status-card">
-                <h2><?php _e('Zone Status', 'ccm-tools'); ?></h2>
+                <h2><?php _e('Zone Features', 'ccm-tools'); ?></h2>
                 <div id="cf-zone-status">
                     <p class="ccm-text-muted"><?php _e('Loading zone information...', 'ccm-tools'); ?></p>
                 </div>
             </div>
 
-            <!-- Cache Actions -->
+            <!-- Cache Management -->
             <div class="ccm-card">
                 <h2><?php _e('Cache Management', 'ccm-tools'); ?></h2>
 

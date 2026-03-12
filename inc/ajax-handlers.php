@@ -3533,11 +3533,16 @@ function ccm_tools_ajax_cf_connect(): void {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
-    $token   = sanitize_text_field($_POST['api_token'] ?? '');
+    $token   = isset($_POST['api_token']) ? trim(wp_unslash($_POST['api_token'])) : '';
     $zone_id = sanitize_text_field($_POST['zone_id'] ?? '');
 
     if (empty($token)) {
         wp_send_json_error(array('message' => __('API Token is required.', 'ccm-tools')));
+    }
+
+    // Validate token contains only printable ASCII (no control chars, no whitespace)
+    if (!preg_match('/^[\x21-\x7E]+$/', $token)) {
+        wp_send_json_error(array('message' => __('Invalid API Token format. Tokens should contain only alphanumeric characters, dashes, and underscores.', 'ccm-tools')));
     }
 
     $result = ccm_tools_cf_verify_token($token, $zone_id);
