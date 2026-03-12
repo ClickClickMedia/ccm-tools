@@ -1742,10 +1742,11 @@ function ccm_tools_perf_minify_html_callback( $html ) {
     $preserve = array();
     $i        = 0;
     // Extract pre/textarea/script/style and replace with placeholders
+    // Uses non-comment tokens so the comment-removal step won't strip them
     $html = preg_replace_callback(
         '/<(pre|textarea|script|style)[^>]*>.*?<\/\1>/si',
         function ( $matches ) use ( &$preserve, &$i ) {
-            $key          = '<!--CCM_PRESERVE_' . $i . '-->';
+            $key          = '%%CCM_PRESERVE_' . $i . '%%';
             $preserve[$i] = $matches[0];
             $i++;
             return $key;
@@ -1761,7 +1762,7 @@ function ccm_tools_perf_minify_html_callback( $html ) {
     $html = preg_replace( '/^\s+|\s+$/m', '', $html );
     // Restore preserved blocks
     foreach ( $preserve as $idx => $content ) {
-        $html = str_replace( '<!--CCM_PRESERVE_' . $idx . '-->', $content, $html );
+        $html = str_replace( '%%CCM_PRESERVE_' . $idx . '%%', $content, $html );
     }
     return $html;
 }
