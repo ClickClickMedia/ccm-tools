@@ -245,7 +245,18 @@ function ccm_tools_cf_get_zone_status() {
 
     $zone_result = $zone['result'] ?? array();
 
-    // Fetch feature settings we care about
+    // Fetch ALL zone settings in a single API call instead of one-by-one
+    $all_settings = ccm_tools_cf_api('zones/' . $zone_id . '/settings');
+    $settings_map = array();
+    if (!is_wp_error($all_settings) && !empty($all_settings['result'])) {
+        foreach ($all_settings['result'] as $item) {
+            if (!empty($item['id'])) {
+                $settings_map[$item['id']] = $item['value'];
+            }
+        }
+    }
+
+    // Pick the settings we care about
     $feature_keys = array(
         'polish', 'minify', 'rocket_loader', 'always_online',
         'browser_cache_ttl', 'development_mode', 'webp',
@@ -256,16 +267,14 @@ function ccm_tools_cf_get_zone_status() {
 
     $features = array();
     foreach ($feature_keys as $key) {
-        $resp = ccm_tools_cf_api('zones/' . $zone_id . '/settings/' . $key);
-        if (!is_wp_error($resp) && isset($resp['result']['value'])) {
-            $features[$key] = $resp['result']['value'];
+        if (isset($settings_map[$key])) {
+            $features[$key] = $settings_map[$key];
         }
     }
 
-    // Check APO
-    $apo = ccm_tools_cf_api('zones/' . $zone_id . '/settings/automatic_platform_optimization');
-    if (!is_wp_error($apo) && isset($apo['result']['value'])) {
-        $features['apo'] = $apo['result']['value'];
+    // APO is included in the bulk settings response
+    if (isset($settings_map['automatic_platform_optimization'])) {
+        $features['apo'] = $settings_map['automatic_platform_optimization'];
     }
 
     return array(
