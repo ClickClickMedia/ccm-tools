@@ -86,9 +86,14 @@ function ccm_tools_cf_detect(): array {
 /**
  * Make a request to the Cloudflare API v4.
  *
+ * Uses PHP cURL directly (not wp_remote_request) to prevent other WordPress
+ * plugins from injecting headers via the http_request_args filter, which
+ * causes Cloudflare error 6003 "Invalid request headers".
+ *
  * @param string $endpoint  Path after /client/v4/ (e.g. "zones/{id}/purge_cache").
  * @param string $method    HTTP method.
  * @param array  $body      Request body (will be JSON-encoded for POST/PUT/PATCH).
+ * @param string $token     API token (uses saved setting if empty).
  * @return array|WP_Error   Decoded JSON body, or WP_Error.
  */
 function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body = array(), string $token = '') {
@@ -101,38 +106,51 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
         return new WP_Error('no_token', __('Cloudflare API token is not configured.', 'ccm-tools'));
     }
 
-    $url = 'https://api.cloudflare.com/client/v4/' . ltrim($endpoint, '/');
+    $url    = 'https://api.cloudflare.com/client/v4/' . ltrim($endpoint, '/');
+    $method = strtoupper($method);
 
-    $args = array(
-        'method'  => strtoupper($method),
-        'timeout' => 15,
-        'headers' => array(
-            'Authorization' => 'Bearer ' . $token,
-        ),
+    // Headers matching the official Cloudflare WordPress plugin
+    $headers = array(
+        'Authorization: Bearer ' . $token,
+        'Content-Type: application/json',
+        'User-Agent: wordpress/' . get_bloginfo('version') . '; ccm-tools/' . CCM_HELPER_VERSION,
     );
 
-    if (!empty($body) && in_array($args['method'], array('POST', 'PUT', 'PATCH'), true)) {
-        $args['headers']['Content-Type'] = 'application/json';
-        $args['body'] = wp_json_encode($body);
+    $ch = curl_init();
+    curl_setopt_array($ch, array(
+        CURLOPT_URL            => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_CUSTOMREQUEST  => $method,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ));
+
+    if (!empty($body) && in_array($method, array('POST', 'PUT', 'PATCH', 'DELETE'), true)) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, wp_json_encode($body));
     }
 
-    $response = wp_remote_request($url, $args);
-    if (is_wp_error($response)) {
-        return new WP_Error('cf_http_error', $response->get_error_message() . ' (cURL/' . $response->get_error_code() . ')');
+    $raw      = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error    = curl_error($ch);
+    $errno    = curl_errno($ch);
+    curl_close($ch);
+
+    if ($error) {
+        return new WP_Error('cf_http_error', $error . ' (cURL/' . $errno . ')');
     }
 
-    $code = wp_remote_retrieve_response_code($response);
-    $raw  = wp_remote_retrieve_body($response);
     $data = json_decode($raw, true);
 
-    if ($code < 200 || $code >= 300 || empty($data['success'])) {
-        $msg = 'Cloudflare API error (HTTP ' . $code . ')';
+    if ($httpCode < 200 || $httpCode >= 300 || empty($data['success'])) {
+        $msg = 'Cloudflare API error (HTTP ' . $httpCode . ')';
         if (!empty($data['errors'][0]['message'])) {
-            $msg = $data['errors'][0]['message'] . ' (HTTP ' . $code . ')';
+            $msg = $data['errors'][0]['message'] . ' (HTTP ' . $httpCode . ')';
         } elseif (empty($data)) {
-            $msg = 'Unexpected response (HTTP ' . $code . '): ' . mb_substr($raw, 0, 200);
+            $msg = 'Unexpected response (HTTP ' . $httpCode . '): ' . mb_substr($raw, 0, 200);
         }
-        return new WP_Error('cf_api_error', $msg, array('status' => $code, 'response' => $data));
+        return new WP_Error('cf_api_error', $msg, array('status' => $httpCode, 'response' => $data));
     }
 
     return $data;
