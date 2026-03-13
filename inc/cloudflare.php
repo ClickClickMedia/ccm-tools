@@ -108,17 +108,17 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
         'timeout' => 15,
         'headers' => array(
             'Authorization' => 'Bearer ' . $token,
-            'Content-Type'  => 'application/json',
         ),
     );
 
     if (!empty($body) && in_array($args['method'], array('POST', 'PUT', 'PATCH'), true)) {
+        $args['headers']['Content-Type'] = 'application/json';
         $args['body'] = wp_json_encode($body);
     }
 
     $response = wp_remote_request($url, $args);
     if (is_wp_error($response)) {
-        return $response;
+        return new WP_Error('cf_http_error', $response->get_error_message() . ' (cURL/' . $response->get_error_code() . ')');
     }
 
     $code = wp_remote_retrieve_response_code($response);
@@ -129,6 +129,8 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
         $msg = 'Cloudflare API error (HTTP ' . $code . ')';
         if (!empty($data['errors'][0]['message'])) {
             $msg = $data['errors'][0]['message'] . ' (HTTP ' . $code . ')';
+        } elseif (empty($data)) {
+            $msg = 'Unexpected response (HTTP ' . $code . '): ' . mb_substr($raw, 0, 200);
         }
         return new WP_Error('cf_api_error', $msg, array('status' => $code, 'response' => $data));
     }
@@ -144,38 +146,51 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
  * @return array|WP_Error  Zone details on success.
  */
 function ccm_tools_cf_verify_token(string $token, string $zone_id = '') {
-    // First verify the token itself is valid
-    $verify = ccm_tools_cf_api('user/tokens/verify', 'GET', array(), $token);
-    if (is_wp_error($verify)) {
-        return new WP_Error('token_invalid', __('API Token verification failed: ', 'ccm-tools') . $verify->get_error_message());
-    }
-
-    // If zone_id supplied, verify it directly
+    // If zone_id supplied, verify token by fetching the zone directly
     if (!empty($zone_id)) {
+        $zone_id = sanitize_text_field($zone_id);
         $data = ccm_tools_cf_api('zones/' . $zone_id, 'GET', array(), $token);
         if (is_wp_error($data)) {
-            return $data;
+            return new WP_Error('token_invalid', __('Could not access zone: ', 'ccm-tools') . $data->get_error_message());
         }
         return $data['result'] ?? $data;
     }
 
-    // Auto-detect zone from site domain
+    // Auto-detect zone from site domain — this also validates the token
     $domain = wp_parse_url(home_url(), PHP_URL_HOST);
-    // Strip www. prefix for zone lookup
     $domain = preg_replace('/^www\./i', '', $domain);
 
     // Walk up subdomains to find the zone (e.g. sub.example.com → example.com)
     $parts = explode('.', $domain);
+    $last_error = null;
     while (count($parts) >= 2) {
         $try = implode('.', $parts);
         $data = ccm_tools_cf_api('zones?name=' . urlencode($try) . '&status=active', 'GET', array(), $token);
-        if (!is_wp_error($data) && !empty($data['result'][0]['id'])) {
+
+        // If the API returned an auth/request error, the token itself is bad
+        if (is_wp_error($data)) {
+            $last_error = $data;
+            $error_data = $data->get_error_data();
+            $status = $error_data['status'] ?? 0;
+            if (in_array($status, array(400, 401, 403), true)) {
+                return new WP_Error('token_invalid', __('API Token verification failed: ', 'ccm-tools') . $data->get_error_message());
+            }
+            array_shift($parts);
+            continue;
+        }
+
+        if (!empty($data['result'][0]['id'])) {
             return $data['result'][0];
         }
         array_shift($parts);
     }
 
-    return new WP_Error('zone_not_found', __('Could not find a Cloudflare zone for this domain. Please enter the Zone ID manually.', 'ccm-tools'));
+    // If we had a transport/API error, surface it
+    if ($last_error) {
+        return new WP_Error('token_invalid', __('API Token verification failed: ', 'ccm-tools') . $last_error->get_error_message());
+    }
+
+    return new WP_Error('zone_not_found', __('Token is valid but no Cloudflare zone found for this domain. Please enter the Zone ID manually.', 'ccm-tools'));
 }
 
 /**
