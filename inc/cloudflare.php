@@ -26,6 +26,7 @@ function ccm_tools_cf_get_settings(): array {
         'api_token'  => '',
         'zone_id'    => '',
         'connected'  => false,
+        'auto_purge' => true,
     );
     return wp_parse_args(get_option('ccm_tools_cf_settings', array()), $defaults);
 }
@@ -248,6 +249,9 @@ function ccm_tools_cf_get_zone_status() {
     $feature_keys = array(
         'polish', 'minify', 'rocket_loader', 'always_online',
         'browser_cache_ttl', 'development_mode', 'webp',
+        'security_level', 'ssl', 'always_use_https', 'automatic_https_rewrites',
+        'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
+        'early_hints', 'http2', 'http3', '0rtt', 'brotli',
     );
 
     $features = array();
@@ -358,7 +362,12 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
     }
 
     // Whitelist of allowed settings
-    $allowed = array('rocket_loader', 'always_online', 'minify', 'browser_cache_ttl', 'polish', 'webp');
+    $allowed = array(
+        'rocket_loader', 'always_online', 'minify', 'browser_cache_ttl', 'polish', 'webp',
+        'security_level', 'ssl', 'always_use_https', 'automatic_https_rewrites',
+        'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
+        'early_hints', 'http2', 'http3', '0rtt', 'brotli',
+    );
     if (!in_array($setting, $allowed, true)) {
         return new WP_Error('invalid_setting', __('Invalid Cloudflare setting.', 'ccm-tools'));
     }
@@ -370,6 +379,210 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
     );
 
     return is_wp_error($data) ? $data : true;
+}
+
+// ──────────────────────────────────────────────
+// Zone Analytics
+// ──────────────────────────────────────────────
+
+/**
+ * Fetch zone analytics for the last 24 hours.
+ *
+ * @param string $since  ISO 8601 start time (default: -24h).
+ * @param string $until  ISO 8601 end time (default: now).
+ * @return array|WP_Error
+ */
+function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
+    $settings = ccm_tools_cf_get_settings();
+    if (empty($settings['zone_id'])) {
+        return new WP_Error('no_zone', __('Cloudflare is not connected.', 'ccm-tools'));
+    }
+
+    if (empty($since)) {
+        $since = gmdate('Y-m-d\TH:i:s\Z', strtotime('-24 hours'));
+    }
+    if (empty($until)) {
+        $until = gmdate('Y-m-d\TH:i:s\Z');
+    }
+
+    $data = ccm_tools_cf_api(
+        'zones/' . $settings['zone_id'] . '/analytics/dashboard?since=' . urlencode($since) . '&until=' . urlencode($until)
+    );
+
+    if (is_wp_error($data)) {
+        return $data;
+    }
+
+    $totals = $data['result']['totals'] ?? array();
+
+    return array(
+        'requests'  => array(
+            'all'     => $totals['requests']['all'] ?? 0,
+            'cached'  => $totals['requests']['cached'] ?? 0,
+            'uncached' => $totals['requests']['uncached'] ?? 0,
+            'ssl'     => $totals['requests']['ssl']['encrypted'] ?? 0,
+        ),
+        'bandwidth' => array(
+            'all'     => $totals['bandwidth']['all'] ?? 0,
+            'cached'  => $totals['bandwidth']['cached'] ?? 0,
+            'uncached' => $totals['bandwidth']['uncached'] ?? 0,
+        ),
+        'threats'   => $totals['threats']['all'] ?? 0,
+        'pageviews' => $totals['pageviews']['all'] ?? 0,
+        'uniques'   => $totals['uniques']['all'] ?? 0,
+    );
+}
+
+// ──────────────────────────────────────────────
+// DNS Records
+// ──────────────────────────────────────────────
+
+/**
+ * Fetch DNS records for the connected zone.
+ *
+ * @return array|WP_Error
+ */
+function ccm_tools_cf_get_dns_records() {
+    $settings = ccm_tools_cf_get_settings();
+    if (empty($settings['zone_id'])) {
+        return new WP_Error('no_zone', __('Cloudflare is not connected.', 'ccm-tools'));
+    }
+
+    $data = ccm_tools_cf_api('zones/' . $settings['zone_id'] . '/dns_records?per_page=100&order=type');
+    if (is_wp_error($data)) {
+        return $data;
+    }
+
+    $records = array();
+    foreach (($data['result'] ?? array()) as $r) {
+        $records[] = array(
+            'type'    => $r['type'] ?? '',
+            'name'    => $r['name'] ?? '',
+            'content' => $r['content'] ?? '',
+            'ttl'     => $r['ttl'] ?? 0,
+            'proxied' => $r['proxied'] ?? false,
+        );
+    }
+
+    return $records;
+}
+
+// ──────────────────────────────────────────────
+// Auto-Purge on Content Changes
+// ──────────────────────────────────────────────
+
+/**
+ * Automatically purge Cloudflare cache when content is saved.
+ *
+ * Hooks into WordPress save/update actions to purge relevant URLs.
+ */
+function ccm_tools_cf_auto_purge_init(): void {
+    $settings = ccm_tools_cf_get_settings();
+    if (empty($settings['connected']) || empty($settings['zone_id']) || empty($settings['auto_purge'])) {
+        return;
+    }
+
+    // Post/page save
+    add_action('save_post', 'ccm_tools_cf_auto_purge_post', 20, 2);
+
+    // Term (category/tag) changes
+    add_action('edited_term', 'ccm_tools_cf_auto_purge_term', 20, 3);
+    add_action('delete_term', 'ccm_tools_cf_auto_purge_term', 20, 3);
+
+    // Menu save
+    add_action('wp_update_nav_menu', 'ccm_tools_cf_auto_purge_all_action', 20);
+
+    // Widget save
+    add_action('update_option_sidebars_widgets', 'ccm_tools_cf_auto_purge_all_action', 20);
+
+    // Theme switch
+    add_action('switch_theme', 'ccm_tools_cf_auto_purge_all_action', 20);
+
+    // Customizer save
+    add_action('customize_save_after', 'ccm_tools_cf_auto_purge_all_action', 20);
+
+    // Permalink structure change
+    add_action('update_option_permalink_structure', 'ccm_tools_cf_auto_purge_all_action', 20);
+}
+add_action('init', 'ccm_tools_cf_auto_purge_init');
+
+/**
+ * Purge CF cache for a specific post and related pages.
+ *
+ * @param int     $post_id
+ * @param WP_Post $post
+ */
+function ccm_tools_cf_auto_purge_post(int $post_id, $post): void {
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+        return;
+    }
+    if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
+        return;
+    }
+    if (!in_array($post->post_status, array('publish', 'trash'), true)) {
+        return;
+    }
+
+    $urls = array();
+    $urls[] = get_permalink($post_id);
+    $urls[] = home_url('/');
+
+    // Purge archive pages
+    if ($post->post_type === 'post') {
+        $urls[] = get_post_type_archive_link('post');
+
+        // Category archives
+        $cats = get_the_category($post_id);
+        if ($cats) {
+            foreach ($cats as $cat) {
+                $urls[] = get_category_link($cat->term_id);
+            }
+        }
+
+        // Tag archives
+        $tags = get_the_tags($post_id);
+        if ($tags) {
+            foreach ($tags as $tag) {
+                $urls[] = get_tag_link($tag->term_id);
+            }
+        }
+
+        // Author archive
+        $urls[] = get_author_posts_url($post->post_author);
+    }
+
+    // Feed URLs
+    $urls[] = get_bloginfo_rss('rss2_url');
+
+    $urls = array_filter(array_unique($urls));
+    if (!empty($urls)) {
+        ccm_tools_cf_purge_urls($urls);
+    }
+}
+
+/**
+ * Purge CF cache for a term and related pages.
+ *
+ * @param int    $term_id
+ * @param int    $tt_id
+ * @param string $taxonomy
+ */
+function ccm_tools_cf_auto_purge_term(int $term_id, int $tt_id, string $taxonomy): void {
+    $urls = array();
+    $urls[] = get_term_link($term_id, $taxonomy);
+    $urls[] = home_url('/');
+
+    $urls = array_filter(array_unique($urls));
+    if (!empty($urls)) {
+        ccm_tools_cf_purge_urls($urls);
+    }
+}
+
+/**
+ * Purge entire CF cache (for menu/widget/theme changes).
+ */
+function ccm_tools_cf_auto_purge_all_action(): void {
+    ccm_tools_cf_purge_all();
 }
 
 
@@ -563,6 +776,57 @@ function ccm_tools_render_cloudflare_page(): void {
                         <input type="checkbox" id="cf-dev-mode-toggle">
                         <span class="ccm-toggle-slider"></span>
                     </label>
+                </div>
+            </div>
+
+            <!-- Auto-Purge Settings -->
+            <div class="ccm-card">
+                <h2><?php _e('Automatic Cache Purge', 'ccm-tools'); ?></h2>
+                <div class="ccm-setting-row" style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md); padding: var(--ccm-space-md) 0;">
+                    <div style="flex: 1;">
+                        <strong><?php _e('Auto-Purge on Content Changes', 'ccm-tools'); ?></strong>
+                        <p class="ccm-text-muted"><?php _e('Automatically purge relevant Cloudflare cache when posts, pages, menus, widgets, or the theme are updated. Purges the changed URL plus related archives and the homepage.', 'ccm-tools'); ?></p>
+                    </div>
+                    <label class="ccm-toggle">
+                        <input type="checkbox" id="cf-auto-purge-toggle" <?php checked(!empty($settings['auto_purge'])); ?>>
+                        <span class="ccm-toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Security Settings -->
+            <div class="ccm-card" id="cf-security-card">
+                <h2><?php _e('Security', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Manage Cloudflare security features for your zone.', 'ccm-tools'); ?></p>
+                <div id="cf-security-settings">
+                    <p class="ccm-text-muted"><?php _e('Loading security settings...', 'ccm-tools'); ?></p>
+                </div>
+            </div>
+
+            <!-- SSL/TLS & Network -->
+            <div class="ccm-card" id="cf-network-card">
+                <h2><?php _e('SSL/TLS & Network', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Encryption and network protocol settings.', 'ccm-tools'); ?></p>
+                <div id="cf-network-settings">
+                    <p class="ccm-text-muted"><?php _e('Loading network settings...', 'ccm-tools'); ?></p>
+                </div>
+            </div>
+
+            <!-- Zone Analytics -->
+            <div class="ccm-card" id="cf-analytics-card">
+                <h2><?php _e('Zone Analytics (Last 24 Hours)', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Traffic, caching efficiency, and threat overview.', 'ccm-tools'); ?></p>
+                <div id="cf-analytics">
+                    <p class="ccm-text-muted"><?php _e('Loading analytics...', 'ccm-tools'); ?></p>
+                </div>
+            </div>
+
+            <!-- DNS Records -->
+            <div class="ccm-card" id="cf-dns-card">
+                <h2><?php _e('DNS Records', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Read-only view of your zone\'s DNS records. Manage records in the Cloudflare dashboard.', 'ccm-tools'); ?></p>
+                <div id="cf-dns-records">
+                    <p class="ccm-text-muted"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p>
                 </div>
             </div>
             <?php endif; ?>

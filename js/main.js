@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.33.0
+ * Version: 7.34.0
  */
 
 (function() {
@@ -3528,6 +3528,44 @@
                 }
             });
         }
+
+        // Auto-Purge toggle
+        const autoPurgeToggle = $('#cf-auto-purge-toggle');
+        if (autoPurgeToggle) {
+            autoPurgeToggle.addEventListener('change', async () => {
+                const enable = autoPurgeToggle.checked;
+                autoPurgeToggle.disabled = true;
+
+                try {
+                    const res = await ajax('ccm_tools_cf_auto_purge', {
+                        enable: enable ? '1' : '0',
+                    });
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                    } else {
+                        showNotification(res.data.message || 'Failed to update auto-purge.', 'error');
+                        autoPurgeToggle.checked = !enable;
+                    }
+                } catch (err) {
+                    showNotification('Failed: ' + err.message, 'error');
+                    autoPurgeToggle.checked = !enable;
+                } finally {
+                    autoPurgeToggle.disabled = false;
+                }
+            });
+        }
+
+        // Load Analytics panel
+        const analyticsContainer = $('#cf-analytics');
+        if (analyticsContainer) {
+            loadCfAnalytics(analyticsContainer);
+        }
+
+        // Load DNS Records panel
+        const dnsContainer = $('#cf-dns-records');
+        if (dnsContainer) {
+            loadCfDnsRecords(dnsContainer);
+        }
     }
 
     /**
@@ -3657,6 +3695,12 @@
             // Bind toggle/select events
             bindCfSettingControls(container);
 
+            // Render Security Settings panel
+            renderCfSecurityPanel(features);
+
+            // Render Network Settings panel
+            renderCfNetworkPanel(features);
+
         } catch (err) {
             container.innerHTML = '<p class="ccm-error">Failed to load zone status: ' + escHtml(err.message) + '</p>';
         }
@@ -3742,6 +3786,261 @@
         el.innerHTML = enabled
             ? '<span style="color: var(--ccm-warning);">⚡ Development Mode is active — caching bypassed for 3 hours.</span>'
             : '';
+    }
+
+    /**
+     * Render Security Settings panel from zone features data.
+     */
+    function renderCfSecurityPanel(features) {
+        const container = $('#cf-security-settings');
+        if (!container) return;
+
+        let html = '<table class="ccm-table">';
+
+        // Security Level (dropdown)
+        if (features.security_level !== undefined) {
+            const levels = [
+                ['essentially_off', 'Essentially Off'],
+                ['low', 'Low'],
+                ['medium', 'Medium'],
+                ['high', 'High'],
+                ['under_attack', 'I\'m Under Attack!'],
+            ];
+            html += '<tr><th>Security Level<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Controls Cloudflare\'s challenge page sensitivity</span></th>';
+            html += '<td style="text-align: right;"><select data-cf-setting="security_level" class="ccm-cf-select">';
+            for (const [val, label] of levels) {
+                const sel = features.security_level === val ? ' selected' : '';
+                html += '<option value="' + val + '"' + sel + '>' + label + '</option>';
+            }
+            html += '</select></td></tr>';
+        }
+
+        // Email Obfuscation (toggle)
+        if (features.email_obfuscation !== undefined) {
+            const checked = features.email_obfuscation === 'on' ? ' checked' : '';
+            html += '<tr><th>Email Address Obfuscation<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Hide email addresses from bots and scrapers</span></th>';
+            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="email_obfuscation"' + checked + '>';
+            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+        }
+
+        // Hotlink Protection (toggle)
+        if (features.hotlink_protection !== undefined) {
+            const checked = features.hotlink_protection === 'on' ? ' checked' : '';
+            html += '<tr><th>Hotlink Protection<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Prevent other sites from embedding your images</span></th>';
+            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="hotlink_protection"' + checked + '>';
+            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+        }
+
+        html += '</table>';
+        container.innerHTML = html;
+
+        // Bind controls
+        bindCfSettingControls(container);
+    }
+
+    /**
+     * Render SSL/TLS & Network Settings panel from zone features data.
+     */
+    function renderCfNetworkPanel(features) {
+        const container = $('#cf-network-settings');
+        if (!container) return;
+
+        let html = '<table class="ccm-table">';
+
+        // SSL Mode (dropdown)
+        if (features.ssl !== undefined) {
+            const modes = [
+                ['off', 'Off'],
+                ['flexible', 'Flexible'],
+                ['full', 'Full'],
+                ['strict', 'Full (Strict)'],
+            ];
+            html += '<tr><th>SSL/TLS Encryption Mode<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Encryption between visitors, Cloudflare, and your origin server</span></th>';
+            html += '<td style="text-align: right;"><select data-cf-setting="ssl" class="ccm-cf-select">';
+            for (const [val, label] of modes) {
+                const sel = features.ssl === val ? ' selected' : '';
+                html += '<option value="' + val + '"' + sel + '>' + label + '</option>';
+            }
+            html += '</select></td></tr>';
+        }
+
+        // Toggle settings for network panel
+        const networkToggles = [
+            { key: 'always_use_https', label: 'Always Use HTTPS', desc: 'Redirect all HTTP requests to HTTPS' },
+            { key: 'automatic_https_rewrites', label: 'Automatic HTTPS Rewrites', desc: 'Fix mixed content by rewriting HTTP URLs to HTTPS' },
+            { key: 'opportunistic_encryption', label: 'Opportunistic Encryption', desc: 'Allow browsers to use HTTP/2 over an unencrypted connection' },
+            { key: 'early_hints', label: 'Early Hints (103)', desc: 'Speed up page loads by sending link headers before the full response' },
+            { key: 'http2', label: 'HTTP/2', desc: 'Accelerate content delivery with HTTP/2 protocol' },
+            { key: 'http3', label: 'HTTP/3 (QUIC)', desc: 'Enable next-generation protocol using QUIC for faster connections' },
+            { key: '0rtt', label: '0-RTT Connection Resumption', desc: 'Improve performance for repeat visitors with zero round-trip time' },
+            { key: 'brotli', label: 'Brotli Compression', desc: 'Compress content with Brotli for faster delivery' },
+        ];
+
+        for (const item of networkToggles) {
+            const val = features[item.key];
+            if (val === undefined) continue;
+            const checked = val === 'on' ? ' checked' : '';
+            html += '<tr><th>' + escHtml(item.label) + '<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">' + escHtml(item.desc) + '</span></th>';
+            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="' + item.key + '"' + checked + '>';
+            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+        }
+
+        html += '</table>';
+        container.innerHTML = html;
+
+        // Bind controls
+        bindCfSettingControls(container);
+    }
+
+    /**
+     * Load and render Cloudflare zone analytics.
+     */
+    async function loadCfAnalytics(container) {
+        try {
+            const res = await ajax('ccm_tools_cf_analytics');
+            if (!res.success) {
+                container.innerHTML = '<p class="ccm-text-muted">' + escHtml(res.data.message || 'Failed to load analytics.') + '</p>';
+                return;
+            }
+
+            const d = res.data;
+            const req = d.requests || {};
+            const bw = d.bandwidth || {};
+            const cacheRatio = req.all > 0 ? Math.round((req.cached / req.all) * 100) : 0;
+            const bwCacheRatio = bw.all > 0 ? Math.round((bw.cached / bw.all) * 100) : 0;
+
+            let html = '<div class="ccm-cf-analytics-grid">';
+
+            // Requests card
+            html += '<div class="ccm-cf-stat-card">';
+            html += '<div class="ccm-cf-stat-number">' + formatNumber(req.all) + '</div>';
+            html += '<div class="ccm-cf-stat-label">Total Requests</div>';
+            html += '<div class="ccm-cf-stat-detail">';
+            html += '<span class="ccm-success">' + formatNumber(req.cached) + ' cached</span> · ';
+            html += '<span class="ccm-text-muted">' + formatNumber(req.uncached) + ' uncached</span>';
+            html += '</div></div>';
+
+            // Bandwidth card
+            html += '<div class="ccm-cf-stat-card">';
+            html += '<div class="ccm-cf-stat-number">' + formatBytes(bw.all) + '</div>';
+            html += '<div class="ccm-cf-stat-label">Bandwidth</div>';
+            html += '<div class="ccm-cf-stat-detail">';
+            html += '<span class="ccm-success">' + formatBytes(bw.cached) + ' cached</span> · ';
+            html += '<span class="ccm-text-muted">' + formatBytes(bw.uncached) + ' uncached</span>';
+            html += '</div></div>';
+
+            // Cache ratio card
+            html += '<div class="ccm-cf-stat-card">';
+            html += '<div class="ccm-cf-stat-number">' + cacheRatio + '%</div>';
+            html += '<div class="ccm-cf-stat-label">Request Cache Ratio</div>';
+            html += '<div class="ccm-cf-stat-bar"><div class="ccm-cf-stat-bar-fill" style="width: ' + cacheRatio + '%;"></div></div>';
+            html += '<div class="ccm-cf-stat-detail">' + bwCacheRatio + '% bandwidth saved</div></div>';
+
+            // Page views card
+            html += '<div class="ccm-cf-stat-card">';
+            html += '<div class="ccm-cf-stat-number">' + formatNumber(d.pageviews || 0) + '</div>';
+            html += '<div class="ccm-cf-stat-label">Page Views</div>';
+            html += '</div>';
+
+            // Unique visitors card
+            html += '<div class="ccm-cf-stat-card">';
+            html += '<div class="ccm-cf-stat-number">' + formatNumber(d.uniques || 0) + '</div>';
+            html += '<div class="ccm-cf-stat-label">Unique Visitors</div>';
+            html += '</div>';
+
+            // Threats card
+            html += '<div class="ccm-cf-stat-card">';
+            html += '<div class="ccm-cf-stat-number' + ((d.threats || 0) > 0 ? ' ccm-cf-stat-warning' : '') + '">' + formatNumber(d.threats || 0) + '</div>';
+            html += '<div class="ccm-cf-stat-label">Threats Blocked</div>';
+            html += '</div>';
+
+            // Encrypted requests
+            html += '<div class="ccm-cf-stat-card">';
+            html += '<div class="ccm-cf-stat-number">' + formatNumber(req.ssl || 0) + '</div>';
+            html += '<div class="ccm-cf-stat-label">Encrypted Requests</div>';
+            html += '<div class="ccm-cf-stat-detail">' + (req.all > 0 ? Math.round((req.ssl / req.all) * 100) : 0) + '% of traffic over HTTPS</div>';
+            html += '</div>';
+
+            html += '</div>';
+            container.innerHTML = html;
+        } catch (err) {
+            container.innerHTML = '<p class="ccm-error">Failed to load analytics: ' + escHtml(err.message) + '</p>';
+        }
+    }
+
+    /**
+     * Load and render Cloudflare DNS records table.
+     */
+    async function loadCfDnsRecords(container) {
+        try {
+            const res = await ajax('ccm_tools_cf_dns_records');
+            if (!res.success) {
+                container.innerHTML = '<p class="ccm-text-muted">' + escHtml(res.data.message || 'Failed to load DNS records.') + '</p>';
+                return;
+            }
+
+            const records = res.data.records || [];
+            if (!records.length) {
+                container.innerHTML = '<p class="ccm-text-muted">No DNS records found.</p>';
+                return;
+            }
+
+            let html = '<div class="ccm-cf-dns-table-wrap"><table class="ccm-table ccm-cf-dns-table">';
+            html += '<thead><tr><th>Type</th><th>Name</th><th>Content</th><th>TTL</th><th>Proxy</th></tr></thead>';
+            html += '<tbody>';
+
+            for (const r of records) {
+                const ttlLabel = r.ttl === 1 ? 'Auto' : formatTtl(r.ttl);
+                const proxyBadge = r.proxied
+                    ? '<span class="ccm-cf-proxy-badge ccm-cf-proxy-on" title="Proxied through Cloudflare">☁ On</span>'
+                    : '<span class="ccm-cf-proxy-badge ccm-cf-proxy-off" title="DNS only">☁ Off</span>';
+
+                // Truncate long content (e.g. TXT/DKIM records)
+                let content = r.content || '';
+                const truncated = content.length > 50;
+                const displayContent = truncated ? content.substring(0, 47) + '…' : content;
+
+                html += '<tr>';
+                html += '<td><span class="ccm-cf-dns-type ccm-cf-dns-type-' + escHtml(r.type).toLowerCase() + '">' + escHtml(r.type) + '</span></td>';
+                html += '<td class="ccm-cf-dns-name">' + escHtml(r.name) + '</td>';
+                html += '<td class="ccm-cf-dns-content"' + (truncated ? ' title="' + escHtml(content) + '"' : '') + '>' + escHtml(displayContent) + '</td>';
+                html += '<td>' + escHtml(ttlLabel) + '</td>';
+                html += '<td>' + proxyBadge + '</td>';
+                html += '</tr>';
+            }
+
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        } catch (err) {
+            container.innerHTML = '<p class="ccm-error">Failed to load DNS records: ' + escHtml(err.message) + '</p>';
+        }
+    }
+
+    /**
+     * Format bytes into human-readable string.
+     */
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+    }
+
+    /**
+     * Format large numbers with commas.
+     */
+    function formatNumber(n) {
+        return Number(n).toLocaleString();
+    }
+
+    /**
+     * Format TTL seconds into human-readable string.
+     */
+    function formatTtl(seconds) {
+        if (seconds < 60) return seconds + 's';
+        if (seconds < 3600) return Math.round(seconds / 60) + 'm';
+        if (seconds < 86400) return Math.round(seconds / 3600) + 'h';
+        return Math.round(seconds / 86400) + 'd';
     }
 
     // ===================================

@@ -3695,6 +3695,18 @@ function ccm_tools_ajax_cf_update_setting(): void {
         if (!in_array($value, $allowed_polish, true)) {
             $value = 'off';
         }
+    } elseif ($setting === 'security_level') {
+        $allowed_levels = array('essentially_off', 'low', 'medium', 'high', 'under_attack');
+        $value = isset($_POST['value']) ? sanitize_text_field($_POST['value']) : 'medium';
+        if (!in_array($value, $allowed_levels, true)) {
+            $value = 'medium';
+        }
+    } elseif ($setting === 'ssl') {
+        $allowed_ssl = array('off', 'flexible', 'full', 'strict');
+        $value = isset($_POST['value']) ? sanitize_text_field($_POST['value']) : 'full';
+        if (!in_array($value, $allowed_ssl, true)) {
+            $value = 'full';
+        }
     } else {
         // on/off toggle settings: rocket_loader, always_online, webp
         $value = (!empty($_POST['value']) && $_POST['value'] === 'on') ? 'on' : 'off';
@@ -3710,4 +3722,63 @@ function ccm_tools_ajax_cf_update_setting(): void {
         'setting' => $setting,
         'value'   => $value,
     ));
+}
+
+// ──────────────────────────────────────────────
+// Cloudflare: Auto-Purge Toggle
+// ──────────────────────────────────────────────
+add_action('wp_ajax_ccm_tools_cf_auto_purge', 'ccm_tools_ajax_cf_auto_purge');
+function ccm_tools_ajax_cf_auto_purge(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $enable   = !empty($_POST['enable']);
+    $settings = ccm_tools_cf_get_settings();
+    $settings['auto_purge'] = $enable;
+    ccm_tools_cf_save_settings($settings);
+
+    wp_send_json_success(array(
+        'message' => $enable
+            ? __('Automatic cache purge enabled.', 'ccm-tools')
+            : __('Automatic cache purge disabled.', 'ccm-tools'),
+        'enabled' => $enable,
+    ));
+}
+
+// ──────────────────────────────────────────────
+// Cloudflare: Zone Analytics
+// ──────────────────────────────────────────────
+add_action('wp_ajax_ccm_tools_cf_analytics', 'ccm_tools_ajax_cf_analytics');
+function ccm_tools_ajax_cf_analytics(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $analytics = ccm_tools_cf_get_analytics();
+    if (is_wp_error($analytics)) {
+        wp_send_json_error(array('message' => $analytics->get_error_message()));
+    }
+
+    wp_send_json_success($analytics);
+}
+
+// ──────────────────────────────────────────────
+// Cloudflare: DNS Records
+// ──────────────────────────────────────────────
+add_action('wp_ajax_ccm_tools_cf_dns_records', 'ccm_tools_ajax_cf_dns_records');
+function ccm_tools_ajax_cf_dns_records(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $records = ccm_tools_cf_get_dns_records();
+    if (is_wp_error($records)) {
+        wp_send_json_error(array('message' => $records->get_error_message()));
+    }
+
+    wp_send_json_success(array('records' => $records));
 }

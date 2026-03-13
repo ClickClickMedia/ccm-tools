@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.33.0
+ * Version: 7.34.0
  */
 
 /* ===================================
@@ -4447,4 +4447,124 @@ tr.ccm-front-page-row {
     height: 16px;
     accent-color: var(--ccm-primary, #2563eb);
     cursor: pointer;
+}
+
+/* ===================================
+   Cloudflare Analytics Dashboard
+   =================================== */
+.ccm-cf-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--ccm-space-md, 1rem);
+    margin-top: var(--ccm-space-md, 1rem);
+}
+.ccm-cf-stat-card {
+    background: var(--ccm-bg, #fff);
+    border: 1px solid var(--ccm-border, #e2e8f0);
+    border-radius: var(--ccm-radius, 8px);
+    padding: var(--ccm-space-md, 1rem);
+    text-align: center;
+}
+.ccm-cf-stat-number {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--ccm-primary, #2563eb);
+    line-height: 1.2;
+}
+.ccm-cf-stat-number.ccm-cf-stat-warning {
+    color: var(--ccm-error, #ef4444);
+}
+.ccm-cf-stat-label {
+    font-size: 0.85rem;
+    color: var(--ccm-text-muted, #64748b);
+    margin-top: var(--ccm-space-xs, 0.25rem);
+    font-weight: 600;
+}
+.ccm-cf-stat-detail {
+    font-size: 0.8rem;
+    color: var(--ccm-text-muted, #64748b);
+    margin-top: var(--ccm-space-xs, 0.25rem);
+}
+.ccm-cf-stat-bar {
+    height: 6px;
+    background: var(--ccm-border, #e2e8f0);
+    border-radius: 3px;
+    margin-top: var(--ccm-space-sm, 0.5rem);
+    overflow: hidden;
+}
+.ccm-cf-stat-bar-fill {
+    height: 100%;
+    background: var(--ccm-success, #22c55e);
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+/* ===================================
+   Cloudflare DNS Records Table
+   =================================== */
+.ccm-cf-dns-table-wrap {
+    overflow-x: auto;
+    margin-top: var(--ccm-space-md, 1rem);
+}
+.ccm-cf-dns-table {
+    width: 100%;
+    font-size: 0.85rem;
+}
+.ccm-cf-dns-table th {
+    font-weight: 600;
+    white-space: nowrap;
+}
+.ccm-cf-dns-name {
+    word-break: break-all;
+    max-width: 200px;
+}
+.ccm-cf-dns-content {
+    word-break: break-all;
+    max-width: 250px;
+    color: var(--ccm-text-muted, #64748b);
+}
+.ccm-cf-dns-type {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    background: var(--ccm-bg-alt, #f1f5f9);
+    color: var(--ccm-text, #1e293b);
+}
+.ccm-cf-dns-type-a,
+.ccm-cf-dns-type-aaaa {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+.ccm-cf-dns-type-cname {
+    background: #dcfce7;
+    color: #166534;
+}
+.ccm-cf-dns-type-mx {
+    background: #fef3c7;
+    color: #92400e;
+}
+.ccm-cf-dns-type-txt {
+    background: #f3e8ff;
+    color: #6b21a8;
+}
+.ccm-cf-proxy-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.ccm-cf-proxy-on {
+    background: #fff7ed;
+    color: #f97316;
+}
+.ccm-cf-proxy-off {
+    background: var(--ccm-bg-alt, #f1f5f9);
+    color: var(--ccm-text-muted, #64748b);
 }
