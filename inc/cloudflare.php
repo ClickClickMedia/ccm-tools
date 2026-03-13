@@ -108,11 +108,11 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
         'timeout' => 15,
         'headers' => array(
             'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
         ),
     );
 
     if (!empty($body) && in_array($args['method'], array('POST', 'PUT', 'PATCH'), true)) {
-        $args['headers']['Content-Type'] = 'application/json';
         $args['body'] = wp_json_encode($body);
     }
 
