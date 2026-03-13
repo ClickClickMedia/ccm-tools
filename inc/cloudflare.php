@@ -45,8 +45,10 @@ function ccm_tools_cf_save_settings(array $settings): void {
 // ──────────────────────────────────────────────
 
 /**
- * Detect whether the site is behind Cloudflare by making a self-request
- * and checking for CF-specific headers. Cached in a short transient.
+ * Detect whether the site is behind Cloudflare.
+ *
+ * Checks $_SERVER for CF-specific headers (set on every proxied request),
+ * then falls back to a self-request. Cached in a short transient.
  *
  * @return array  {detected: bool, ray_id?: string, server?: string}
  */
@@ -58,20 +60,32 @@ function ccm_tools_cf_detect(): array {
 
     $result = array('detected' => false);
 
-    $response = wp_remote_head(home_url('/'), array(
-        'timeout'   => 5,
-        'sslverify' => false,
-    ));
+    // Primary: check $_SERVER for CF headers (most reliable)
+    if (!empty($_SERVER['HTTP_CF_RAY'])) {
+        $result['detected'] = true;
+        $result['ray_id']   = sanitize_text_field($_SERVER['HTTP_CF_RAY']);
+    }
+    if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+        $result['detected'] = true;
+    }
 
-    if (!is_wp_error($response)) {
-        $headers = wp_remote_retrieve_headers($response);
-        if (!empty($headers['cf-ray'])) {
-            $result['detected'] = true;
-            $result['ray_id']   = sanitize_text_field($headers['cf-ray']);
-        }
-        if (!empty($headers['server']) && stripos($headers['server'], 'cloudflare') !== false) {
-            $result['detected'] = true;
-            $result['server']   = sanitize_text_field($headers['server']);
+    // Fallback: self-request (may miss CF if request doesn't traverse the edge)
+    if (!$result['detected']) {
+        $response = wp_remote_head(home_url('/'), array(
+            'timeout'   => 5,
+            'sslverify' => false,
+        ));
+
+        if (!is_wp_error($response)) {
+            $headers = wp_remote_retrieve_headers($response);
+            if (!empty($headers['cf-ray'])) {
+                $result['detected'] = true;
+                $result['ray_id']   = sanitize_text_field($headers['cf-ray']);
+            }
+            if (!empty($headers['server']) && stripos($headers['server'], 'cloudflare') !== false) {
+                $result['detected'] = true;
+                $result['server']   = sanitize_text_field($headers['server']);
+            }
         }
     }
 
@@ -341,7 +355,8 @@ function ccm_tools_cf_toggle_dev_mode(bool $enable) {
 function ccm_tools_render_cloudflare_page(): void {
     $settings  = ccm_tools_cf_get_settings();
     $connected = !empty($settings['connected']) && !empty($settings['zone_id']);
-    $cf_detected = get_transient('ccm_tools_cf_detected');
+    $cf_detected = ccm_tools_cf_detect();
+    $is_cf       = !empty($cf_detected['detected']);
     ?>
     <div class="wrap ccm-tools">
         <?php ccm_tools_render_header_nav('ccm-tools-cloudflare'); ?>
@@ -354,12 +369,13 @@ function ccm_tools_render_cloudflare_page(): void {
                     <tr>
                         <th><?php _e('Cloudflare Detected', 'ccm-tools'); ?></th>
                         <td>
-                            <?php if ($cf_detected): ?>
+                            <?php if ($is_cf): ?>
                                 <span class="ccm-success"><?php _e('Yes', 'ccm-tools'); ?></span>
-                            <?php elseif ($cf_detected === false): ?>
-                                <span class="ccm-warning"><?php _e('Not detected', 'ccm-tools'); ?></span>
+                                <?php if (!empty($cf_detected['ray_id'])): ?>
+                                    <span class="ccm-text-muted" style="margin-left: var(--ccm-space-xs);">CF-Ray: <?php echo esc_html($cf_detected['ray_id']); ?></span>
+                                <?php endif; ?>
                             <?php else: ?>
-                                <span class="ccm-text-muted"><?php _e('Unknown (not checked yet)', 'ccm-tools'); ?></span>
+                                <span class="ccm-warning"><?php _e('Not detected', 'ccm-tools'); ?></span>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -386,6 +402,7 @@ function ccm_tools_render_cloudflare_page(): void {
             <div class="ccm-card">
                 <h2><?php _e('Connection Settings', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Connect using an API Token with Zone:Read, Cache Purge, and Zone Settings:Read permissions.', 'ccm-tools'); ?></p>
+                <p class="ccm-text-muted" style="margin-top: var(--ccm-space-xs);"><strong><?php _e('Important:', 'ccm-tools'); ?></strong> <?php _e('You need an <strong>API Token</strong> (not a Global API Key). Global API Keys use a different authentication method and will not work here.', 'ccm-tools'); ?></p>
 
                 <div id="cf-connection-form" autocomplete="off">
                     <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
@@ -430,6 +447,41 @@ function ccm_tools_render_cloudflare_page(): void {
                         <span id="cf-connection-status"></span>
                     </div>
                 </div>
+
+                <!-- API Token Setup Guide -->
+                <details style="margin-top: var(--ccm-space-lg); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); padding: 0;">
+                    <summary style="padding: var(--ccm-space-md); cursor: pointer; font-weight: 600; user-select: none;">
+                        <?php _e('How to create a Cloudflare API Token', 'ccm-tools'); ?>
+                    </summary>
+                    <div style="padding: 0 var(--ccm-space-md) var(--ccm-space-md); line-height: 1.7;">
+                        <ol style="margin: 0; padding-left: var(--ccm-space-lg);">
+                            <li><?php _e('Log in to the <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Cloudflare Dashboard → My Profile → API Tokens</a>.', 'ccm-tools'); ?></li>
+                            <li><?php _e('Click <strong>Create Token</strong>.', 'ccm-tools'); ?></li>
+                            <li><?php _e('Under <strong>Custom token</strong>, click <strong>Get started</strong>.', 'ccm-tools'); ?></li>
+                            <li>
+                                <?php _e('Give it a name (e.g. <em>CCM Tools</em>) and add these <strong>Permissions</strong>:', 'ccm-tools'); ?>
+                                <table class="ccm-table" style="margin: var(--ccm-space-sm) 0; font-size: 0.9em;">
+                                    <thead>
+                                        <tr><th><?php _e('Resource', 'ccm-tools'); ?></th><th><?php _e('Permission', 'ccm-tools'); ?></th><th><?php _e('Access', 'ccm-tools'); ?></th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td>Zone</td><td>Zone</td><td>Read</td></tr>
+                                        <tr><td>Zone</td><td>Zone Settings</td><td>Read</td></tr>
+                                        <tr><td>Zone</td><td>Cache Purge</td><td>Purge</td></tr>
+                                    </tbody>
+                                </table>
+                                <p class="ccm-text-muted" style="margin: var(--ccm-space-xs) 0;"><?php _e('Click <strong>+ Add more</strong> to add each permission row.', 'ccm-tools'); ?></p>
+                            </li>
+                            <li><?php _e('Under <strong>Zone Resources</strong>, select <strong>Include → Specific zone</strong> and choose your domain, or use <strong>All zones</strong>.', 'ccm-tools'); ?></li>
+                            <li><?php _e('Click <strong>Continue to summary</strong>, then <strong>Create Token</strong>.', 'ccm-tools'); ?></li>
+                            <li><?php _e('Copy the token and paste it into the <strong>API Token</strong> field above. The token is only shown once — save it somewhere safe.', 'ccm-tools'); ?></li>
+                        </ol>
+                        <p style="margin: var(--ccm-space-md) 0 0; padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-bg-alt, #f0f6fc); border-radius: var(--ccm-radius); font-size: 0.9em;">
+                            <strong><?php _e('Finding your Zone ID:', 'ccm-tools'); ?></strong>
+                            <?php _e('Go to your domain in the Cloudflare dashboard. The Zone ID is shown in the right sidebar under <strong>API</strong>. You can leave it blank above and CCM Tools will auto-detect it.', 'ccm-tools'); ?>
+                        </p>
+                    </div>
+                </details>
             </div>
 
             <?php if ($connected): ?>
