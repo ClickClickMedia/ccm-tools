@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.34.2
+ * Version: 7.34.3
  */
 
 /* ===================================
@@ -4476,6 +4476,25 @@ tr.ccm-front-page-row {
 }
 .ccm-cf-connection-details[open] > .ccm-cf-connection-summary::before {
     transform: rotate(90deg);
+}
+
+/* ===================================
+   Cloudflare Under Attack Mode
+   =================================== */
+.ccm-cf-under-attack {
+    display: flex;
+    align-items: center;
+    gap: var(--ccm-space-md, 1rem);
+    padding: var(--ccm-space-md, 1rem);
+    margin-bottom: var(--ccm-space-md, 1rem);
+    border: 2px solid var(--ccm-border, #e2e8f0);
+    border-radius: var(--ccm-radius, 8px);
+    background: var(--ccm-bg, #fff);
+    transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+.ccm-cf-under-attack-active {
+    border-color: var(--ccm-danger, #ef4444);
+    background: #fef2f2;
 }
 
 /* ===================================

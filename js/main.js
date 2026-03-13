@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.34.2
+ * Version: 7.34.3
  */
 
 (function() {
@@ -3652,12 +3652,13 @@
                 html += '</select></td></tr>';
             }
 
-            // --- APO (read-only) ---
+            // --- APO (toggle) ---
             if (features.apo !== undefined) {
                 const apoEnabled = features.apo && features.apo.enabled;
-                html += cfStatusRow('Automatic Platform Optimization (APO)', apoEnabled
-                    ? '<span class="ccm-success">✓ Enabled</span>'
-                    : '<span class="ccm-text-muted">Disabled</span>');
+                const apoChecked = apoEnabled ? ' checked' : '';
+                html += '<tr><th>Automatic Platform Optimization (APO)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Cloudflare\'s WordPress-specific full-page caching at the edge</span></th>';
+                html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="automatic_platform_optimization"' + apoChecked + '>';
+                html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
             }
 
             // Development mode (read-only here — separate toggle below)
@@ -3698,6 +3699,42 @@
             // Render Security Settings panel
             renderCfSecurityPanel(features);
 
+            // Bind "Under Attack" toggle
+            const uaToggle = $('#cf-under-attack-toggle');
+            if (uaToggle) {
+                uaToggle.addEventListener('change', async function () {
+                    const enable = this.checked;
+                    const box = $('#cf-under-attack-box');
+                    this.disabled = true;
+
+                    if (enable && !confirm('Enable "I\'m Under Attack" mode? All visitors will see a challenge page for ~5 seconds.')) {
+                        this.checked = false;
+                        this.disabled = false;
+                        return;
+                    }
+
+                    try {
+                        const newLevel = enable ? 'under_attack' : 'high';
+                        const res = await ajax('ccm_tools_cf_update_setting', { setting: 'security_level', value: newLevel });
+                        if (res.success) {
+                            showNotification(enable ? 'Under Attack mode enabled.' : 'Under Attack mode disabled (Security Level set to High).', 'success');
+                            if (box) box.classList.toggle('ccm-cf-under-attack-active', enable);
+                            // Update Security Level dropdown if present
+                            const secSelect = document.querySelector('[data-cf-setting="security_level"]');
+                            if (secSelect) secSelect.value = newLevel;
+                        } else {
+                            showNotification(res.data.message || 'Failed to update.', 'error');
+                            this.checked = !enable;
+                        }
+                    } catch (err) {
+                        showNotification('Failed: ' + err.message, 'error');
+                        this.checked = !enable;
+                    } finally {
+                        this.disabled = false;
+                    }
+                });
+            }
+
             // Render Network Settings panel
             renderCfNetworkPanel(features);
 
@@ -3730,6 +3767,13 @@
                     const res = await ajax('ccm_tools_cf_update_setting', params);
                     if (res.success) {
                         showNotification(res.data.message, 'success');
+                        // Sync Under Attack toggle when security_level dropdown changes
+                        if (setting === 'security_level') {
+                            const uaToggle = $('#cf-under-attack-toggle');
+                            const uaBox = $('#cf-under-attack-box');
+                            if (uaToggle) uaToggle.checked = (this.value === 'under_attack');
+                            if (uaBox) uaBox.classList.toggle('ccm-cf-under-attack-active', this.value === 'under_attack');
+                        }
                     } else {
                         showNotification(res.data.message || 'Failed to update setting.', 'error');
                         if (isToggle) this.checked = !this.checked;
@@ -3795,7 +3839,19 @@
         const container = $('#cf-security-settings');
         if (!container) return;
 
-        let html = '<table class="ccm-table">';
+        let html = '';
+
+        // "I'm Under Attack" mode — prominent toggle at the top
+        if (features.security_level !== undefined) {
+            const isUnderAttack = features.security_level === 'under_attack';
+            html += '<div class="ccm-cf-under-attack' + (isUnderAttack ? ' ccm-cf-under-attack-active' : '') + '" id="cf-under-attack-box">';
+            html += '<div style="flex: 1;"><strong>\u{1F6E1}\uFE0F I\'m Under Attack Mode</strong>';
+            html += '<p class="ccm-text-muted" style="margin: 4px 0 0;">Enables additional DDoS protection. Visitors see a challenge page for ~5 seconds while Cloudflare verifies the request.</p></div>';
+            html += '<label class="ccm-toggle"><input type="checkbox" id="cf-under-attack-toggle"' + (isUnderAttack ? ' checked' : '') + '>';
+            html += '<span class="ccm-toggle-slider"></span></label></div>';
+        }
+
+        html += '<table class="ccm-table">';
 
         // Security Level (dropdown)
         if (features.security_level !== undefined) {

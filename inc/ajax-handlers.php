@@ -3707,6 +3707,16 @@ function ccm_tools_ajax_cf_update_setting(): void {
         if (!in_array($value, $allowed_ssl, true)) {
             $value = 'full';
         }
+    } elseif ($setting === 'automatic_platform_optimization') {
+        $enabled = (!empty($_POST['value']) && $_POST['value'] === 'on');
+        $value = array(
+            'enabled'       => $enabled,
+            'cf'            => true,
+            'wordpress'     => true,
+            'wp_plugin'     => false,
+            'hostnames'     => array(),
+            'cache_by_device_type' => false,
+        );
     } else {
         // on/off toggle settings: rocket_loader, always_online, webp
         $value = (!empty($_POST['value']) && $_POST['value'] === 'on') ? 'on' : 'off';

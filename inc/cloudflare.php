@@ -367,6 +367,7 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
         'security_level', 'ssl', 'always_use_https', 'automatic_https_rewrites',
         'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
         'early_hints', 'http2', 'http3', '0rtt', 'brotli',
+        'automatic_platform_optimization',
     );
     if (!in_array($setting, $allowed, true)) {
         return new WP_Error('invalid_setting', __('Invalid Cloudflare setting.', 'ccm-tools'));
