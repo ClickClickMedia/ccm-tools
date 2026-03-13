@@ -3792,7 +3792,7 @@ function ccm_tools_ajax_cf_analytics(): void {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
-    if (function_exists('ccm_tools_has_premium_feature') && !ccm_tools_has_premium_feature('advanced_cloudflare')) {
+    if (function_exists('ccm_tools_is_premium') && !ccm_tools_is_premium()) {
         wp_send_json_error(array('message' => __('This feature requires CCM Tools Premium.', 'ccm-tools'), 'premium_required' => true));
     }
 
@@ -3818,7 +3818,7 @@ function ccm_tools_ajax_cf_dns_records(): void {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
-    if (function_exists('ccm_tools_has_premium_feature') && !ccm_tools_has_premium_feature('advanced_cloudflare')) {
+    if (function_exists('ccm_tools_is_premium') && !ccm_tools_is_premium()) {
         wp_send_json_error(array('message' => __('This feature requires CCM Tools Premium.', 'ccm-tools'), 'premium_required' => true));
     }
 

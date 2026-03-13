@@ -722,7 +722,7 @@ function ccm_tools_render_cloudflare_page(): void {
     $connected = !empty($settings['connected']) && !empty($settings['zone_id']);
     $cf_detected = ccm_tools_cf_detect();
     $is_cf       = !empty($cf_detected['detected']);
-    $is_cf_premium = function_exists('ccm_tools_has_premium_feature') && ccm_tools_has_premium_feature('advanced_cloudflare');
+    $is_cf_premium = function_exists('ccm_tools_is_premium') && ccm_tools_is_premium();
     ?>
     <div class="wrap ccm-tools">
         <?php ccm_tools_render_header_nav('ccm-tools-cloudflare'); ?>
