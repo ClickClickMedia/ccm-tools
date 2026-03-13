@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.32.9
+ * Version: 7.33.0
  */
 
 (function() {
@@ -3531,7 +3531,7 @@
     }
 
     /**
-     * Load Cloudflare zone status and render the status panel.
+     * Load Cloudflare zone status and render the status panel with toggleable controls.
      */
     async function loadCloudflareStatus(container, devToggle) {
         try {
@@ -3552,53 +3552,83 @@
                 : '<span class="ccm-error">' + escHtml(zone.status) + '</span>');
             html += cfStatusRow('Plan', escHtml(zone.plan));
 
-            // Feature statuses
-            const featureMap = {
-                'apo': 'Automatic Platform Optimization (APO)',
-                'polish': 'Polish (Image Optimization)',
-                'webp': 'WebP Conversion',
-                'minify': 'Auto Minify',
-                'rocket_loader': 'Rocket Loader',
-                'always_online': 'Always Online',
-                'browser_cache_ttl': 'Browser Cache TTL',
-            };
-
             html += '<tr><td colspan="2" style="padding-top: var(--ccm-space-md);"><strong>Features</strong></td></tr>';
 
-            for (const [key, label] of Object.entries(featureMap)) {
-                const val = features[key];
+            // --- Toggleable on/off settings ---
+            const toggleSettings = [
+                { key: 'rocket_loader', label: 'Rocket Loader', desc: 'Prioritise loading of your page content over scripts' },
+                { key: 'always_online', label: 'Always Online', desc: 'Show a cached version of your site if your server goes offline' },
+                { key: 'webp', label: 'WebP Conversion', desc: 'Serve WebP images to supported browsers (Pro+ plan)' },
+            ];
+            for (const item of toggleSettings) {
+                const val = features[item.key];
                 if (val === undefined) continue;
-
-                if (key === 'browser_cache_ttl') {
-                    html += cfStatusRow(label, val === 0 ? 'Respect Existing Headers' : val + ' seconds');
-                } else if (key === 'apo') {
-                    const enabled = val && val.enabled;
-                    html += cfStatusRow(label, enabled
-                        ? '<span class="ccm-success">✓ Enabled</span>'
-                        : '<span class="ccm-text-muted">Disabled</span>');
-                } else if (key === 'minify') {
-                    const parts = [];
-                    if (val.js && val.js === 'on') parts.push('JS');
-                    if (val.css && val.css === 'on') parts.push('CSS');
-                    if (val.html && val.html === 'on') parts.push('HTML');
-                    html += cfStatusRow(label, parts.length > 0
-                        ? '<span class="ccm-success">✓ ' + parts.join(', ') + '</span>'
-                        : '<span class="ccm-text-muted">Disabled</span>');
-                } else {
-                    html += cfStatusRow(label, val === 'on'
-                        ? '<span class="ccm-success">✓ Enabled</span>'
-                        : '<span class="ccm-text-muted">Disabled</span>');
-                }
+                const checked = val === 'on' ? ' checked' : '';
+                html += '<tr><th>' + escHtml(item.label) + '<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">' + escHtml(item.desc) + '</span></th>';
+                html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="' + item.key + '"' + checked + '>';
+                html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
             }
 
-            // Development mode
+            // --- Polish (dropdown: off / lossless / lossy) ---
+            if (features.polish !== undefined) {
+                html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
+                html += '<td style="text-align: right;"><select data-cf-setting="polish" class="ccm-cf-select">';
+                const polishOptions = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
+                for (const [pval, plabel] of polishOptions) {
+                    const sel = features.polish === pval ? ' selected' : '';
+                    html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
+                }
+                html += '</select></td></tr>';
+            }
+
+            // --- Auto Minify (3 checkboxes: JS, CSS, HTML) ---
+            if (features.minify !== undefined) {
+                const m = features.minify || {};
+                html += '<tr><th>Auto Minify<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Minify JS, CSS, and HTML at Cloudflare\'s edge</span></th>';
+                html += '<td style="text-align: right;"><div class="ccm-cf-minify-toggles">';
+                for (const type of ['js', 'css', 'html']) {
+                    const chk = m[type] === 'on' ? ' checked' : '';
+                    html += '<label class="ccm-cf-minify-label"><input type="checkbox" data-cf-minify="' + type + '"' + chk + '> ' + type.toUpperCase() + '</label>';
+                }
+                html += '</div></td></tr>';
+            }
+
+            // --- Browser Cache TTL (dropdown) ---
+            if (features.browser_cache_ttl !== undefined) {
+                html += '<tr><th>Browser Cache TTL<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">How long browsers should cache resources</span></th>';
+                html += '<td style="text-align: right;"><select data-cf-setting="browser_cache_ttl" class="ccm-cf-select">';
+                const ttlOptions = [
+                    [0, 'Respect Existing Headers'],
+                    [1800, '30 minutes'], [3600, '1 hour'], [7200, '2 hours'],
+                    [14400, '4 hours'], [28800, '8 hours'], [43200, '12 hours'],
+                    [86400, '1 day'], [172800, '2 days'], [259200, '3 days'],
+                    [345600, '4 days'], [432000, '5 days'], [691200, '8 days'],
+                    [1382400, '16 days'], [2592000, '1 month'], [5184000, '2 months'],
+                    [15552000, '6 months'], [31536000, '1 year'],
+                ];
+                const curTtl = features.browser_cache_ttl;
+                for (const [tval, tlabel] of ttlOptions) {
+                    const sel = curTtl === tval ? ' selected' : '';
+                    html += '<option value="' + tval + '"' + sel + '>' + tlabel + '</option>';
+                }
+                html += '</select></td></tr>';
+            }
+
+            // --- APO (read-only) ---
+            if (features.apo !== undefined) {
+                const apoEnabled = features.apo && features.apo.enabled;
+                html += cfStatusRow('Automatic Platform Optimization (APO)', apoEnabled
+                    ? '<span class="ccm-success">✓ Enabled</span>'
+                    : '<span class="ccm-text-muted">Disabled</span>');
+            }
+
+            // Development mode (read-only here — separate toggle below)
             const devMode = features.development_mode;
             if (devMode !== undefined) {
                 html += cfStatusRow('Development Mode', devMode === 'on'
                     ? '<span style="color: var(--ccm-warning);">⚡ Active (auto-disables in 3h)</span>'
                     : '<span class="ccm-text-muted">Off</span>');
 
-                // Sync toggle
                 if (devToggle) {
                     devToggle.checked = devMode === 'on';
                     updateDevModeStatus(devMode === 'on');
@@ -3608,7 +3638,7 @@
             html += '</table>';
 
             // Overlap warnings
-            if (features.polish === 'on' || features.webp === 'on') {
+            if (features.polish !== 'off' && features.polish !== undefined || features.webp === 'on') {
                 html += '<div class="ccm-notice" style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-warning-bg, #fff8e1); border-left: 3px solid var(--ccm-warning); border-radius: var(--ccm-radius);">';
                 html += '<span class="ccm-icon">⚠</span> ';
                 html += '<strong>Note:</strong> Cloudflare is handling image optimization (Polish/WebP). The CCM Tools WebP converter may not be needed for this site.';
@@ -3624,8 +3654,81 @@
 
             container.innerHTML = html;
 
+            // Bind toggle/select events
+            bindCfSettingControls(container);
+
         } catch (err) {
             container.innerHTML = '<p class="ccm-error">Failed to load zone status: ' + escHtml(err.message) + '</p>';
+        }
+    }
+
+    /**
+     * Bind change events to all CF setting controls in the zone status panel.
+     */
+    function bindCfSettingControls(container) {
+        // On/off toggle switches (rocket_loader, always_online, webp)
+        container.querySelectorAll('[data-cf-setting]').forEach(el => {
+            el.addEventListener('change', async function () {
+                const setting = this.dataset.cfSetting;
+                const isToggle = this.type === 'checkbox';
+                const isSelect = this.tagName === 'SELECT';
+
+                this.disabled = true;
+                const params = { setting };
+
+                if (isToggle) {
+                    params.value = this.checked ? 'on' : 'off';
+                } else if (isSelect) {
+                    params.value = this.value;
+                }
+
+                try {
+                    const res = await ajax('ccm_tools_cf_update_setting', params);
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                    } else {
+                        showNotification(res.data.message || 'Failed to update setting.', 'error');
+                        if (isToggle) this.checked = !this.checked;
+                    }
+                } catch (err) {
+                    showNotification('Failed: ' + err.message, 'error');
+                    if (isToggle) this.checked = !this.checked;
+                } finally {
+                    this.disabled = false;
+                }
+            });
+        });
+
+        // Minify checkboxes (send all 3 values together)
+        const minifyBoxes = container.querySelectorAll('[data-cf-minify]');
+        if (minifyBoxes.length) {
+            minifyBoxes.forEach(box => {
+                box.addEventListener('change', async function () {
+                    minifyBoxes.forEach(b => b.disabled = true);
+
+                    const params = {
+                        setting: 'minify',
+                        js: container.querySelector('[data-cf-minify="js"]').checked ? 'on' : 'off',
+                        css: container.querySelector('[data-cf-minify="css"]').checked ? 'on' : 'off',
+                        html: container.querySelector('[data-cf-minify="html"]').checked ? 'on' : 'off',
+                    };
+
+                    try {
+                        const res = await ajax('ccm_tools_cf_update_setting', params);
+                        if (res.success) {
+                            showNotification(res.data.message, 'success');
+                        } else {
+                            showNotification(res.data.message || 'Failed to update minify settings.', 'error');
+                            this.checked = !this.checked;
+                        }
+                    } catch (err) {
+                        showNotification('Failed: ' + err.message, 'error');
+                        this.checked = !this.checked;
+                    } finally {
+                        minifyBoxes.forEach(b => b.disabled = false);
+                    }
+                });
+            });
         }
     }
 

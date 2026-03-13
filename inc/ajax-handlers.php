@@ -3664,3 +3664,50 @@ function ccm_tools_ajax_cf_dev_mode(): void {
         'enabled' => $enable,
     ));
 }
+
+// ──────────────────────────────────────────────
+// Cloudflare: Update Zone Setting
+// ──────────────────────────────────────────────
+add_action('wp_ajax_ccm_tools_cf_update_setting', 'ccm_tools_ajax_cf_update_setting');
+function ccm_tools_ajax_cf_update_setting(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $setting = isset($_POST['setting']) ? sanitize_text_field($_POST['setting']) : '';
+    if (empty($setting)) {
+        wp_send_json_error(array('message' => __('No setting specified.', 'ccm-tools')));
+    }
+
+    // Parse value based on setting type
+    if ($setting === 'minify') {
+        $value = array(
+            'js'   => (!empty($_POST['js']) && $_POST['js'] === 'on') ? 'on' : 'off',
+            'css'  => (!empty($_POST['css']) && $_POST['css'] === 'on') ? 'on' : 'off',
+            'html' => (!empty($_POST['html']) && $_POST['html'] === 'on') ? 'on' : 'off',
+        );
+    } elseif ($setting === 'browser_cache_ttl') {
+        $value = isset($_POST['value']) ? absint($_POST['value']) : 0;
+    } elseif ($setting === 'polish') {
+        $allowed_polish = array('off', 'lossless', 'lossy');
+        $value = isset($_POST['value']) ? sanitize_text_field($_POST['value']) : 'off';
+        if (!in_array($value, $allowed_polish, true)) {
+            $value = 'off';
+        }
+    } else {
+        // on/off toggle settings: rocket_loader, always_online, webp
+        $value = (!empty($_POST['value']) && $_POST['value'] === 'on') ? 'on' : 'off';
+    }
+
+    $result = ccm_tools_cf_update_setting($setting, $value);
+    if (is_wp_error($result)) {
+        wp_send_json_error(array('message' => $result->get_error_message()));
+    }
+
+    wp_send_json_success(array(
+        'message' => __('Setting updated successfully.', 'ccm-tools'),
+        'setting' => $setting,
+        'value'   => $value,
+    ));
+}

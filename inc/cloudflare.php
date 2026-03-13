@@ -344,6 +344,34 @@ function ccm_tools_cf_toggle_dev_mode(bool $enable) {
     return is_wp_error($data) ? $data : true;
 }
 
+/**
+ * Update a Cloudflare zone setting.
+ *
+ * @param string $setting Setting key (e.g. 'rocket_loader', 'always_online', 'minify').
+ * @param mixed  $value   Setting value ('on'/'off', object for minify, integer for browser_cache_ttl).
+ * @return true|WP_Error
+ */
+function ccm_tools_cf_update_setting(string $setting, $value) {
+    $settings = ccm_tools_cf_get_settings();
+    if (empty($settings['zone_id'])) {
+        return new WP_Error('no_zone', __('Cloudflare is not connected.', 'ccm-tools'));
+    }
+
+    // Whitelist of allowed settings
+    $allowed = array('rocket_loader', 'always_online', 'minify', 'browser_cache_ttl', 'polish', 'webp');
+    if (!in_array($setting, $allowed, true)) {
+        return new WP_Error('invalid_setting', __('Invalid Cloudflare setting.', 'ccm-tools'));
+    }
+
+    $data = ccm_tools_cf_api(
+        'zones/' . $settings['zone_id'] . '/settings/' . $setting,
+        'PATCH',
+        array('value' => $value)
+    );
+
+    return is_wp_error($data) ? $data : true;
+}
+
 
 // ──────────────────────────────────────────────
 // Admin page renderer
@@ -401,7 +429,7 @@ function ccm_tools_render_cloudflare_page(): void {
             <!-- Connection Settings -->
             <div class="ccm-card">
                 <h2><?php _e('Connection Settings', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted"><?php _e('Connect using an API Token with Zone:Read, Cache Purge, and Zone Settings:Read permissions.', 'ccm-tools'); ?></p>
+                <p class="ccm-text-muted"><?php _e('Connect using an API Token with Zone:Read, Zone Settings:Edit, and Cache Purge permissions.', 'ccm-tools'); ?></p>
                 <p class="ccm-text-muted" style="margin-top: var(--ccm-space-xs);"><strong><?php _e('Important:', 'ccm-tools'); ?></strong> <?php _e('You need an <strong>API Token</strong> (not a Global API Key). Global API Keys use a different authentication method and will not work here.', 'ccm-tools'); ?></p>
 
                 <div id="cf-connection-form" autocomplete="off">
@@ -466,7 +494,7 @@ function ccm_tools_render_cloudflare_page(): void {
                                     </thead>
                                     <tbody>
                                         <tr><td>Zone</td><td>Zone</td><td>Read</td></tr>
-                                        <tr><td>Zone</td><td>Zone Settings</td><td>Read</td></tr>
+                                        <tr><td>Zone</td><td>Zone Settings</td><td>Edit</td></tr>
                                         <tr><td>Zone</td><td>Cache Purge</td><td>Purge</td></tr>
                                     </tbody>
                                 </table>
@@ -488,6 +516,7 @@ function ccm_tools_render_cloudflare_page(): void {
             <!-- Zone Features -->
             <div class="ccm-card" id="cf-status-card">
                 <h2><?php _e('Zone Features', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('View and manage your Cloudflare zone settings. Toggle switches require your API Token to have <strong>Zone Settings: Edit</strong> permission.', 'ccm-tools'); ?></p>
                 <div id="cf-zone-status">
                     <p class="ccm-text-muted"><?php _e('Loading zone information...', 'ccm-tools'); ?></p>
                 </div>
