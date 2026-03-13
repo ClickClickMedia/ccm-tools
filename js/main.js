@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.35.3
+ * Version: 7.35.4
  */
 
 (function() {
@@ -3664,7 +3664,6 @@
                     const plabel = features.polish === 'off' ? 'Off' : features.polish === 'lossless' ? 'Lossless' : features.polish === 'lossy' ? 'Lossy' : escHtml(features.polish);
                     html += cfStatusRow('Polish (Image Optimization)', '<span class="ccm-text-muted">' + plabel + '</span>');
                 }
-            }
             }
 
             // --- Auto Minify (3 checkboxes: JS, CSS, HTML) ---
