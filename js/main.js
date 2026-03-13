@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.34.1
+ * Version: 7.34.2
  */
 
 (function() {
@@ -3899,7 +3899,7 @@
         try {
             const res = await ajax('ccm_tools_cf_analytics');
             if (!res.success) {
-                container.innerHTML = '<p class="ccm-text-muted">' + escHtml(res.data.message || 'Failed to load analytics.') + '</p>';
+                container.innerHTML = '<p class="ccm-text-muted" style="padding: var(--ccm-space-sm) 0;">⚠ ' + escHtml(res.data.message || 'Failed to load analytics.') + '</p>';
                 return;
             }
 
@@ -3975,7 +3975,7 @@
         try {
             const res = await ajax('ccm_tools_cf_dns_records');
             if (!res.success) {
-                container.innerHTML = '<p class="ccm-text-muted">' + escHtml(res.data.message || 'Failed to load DNS records.') + '</p>';
+                container.innerHTML = '<p class="ccm-text-muted" style="padding: var(--ccm-space-sm) 0;">⚠ ' + escHtml(res.data.message || 'Failed to load DNS records.') + '</p>';
                 return;
             }
 

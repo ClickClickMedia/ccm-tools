@@ -3759,7 +3759,12 @@ function ccm_tools_ajax_cf_analytics(): void {
 
     $analytics = ccm_tools_cf_get_analytics();
     if (is_wp_error($analytics)) {
-        wp_send_json_error(array('message' => $analytics->get_error_message()));
+        $msg = $analytics->get_error_message();
+        $err_data = $analytics->get_error_data();
+        if (!empty($err_data['status']) && $err_data['status'] === 403) {
+            $msg = __('Your API token does not have Analytics:Read permission. Edit your token in the Cloudflare dashboard to add Zone → Analytics → Read.', 'ccm-tools');
+        }
+        wp_send_json_error(array('message' => $msg));
     }
 
     wp_send_json_success($analytics);
@@ -3777,7 +3782,12 @@ function ccm_tools_ajax_cf_dns_records(): void {
 
     $records = ccm_tools_cf_get_dns_records();
     if (is_wp_error($records)) {
-        wp_send_json_error(array('message' => $records->get_error_message()));
+        $msg = $records->get_error_message();
+        $err_data = $records->get_error_data();
+        if (!empty($err_data['status']) && $err_data['status'] === 403) {
+            $msg = __('Your API token does not have DNS:Read permission. Edit your token in the Cloudflare dashboard to add Zone → DNS → Read.', 'ccm-tools');
+        }
+        wp_send_json_error(array('message' => $msg));
     }
 
     wp_send_json_success(array('records' => $records));

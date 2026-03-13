@@ -709,6 +709,8 @@ function ccm_tools_render_cloudflare_page(): void {
                                         <tr><td>Zone</td><td>Zone</td><td>Read</td></tr>
                                         <tr><td>Zone</td><td>Zone Settings</td><td>Edit</td></tr>
                                         <tr><td>Zone</td><td>Cache Purge</td><td>Purge</td></tr>
+                                        <tr><td>Zone</td><td>Analytics</td><td>Read</td></tr>
+                                        <tr><td>Zone</td><td>DNS</td><td>Read</td></tr>
                                     </tbody>
                                 </table>
                                 <p class="ccm-text-muted" style="margin: var(--ccm-space-xs) 0;"><?php _e('Click <strong>+ Add more</strong> to add each permission row.', 'ccm-tools'); ?></p>
