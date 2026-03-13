@@ -640,8 +640,8 @@ function ccm_tools_render_cloudflare_page(): void {
             </div>
 
             <!-- Connection Settings -->
-            <div class="ccm-card">
-                <h2><?php _e('Connection Settings', 'ccm-tools'); ?></h2>
+            <details class="ccm-card ccm-cf-connection-details"<?php echo !$connected ? ' open' : ''; ?>>
+                <summary class="ccm-cf-connection-summary"><h2 style="display:inline; cursor:pointer;"><?php _e('Connection Settings', 'ccm-tools'); ?></h2></summary>
                 <p class="ccm-text-muted"><?php _e('Connect using an API Token with Zone:Read, Zone Settings:Edit, and Cache Purge permissions.', 'ccm-tools'); ?></p>
                 <p class="ccm-text-muted" style="margin-top: var(--ccm-space-xs);"><strong><?php _e('Important:', 'ccm-tools'); ?></strong> <?php _e('You need an <strong>API Token</strong> (not a Global API Key). Global API Keys use a different authentication method and will not work here.', 'ccm-tools'); ?></p>
 
@@ -723,7 +723,7 @@ function ccm_tools_render_cloudflare_page(): void {
                         </p>
                     </div>
                 </details>
-            </div>
+            </details>
 
             <?php if ($connected): ?>
             <!-- Zone Features -->
@@ -731,7 +731,7 @@ function ccm_tools_render_cloudflare_page(): void {
                 <h2><?php _e('Zone Features', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('View and manage your Cloudflare zone settings. Toggle switches require your API Token to have <strong>Zone Settings: Edit</strong> permission.', 'ccm-tools'); ?></p>
                 <div id="cf-zone-status">
-                    <p class="ccm-text-muted"><?php _e('Loading zone information...', 'ccm-tools'); ?></p>
+                    <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading zone information...', 'ccm-tools'); ?></p></div>
                 </div>
             </div>
 
@@ -799,7 +799,7 @@ function ccm_tools_render_cloudflare_page(): void {
                 <h2><?php _e('Security', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Manage Cloudflare security features for your zone.', 'ccm-tools'); ?></p>
                 <div id="cf-security-settings">
-                    <p class="ccm-text-muted"><?php _e('Loading security settings...', 'ccm-tools'); ?></p>
+                    <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading security settings...', 'ccm-tools'); ?></p></div>
                 </div>
             </div>
 
@@ -808,7 +808,7 @@ function ccm_tools_render_cloudflare_page(): void {
                 <h2><?php _e('SSL/TLS & Network', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Encryption and network protocol settings.', 'ccm-tools'); ?></p>
                 <div id="cf-network-settings">
-                    <p class="ccm-text-muted"><?php _e('Loading network settings...', 'ccm-tools'); ?></p>
+                    <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading network settings...', 'ccm-tools'); ?></p></div>
                 </div>
             </div>
 
@@ -817,7 +817,7 @@ function ccm_tools_render_cloudflare_page(): void {
                 <h2><?php _e('Zone Analytics (Last 24 Hours)', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Traffic, caching efficiency, and threat overview.', 'ccm-tools'); ?></p>
                 <div id="cf-analytics">
-                    <p class="ccm-text-muted"><?php _e('Loading analytics...', 'ccm-tools'); ?></p>
+                    <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading analytics...', 'ccm-tools'); ?></p></div>
                 </div>
             </div>
 
@@ -826,7 +826,7 @@ function ccm_tools_render_cloudflare_page(): void {
                 <h2><?php _e('DNS Records', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Read-only view of your zone\'s DNS records. Manage records in the Cloudflare dashboard.', 'ccm-tools'); ?></p>
                 <div id="cf-dns-records">
-                    <p class="ccm-text-muted"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p>
+                    <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p></div>
                 </div>
             </div>
             <?php endif; ?>

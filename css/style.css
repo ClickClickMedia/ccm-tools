@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.34.0
+ * Version: 7.34.1
  */
 
 /* ===================================
@@ -4447,6 +4447,35 @@ tr.ccm-front-page-row {
     height: 16px;
     accent-color: var(--ccm-primary, #2563eb);
     cursor: pointer;
+}
+
+/* ===================================
+   Cloudflare Connection Accordion
+   =================================== */
+.ccm-cf-connection-details {
+    border: 1px solid var(--ccm-border, #e2e8f0);
+    border-radius: var(--ccm-radius, 8px);
+}
+.ccm-cf-connection-summary {
+    padding: 0;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: var(--ccm-space-sm, 0.5rem);
+    user-select: none;
+}
+.ccm-cf-connection-summary::-webkit-details-marker {
+    display: none;
+}
+.ccm-cf-connection-summary::before {
+    content: '▶';
+    font-size: 0.7em;
+    transition: transform 0.2s ease;
+    color: var(--ccm-text-muted, #64748b);
+}
+.ccm-cf-connection-details[open] > .ccm-cf-connection-summary::before {
+    transform: rotate(90deg);
 }
 
 /* ===================================
