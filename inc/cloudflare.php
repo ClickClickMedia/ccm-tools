@@ -430,16 +430,21 @@ function ccm_tools_cf_apply_recommended(): array {
 // ──────────────────────────────────────────────
 
 /**
- * Fetch zone analytics for the last 24 hours.
+ * Fetch zone analytics for the last 24 hours via Cloudflare GraphQL Analytics API.
  *
- * @param string $since  ISO 8601 start time (default: -24h).
- * @param string $until  ISO 8601 end time (default: now).
+ * @param string $since  ISO 8601 date (default: -24h).
+ * @param string $until  ISO 8601 date (default: now).
  * @return array|WP_Error
  */
 function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
         return new WP_Error('no_zone', __('Cloudflare is not connected.', 'ccm-tools'));
+    }
+
+    $token = $settings['api_token'];
+    if (empty($token)) {
+        return new WP_Error('no_token', __('Cloudflare API token is not configured.', 'ccm-tools'));
     }
 
     if (empty($since)) {
@@ -449,31 +454,97 @@ function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
         $until = gmdate('Y-m-d\TH:i:s\Z');
     }
 
-    $data = ccm_tools_cf_api(
-        'zones/' . $settings['zone_id'] . '/analytics/dashboard?since=' . urlencode($since) . '&until=' . urlencode($until)
+    $query = '
+        query {
+            viewer {
+                zones(filter: {zoneTag: "' . $settings['zone_id'] . '"}) {
+                    httpRequests1dGroups(
+                        filter: {date_geq: "' . substr($since, 0, 10) . '", date_leq: "' . substr($until, 0, 10) . '"}
+                        limit: 1
+                        orderBy: [date_DESC]
+                    ) {
+                        sum {
+                            requests
+                            cachedRequests
+                            encryptedRequests
+                            bytes
+                            cachedBytes
+                            threats
+                            pageViews
+                        }
+                        uniq {
+                            uniques
+                        }
+                    }
+                }
+            }
+        }
+    ';
+
+    $headers = array(
+        'Authorization: Bearer ' . $token,
+        'Content-Type: application/json',
+        'User-Agent: wordpress/' . get_bloginfo('version') . '; ccm-tools/' . CCM_HELPER_VERSION,
     );
 
-    if (is_wp_error($data)) {
-        return $data;
+    $ch = curl_init();
+    curl_setopt_array($ch, array(
+        CURLOPT_URL            => 'https://api.cloudflare.com/client/v4/graphql',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_CUSTOMREQUEST  => 'POST',
+        CURLOPT_POSTFIELDS     => wp_json_encode(array('query' => $query)),
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ));
+
+    $raw      = curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error    = curl_error($ch);
+    $errno    = curl_errno($ch);
+    curl_close($ch);
+
+    if ($error) {
+        return new WP_Error('cf_http_error', $error . ' (cURL/' . $errno . ')');
     }
 
-    $totals = $data['result']['totals'] ?? array();
+    $data = json_decode($raw, true);
+
+    if ($httpCode < 200 || $httpCode >= 300) {
+        $msg = 'Cloudflare GraphQL error (HTTP ' . $httpCode . ')';
+        if (!empty($data['errors'][0]['message'])) {
+            $msg = $data['errors'][0]['message'] . ' (HTTP ' . $httpCode . ')';
+        }
+        return new WP_Error('cf_api_error', $msg, array('status' => $httpCode, 'response' => $data));
+    }
+
+    if (!empty($data['errors'])) {
+        return new WP_Error('cf_graphql_error', $data['errors'][0]['message'] ?? 'GraphQL query failed.', array('status' => $httpCode));
+    }
+
+    $groups = $data['data']['viewer']['zones'][0]['httpRequests1dGroups'] ?? array();
+    $sum    = $groups[0]['sum'] ?? array();
+    $uniq   = $groups[0]['uniq'] ?? array();
+
+    $all_requests = $sum['requests'] ?? 0;
+    $cached       = $sum['cachedRequests'] ?? 0;
 
     return array(
         'requests'  => array(
-            'all'     => $totals['requests']['all'] ?? 0,
-            'cached'  => $totals['requests']['cached'] ?? 0,
-            'uncached' => $totals['requests']['uncached'] ?? 0,
-            'ssl'     => $totals['requests']['ssl']['encrypted'] ?? 0,
+            'all'      => $all_requests,
+            'cached'   => $cached,
+            'uncached' => $all_requests - $cached,
+            'ssl'      => $sum['encryptedRequests'] ?? 0,
         ),
         'bandwidth' => array(
-            'all'     => $totals['bandwidth']['all'] ?? 0,
-            'cached'  => $totals['bandwidth']['cached'] ?? 0,
-            'uncached' => $totals['bandwidth']['uncached'] ?? 0,
+            'all'      => $sum['bytes'] ?? 0,
+            'cached'   => $sum['cachedBytes'] ?? 0,
+            'uncached' => ($sum['bytes'] ?? 0) - ($sum['cachedBytes'] ?? 0),
         ),
-        'threats'   => $totals['threats']['all'] ?? 0,
-        'pageviews' => $totals['pageviews']['all'] ?? 0,
-        'uniques'   => $totals['uniques']['all'] ?? 0,
+        'threats'   => $sum['threats'] ?? 0,
+        'pageviews' => $sum['pageViews'] ?? 0,
+        'uniques'   => $uniq['uniques'] ?? 0,
     );
 }
 
