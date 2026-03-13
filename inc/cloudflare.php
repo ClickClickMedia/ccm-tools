@@ -457,20 +457,23 @@ function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
     }
 
     if (empty($since)) {
-        $since = gmdate('Y-m-d\TH:i:s\Z', strtotime('-24 hours'));
+        $since = gmdate('Y-m-d', strtotime('-1 day'));
     }
     if (empty($until)) {
-        $until = gmdate('Y-m-d\TH:i:s\Z');
+        $until = gmdate('Y-m-d');
     }
+
+    // Use date-only values for the 1d dataset
+    $date_since = substr($since, 0, 10);
+    $date_until = substr($until, 0, 10);
 
     $query = '
         query {
             viewer {
                 zones(filter: {zoneTag: "' . $settings['zone_id'] . '"}) {
                     httpRequests1dGroups(
-                        filter: {date_geq: "' . substr($since, 0, 10) . '", date_leq: "' . substr($until, 0, 10) . '"}
-                        limit: 1
-                        orderBy: [date_DESC]
+                        filter: {date_geq: "' . $date_since . '", date_leq: "' . $date_until . '"}
+                        limit: 10
                     ) {
                         sum {
                             requests
@@ -533,27 +536,40 @@ function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
     }
 
     $groups = $data['data']['viewer']['zones'][0]['httpRequests1dGroups'] ?? array();
-    $sum    = $groups[0]['sum'] ?? array();
-    $uniq   = $groups[0]['uniq'] ?? array();
 
-    $all_requests = $sum['requests'] ?? 0;
-    $cached       = $sum['cachedRequests'] ?? 0;
+    // Aggregate across all returned day groups
+    $totals = array(
+        'requests' => 0, 'cachedRequests' => 0, 'encryptedRequests' => 0,
+        'bytes' => 0, 'cachedBytes' => 0, 'threats' => 0, 'pageViews' => 0,
+        'uniques' => 0,
+    );
+    foreach ($groups as $g) {
+        $s = $g['sum'] ?? array();
+        $totals['requests']          += $s['requests'] ?? 0;
+        $totals['cachedRequests']    += $s['cachedRequests'] ?? 0;
+        $totals['encryptedRequests'] += $s['encryptedRequests'] ?? 0;
+        $totals['bytes']             += $s['bytes'] ?? 0;
+        $totals['cachedBytes']       += $s['cachedBytes'] ?? 0;
+        $totals['threats']           += $s['threats'] ?? 0;
+        $totals['pageViews']         += $s['pageViews'] ?? 0;
+        $totals['uniques']           += ($g['uniq']['uniques'] ?? 0);
+    }
 
     return array(
         'requests'  => array(
-            'all'      => $all_requests,
-            'cached'   => $cached,
-            'uncached' => $all_requests - $cached,
-            'ssl'      => $sum['encryptedRequests'] ?? 0,
+            'all'      => $totals['requests'],
+            'cached'   => $totals['cachedRequests'],
+            'uncached' => $totals['requests'] - $totals['cachedRequests'],
+            'ssl'      => $totals['encryptedRequests'],
         ),
         'bandwidth' => array(
-            'all'      => $sum['bytes'] ?? 0,
-            'cached'   => $sum['cachedBytes'] ?? 0,
-            'uncached' => ($sum['bytes'] ?? 0) - ($sum['cachedBytes'] ?? 0),
+            'all'      => $totals['bytes'],
+            'cached'   => $totals['cachedBytes'],
+            'uncached' => $totals['bytes'] - $totals['cachedBytes'],
         ),
-        'threats'   => $sum['threats'] ?? 0,
-        'pageviews' => $sum['pageViews'] ?? 0,
-        'uniques'   => $uniq['uniques'] ?? 0,
+        'threats'   => $totals['threats'],
+        'pageviews' => $totals['pageViews'],
+        'uniques'   => $totals['uniques'],
     );
 }
 
