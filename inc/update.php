@@ -468,12 +468,12 @@ class CCM_GitHub_Updater {
      * @return array Result
      */
     /**
-     * Rename extracted source directory to 'ccm-tools' regardless of zip folder name.
+     * Rename extracted source directory to match the installed plugin folder.
      *
-     * GitHub release zips extract to folders like 'ccm-tools-7.20.2/' or
-     * 'ClickClickMedia-ccm-tools-abc1234/'. This filter fires for ALL installs
-     * (manual upload + auto-update) and renames to 'ccm-tools/' so WordPress
-     * places files in the correct plugin directory.
+     * GitHub release zips extract to folders like 'ccm-tools/', 'ccm-tools-7.20.2/',
+     * or 'ClickClickMedia-ccm-tools-abc1234/'. This filter renames the extracted
+     * folder to match $this->basename (the actual installed plugin directory name,
+     * e.g. 'ccm-tools' or 'ccm-tools-main') so WordPress installs to the correct path.
      *
      * @param string $source        File source location (temp directory).
      * @param string $remote_source Remote file source location.
@@ -485,61 +485,47 @@ class CCM_GitHub_Updater {
         global $wp_filesystem;
 
         // Only act on our plugin (updates) or when the extracted folder looks like ours (fresh installs)
-        $source_dirname = trailingslashit(basename(untrailingslashit($source)));
+        $source_dirname = basename(untrailingslashit($source));
 
         // Check if this is our plugin update
         $is_our_update = isset($hook_extra['plugin']) && $hook_extra['plugin'] === $this->plugin;
 
         // Check if the extracted folder matches our naming pattern (covers manual upload)
-        $is_our_folder = (bool) preg_match('/^ccm-tools(-[\d.]+)?\/?$/i', $source_dirname)
+        $is_our_folder = (bool) preg_match('/^ccm-tools/i', $source_dirname)
                       || (bool) preg_match('/^ClickClickMedia-ccm-tools-/i', $source_dirname);
 
         if (!$is_our_update && !$is_our_folder) {
             return $source;
         }
 
-        // Already correct — basename is 'ccm-tools'
-        if (basename(untrailingslashit($source)) === 'ccm-tools') {
+        // Already correct — folder matches the installed plugin directory
+        if ($source_dirname === $this->basename) {
             return $source;
         }
 
         // Flat zip: source IS the working directory (no parent folder in zip).
-        // Files are at root level — WordPress copies contents directly to the
-        // destination plugin directory, so no rename is needed.
+        // This should not happen with properly built zips, but handle gracefully.
         if (untrailingslashit($source) === untrailingslashit($remote_source)) {
             return $source;
         }
 
-        // Rename the folder (e.g. ccm-tools-7.20.5 → ccm-tools)
-        $correct_dir = trailingslashit($remote_source) . 'ccm-tools/';
+        // Rename the folder to match the installed plugin directory
+        // e.g. ccm-tools-7.32.5 → ccm-tools (or ccm-tools-main, etc.)
+        $correct_dir = trailingslashit($remote_source) . trailingslashit($this->basename);
         if ($wp_filesystem->move($source, $correct_dir)) {
             return $correct_dir;
         }
 
-        return new WP_Error('rename_failed', 'Could not rename plugin directory to ccm-tools.');
+        return new WP_Error('rename_failed', 'Could not rename plugin directory to ' . $this->basename . '.');
     }
 
     public function after_install($response, $hook_extra, $result) {
-        global $wp_filesystem;
-        
         // Check if we're updating this plugin
         if (!isset($hook_extra['plugin']) || $hook_extra['plugin'] != $this->plugin) {
             return $response;
         }
         
-        // Ensure we have WP_Filesystem available
-        if (!$wp_filesystem) {
-            require_once ABSPATH . 'wp-admin/includes/file.php';
-            WP_Filesystem();
-            global $wp_filesystem;
-        }
-        
-        // Get the install directory
-        $install_directory = plugin_dir_path($this->file);
-        $wp_filesystem->move($result['destination'], $install_directory);
-        $result['destination'] = $install_directory;
-        
-        // Re-activate plugin if it was active
+        // Re-activate plugin if it was active before the update
         if ($this->active) {
             activate_plugin($this->plugin);
         }
@@ -547,7 +533,7 @@ class CCM_GitHub_Updater {
         // Clean up maintenance file
         $this->check_maintenance_file();
         
-        return $result;
+        return $response;
     }
     
     /**
