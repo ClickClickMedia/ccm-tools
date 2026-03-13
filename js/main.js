@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.34.3
+ * Version: 7.35.0
  */
 
 (function() {
@@ -3448,6 +3448,36 @@
             loadCloudflareStatus(statusCard, devToggle);
         }
 
+        // Apply Recommended Settings
+        const recommendedBtn = $('#cf-apply-recommended');
+        if (recommendedBtn) {
+            recommendedBtn.addEventListener('click', async () => {
+                if (!confirm('Apply Cloudflare\u2019s recommended settings for WordPress? This will change security, caching, and performance settings to optimal values.')) return;
+
+                recommendedBtn.disabled = true;
+                recommendedBtn.textContent = 'Applying\u2026';
+
+                try {
+                    const res = await ajax('ccm_tools_cf_apply_recommended');
+                    if (res.success) {
+                        showNotification(res.data.message, 'success');
+                        if (res.data.failed && res.data.failed.length) {
+                            showNotification('Failed: ' + res.data.failed.join(', '), 'warning');
+                        }
+                        // Reload zone status to reflect changes
+                        if (statusCard) loadCloudflareStatus(statusCard, devToggle);
+                    } else {
+                        showNotification(res.data.message || 'Failed to apply settings.', 'error');
+                    }
+                } catch (err) {
+                    showNotification('Failed: ' + err.message, 'error');
+                } finally {
+                    recommendedBtn.disabled = false;
+                    recommendedBtn.textContent = 'Apply Recommended';
+                }
+            });
+        }
+
         // Purge All Cache
         if (purgeAllBtn) {
             purgeAllBtn.addEventListener('click', async () => {
@@ -3581,6 +3611,7 @@
 
             const zone = res.data.zone || {};
             const features = res.data.features || {};
+            const isPremium = container.dataset.premium === '1';
 
             let html = '<table class="ccm-table">';
             html += cfStatusRow('Zone', zone.name || '—');
@@ -3596,7 +3627,6 @@
             const toggleSettings = [
                 { key: 'rocket_loader', label: 'Rocket Loader', desc: 'Prioritise loading of your page content over scripts' },
                 { key: 'always_online', label: 'Always Online', desc: 'Show a cached version of your site if your server goes offline' },
-                { key: 'webp', label: 'WebP Conversion', desc: 'Serve WebP images to supported browsers (Pro+ plan)' },
             ];
             for (const item of toggleSettings) {
                 const val = features[item.key];
@@ -3607,16 +3637,34 @@
                 html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
             }
 
-            // --- Polish (dropdown: off / lossless / lossy) ---
-            if (features.polish !== undefined) {
-                html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
-                html += '<td style="text-align: right;"><select data-cf-setting="polish" class="ccm-cf-select">';
-                const polishOptions = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
-                for (const [pval, plabel] of polishOptions) {
-                    const sel = features.polish === pval ? ' selected' : '';
-                    html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
+            // --- WebP (premium toggle / free read-only) ---
+            if (features.webp !== undefined) {
+                if (isPremium) {
+                    const wChecked = features.webp === 'on' ? ' checked' : '';
+                    html += '<tr><th>WebP Conversion<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Serve WebP images to supported browsers (Pro+ plan)</span></th>';
+                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="webp"' + wChecked + '>';
+                    html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+                } else {
+                    html += cfStatusRow('WebP Conversion', features.webp === 'on' ? '<span class="ccm-success">\u2713 On</span>' : '<span class="ccm-text-muted">Off</span>');
                 }
-                html += '</select></td></tr>';
+            }
+
+            // --- Polish (premium dropdown / free read-only) ---
+            if (features.polish !== undefined) {
+                if (isPremium) {
+                    html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
+                    html += '<td style="text-align: right;"><select data-cf-setting="polish" class="ccm-cf-select">';
+                    const polishOptions = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
+                    for (const [pval, plabel] of polishOptions) {
+                        const sel = features.polish === pval ? ' selected' : '';
+                        html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
+                    }
+                    html += '</select></td></tr>';
+                } else {
+                    const plabel = features.polish === 'off' ? 'Off' : features.polish === 'lossless' ? 'Lossless' : features.polish === 'lossy' ? 'Lossy' : escHtml(features.polish);
+                    html += cfStatusRow('Polish (Image Optimization)', '<span class="ccm-text-muted">' + plabel + '</span>');
+                }
+            }
             }
 
             // --- Auto Minify (3 checkboxes: JS, CSS, HTML) ---
@@ -3652,13 +3700,19 @@
                 html += '</select></td></tr>';
             }
 
-            // --- APO (toggle) ---
+            // --- APO (premium toggle / free read-only) ---
             if (features.apo !== undefined) {
                 const apoEnabled = features.apo && features.apo.enabled;
-                const apoChecked = apoEnabled ? ' checked' : '';
-                html += '<tr><th>Automatic Platform Optimization (APO)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Cloudflare\'s WordPress-specific full-page caching at the edge</span></th>';
-                html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="automatic_platform_optimization"' + apoChecked + '>';
-                html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+                if (isPremium) {
+                    const apoChecked = apoEnabled ? ' checked' : '';
+                    html += '<tr><th>Automatic Platform Optimization (APO)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Cloudflare\'s WordPress-specific full-page caching at the edge</span></th>';
+                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="automatic_platform_optimization"' + apoChecked + '>';
+                    html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+                } else {
+                    html += cfStatusRow('Automatic Platform Optimization (APO)', apoEnabled
+                        ? '<span class="ccm-success">\u2713 Enabled</span>'
+                        : '<span class="ccm-text-muted">Disabled</span>');
+                }
             }
 
             // Development mode (read-only here — separate toggle below)
@@ -3696,47 +3750,50 @@
             // Bind toggle/select events
             bindCfSettingControls(container);
 
-            // Render Security Settings panel
-            renderCfSecurityPanel(features);
+            // Render premium-only panels
+            if (isPremium) {
+                // Render Security Settings panel
+                renderCfSecurityPanel(features);
 
-            // Bind "Under Attack" toggle
-            const uaToggle = $('#cf-under-attack-toggle');
-            if (uaToggle) {
-                uaToggle.addEventListener('change', async function () {
-                    const enable = this.checked;
-                    const box = $('#cf-under-attack-box');
-                    this.disabled = true;
+                // Bind "Under Attack" toggle
+                const uaToggle = $('#cf-under-attack-toggle');
+                if (uaToggle) {
+                    uaToggle.addEventListener('change', async function () {
+                        const enable = this.checked;
+                        const box = $('#cf-under-attack-box');
+                        this.disabled = true;
 
-                    if (enable && !confirm('Enable "I\'m Under Attack" mode? All visitors will see a challenge page for ~5 seconds.')) {
-                        this.checked = false;
-                        this.disabled = false;
-                        return;
-                    }
-
-                    try {
-                        const newLevel = enable ? 'under_attack' : 'high';
-                        const res = await ajax('ccm_tools_cf_update_setting', { setting: 'security_level', value: newLevel });
-                        if (res.success) {
-                            showNotification(enable ? 'Under Attack mode enabled.' : 'Under Attack mode disabled (Security Level set to High).', 'success');
-                            if (box) box.classList.toggle('ccm-cf-under-attack-active', enable);
-                            // Update Security Level dropdown if present
-                            const secSelect = document.querySelector('[data-cf-setting="security_level"]');
-                            if (secSelect) secSelect.value = newLevel;
-                        } else {
-                            showNotification(res.data.message || 'Failed to update.', 'error');
-                            this.checked = !enable;
+                        if (enable && !confirm('Enable "I\'m Under Attack" mode? All visitors will see a challenge page for ~5 seconds.')) {
+                            this.checked = false;
+                            this.disabled = false;
+                            return;
                         }
-                    } catch (err) {
-                        showNotification('Failed: ' + err.message, 'error');
-                        this.checked = !enable;
-                    } finally {
-                        this.disabled = false;
-                    }
-                });
-            }
 
-            // Render Network Settings panel
-            renderCfNetworkPanel(features);
+                        try {
+                            const newLevel = enable ? 'under_attack' : 'high';
+                            const res = await ajax('ccm_tools_cf_update_setting', { setting: 'security_level', value: newLevel });
+                            if (res.success) {
+                                showNotification(enable ? 'Under Attack mode enabled.' : 'Under Attack mode disabled (Security Level set to High).', 'success');
+                                if (box) box.classList.toggle('ccm-cf-under-attack-active', enable);
+                                // Update Security Level dropdown if present
+                                const secSelect = document.querySelector('[data-cf-setting="security_level"]');
+                                if (secSelect) secSelect.value = newLevel;
+                            } else {
+                                showNotification(res.data.message || 'Failed to update.', 'error');
+                                this.checked = !enable;
+                            }
+                        } catch (err) {
+                            showNotification('Failed: ' + err.message, 'error');
+                            this.checked = !enable;
+                        } finally {
+                            this.disabled = false;
+                        }
+                    });
+                }
+
+                // Render Network Settings panel
+                renderCfNetworkPanel(features);
+            }
 
         } catch (err) {
             container.innerHTML = '<p class="ccm-error">Failed to load zone status: ' + escHtml(err.message) + '</p>';

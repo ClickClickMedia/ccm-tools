@@ -3735,6 +3735,32 @@ function ccm_tools_ajax_cf_update_setting(): void {
 }
 
 // ──────────────────────────────────────────────
+// Cloudflare: Apply Recommended Settings
+// ──────────────────────────────────────────────
+add_action('wp_ajax_ccm_tools_cf_apply_recommended', 'ccm_tools_ajax_cf_apply_recommended');
+function ccm_tools_ajax_cf_apply_recommended(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $result = ccm_tools_cf_apply_recommended();
+    $applied_count = count($result['applied']);
+    $failed_count  = count($result['failed']);
+
+    if ($failed_count === 0) {
+        wp_send_json_success(array(
+            'message' => sprintf(__('%d recommended settings applied successfully.', 'ccm-tools'), $applied_count),
+        ));
+    } else {
+        wp_send_json_success(array(
+            'message' => sprintf(__('%d settings applied, %d failed.', 'ccm-tools'), $applied_count, $failed_count),
+            'failed'  => $result['failed'],
+        ));
+    }
+}
+
+// ──────────────────────────────────────────────
 // Cloudflare: Auto-Purge Toggle
 // ──────────────────────────────────────────────
 add_action('wp_ajax_ccm_tools_cf_auto_purge', 'ccm_tools_ajax_cf_auto_purge');
@@ -3766,6 +3792,9 @@ function ccm_tools_ajax_cf_analytics(): void {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
+    if (function_exists('ccm_tools_has_premium_feature') && !ccm_tools_has_premium_feature('advanced_cloudflare')) {
+        wp_send_json_error(array('message' => __('This feature requires CCM Tools Premium.', 'ccm-tools'), 'premium_required' => true));
+    }
 
     $analytics = ccm_tools_cf_get_analytics();
     if (is_wp_error($analytics)) {
@@ -3788,6 +3817,9 @@ function ccm_tools_ajax_cf_dns_records(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+    if (function_exists('ccm_tools_has_premium_feature') && !ccm_tools_has_premium_feature('advanced_cloudflare')) {
+        wp_send_json_error(array('message' => __('This feature requires CCM Tools Premium.', 'ccm-tools'), 'premium_required' => true));
     }
 
     $records = ccm_tools_cf_get_dns_records();

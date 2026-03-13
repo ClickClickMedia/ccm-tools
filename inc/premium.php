@@ -61,6 +61,21 @@ function ccm_tools_premium_features(): array {
                 'Connection & read timeout tuning',
             ),
         ),
+        'advanced_cloudflare' => array(
+            'name'        => 'Advanced Cloudflare Management',
+            'icon'        => '☁️',
+            'description' => 'Full Cloudflare control from your WordPress dashboard',
+            'includes'    => array(
+                'Security settings (Security Level, Under Attack mode)',
+                'Email Obfuscation & Hotlink Protection',
+                'SSL/TLS encryption mode management',
+                'Network protocol controls (HTTP/2, HTTP/3, 0-RTT)',
+                'Automatic Platform Optimization (APO) toggle',
+                'Polish & WebP image optimization',
+                'Zone Analytics dashboard (24h overview)',
+                'DNS Records viewer',
+            ),
+        ),
     );
 }
 

@@ -383,6 +383,49 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
 }
 
 // ──────────────────────────────────────────────
+// Apply Recommended WordPress Settings
+// ──────────────────────────────────────────────
+
+/**
+ * Apply Cloudflare's recommended settings for WordPress.
+ *
+ * @return array Results with successes and failures.
+ */
+function ccm_tools_cf_apply_recommended(): array {
+    $recommended = array(
+        'security_level'           => 'medium',
+        'ssl'                      => 'full',
+        'always_use_https'         => 'on',
+        'automatic_https_rewrites' => 'on',
+        'browser_cache_ttl'        => 14400,
+        'rocket_loader'            => 'off',
+        'email_obfuscation'        => 'on',
+        'brotli'                   => 'on',
+        'http2'                    => 'on',
+        'early_hints'              => 'on',
+        'always_online'            => 'on',
+        'hotlink_protection'       => 'off',
+    );
+
+    $successes = array();
+    $failures  = array();
+
+    foreach ($recommended as $setting => $value) {
+        $result = ccm_tools_cf_update_setting($setting, $value);
+        if (is_wp_error($result)) {
+            $failures[] = $setting . ': ' . $result->get_error_message();
+        } else {
+            $successes[] = $setting;
+        }
+    }
+
+    return array(
+        'applied' => $successes,
+        'failed'  => $failures,
+    );
+}
+
+// ──────────────────────────────────────────────
 // Zone Analytics
 // ──────────────────────────────────────────────
 
@@ -599,6 +642,7 @@ function ccm_tools_render_cloudflare_page(): void {
     $connected = !empty($settings['connected']) && !empty($settings['zone_id']);
     $cf_detected = ccm_tools_cf_detect();
     $is_cf       = !empty($cf_detected['detected']);
+    $is_cf_premium = function_exists('ccm_tools_has_premium_feature') && ccm_tools_has_premium_feature('advanced_cloudflare');
     ?>
     <div class="wrap ccm-tools">
         <?php ccm_tools_render_header_nav('ccm-tools-cloudflare'); ?>
@@ -733,8 +777,21 @@ function ccm_tools_render_cloudflare_page(): void {
             <div class="ccm-card" id="cf-status-card">
                 <h2><?php _e('Zone Features', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('View and manage your Cloudflare zone settings. Toggle switches require your API Token to have <strong>Zone Settings: Edit</strong> permission.', 'ccm-tools'); ?></p>
-                <div id="cf-zone-status">
+                <div id="cf-zone-status" data-premium="<?php echo $is_cf_premium ? '1' : '0'; ?>">
                     <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading zone information...', 'ccm-tools'); ?></p></div>
+                </div>
+
+                <!-- Apply Recommended Settings -->
+                <div style="margin-top: var(--ccm-space-md); padding-top: var(--ccm-space-md); border-top: 1px solid var(--ccm-border);">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
+                        <div style="flex: 1;">
+                            <strong><?php _e('Apply Recommended WordPress Settings', 'ccm-tools'); ?></strong>
+                            <p class="ccm-text-muted"><?php _e('Apply Cloudflare\'s recommended base configuration for WordPress sites. Sets security, caching, and performance to optimal values.', 'ccm-tools'); ?></p>
+                        </div>
+                        <button type="button" id="cf-apply-recommended" class="ccm-button">
+                            <?php _e('Apply Recommended', 'ccm-tools'); ?>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -798,6 +855,7 @@ function ccm_tools_render_cloudflare_page(): void {
             </div>
 
             <!-- Security Settings -->
+            <?php if ($is_cf_premium): ?>
             <div class="ccm-card" id="cf-security-card">
                 <h2><?php _e('Security', 'ccm-tools'); ?></h2>
                 <p class="ccm-text-muted"><?php _e('Manage Cloudflare security features for your zone.', 'ccm-tools'); ?></p>
@@ -832,6 +890,13 @@ function ccm_tools_render_cloudflare_page(): void {
                     <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p></div>
                 </div>
             </div>
+            <?php else: ?>
+            <!-- Premium Upsell for Advanced Cloudflare -->
+            <div class="ccm-card">
+                <h2><?php _e('Advanced Cloudflare Management', 'ccm-tools'); ?> <span class="ccm-premium-badge ccm-premium-badge-pro" style="font-size: 0.6em; vertical-align: middle;">Premium</span></h2>
+                <?php if (function_exists('ccm_tools_render_premium_upsell')) { ccm_tools_render_premium_upsell('advanced_cloudflare'); } ?>
+            </div>
+            <?php endif; ?>
             <?php endif; ?>
         </div>
     </div>
