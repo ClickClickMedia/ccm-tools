@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.35.5
+ * Version: 7.35.6
  */
 
 (function() {
@@ -670,12 +670,13 @@
                     const stat = getStatForOption(item.key, stats);
                     const statClass = stat > 0 ? (riskLevel === 'high' ? 'warning' : 'has-items') : '';
                     const checked = item.default ? 'checked' : '';
+                    const premiumBadge = item.premium ? '<span class="ccm-opt-premium-badge">Premium</span>' : '';
                     
                     html += `
-                        <div class="ccm-opt-item">
+                        <div class="ccm-opt-item${item.premium ? ' ccm-opt-item-premium' : ''}">
                             <input type="checkbox" id="opt-${item.key}" name="optimization[]" value="${item.key}" ${checked}>
                             <div class="ccm-opt-item-content">
-                                <label class="ccm-opt-item-label" for="opt-${item.key}">${escapeHtml(item.label)}</label>
+                                <label class="ccm-opt-item-label" for="opt-${item.key}">${escapeHtml(item.label)}${premiumBadge}</label>
                                 <span class="ccm-opt-item-desc">${escapeHtml(item.description)}</span>
                             </div>
                             ${stat !== null ? `<span class="ccm-opt-item-stat ${statClass}">${stat}</span>` : ''}
@@ -695,6 +696,7 @@
                 'add_usermeta_index': !!stats.index_usermeta_exists,
                 'add_commentmeta_index': !!stats.index_commentmeta_exists,
                 'add_termmeta_index': !!stats.index_termmeta_exists,
+                'add_postmeta_composite_index': !!stats.index_postmeta_composite_exists,
             };
             for (const [optKey, isApplied] of Object.entries(alreadyApplied)) {
                 if (!isApplied) continue;
@@ -777,6 +779,7 @@
             'add_usermeta_index': null,
             'add_commentmeta_index': null,
             'add_termmeta_index': null,
+            'add_postmeta_composite_index': null,
         };
         return mapping.hasOwnProperty(optKey) ? mapping[optKey] : null;
     }

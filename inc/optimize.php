@@ -111,6 +111,13 @@ function ccm_tools_get_optimization_options() {
             'default' => false,
             'risk' => 'moderate'
         ),
+        'add_postmeta_composite_index' => array(
+            'label' => __('Add postmeta composite index', 'ccm-tools'),
+            'description' => __('Add composite index on meta_key + meta_value + post_id — massive query performance boost, especially for WooCommerce', 'ccm-tools'),
+            'default' => false,
+            'risk' => 'moderate',
+            'premium' => true
+        ),
         'add_usermeta_index' => array(
             'label' => __('Add usermeta index', 'ccm-tools'),
             'description' => __('Add optimized index on wp_usermeta.meta_key', 'ccm-tools'),
@@ -810,6 +817,48 @@ function ccm_tools_optimization_add_termmeta_index() {
 }
 
 /**
+ * Add composite index to postmeta table (meta_key, meta_value, post_id)
+ * Premium feature — massive performance improvement for meta queries, especially WooCommerce
+ */
+function ccm_tools_optimization_add_postmeta_composite_index() {
+    global $wpdb;
+
+    $index_name = 'idx_meta_key_value_postid';
+    $table = $wpdb->postmeta;
+
+    // Check if table exists
+    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+    if (!$table_exists) {
+        return array(
+            'success' => false,
+            'message' => sprintf(__('Table %s does not exist', 'ccm-tools'), $table),
+            'count' => 0
+        );
+    }
+
+    // Check if index already exists
+    $indexes = $wpdb->get_results("SHOW INDEX FROM `{$table}` WHERE Key_name = '{$index_name}'");
+    if (!empty($indexes)) {
+        return array(
+            'success' => true,
+            'message' => sprintf(__('Composite index already exists on %s', 'ccm-tools'), $table),
+            'count' => 0
+        );
+    }
+
+    // Add composite index
+    $result = $wpdb->query("ALTER TABLE `{$table}` ADD INDEX `{$index_name}` (`meta_key`, `meta_value`(191), `post_id`)");
+
+    return array(
+        'success' => $result !== false,
+        'message' => $result !== false
+            ? sprintf(__('Composite index added to %s (meta_key, meta_value, post_id)', 'ccm-tools'), $table)
+            : sprintf(__('Failed to add composite index to %s', 'ccm-tools'), $table),
+        'count' => $result !== false ? 1 : 0
+    );
+}
+
+/**
  * Helper function to add an index to a meta table
  */
 function ccm_tools_add_meta_index($table, $column, $index_name, $index_length) {
@@ -1161,6 +1210,16 @@ function ccm_tools_get_optimization_stats() {
                     break;
                 }
             }
+        }
+    }
+
+    // Composite postmeta index check
+    $stats['index_postmeta_composite_exists'] = false;
+    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $wpdb->postmeta));
+    if ($table_exists) {
+        $composite_indexes = $wpdb->get_results("SHOW INDEX FROM `{$wpdb->postmeta}` WHERE Key_name = 'idx_meta_key_value_postid'");
+        if (!empty($composite_indexes)) {
+            $stats['index_postmeta_composite_exists'] = true;
         }
     }
     

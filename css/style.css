@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.35.5
+ * Version: 7.35.6
  */
 
 /* ===================================
@@ -481,6 +481,26 @@
 
 .ccm-opt-item.ccm-status-will-remove {
     border-left-color: var(--ccm-warning);
+}
+
+/* Premium optimization item */
+.ccm-opt-item-premium {
+    border-left-color: #d97706;
+}
+.ccm-opt-premium-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.45rem;
+    margin-left: 0.4rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    line-height: 1.5;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+    white-space: nowrap;
+    vertical-align: middle;
 }
 
 /* Optimization Progress */

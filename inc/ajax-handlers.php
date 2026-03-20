@@ -96,10 +96,21 @@ function ccm_tools_ajax_get_optimization_options(): void {
     
     $options = ccm_tools_get_optimization_options();
     $stats = ccm_tools_get_optimization_stats();
+    $is_premium = function_exists('ccm_tools_is_premium') && ccm_tools_is_premium();
+
+    // Remove premium-only options for non-premium users
+    if (!$is_premium) {
+        foreach ($options as $key => $opt) {
+            if (!empty($opt['premium'])) {
+                unset($options[$key]);
+            }
+        }
+    }
     
     wp_send_json_success(array(
         'options' => $options,
-        'stats' => $stats
+        'stats' => $stats,
+        'is_premium' => $is_premium
     ));
 }
 
@@ -126,9 +137,14 @@ function ccm_tools_ajax_run_optimizations(): void {
     
     // Validate all selected options exist
     $available = ccm_tools_get_optimization_options();
+    $is_premium = function_exists('ccm_tools_is_premium') && ccm_tools_is_premium();
     foreach ($selected as $option) {
         if (!isset($available[$option])) {
             wp_send_json_error(sprintf(__('Invalid optimization option: %s', 'ccm-tools'), $option));
+        }
+        // Block premium options for non-premium users
+        if (!empty($available[$option]['premium']) && !$is_premium) {
+            wp_send_json_error(__('This optimization requires a premium subscription.', 'ccm-tools'));
         }
     }
     
@@ -181,6 +197,14 @@ function ccm_tools_ajax_run_single_optimization(): void {
     $available = ccm_tools_get_optimization_options();
     if (!isset($available[$task])) {
         wp_send_json_error(sprintf(__('Invalid optimization task: %s', 'ccm-tools'), $task));
+    }
+    
+    // Block premium options for non-premium users
+    if (!empty($available[$task]['premium'])) {
+        $is_premium = function_exists('ccm_tools_is_premium') && ccm_tools_is_premium();
+        if (!$is_premium) {
+            wp_send_json_error(__('This optimization requires a premium subscription.', 'ccm-tools'));
+        }
     }
     
     // Run the single task
