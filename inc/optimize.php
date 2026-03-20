@@ -113,7 +113,7 @@ function ccm_tools_get_optimization_options() {
         ),
         'add_postmeta_composite_index' => array(
             'label' => __('Add postmeta composite index', 'ccm-tools'),
-            'description' => __('Speed up product, order, and metadata lookups with a high-performance covering index — especially effective on WooCommerce sites', 'ccm-tools'),
+            'description' => __('Speed up custom field and metadata lookups with a high-performance covering index — especially effective on sites using ACF or WooCommerce', 'ccm-tools'),
             'default' => false,
             'risk' => 'moderate',
             'premium' => true
