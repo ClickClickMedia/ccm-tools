@@ -875,6 +875,29 @@ function ccm_tools_redis_add_config($config = array()) {
         $config_content
     );
     
+    // ── Remove ANY pre-existing Redis constants (from other plugins, manual edits, etc.) ──
+    // This prevents stale values from blocking our managed block.
+    $redis_constant_names = array(
+        'WP_REDIS_HOST', 'WP_REDIS_PORT', 'WP_REDIS_PATH', 'WP_REDIS_SCHEME',
+        'WP_REDIS_DATABASE', 'WP_REDIS_PASSWORD', 'WP_REDIS_USERNAME',
+        'WP_REDIS_TIMEOUT', 'WP_REDIS_READ_TIMEOUT', 'WP_REDIS_RETRY_INTERVAL',
+        'WP_REDIS_MAXTTL', 'WP_REDIS_DISABLE_METRICS', 'WP_REDIS_DISABLE_COMMENT',
+        'WP_REDIS_SELECTIVE_FLUSH', 'WP_REDIS_SERIALIZER', 'WP_REDIS_COMPRESSION',
+        'WP_REDIS_ASYNC_FLUSH', 'WP_REDIS_CLIENT', 'WP_REDIS_IGNORED_GROUPS',
+        'WP_REDIS_GLOBAL_GROUPS', 'WP_CACHE_KEY_SALT',
+    );
+    foreach ($redis_constant_names as $cname) {
+        $config_content = preg_replace(
+            '/^[ \t]*define\s*\(\s*[\'"]' . preg_quote($cname, '/') . '[\'"].*?\);\s*\n?/mi',
+            '',
+            $config_content
+        );
+    }
+    // Remove common Redis comment headers left behind (but not our block markers)
+    $config_content = preg_replace('/^[ \t]*\/\*\s*Redis\s+configuration\s*\*\/\s*\n?/mi', '', $config_content);
+    // Collapse excessive blank lines left by removals (3+ → 2)
+    $config_content = preg_replace('/\n{4,}/', "\n\n\n", $config_content);
+    
     // Default configuration
     $defaults = array(
         'WP_REDIS_HOST' => '127.0.0.1',
@@ -896,11 +919,6 @@ function ccm_tools_redis_add_config($config = array()) {
     $config_lines = array("\n/* CCM Tools Redis Configuration */");
     
     foreach ($config as $constant => $value) {
-        // Skip if defined OUTSIDE our block (e.g. manually added by user)
-        if (preg_match('/define\s*\(\s*[\'"]' . preg_quote($constant, '/') . '[\'"]/i', $config_content)) {
-            continue;
-        }
-        
         if (is_bool($value)) {
             $value_str = $value ? 'true' : 'false';
             $config_lines[] = "define('{$constant}', {$value_str});";
