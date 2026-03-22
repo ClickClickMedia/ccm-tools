@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.35.9
+ * Version: 7.35.10
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.35.9');
+    define('CCM_HELPER_VERSION', '7.35.10');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -752,46 +752,6 @@ class CCMSettings {
                 </div>
                 <?php endif; ?>
 
-                <!-- Disk Information Card -->
-                <div class="ccm-card">
-                    <h2><?php _e('Disk Information', 'ccm-tools'); ?></h2>
-                    <?php
-                    $disk_info = ccm_tools_get_disk_info();
-                    if (!empty($disk_info)) {
-                        $source_label = !empty($disk_info['source_label']) ? $disk_info['source_label'] : __('Disk Usage', 'ccm-tools');
-                        // Calculate a color based on disk usage (green to red)
-                        $used_percent_value = floatval($disk_info['used_percent']);
-                        $color_class = 'ccm-success';
-                        if ($used_percent_value > 85) {
-                            $color_class = 'ccm-error';
-                        } elseif ($used_percent_value > 70) {
-                            $color_class = 'ccm-warning';
-                        }
-                    ?>
-                        <div class="ccm-disk-usage">
-                            <div class="ccm-disk-bar">
-                                <div class="ccm-disk-used <?php echo esc_attr($color_class); ?>" style="width: <?php echo esc_attr($disk_info['used_percent']); ?>;">
-                                    <?php echo esc_html($disk_info['used_percent']); ?>
-                                </div>
-                            </div>
-                            <div class="ccm-disk-info">
-                                <p class="ccm-text-muted"><?php _e('Showing:', 'ccm-tools'); ?> <strong><?php echo esc_html($source_label); ?></strong></p>
-                                <?php if (!empty($disk_info['source_notice'])) : ?>
-                                    <p class="ccm-text-muted"><?php echo esc_html($disk_info['source_notice']); ?></p>
-                                <?php endif; ?>
-                                <p><?php _e('Used Space:', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['used']); ?></strong> (<?php echo esc_html($disk_info['used_percent']); ?>)</p>
-                                <p><?php _e('Free Space:', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['free']); ?></strong> (<?php echo esc_html($disk_info['free_percent']); ?>)</p>
-                                <p><?php _e('Total Space:', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['total']); ?></strong></p>
-                                <?php if (!empty($disk_info['server_total']) && !empty($disk_info['server_used']) && !empty($disk_info['server_used_percent'])) : ?>
-                                    <p class="ccm-text-muted"><?php _e('Server Disk (secondary):', 'ccm-tools'); ?> <strong><?php echo esc_html($disk_info['server_used']); ?></strong> / <strong><?php echo esc_html($disk_info['server_total']); ?></strong> (<?php echo esc_html($disk_info['server_used_percent']); ?>)</p>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    <?php } else { ?>
-                        <p class="ccm-warning"><span class="ccm-icon">⚠</span> <?php _e('Disk information is not available.', 'ccm-tools'); ?></p>
-                    <?php } ?>
-                </div>
-                
                 <!-- Uploads Backup Card -->
                 <div class="ccm-card">
                     <h2><?php _e('Uploads Backup', 'ccm-tools'); ?></h2>
