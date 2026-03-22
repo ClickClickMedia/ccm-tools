@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.36.0
+ * Version: 7.36.1
  */
 
 (function() {
@@ -4258,7 +4258,7 @@
 
             if (!data.mobile && !data.desktop) {
                 const adminUrl = ccmToolsData.ajax_url.replace('admin-ajax.php', '');
-                container.innerHTML = '<p class="ccm-text-muted">No PageSpeed results yet. <a href="' + adminUrl + 'admin.php?page=ccm-tools-performance">Run a test</a></p>';
+                container.innerHTML = '<p class="ccm-text-muted">No PageSpeed results yet. <a href="' + adminUrl + 'admin.php?page=ccm-tools-perf">Run a test</a></p>';
                 return;
             }
 

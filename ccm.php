@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.36.0
+ * Version: 7.36.1
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.36.0');
+    define('CCM_HELPER_VERSION', '7.36.1');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -743,7 +743,7 @@ class CCMSettings {
                 <div class="ccm-card ccm-card-ps" id="dashboard-pagespeed-card">
                     <div class="ccm-card-ps-header">
                         <h2><?php _e('PageSpeed Scores', 'ccm-tools'); ?></h2>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-performance')); ?>" class="ccm-button ccm-button-small"><?php _e('Performance →', 'ccm-tools'); ?></a>
+                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-perf')); ?>" class="ccm-button ccm-button-small"><?php _e('Performance →', 'ccm-tools'); ?></a>
                     </div>
                     <div id="dashboard-pagespeed-scores" class="ccm-dashboard-ps-loading">
                         <div class="ccm-spinner ccm-spinner-small"></div>
