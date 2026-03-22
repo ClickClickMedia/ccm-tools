@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.35.8
+ * Version: 7.35.9
  */
 
 /* ===================================
@@ -1050,63 +1050,6 @@
 #progress-info p {
     margin: var(--ccm-space-sm) 0;
     font-weight: 500;
-    color: var(--ccm-text);
-}
-
-/* ===================================
-   Disk Usage
-   =================================== */
-.ccm-disk-usage {
-    margin: var(--ccm-space-lg) 0;
-}
-
-.ccm-disk-bar {
-    height: 32px;
-    background: var(--ccm-border);
-    border-radius: var(--ccm-radius-lg);
-    overflow: hidden;
-    margin-bottom: var(--ccm-space-lg);
-}
-
-.ccm-disk-used {
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    padding-right: var(--ccm-space-md);
-    color: white;
-    font-weight: 600;
-    font-size: var(--ccm-text-sm);
-    transition: width var(--ccm-transition-slow);
-    border-radius: var(--ccm-radius-lg);
-}
-
-.ccm-disk-used.ccm-success {
-    background: linear-gradient(90deg, var(--ccm-success), #16a34a);
-}
-
-.ccm-disk-used.ccm-warning {
-    background: linear-gradient(90deg, var(--ccm-warning), #d97706);
-}
-
-.ccm-disk-used.ccm-error {
-    background: linear-gradient(90deg, var(--ccm-error), #dc2626);
-}
-
-.ccm-disk-info {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--ccm-space-md);
-}
-
-.ccm-disk-info p {
-    margin: 0;
-    padding: var(--ccm-space-md);
-    background: var(--ccm-bg);
-    border-radius: var(--ccm-radius-md);
-}
-
-.ccm-disk-info strong {
     color: var(--ccm-text);
 }
 
