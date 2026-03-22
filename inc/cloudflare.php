@@ -787,6 +787,17 @@ function ccm_tools_render_cloudflare_page(): void {
                 </table>
             </div>
 
+            <?php if ($connected && $is_cf_premium): ?>
+            <!-- Zone Analytics -->
+            <div class="ccm-card" id="cf-analytics-card">
+                <h2><?php _e('Zone Analytics (Last 24 Hours)', 'ccm-tools'); ?></h2>
+                <p class="ccm-text-muted"><?php _e('Traffic, caching efficiency, and threat overview.', 'ccm-tools'); ?></p>
+                <div id="cf-analytics">
+                    <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading analytics...', 'ccm-tools'); ?></p></div>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <!-- Connection Settings -->
             <details class="ccm-card ccm-cf-connection-details"<?php echo !$connected ? ' open' : ''; ?>>
                 <summary class="ccm-cf-connection-summary"><h2 style="display:inline; cursor:pointer;"><?php _e('Connection Settings', 'ccm-tools'); ?></h2></summary>
@@ -973,15 +984,6 @@ function ccm_tools_render_cloudflare_page(): void {
                 <p class="ccm-text-muted"><?php _e('Encryption and network protocol settings.', 'ccm-tools'); ?></p>
                 <div id="cf-network-settings">
                     <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading network settings...', 'ccm-tools'); ?></p></div>
-                </div>
-            </div>
-
-            <!-- Zone Analytics -->
-            <div class="ccm-card" id="cf-analytics-card">
-                <h2><?php _e('Zone Analytics (Last 24 Hours)', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted"><?php _e('Traffic, caching efficiency, and threat overview.', 'ccm-tools'); ?></p>
-                <div id="cf-analytics">
-                    <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading analytics...', 'ccm-tools'); ?></p></div>
                 </div>
             </div>
 
