@@ -101,7 +101,7 @@ function ccm_tools_webp_get_settings() {
         'quality' => 85, // Default to 85 for near-lossless quality
         'convert_on_upload' => true,
         'serve_webp' => true,
-        'convert_on_demand' => false,
+        'convert_on_demand' => true,
         'use_picture_tags' => false,
         'convert_bg_images' => false,
         'keep_originals' => true,
