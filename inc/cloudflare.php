@@ -61,7 +61,14 @@ function ccm_tools_cf_detect(): array {
 
     $result = array('detected' => false);
 
-    // Primary: check $_SERVER for CF headers (most reliable)
+    // Quick win: if we have a connected CF API with a zone, it's on Cloudflare
+    $cf_settings = ccm_tools_cf_get_settings();
+    if (!empty($cf_settings['connected']) && !empty($cf_settings['zone_id'])) {
+        $result['detected'] = true;
+        $result['source']   = 'api';
+    }
+
+    // Primary: check $_SERVER for CF headers (set on every proxied request)
     if (!empty($_SERVER['HTTP_CF_RAY'])) {
         $result['detected'] = true;
         $result['ray_id']   = sanitize_text_field($_SERVER['HTTP_CF_RAY']);
