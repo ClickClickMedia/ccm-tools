@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.36.6
+ * Version: 7.37.0
  */
 
 (function() {
@@ -691,6 +691,8 @@
             
             // Disable and annotate options that are already applied
             const alreadyApplied = {
+                'optimize_tables': stats.tables_needing_optimization === 0,
+                'convert_innodb': stats.tables_needing_innodb === 0,
                 'update_collation': stats.tables_needing_collation === 0,
                 'add_postmeta_index': !!stats.index_postmeta_exists,
                 'add_usermeta_index': !!stats.index_usermeta_exists,
@@ -762,7 +764,8 @@
     function getStatForOption(optKey, stats) {
         const mapping = {
             'clear_transients': stats.transients,
-            'optimize_tables': stats.table_count,
+            'optimize_tables': stats.tables_needing_optimization,
+            'convert_innodb': stats.tables_needing_innodb,
             'update_collation': stats.tables_needing_collation,
             'clean_spam_comments': stats.spam_comments,
             'clean_trashed_comments': stats.trashed_comments,
@@ -827,7 +830,7 @@
         optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = true);
         
         // Identify table-intensive tasks that need per-table progressive processing
-        const TABLE_TASKS = new Set(['optimize_tables', 'update_collation']);
+        const TABLE_TASKS = new Set(['optimize_tables', 'update_collation', 'convert_innodb']);
         const tableTasks = selected.filter(t => TABLE_TASKS.has(t.key));
         const regularTasks = selected.filter(t => !TABLE_TASKS.has(t.key));
         
@@ -927,6 +930,7 @@
             
             const doOptimize = tasks.some(t => t.key === 'optimize_tables');
             const doCollation = tasks.some(t => t.key === 'update_collation');
+            const doEngine = tasks.some(t => t.key === 'convert_innodb');
             
             // Mark all table tasks as running
             for (const task of tasks) {
@@ -944,7 +948,11 @@
             // Get table list
             let tables = [];
             try {
-                const tablesResponse = await ajax('ccm_tools_get_tables_to_optimize', {}, { timeout: 30000 });
+                const tablesResponse = await ajax('ccm_tools_get_tables_to_optimize', {
+                    optimize: doOptimize ? '1' : '',
+                    collation: doCollation ? '1' : '',
+                    engine: doEngine ? '1' : ''
+                }, { timeout: 30000 });
                 tables = tablesResponse?.data?.tables || [];
             } catch (e) {
                 for (const task of tasks) {
@@ -1010,7 +1018,8 @@
                     const resp = await ajax('ccm_tools_optimize_table_task', {
                         table_name: tableName,
                         optimize: doOptimize ? '1' : '',
-                        collation: doCollation ? '1' : ''
+                        collation: doCollation ? '1' : '',
+                        engine: doEngine ? '1' : ''
                     }, { timeout: 60000 });
                     
                     const r = resp?.data || {};
@@ -1048,9 +1057,14 @@
                 
                 const statusIcon = allOk ? '✓' : '⚠';
                 const statusClass = allOk ? 'success' : 'warning';
-                const msg = task.key === 'optimize_tables'
-                    ? `${tablesSuccess} tables optimized` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '')
-                    : `${tablesSuccess} tables processed` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                let msg;
+                if (task.key === 'optimize_tables') {
+                    msg = `${tablesSuccess} tables optimized` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                } else if (task.key === 'convert_innodb') {
+                    msg = `${tablesSuccess} tables converted to InnoDB` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                } else {
+                    msg = `${tablesSuccess} tables processed` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                }
                 
                 if (row) {
                     row.innerHTML = `
@@ -1241,18 +1255,6 @@
      * Initialize all event handlers
      */
     function initEventHandlers() {
-        // Database Tools
-        const ctButton = $('#ct');
-        
-        if (ctButton) {
-            ctButton.addEventListener('click', (e) => {
-                e.preventDefault();
-                if (confirm(ccmToolsData.i18n.confirmConvert)) {
-                    convertTablesProgressively();
-                }
-            });
-        }
-        
         // Initialize optimization options if on database page
         initOptimizationOptions();
         

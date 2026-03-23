@@ -62,8 +62,17 @@ function ccm_tools_ajax_get_tables_to_optimize(): void {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     
+    $do_optimize = !empty($_POST['optimize']);
+    $do_collation = !empty($_POST['collation']);
+    $do_engine = !empty($_POST['engine']);
+    
+    // Default to optimize if no flags specified (backwards compatibility)
+    if (!$do_optimize && !$do_collation && !$do_engine) {
+        $do_optimize = true;
+    }
+    
     try {
-        $tables_info = ccm_tools_get_tables_to_optimize();
+        $tables_info = ccm_tools_get_tables_to_optimize($do_optimize, $do_collation, $do_engine);
         
         if (isset($tables_info['error'])) {
             wp_send_json_error('Error getting tables: ' . $tables_info['error']);
@@ -251,6 +260,7 @@ function ccm_tools_ajax_optimize_table_task(): void {
     $table_name = isset($_POST['table_name']) ? sanitize_text_field($_POST['table_name']) : '';
     $do_optimize = !empty($_POST['optimize']);
     $do_collation = !empty($_POST['collation']);
+    $do_engine = !empty($_POST['engine']);
 
     if (empty($table_name)) {
         wp_send_json_error(__('No table name provided.', 'ccm-tools'));
@@ -272,6 +282,33 @@ function ccm_tools_ajax_optimize_table_task(): void {
             $success = false;
         } else {
             $messages[] = 'Optimized';
+        }
+    }
+
+    // CONVERT ENGINE TO InnoDB
+    if ($do_engine) {
+        $database_name = $wpdb->dbname;
+        if (empty($database_name)) {
+            $database_name = defined('DB_NAME') ? DB_NAME : '';
+        }
+
+        $table_engine = null;
+        if (!empty($database_name)) {
+            $table_engine = $wpdb->get_var(
+                $wpdb->prepare("SELECT ENGINE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s", $database_name, $table_name)
+            );
+        }
+
+        if ($table_engine && $table_engine !== 'InnoDB') {
+            $result = $wpdb->query("ALTER TABLE `{$table_name}` ENGINE = InnoDB");
+            if ($result !== false) {
+                $messages[] = $table_engine . ' → InnoDB';
+            } else {
+                $messages[] = 'Engine conversion failed';
+                $success = false;
+            }
+        } else {
+            $messages[] = 'Engine OK';
         }
     }
 

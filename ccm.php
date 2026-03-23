@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.36.6
+ * Version: 7.37.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.36.6');
+    define('CCM_HELPER_VERSION', '7.37.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -1210,16 +1210,6 @@ class CCMSettings {
             <?php ccm_tools_render_header_nav('ccm-tools-database'); ?>
             
             <div class="ccm-content">
-                <div class="ccm-card">
-                    <h2><?php _e('Database Tools', 'ccm-tools'); ?></h2>
-                    <p><?php _e('Use these tools to optimize your WordPress database.', 'ccm-tools'); ?></p>
-                    <div class="ccm-buttons">
-                        <button id="ct" class="ccm-button"><?php _e('Convert Tables to InnoDB', 'ccm-tools'); ?></button>
-                    </div>
-                    <div id="infoBox" class="ccm-info-box"></div>
-                    <div id="resultBox" class="ccm-result-box"></div>
-                </div>
-                
                 <div class="ccm-card">
                     <h2><?php _e('Database Optimization', 'ccm-tools'); ?></h2>
                     <p><?php _e('Select the optimization tasks you want to run. Safe options are checked by default.', 'ccm-tools'); ?></p>

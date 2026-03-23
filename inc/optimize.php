@@ -73,6 +73,12 @@ function ccm_tools_get_optimization_options() {
             'default' => true,
             'risk' => 'safe'
         ),
+        'convert_innodb' => array(
+            'label' => __('Convert tables to InnoDB', 'ccm-tools'),
+            'description' => __('Convert non-InnoDB tables to the InnoDB storage engine', 'ccm-tools'),
+            'default' => true,
+            'risk' => 'safe'
+        ),
         'update_collation' => array(
             'label' => __('Update table collations', 'ccm-tools'),
             'description' => __('Convert tables to modern utf8mb4 collation', 'ccm-tools'),
@@ -182,28 +188,57 @@ function ccm_tools_get_optimization_options() {
         ),
     );
 }
-function ccm_tools_get_tables_to_optimize() {
+function ccm_tools_get_tables_to_optimize($do_optimize = true, $do_collation = false, $do_engine = false) {
     global $wpdb;
     
     try {
-        $tables = $wpdb->get_results("SHOW TABLES", 'ARRAY_N');
-        $table_names = [];
+        $database_name = $wpdb->dbname;
+        if (empty($database_name)) {
+            $database_name = defined('DB_NAME') ? DB_NAME : '';
+        }
         
-        if (!$tables) {
+        if (empty($database_name)) {
             return [
                 'tables' => [],
                 'total_count' => 0,
-                'error' => 'Could not retrieve tables from database'
+                'error' => 'Unable to determine database name'
             ];
         }
         
-        foreach ($tables as $table) {
-            $table_names[] = $table[0];
+        $collation = ccm_tools_get_appropriate_collation_optimize();
+        
+        // Build conditions for tables that need at least one operation
+        $conditions = [];
+        if ($do_optimize) {
+            $conditions[] = 'Data_free > 1048576';
+        }
+        if ($do_collation) {
+            $conditions[] = $wpdb->prepare('TABLE_COLLATION != %s', $collation);
+        }
+        if ($do_engine) {
+            $conditions[] = "ENGINE != 'InnoDB'";
+        }
+        
+        if (empty($conditions)) {
+            // Fallback: return all tables
+            $conditions[] = '1=1';
+        }
+        
+        $where = implode(' OR ', $conditions);
+        $sql = $wpdb->prepare(
+            "SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = %s AND ({$where})",
+            $database_name
+        );
+        
+        $tables = $wpdb->get_col($sql);
+        
+        if (!$tables) {
+            $tables = [];
         }
         
         return [
-            'tables' => $table_names,
-            'total_count' => count($table_names)
+            'tables' => $tables,
+            'total_count' => count($tables)
         ];
         
     } catch (Exception $e) {
@@ -586,17 +621,38 @@ function ccm_tools_optimization_clear_transients() {
 }
 
 /**
- * Optimize all database tables
+ * Optimize database tables that have significant overhead (>1MB free space)
  */
 function ccm_tools_optimization_optimize_tables() {
     global $wpdb;
     
-    $tables = $wpdb->get_results("SHOW TABLES", 'ARRAY_N');
+    $database_name = $wpdb->dbname;
+    if (empty($database_name)) {
+        $database_name = defined('DB_NAME') ? DB_NAME : '';
+    }
+    
+    $tables = $wpdb->get_col(
+        $wpdb->prepare(
+            "SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = %s AND Data_free > 1048576",
+            $database_name
+        )
+    );
+    
+    if (empty($tables)) {
+        return array(
+            'success' => true,
+            'message' => __('All tables are already optimized', 'ccm-tools'),
+            'count' => 0
+        );
+    }
+    
     $optimized = 0;
     $failed = 0;
     
-    foreach ($tables as $table) {
-        $table_name = $table[0];
+    foreach ($tables as $table_name) {
+        if (!ccm_tools_validate_table_name_optimize($table_name)) {
+            continue;
+        }
         $result = $wpdb->query("OPTIMIZE TABLE `{$table_name}`");
         if ($result !== false) {
             $optimized++;
@@ -609,6 +665,54 @@ function ccm_tools_optimization_optimize_tables() {
         'success' => $failed === 0,
         'message' => sprintf(__('%d tables optimized', 'ccm-tools'), $optimized) . ($failed > 0 ? sprintf(__(', %d failed', 'ccm-tools'), $failed) : ''),
         'count' => $optimized
+    );
+}
+
+/**
+ * Convert non-InnoDB tables to InnoDB engine
+ */
+function ccm_tools_optimization_convert_innodb() {
+    global $wpdb;
+    
+    $database_name = $wpdb->dbname;
+    if (empty($database_name)) {
+        $database_name = defined('DB_NAME') ? DB_NAME : '';
+    }
+    
+    $tables = $wpdb->get_col(
+        $wpdb->prepare(
+            "SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = %s AND ENGINE != 'InnoDB'",
+            $database_name
+        )
+    );
+    
+    if (empty($tables)) {
+        return array(
+            'success' => true,
+            'message' => __('All tables already use InnoDB', 'ccm-tools'),
+            'count' => 0
+        );
+    }
+    
+    $converted = 0;
+    $failed = 0;
+    
+    foreach ($tables as $table_name) {
+        if (!ccm_tools_validate_table_name_optimize($table_name)) {
+            continue;
+        }
+        $result = $wpdb->query("ALTER TABLE `{$table_name}` ENGINE = InnoDB");
+        if ($result !== false) {
+            $converted++;
+        } else {
+            $failed++;
+        }
+    }
+    
+    return array(
+        'success' => $failed === 0,
+        'message' => sprintf(__('%d tables converted to InnoDB', 'ccm-tools'), $converted) . ($failed > 0 ? sprintf(__(', %d failed', 'ccm-tools'), $failed) : ''),
+        'count' => $converted
     );
 }
 
@@ -1184,6 +1288,16 @@ function ccm_tools_get_optimization_stats() {
     
     // Table count
     $stats['table_count'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()");
+    
+    // Tables needing optimization (significant overhead: >1MB free space)
+    $stats['tables_needing_optimization'] = (int) $wpdb->get_var(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND Data_free > 1048576"
+    );
+    
+    // Tables needing InnoDB conversion
+    $stats['tables_needing_innodb'] = (int) $wpdb->get_var(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND ENGINE != 'InnoDB'"
+    );
     
     // Tables needing collation update (not already utf8mb4_unicode_520_ci)
     $stats['tables_needing_collation'] = (int) $wpdb->get_var(
