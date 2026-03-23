@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.36.5
+ * Version: 7.36.6
  */
 
 (function() {
@@ -3615,6 +3615,7 @@
             const zone = res.data.zone || {};
             const features = res.data.features || {};
             const isPremium = container.dataset.premium === '1';
+            const isFreePlan = !zone.plan_id || zone.plan_id === 'free';
 
             let html = '<table class="ccm-table">';
             html += cfStatusRow('Zone', zone.name || '—');
@@ -3642,7 +3643,11 @@
 
             // --- WebP (premium toggle / free read-only) ---
             if (features.webp !== undefined) {
-                if (isPremium) {
+                if (isFreePlan) {
+                    html += '<tr><th>WebP Conversion<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Serve WebP images to supported browsers (Pro+ plan)</span></th>';
+                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" disabled' + (features.webp === 'on' ? ' checked' : '') + '>';
+                    html += '<span class="ccm-toggle-slider"></span></label> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
+                } else if (isPremium) {
                     const wChecked = features.webp === 'on' ? ' checked' : '';
                     html += '<tr><th>WebP Conversion<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Serve WebP images to supported browsers (Pro+ plan)</span></th>';
                     html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="webp"' + wChecked + '>';
@@ -3654,7 +3659,16 @@
 
             // --- Polish (premium dropdown / free read-only) ---
             if (features.polish !== undefined) {
-                if (isPremium) {
+                if (isFreePlan) {
+                    html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
+                    html += '<td style="text-align: right;"><select disabled class="ccm-cf-select">';
+                    const polishOptionsFree = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
+                    for (const [pval, plabel] of polishOptionsFree) {
+                        const sel = features.polish === pval ? ' selected' : '';
+                        html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
+                    }
+                    html += '</select> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
+                } else if (isPremium) {
                     html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
                     html += '<td style="text-align: right;"><select data-cf-setting="polish" class="ccm-cf-select">';
                     const polishOptions = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];

@@ -295,10 +295,11 @@ function ccm_tools_cf_get_zone_status() {
 
     return array(
         'zone'     => array(
-            'id'     => $zone_result['id'] ?? '',
-            'name'   => $zone_result['name'] ?? '',
-            'status' => $zone_result['status'] ?? '',
-            'plan'   => $zone_result['plan']['name'] ?? 'Unknown',
+            'id'      => $zone_result['id'] ?? '',
+            'name'    => $zone_result['name'] ?? '',
+            'status'  => $zone_result['status'] ?? '',
+            'plan'    => $zone_result['plan']['name'] ?? 'Unknown',
+            'plan_id' => $zone_result['plan']['legacy_id'] ?? 'free',
         ),
         'features' => $features,
     );
@@ -396,6 +397,16 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
     );
     if (!in_array($setting, $allowed, true)) {
         return new WP_Error('invalid_setting', __('Invalid Cloudflare setting.', 'ccm-tools'));
+    }
+
+    // Pro+ features cannot be changed on the Free plan
+    $pro_only = array('polish', 'webp');
+    if (in_array($setting, $pro_only, true)) {
+        $zone = ccm_tools_cf_api('zones/' . $settings['zone_id']);
+        $plan_id = $zone['result']['plan']['legacy_id'] ?? 'free';
+        if ($plan_id === 'free') {
+            return new WP_Error('plan_required', __('This feature requires a Cloudflare Pro or higher plan.', 'ccm-tools'));
+        }
     }
 
     $data = ccm_tools_cf_api(
