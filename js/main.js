@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.37.0
+ * Version: 7.37.1
  */
 
 (function() {
@@ -689,19 +689,31 @@
             
             optionsContainer.innerHTML = html;
             
-            // Disable and annotate options that are already applied
-            const alreadyApplied = {
+            // Disable and annotate options that are already applied or have nothing to do
+            const nothingToDo = {
                 'optimize_tables': stats.tables_needing_optimization === 0,
                 'convert_innodb': stats.tables_needing_innodb === 0,
                 'update_collation': stats.tables_needing_collation === 0,
+                'clear_transients': stats.transients === 0,
+                'clean_spam_comments': stats.spam_comments === 0,
+                'clean_trashed_comments': stats.trashed_comments === 0,
+                'clean_trashed_posts': stats.trashed_posts === 0,
+                'clean_auto_drafts': stats.auto_drafts === 0,
+                'clean_orphaned_postmeta': stats.orphaned_postmeta === 0,
+                'clean_orphaned_commentmeta': stats.orphaned_commentmeta === 0,
+                'clean_oembed_cache': stats.oembed_cache === 0,
+                'limit_revisions': stats.excess_revisions === 0,
+                'delete_all_revisions': stats.revisions === 0,
+                'clean_orphaned_termmeta': stats.orphaned_termmeta === 0,
+                'clean_orphaned_relationships': stats.orphaned_relationships === 0,
                 'add_postmeta_index': !!stats.index_postmeta_exists,
                 'add_usermeta_index': !!stats.index_usermeta_exists,
                 'add_commentmeta_index': !!stats.index_commentmeta_exists,
                 'add_termmeta_index': !!stats.index_termmeta_exists,
                 'add_postmeta_composite_index': !!stats.index_postmeta_composite_exists,
             };
-            for (const [optKey, isApplied] of Object.entries(alreadyApplied)) {
-                if (!isApplied) continue;
+            for (const [optKey, isDone] of Object.entries(nothingToDo)) {
+                if (!isDone) continue;
                 const cb = optionsContainer.querySelector(`#opt-${optKey}`);
                 if (!cb) continue;
                 cb.checked = false;
@@ -710,7 +722,6 @@
                 if (descEl) {
                     descEl.innerHTML = '<span style="color:var(--ccm-success)">✓ Already applied</span>';
                 }
-                // Replace stat badge with a check
                 const statEl = cb.closest('.ccm-opt-item')?.querySelector('.ccm-opt-item-stat');
                 if (statEl) {
                     statEl.textContent = '✓';
