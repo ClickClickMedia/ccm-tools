@@ -210,7 +210,7 @@ function ccm_tools_get_tables_to_optimize($do_optimize = true, $do_collation = f
         // Build conditions for tables that need at least one operation
         $conditions = [];
         if ($do_optimize) {
-            $conditions[] = 'Data_free > 1048576';
+            $conditions[] = ccm_tools_optimize_fragmentation_condition();
         }
         if ($do_collation) {
             $conditions[] = $wpdb->prepare('TABLE_COLLATION != %s', $collation);
@@ -621,7 +621,17 @@ function ccm_tools_optimization_clear_transients() {
 }
 
 /**
- * Optimize database tables that have significant overhead (>1MB free space)
+ * SQL condition for tables with meaningful fragmentation.
+ * InnoDB retains some Data_free after OPTIMIZE TABLE, so we use a ratio:
+ * overhead must be >20% of table size AND >5MB absolute.
+ */
+function ccm_tools_optimize_fragmentation_condition() {
+    return '(Data_free > 5242880 AND Data_free > 0.2 * (Data_length + Index_length))';
+}
+
+/**
+ * Optimize database tables that have significant fragmentation.
+ * Uses ratio-based detection and saves a cooldown timestamp.
  */
 function ccm_tools_optimization_optimize_tables() {
     global $wpdb;
@@ -631,14 +641,16 @@ function ccm_tools_optimization_optimize_tables() {
         $database_name = defined('DB_NAME') ? DB_NAME : '';
     }
     
+    $frag_condition = ccm_tools_optimize_fragmentation_condition();
     $tables = $wpdb->get_col(
         $wpdb->prepare(
-            "SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = %s AND Data_free > 1048576",
+            "SELECT TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = %s AND {$frag_condition}",
             $database_name
         )
     );
     
     if (empty($tables)) {
+        update_option('ccm_tools_last_db_optimize', time());
         return array(
             'success' => true,
             'message' => __('All tables are already optimized', 'ccm-tools'),
@@ -660,6 +672,8 @@ function ccm_tools_optimization_optimize_tables() {
             $failed++;
         }
     }
+    
+    update_option('ccm_tools_last_db_optimize', time());
     
     return array(
         'success' => $failed === 0,
@@ -1289,10 +1303,17 @@ function ccm_tools_get_optimization_stats() {
     // Table count
     $stats['table_count'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()");
     
-    // Tables needing optimization (significant overhead: >1MB free space)
-    $stats['tables_needing_optimization'] = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND Data_free > 1048576"
-    );
+    // Tables needing optimization (fragmentation ratio-based + 7-day cooldown)
+    $last_optimize = (int) get_option('ccm_tools_last_db_optimize', 0);
+    $optimize_cooldown = 7 * DAY_IN_SECONDS;
+    if ($last_optimize > 0 && (time() - $last_optimize) < $optimize_cooldown) {
+        $stats['tables_needing_optimization'] = 0;
+    } else {
+        $frag_condition = ccm_tools_optimize_fragmentation_condition();
+        $stats['tables_needing_optimization'] = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND {$frag_condition}"
+        );
+    }
     
     // Tables needing InnoDB conversion
     $stats['tables_needing_innodb'] = (int) $wpdb->get_var(
