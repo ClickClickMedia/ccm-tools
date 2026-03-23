@@ -54,16 +54,25 @@ function ccm_tools_cf_save_settings(array $settings): void {
  * @return array  {detected: bool, ray_id?: string, server?: string}
  */
 function ccm_tools_cf_detect(): array {
+    // API connection check must run BEFORE the transient cache so a connected
+    // API always trumps a stale "not detected" cache entry.
+    $cf_settings   = ccm_tools_cf_get_settings();
+    $api_connected = !empty($cf_settings['connected']) && !empty($cf_settings['zone_id']);
+
     $cached = get_transient('ccm_tools_cf_detected');
     if (is_array($cached)) {
-        return $cached;
+        // Trust cache only when API is disconnected, or cache already says detected
+        if (!$api_connected || !empty($cached['detected'])) {
+            return $cached;
+        }
+        // API is connected but cache says not detected — stale, re-run detection
+        delete_transient('ccm_tools_cf_detected');
     }
 
     $result = array('detected' => false);
 
-    // Quick win: if we have a connected CF API with a zone, it's on Cloudflare
-    $cf_settings = ccm_tools_cf_get_settings();
-    if (!empty($cf_settings['connected']) && !empty($cf_settings['zone_id'])) {
+    // Quick win: connected API proves the site is on Cloudflare
+    if ($api_connected) {
         $result['detected'] = true;
         $result['source']   = 'api';
     }
