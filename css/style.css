@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.37.3
+ * Version: 7.38.0
  */
 
 /* ===================================
@@ -27,6 +27,7 @@
     
     /* Neutral Colors */
     --ccm-bg: #f8fafc;
+    --ccm-bg-secondary: #f1f5f9;
     --ccm-bg-dark: #0f172a;
     --ccm-surface: #ffffff;
     --ccm-surface-elevated: #ffffff;
@@ -49,6 +50,7 @@
     
     /* Border Radius */
     --ccm-radius-sm: 0.375rem;
+    --ccm-radius: 0.5rem;
     --ccm-radius-md: 0.5rem;
     --ccm-radius-lg: 0.75rem;
     --ccm-radius-xl: 1rem;
@@ -252,6 +254,11 @@
 
 .ccm-button:active {
     transform: translateY(0);
+}
+
+.ccm-button:focus-visible {
+    outline: 2px solid var(--ccm-primary);
+    outline-offset: 2px;
 }
 
 .ccm-button:disabled {

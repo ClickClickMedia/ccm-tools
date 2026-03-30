@@ -185,7 +185,10 @@ function ccm_tools_convert_single_table($table_name) {
                 'message' => 'Errors occurred: ' . implode(', ', $errors),
                 'table_name' => $table_name,
                 'original_engine' => $original_engine,
-                'original_collation' => $original_collation
+                'original_collation' => $original_collation,
+                'new_engine' => $original_engine,
+                'new_collation' => $original_collation,
+                'changes_made' => false
             ];
         }
         
@@ -286,7 +289,8 @@ function ccm_tools_convert_tables() {
         if ($original_engine !== 'InnoDB') {
             $result_query = $wpdb->query("ALTER TABLE `{$table_name}` ENGINE = InnoDB");
             if ($result_query === false) {
-                ccm_tools_log_db_error("Engine conversion for table {$table_name}");
+                $error_msg = ccm_tools_log_db_error("Engine conversion for table {$table_name}");
+                $errors[] = 'Engine conversion failed' . ($error_msg ? ': ' . $error_msg : '');
             } else {
                 $changes_made = true;
             }
@@ -296,7 +300,8 @@ function ccm_tools_convert_tables() {
         if ($original_collation !== $collation) {
             $result_query = $wpdb->query("ALTER TABLE `{$table_name}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$collation}");
             if ($result_query === false) {
-                ccm_tools_log_db_error("Collation conversion for table {$table_name}");
+                $error_msg = ccm_tools_log_db_error("Collation conversion for table {$table_name}");
+                $errors[] = 'Collation conversion failed' . ($error_msg ? ': ' . $error_msg : '');
             } else {
                 $changes_made = true;
             }
@@ -336,7 +341,7 @@ function ccm_tools_convert_tables() {
             }
         }
 
-        $result .= "<tr><td>{$table_name}</td><td>";
+        $result .= "<tr><td>" . esc_html($table_name) . "</td><td>";
         
         // Show engine conversion with status indicators
         if ($new_engine === 'undefined' || empty($new_engine)) {

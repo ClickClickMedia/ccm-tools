@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.37.3
+ * Version: 7.38.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.37.3');
+    define('CCM_HELPER_VERSION', '7.38.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -81,13 +81,6 @@ function ccm_tools_custom_admin_notices() {
 
 // Only run duplicate checking if we're actually finding a duplicate
 if ($ccm_is_duplicate) {
-    // Deactivate this instance if another one is already running
-    add_action('admin_notices', function() {
-        echo '<div class="notice notice-error is-dismissible"><p>';
-        echo 'Another instance of CCM Tools is already active. Please deactivate it before using this version.';
-        echo '</p></div>';
-    });
-    
     // Deactivate the newer plugin
     add_action('admin_init', function() {
         deactivate_plugins(plugin_basename(__FILE__));
@@ -152,10 +145,6 @@ add_action('plugins_loaded', 'ccm_initialize_plugin', 10);
 function ccm_initialize_plugin() {
     // Remove the problematic class check that's preventing initialization
     // and use our improved duplicate detection instead
-    if (isset($GLOBALS['ccm_is_duplicate']) && $GLOBALS['ccm_is_duplicate'] === true) {
-        return;
-    }
-
     // Skip heavy loading on REST API requests.
     // CCM Tools is admin-only — loading 12 include files adds unnecessary
     // overhead to REST responses consumed by headless frontends.
@@ -228,7 +217,7 @@ function ccm_tools_render_header_nav($active_page = '') {
             </div>
         </nav>
         <div class="ccm-header-title">
-            <h1><?php echo esc_html(get_admin_page_title()); ?> <?php echo ccm_tools_render_premium_badge(); ?></h1>
+            <h1><?php echo esc_html(get_admin_page_title()); ?> <?php echo wp_kses_post(ccm_tools_render_premium_badge()); ?></h1>
         </div>
     </div>
     <?php
@@ -421,8 +410,6 @@ class CCMSettings {
                     'showConfig' => __('Show Config', 'ccm-tools'),
                     'hideConfig' => __('Hide Config', 'ccm-tools'),
                     // WooCommerce related messages
-                    'enabling' => __('Enabling...', 'ccm-tools'),
-                    'disabling' => __('Disabling...', 'ccm-tools'),
                     'wooToggleFailed' => __('Failed to toggle setting.', 'ccm-tools')
                 )
             ));
@@ -783,6 +770,7 @@ class CCMSettings {
                     <h2><?php _e('PHP Information', 'ccm-tools'); ?></h2>
                     <?php
                     // Helper function to convert PHP size values to bytes
+                    if (!function_exists('ccm_tools_convert_php_size_to_bytes')) {
                     function ccm_tools_convert_php_size_to_bytes($size) {
                         if (is_numeric($size)) {
                             return (int) $size;
@@ -802,6 +790,7 @@ class CCMSettings {
                         }
                         
                         return $size;
+                    }
                     }
                     
                     // Get PHP settings
@@ -1245,18 +1234,6 @@ class CCMSettings {
     /**
      * Error Log viewer page callback
      */
-    function ccm_tools_render_error_log_page() {
-        if (!current_user_can('manage_options')) {
-            wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
-        }
-        ?>
-        <div class="wrap ccm-tools">
-            <?php ccm_tools_render_header_nav('ccm-tools-error-log'); ?>
-            <!-- ...rest of error log page... -->
-        </div>
-        <?php
-    }
-
     /**
      * WooCommerce tools page callback
      */

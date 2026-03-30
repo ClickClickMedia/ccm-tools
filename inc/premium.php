@@ -288,7 +288,7 @@ function ccm_tools_premium_get_checkout_url(): string {
     return add_query_arg(array(
         'utm_source' => 'plugin',
         'utm_medium' => 'upgrade-cta',
-        'site'       => urlencode(function_exists('ccm_tools_normalize_site_url') ? ccm_tools_normalize_site_url(site_url()) : site_url()),
+        'site'       => function_exists('ccm_tools_normalize_site_url') ? ccm_tools_normalize_site_url(site_url()) : site_url(),
     ), trailingslashit(CCM_TOOLS_PREMIUM_URL));
 }
 
@@ -531,7 +531,7 @@ function ccm_tools_render_premium_page(): void {
                     <div class="ccm-ai-connection-row">
                         <div class="ccm-form-field">
                             <label for="ai-hub-key"><?php _e('API Key', 'ccm-tools'); ?></label>
-                            <input type="password" id="ai-hub-key" value="<?php echo esc_attr($settings['api_key'] ?? ''); ?>" placeholder="ccm_xxxx..." class="ccm-input">
+                            <input type="password" id="ai-hub-key" value="<?php echo esc_attr(!empty($settings['api_key']) ? str_repeat('\u2022', 12) : ''); ?>" placeholder="ccm_xxxx..." class="ccm-input" data-has-key="<?php echo !empty($settings['api_key']) ? '1' : '0'; ?>">
                         </div>
                         <button type="button" id="ai-hub-save-btn" class="ccm-button ccm-button-secondary"><?php _e('Save', 'ccm-tools'); ?></button>
                         <button type="button" id="ai-hub-test-btn" class="ccm-button ccm-button-secondary"><?php _e('Test Connection', 'ccm-tools'); ?></button>

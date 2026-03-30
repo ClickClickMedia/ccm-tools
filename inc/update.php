@@ -446,8 +446,8 @@ class CCM_GitHub_Updater {
             return 'No changelog provided';
         }
         
-        // Simple markdown to HTML conversion
-        $changelog = $this->github_response->body;
+        // Simple markdown to HTML conversion — escape raw HTML first
+        $changelog = esc_html($this->github_response->body);
         $changelog = preg_replace('/\r\n|\r/', "\n", $changelog);
         $changelog = preg_replace('/###(.*?)\n/', '<h3>$1</h3>', $changelog);
         $changelog = preg_replace('/##(.*?)\n/', '<h2>$1</h2>', $changelog);
@@ -545,7 +545,8 @@ class CCM_GitHub_Updater {
      */
     public function add_auth_to_request($args, $url) {
         // Only add token to GitHub URLs
-        if (strpos($url, 'github.com') === false && strpos($url, 'api.github.com') === false) {
+        $host = wp_parse_url($url, PHP_URL_HOST);
+        if ($host !== 'github.com' && $host !== 'api.github.com') {
             return $args;
         }
         

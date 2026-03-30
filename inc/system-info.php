@@ -65,19 +65,20 @@ function ccm_tools_check_redis_status(): array {
                 try {
                     if ($attempt['port'] === 0) {
                         // Try unix socket connection
-                        $result = @$redis->connect($attempt['host']);
+                        $result = $redis->connect($attempt['host']);
                     } else {
-                        $result = @$redis->connect($attempt['host'], $attempt['port'], $attempt['timeout']);
+                        $result = $redis->connect($attempt['host'], $attempt['port'], $attempt['timeout']);
                     }
                     
                     if ($result) {
                         $status['connected'] = true;
                         $status['server_available'] = true;
-                        $status['version'] = $redis->info()['redis_version'] ?? 'Unknown';
+                        $info = $redis->info();
+                        $status['version'] = isset($info['redis_version']) ? $info['redis_version'] : 'Unknown';
                         $status['connection'] = $attempt;
                         break;
                     }
-                } catch (Exception $e) {
+                } catch (\Throwable $e) {
                     // Connection failed, try next configuration
                     continue;
                 }
@@ -322,7 +323,7 @@ function ccm_tools_add_redis_configuration() {
         if (empty($site_url)) {
             $site_url = 'wp_' . time(); // Fallback if site_url is not available
         }
-        $redis_config_lines[] = "define('WP_CACHE_KEY_SALT', '{$site_url}');";
+        $redis_config_lines[] = "define('WP_CACHE_KEY_SALT', '" . addslashes($site_url) . "');";
     }
     
     // If no configuration to add, we're done

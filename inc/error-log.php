@@ -169,6 +169,8 @@ function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
                 $lines_array = array_slice($lines_array, $start, $length);
                 $content = implode("\n", $lines_array);
             }
+        } else {
+            $content = __('Failed to open log file for reading.', 'ccm-tools');
         }
     } else {
         // For smaller files, we can read the whole file
@@ -206,8 +208,8 @@ function ccm_tools_ajax_get_error_log() {
     }
     
     $log_file_input = isset($_POST['log_file']) ? sanitize_text_field(wp_unslash($_POST['log_file'])) : '';
-    $lines = isset($_POST['lines']) ? intval($_POST['lines']) : 100;
-    $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    $lines = isset($_POST['lines']) ? max(1, min(10000, intval($_POST['lines']))) : 100;
+    $offset = isset($_POST['offset']) ? max(0, min(100000, intval($_POST['offset']))) : 0;
     
     // Check for errors_only parameter - handle various boolean formats
     $errors_only = false;
@@ -236,6 +238,12 @@ function ccm_tools_ajax_get_error_log() {
     if ($errors_only) {
         if (!file_exists($log_file) || !is_readable($log_file)) {
             wp_send_json_error(array('message' => __('Log file not found or not readable.', 'ccm-tools')));
+        }
+        
+        // Guard against reading excessively large files
+        $filesize = @filesize($log_file);
+        if ($filesize > 5 * 1024 * 1024) {
+            wp_send_json_error(array('message' => __('Log file too large for error filtering. Please clear the log first.', 'ccm-tools')));
         }
         
         $full_content = @file_get_contents($log_file);
@@ -439,7 +447,7 @@ function ccm_tools_ajax_format_error_log() {
     if (!current_user_can('manage_options') || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
-    $content = isset($_POST['content']) ? wp_kses_post(wp_unslash($_POST['content'])) : '';
+    $content = isset($_POST['content']) ? sanitize_textarea_field(wp_unslash($_POST['content'])) : '';
     
     if (empty($content)) {
         wp_send_json_error(array('message' => __('No content to format.', 'ccm-tools')));
@@ -484,6 +492,12 @@ function ccm_tools_ajax_filter_errors_only() {
     // For filtering, we need to read the entire log file first
     if (!file_exists($log_file) || !is_readable($log_file)) {
         wp_send_json_error(array('message' => __('Log file not found or not readable.', 'ccm-tools')));
+    }
+    
+    // Guard against reading excessively large files
+    $filter_filesize = @filesize($log_file);
+    if ($filter_filesize > 5 * 1024 * 1024) {
+        wp_send_json_error(array('message' => __('Log file too large for error filtering. Please clear the log first.', 'ccm-tools')));
     }
     
     // Read the entire log file content
@@ -650,10 +664,10 @@ function ccm_tools_convert_error_log_timestamps($content) {
                 return $matches[0];
             }
             
-            // Convert to Australia/Sydney timezone
-            $dt->setTimezone(new DateTimeZone('Australia/Sydney'));
+            // Convert to WordPress-configured timezone
+            $dt->setTimezone(wp_timezone());
             
-            // Format as the original format but with AEDT/AEST instead of UTC
+            // Format as the original format but with timezone abbreviation
             $tz_abbr = $dt->format('T');
             return '[' . $dt->format('d-M-Y H:i:s') . ' ' . $tz_abbr . ']';
             

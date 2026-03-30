@@ -494,6 +494,11 @@ function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
     $date_since = substr($since, 0, 10);
     $date_until = substr($until, 0, 10);
 
+    // Validate zone_id format to prevent GraphQL injection
+    if (!preg_match('/^[a-f0-9]{32}$/i', $settings['zone_id'])) {
+        return array('success' => false, 'message' => __('Invalid zone ID format.', 'ccm-tools'));
+    }
+
     $query = '
         query {
             viewer {
@@ -702,7 +707,10 @@ function ccm_tools_cf_auto_purge_post(int $post_id, $post): void {
         $cats = get_the_category($post_id);
         if ($cats) {
             foreach ($cats as $cat) {
-                $urls[] = get_category_link($cat->term_id);
+                $cat_link = get_category_link($cat->term_id);
+                if (!is_wp_error($cat_link)) {
+                    $urls[] = $cat_link;
+                }
             }
         }
 
@@ -710,7 +718,10 @@ function ccm_tools_cf_auto_purge_post(int $post_id, $post): void {
         $tags = get_the_tags($post_id);
         if ($tags) {
             foreach ($tags as $tag) {
-                $urls[] = get_tag_link($tag->term_id);
+                $tag_link = get_tag_link($tag->term_id);
+                if (!is_wp_error($tag_link)) {
+                    $urls[] = $tag_link;
+                }
             }
         }
 
@@ -736,7 +747,10 @@ function ccm_tools_cf_auto_purge_post(int $post_id, $post): void {
  */
 function ccm_tools_cf_auto_purge_term(int $term_id, int $tt_id, string $taxonomy): void {
     $urls = array();
-    $urls[] = get_term_link($term_id, $taxonomy);
+    $term_link = get_term_link($term_id, $taxonomy);
+    if (!is_wp_error($term_link)) {
+        $urls[] = $term_link;
+    }
     $urls[] = home_url('/');
 
     $urls = array_filter(array_unique($urls));
@@ -833,7 +847,8 @@ function ccm_tools_render_cloudflare_page(): void {
                             <input type="password" id="cf-api-token"
                                    name="cf_api_token"
                                    autocomplete="new-password"
-                                   value="<?php echo esc_attr($settings['api_token']); ?>"
+                                   value="<?php echo esc_attr(!empty($settings['api_token']) ? str_repeat("\xe2\x80\xa2", 12) : ''); ?>"
+                                   data-has-token="<?php echo !empty($settings['api_token']) ? '1' : '0'; ?>"
                                    placeholder="<?php esc_attr_e('Enter your Cloudflare API Token', 'ccm-tools'); ?>"
                                    style="flex: 1; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace;">
                             <button type="button" id="cf-toggle-token" class="ccm-button ccm-button-secondary" style="padding: var(--ccm-space-sm) var(--ccm-space-md);" title="<?php esc_attr_e('Show/hide token', 'ccm-tools'); ?>">

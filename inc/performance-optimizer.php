@@ -518,8 +518,8 @@ function ccm_tools_perf_delay_js($tag, $handle, $src) {
         return $tag;
     }
     
-    // Change script type to delay loading
-    $tag = str_replace('type="text/javascript"', 'type="ccmdelay/javascript"', $tag);
+    // Change script type to delay loading (handle both single and double quotes)
+    $tag = preg_replace('/\btype=["\']text\/javascript["\']/', 'type="ccmdelay/javascript"', $tag);
     
     // If no type attribute, add our delayed type
     if (strpos($tag, 'type=') === false) {
@@ -1292,8 +1292,8 @@ function ccm_tools_perf_font_display_preload() {
  * This catches self-hosted fonts in theme CSS that don't have font-display set
  */
 function ccm_tools_perf_font_display_start_buffer() {
-    // Don't buffer AJAX requests, admin, or REST API
-    if (wp_doing_ajax() || is_admin() || (defined('REST_REQUEST') && REST_REQUEST)) {
+    // Don't buffer AJAX requests, admin, REST API, or feeds
+    if (wp_doing_ajax() || is_admin() || (defined('REST_REQUEST') && REST_REQUEST) || is_feed()) {
         return;
     }
     
@@ -1403,8 +1403,8 @@ function ccm_tools_perf_inline_critical_css() {
         return;
     }
     
-    // Sanitize and output the critical CSS
-    $css = wp_strip_all_tags($settings['critical_css_code']);
+    // Sanitize critical CSS — strip closing style tags to prevent breakout
+    $css = str_ireplace('</style>', '', $settings['critical_css_code']);
     
     echo '<style id="ccm-critical-css">' . $css . '</style>' . "\n";
 }
@@ -1622,6 +1622,8 @@ function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
     if ( $content === false || $content === '' ) {
         return $tag;
     }
+    // Escape closing style tags to prevent HTML breakout
+    $content = str_replace( '</style>', '<\/style>', $content );
     $media_attr = ( $media && $media !== 'all' ) ? ' media="' . esc_attr( $media ) . '"' : '';
     return '<style id="' . esc_attr( $handle ) . '-inline"' . $media_attr . '>' . "\n" . $content . "\n" . '</style>' . "\n";
 }
@@ -1731,6 +1733,7 @@ function ccm_tools_perf_inject_srcset( $content ) {
  * Start HTML minification output buffer (v7.26.0)
  */
 function ccm_tools_perf_minify_html_start() {
+    if ( is_feed() ) return;
     ob_start( 'ccm_tools_perf_minify_html_callback' );
 }
 
@@ -1868,7 +1871,10 @@ function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
             if ( ! file_exists( $local_path ) ) {
                 $font_response = wp_remote_get( $font_url, array( 'timeout' => 15 ) );
                 if ( ! is_wp_error( $font_response ) && 200 === (int) wp_remote_retrieve_response_code( $font_response ) ) {
-                    file_put_contents( $local_path, wp_remote_retrieve_body( $font_response ) );
+                    $written = file_put_contents( $local_path, wp_remote_retrieve_body( $font_response ) );
+                    if ( $written === false ) {
+                        return $matches[0];
+                    }
                 } else {
                     return $matches[0];
                 }
@@ -1896,7 +1902,7 @@ function ccm_tools_perf_preload_css_bg_image() {
  * Priority hints for above-fold images — start output buffer (v7.27.0)
  */
 function ccm_tools_perf_priority_hints_start_buffer() {
-    if ( is_admin() ) return;
+    if ( is_admin() || is_feed() ) return;
     ob_start( 'ccm_tools_perf_priority_hints_process_buffer' );
 }
 
@@ -1928,7 +1934,6 @@ function ccm_tools_perf_priority_hints_process_buffer( $html ) {
 
             // Class-based selector matching (e.g. .hero-image)
             if ( ! empty( $selectors ) ) {
-                preg_match( '/\bclass=["\']([\'"]*)["\']/', $tag, $class_match );
                 preg_match( '/\bclass=["\']([^"\']*)["\']/', $tag, $class_match );
                 $classes = isset( $class_match[1] ) ? array_filter( array_map( 'trim', explode( ' ', $class_match[1] ) ) ) : array();
                 $matched = false;
@@ -1966,7 +1971,7 @@ function ccm_tools_perf_priority_hints_process_buffer( $html ) {
  * Delay third-party scripts — start output buffer (v7.27.0)
  */
 function ccm_tools_perf_delay_third_party_start_buffer() {
-    if ( is_admin() ) return;
+    if ( is_admin() || is_feed() ) return;
     ob_start( 'ccm_tools_perf_delay_third_party_process_buffer' );
 }
 

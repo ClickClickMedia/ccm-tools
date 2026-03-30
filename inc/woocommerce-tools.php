@@ -27,8 +27,7 @@ function ccm_tools_get_woocommerce_version() {
         return false;
     }
     
-    global $woocommerce;
-    return $woocommerce->version;
+    return defined('WC_VERSION') ? WC_VERSION : (function_exists('WC') ? WC()->version : '');
 }
 
 /**

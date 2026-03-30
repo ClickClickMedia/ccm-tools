@@ -480,11 +480,6 @@ function ccm_tools_ajax_update_debug_mode(): void {
     
     // Get wp-config.php file path
     $wp_config_path = ABSPATH . 'wp-config.php';
-    $wp_config_sample_path = ABSPATH . 'wp-config-sample.php';
-    
-    if (!file_exists($wp_config_path) && file_exists($wp_config_sample_path)) {
-        $wp_config_path = $wp_config_sample_path;
-    }
     
     if (!file_exists($wp_config_path) || !is_writable($wp_config_path)) {
         wp_send_json_error(__('wp-config.php file not found or not writable.', 'ccm-tools'));
@@ -604,11 +599,6 @@ function ccm_tools_ajax_update_debug_display(): void {
     
     // Get wp-config.php file path
     $wp_config_path = ABSPATH . 'wp-config.php';
-    $wp_config_sample_path = ABSPATH . 'wp-config-sample.php';
-    
-    if (!file_exists($wp_config_path) && file_exists($wp_config_sample_path)) {
-        $wp_config_path = $wp_config_sample_path;
-    }
     
     if (!file_exists($wp_config_path) || !is_writable($wp_config_path)) {
         wp_send_json_error(__('wp-config.php file not found or not writable.', 'ccm-tools'));
@@ -685,11 +675,6 @@ function ccm_tools_ajax_update_debug_log(): void {
     
     // Get wp-config.php file path
     $wp_config_path = ABSPATH . 'wp-config.php';
-    $wp_config_sample_path = ABSPATH . 'wp-config-sample.php';
-    
-    if (!file_exists($wp_config_path) && file_exists($wp_config_sample_path)) {
-        $wp_config_path = $wp_config_sample_path;
-    }
     
     if (!file_exists($wp_config_path) || !is_writable($wp_config_path)) {
         wp_send_json_error(__('wp-config.php file not found or not writable.', 'ccm-tools'));
@@ -2889,8 +2874,9 @@ function ccm_tools_ajax_process_backup_batch(): void {
     try {
         $zip = new ZipArchive();
         $mode = ($start_index === 0) ? ZipArchive::CREATE | ZipArchive::OVERWRITE : ZipArchive::CREATE;
+        $open_flag = ($start_index === 0) ? $mode : ZipArchive::RDWR;
         
-        if ($zip->open($state['backup_path'], $mode) !== true) {
+        if ($zip->open($state['backup_path'], $open_flag) !== true) {
             throw new Exception(__('Failed to open zip file for writing.', 'ccm-tools'));
         }
         
@@ -2997,9 +2983,17 @@ function ccm_tools_ajax_download_backup(): void {
     $file_path = $state['backup_path'];
     $file_name = $state['backup_filename'];
     
+    // Validate backup path is within uploads directory
+    $upload_dir = wp_upload_dir();
+    $real_file = realpath($file_path);
+    $real_upload = realpath($upload_dir['basedir']);
+    if ($real_file === false || $real_upload === false || strpos($real_file, $real_upload) !== 0) {
+        wp_die(__('Invalid backup file path.', 'ccm-tools'));
+    }
+    
     // Set headers for download
     header('Content-Type: application/zip');
-    header('Content-Disposition: attachment; filename="' . $file_name . '"');
+    header('Content-Disposition: attachment; filename="' . sanitize_file_name($file_name) . '"');
     header('Content-Length: ' . filesize($file_path));
     header('Pragma: public');
     header('Cache-Control: must-revalidate, post-check=0, pre-check=0');

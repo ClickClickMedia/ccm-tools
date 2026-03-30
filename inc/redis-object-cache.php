@@ -1716,17 +1716,38 @@ function ccm_tools_redis_set_product_cache($product_id, $data) {
 function ccm_tools_redis_cleanup_transients() {
     global $wpdb;
 
+    // Only delete expired transients (where timeout has passed)
+    $now = time();
     $deleted = $wpdb->query(
-        "DELETE FROM {$wpdb->options}
-         WHERE option_name LIKE '\_transient\_%'
-            OR option_name LIKE '\_site_transient\_%'"
+        $wpdb->prepare(
+            "DELETE a, b FROM {$wpdb->options} a
+             INNER JOIN {$wpdb->options} b ON b.option_name = CONCAT('_transient_timeout_', SUBSTRING(a.option_name, 12))
+             WHERE a.option_name LIKE %s
+             AND b.option_value < %d",
+            $wpdb->esc_like('_transient_') . '%',
+            $now
+        )
     );
 
-    if ($deleted > 0) {
-        error_log('CCM Redis: Cleaned up ' . $deleted . ' database transients.');
+    // Also clean expired site transients
+    $deleted_site = $wpdb->query(
+        $wpdb->prepare(
+            "DELETE a, b FROM {$wpdb->options} a
+             INNER JOIN {$wpdb->options} b ON b.option_name = CONCAT('_site_transient_timeout_', SUBSTRING(a.option_name, 17))
+             WHERE a.option_name LIKE %s
+             AND b.option_value < %d",
+            $wpdb->esc_like('_site_transient_') . '%',
+            $now
+        )
+    );
+
+    $total = ($deleted ?: 0) + ($deleted_site ?: 0);
+
+    if ($total > 0) {
+        error_log('CCM Redis: Cleaned up ' . $total . ' expired database transients.');
     }
 
-    return $deleted;
+    return $total;
 }
 
 /* ────────────────────────────────────────────────────────────────

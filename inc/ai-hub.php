@@ -41,7 +41,7 @@ function ccm_tools_ai_hub_get_settings(): array {
     $defaults = [
         'enabled'  => false,
         'hub_url'  => 'https://api.tools.clickclick.media',
-        'api_key'  => '', // ccm_xxxx... stored encrypted in WP options
+        'api_key'  => '', // ccm_xxxx... stored in WP options
         'site_url' => ccm_tools_normalize_site_url(site_url()),
     ];
 
@@ -259,11 +259,12 @@ function ccm_tools_ajax_ai_hub_test_connection(): void {
  */
 function ccm_tools_ajax_ai_hub_run_pagespeed(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
+
+    if (ccm_tools_ai_require_premium()) return;
 
     $url = esc_url_raw(sanitize_text_field($_POST['url'] ?? site_url()));
     $strategy = in_array($_POST['strategy'] ?? '', ['mobile', 'desktop']) ? $_POST['strategy'] : 'mobile';
@@ -333,11 +334,12 @@ function ccm_tools_ajax_ai_hub_get_results(): void {
  */
 function ccm_tools_ajax_ai_hub_ai_analyze(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
+
+    if (ccm_tools_ai_require_premium()) return;
 
     $resultId = (int)($_POST['result_id'] ?? 0);
     if ($resultId <= 0) {
@@ -396,11 +398,12 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
  */
 function ccm_tools_ajax_ai_hub_ai_optimize(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
+
+    if (ccm_tools_ai_require_premium()) return;
 
     $action = sanitize_text_field($_POST['optimize_action'] ?? 'start');
     $sessionId = (int)($_POST['session_id'] ?? 0);
@@ -654,6 +657,8 @@ function ccm_tools_ajax_ai_apply_changes(): void {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
 
+    if (ccm_tools_ai_require_premium()) return;
+
     $recommendations_raw = wp_unslash($_POST['recommendations'] ?? '');
     $recommendations = json_decode($recommendations_raw, true);
 
@@ -801,11 +806,12 @@ add_action('wp_ajax_ccm_tools_ai_hub_console_check', 'ccm_tools_ajax_ai_hub_cons
  */
 function ccm_tools_ajax_ai_hub_console_check(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
+
+    if (ccm_tools_ai_require_premium()) return;
 
     $url = sanitize_url($_POST['url'] ?? '');
     $wait = absint($_POST['wait_seconds'] ?? 12);
@@ -835,11 +841,12 @@ add_action('wp_ajax_ccm_tools_ai_hub_screenshot', 'ccm_tools_ajax_ai_hub_screens
  */
 function ccm_tools_ajax_ai_hub_screenshot(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
+
+    if (ccm_tools_ai_require_premium()) return;
 
     // Screenshots can retry up to 3 times per viewport — extend execution time generously
     @set_time_limit(600);
@@ -878,11 +885,12 @@ add_action('wp_ajax_ccm_tools_ai_hub_visual_compare', 'ccm_tools_ajax_ai_hub_vis
  */
 function ccm_tools_ajax_ai_hub_visual_compare(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
+
+    if (ccm_tools_ai_require_premium()) return;
 
     $before_desktop_url = sanitize_url($_POST['before_desktop_url'] ?? '');
     $after_desktop_url  = sanitize_url($_POST['after_desktop_url'] ?? '');
@@ -925,11 +933,12 @@ add_action('wp_ajax_ccm_tools_ai_chat', 'ccm_tools_ajax_ai_chat');
  */
 function ccm_tools_ajax_ai_chat(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (ccm_tools_ai_require_premium()) return;
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
+
+    if (ccm_tools_ai_require_premium()) return;
 
     $message = sanitize_textarea_field($_POST['message'] ?? '');
     if (empty($message)) {
@@ -1009,182 +1018,6 @@ function ccm_tools_ajax_ai_chat(): void {
 }
 
 // ─── Preflight: Tool Status & Auto-Enable ────────────────────────
-
-/**
- * Build learnings context from previous optimization runs for the same URL.
- *
- * Creates a structured summary the AI can use to avoid repeating mistakes and
- * build on successful strategies. Includes score deltas, which settings helped
- * or hurt, and overall patterns.
- *
- * @param string $url The URL being optimized (for matching past runs)
- * @return string Formatted context string, or empty if no relevant history
- */
-function ccm_tools_build_learnings_context(string $url = ''): string {
-    $runs = get_option('ccm_tools_ai_optimization_runs', []);
-    if (!is_array($runs) || empty($runs)) {
-        return '';
-    }
-
-    // Filter to runs for this URL (or all runs if URL is empty/different)
-    $relevant = [];
-    $normalized_url = rtrim(strtolower($url), '/');
-    foreach ($runs as $run) {
-        $run_url = rtrim(strtolower($run['url'] ?? ''), '/');
-        // Match exact URL or same domain (allow path variation)
-        if (empty($normalized_url) || $run_url === $normalized_url || parse_url($run_url, PHP_URL_HOST) === parse_url($normalized_url, PHP_URL_HOST)) {
-            $relevant[] = $run;
-        }
-    }
-
-    if (empty($relevant)) {
-        return '';
-    }
-
-    // Limit to last 10 runs
-    $relevant = array_slice($relevant, 0, 10);
-
-    // Build wins and losses
-    $wins = [];   // settings that improved scores
-    $losses = []; // settings that caused rollbacks
-    $patterns = ['improved' => 0, 'rolled_back' => 0, 'no_changes' => 0];
-
-    foreach ($relevant as $run) {
-        $outcome = $run['outcome'] ?? 'completed';
-        if (isset($patterns[$outcome])) {
-            $patterns[$outcome]++;
-        }
-
-        $m_delta = ($run['after_mobile'] ?? 0) - ($run['before_mobile'] ?? 0);
-        $d_delta = ($run['after_desktop'] ?? 0) - ($run['before_desktop'] ?? 0);
-        $changes = $run['changes'] ?? [];
-
-        if ($outcome === 'improved' && !empty($changes)) {
-            foreach ($changes as $change) {
-                $key = is_array($change) ? ($change['key'] ?? '') : $change;
-                if (empty($key)) continue;
-                if (!isset($wins[$key])) {
-                    $wins[$key] = ['count' => 0, 'total_m_delta' => 0, 'total_d_delta' => 0, 'values' => []];
-                }
-                $wins[$key]['count']++;
-                $wins[$key]['total_m_delta'] += $m_delta;
-                $wins[$key]['total_d_delta'] += $d_delta;
-                if (is_array($change) && isset($change['to'])) {
-                    $wins[$key]['values'][] = $change['to'];
-                }
-            }
-        } elseif ($outcome === 'rolled_back' && !empty($changes)) {
-            foreach ($changes as $change) {
-                $key = is_array($change) ? ($change['key'] ?? '') : $change;
-                if (empty($key)) continue;
-                if (!isset($losses[$key])) {
-                    $losses[$key] = ['count' => 0, 'total_m_delta' => 0, 'total_d_delta' => 0, 'values' => []];
-                }
-                $losses[$key]['count']++;
-                $losses[$key]['total_m_delta'] += $m_delta;
-                $losses[$key]['total_d_delta'] += $d_delta;
-                if (is_array($change) && isset($change['to'])) {
-                    $losses[$key]['values'][] = $change['to'];
-                }
-            }
-        }
-    }
-
-    // Build the context string
-    $out = "## Previous Optimization History (AI Memory)\n";
-    $out .= "The following is data from previous optimization runs on this site. Use it to make better decisions.\n\n";
-
-    // Overview
-    $total = count($relevant);
-    $out .= "**Runs:** {$total} total — {$patterns['improved']} improved, {$patterns['rolled_back']} rolled back, {$patterns['no_changes']} no changes\n";
-
-    // Best scores achieved
-    $best_m = 0;
-    $best_d = 0;
-    foreach ($relevant as $r) {
-        $best_m = max($best_m, $r['after_mobile'] ?? 0, $r['before_mobile'] ?? 0);
-        $best_d = max($best_d, $r['after_desktop'] ?? 0, $r['before_desktop'] ?? 0);
-    }
-    if ($best_m > 0 || $best_d > 0) {
-        $out .= "**Best scores achieved:** Mobile {$best_m}, Desktop {$best_d}\n\n";
-    }
-
-    // Settings that helped
-    if (!empty($wins)) {
-        $out .= "### Settings That IMPROVED Scores (REPEAT these)\n";
-        // Sort by count desc
-        uasort($wins, function ($a, $b) { return $b['count'] - $a['count']; });
-        foreach ($wins as $key => $data) {
-            $avg_m = $data['count'] > 0 ? round($data['total_m_delta'] / $data['count']) : 0;
-            $avg_d = $data['count'] > 0 ? round($data['total_d_delta'] / $data['count']) : 0;
-            $m_fmt = sprintf('%+d', $avg_m);
-            $d_fmt = sprintf('%+d', $avg_d);
-            $out .= "- `{$key}`: helped {$data['count']}x (avg Mobile {$m_fmt}, Desktop {$d_fmt})";
-            // Show most recent value used
-            if (!empty($data['values'])) {
-                $last_val = end($data['values']);
-                if (is_bool($last_val)) {
-                    $out .= " → " . ($last_val ? 'true' : 'false');
-                } elseif (is_scalar($last_val) && strlen((string)$last_val) < 60) {
-                    $out .= " → " . (string)$last_val;
-                }
-            }
-            $out .= "\n";
-        }
-        $out .= "\n";
-    }
-
-    // Settings that hurt
-    if (!empty($losses)) {
-        $out .= "### Settings That CAUSED ROLLBACKS (AVOID these)\n";
-        uasort($losses, function ($a, $b) { return $b['count'] - $a['count']; });
-        foreach ($losses as $key => $data) {
-            $avg_m = $data['count'] > 0 ? round($data['total_m_delta'] / $data['count']) : 0;
-            $avg_d = $data['count'] > 0 ? round($data['total_d_delta'] / $data['count']) : 0;
-            $m_fmt = sprintf('%+d', $avg_m);
-            $d_fmt = sprintf('%+d', $avg_d);
-            $out .= "- `{$key}`: caused rollback {$data['count']}x (avg Mobile {$m_fmt}, Desktop {$d_fmt})";
-            if (!empty($data['values'])) {
-                $last_val = end($data['values']);
-                if (is_bool($last_val)) {
-                    $out .= " → " . ($last_val ? 'true' : 'false');
-                } elseif (is_scalar($last_val) && strlen((string)$last_val) < 60) {
-                    $out .= " → " . (string)$last_val;
-                }
-            }
-            $out .= "\n";
-        }
-        $out .= "\n";
-    }
-
-    // Recent run details (last 3)
-    $out .= "### Recent Runs (newest first)\n";
-    foreach (array_slice($relevant, 0, 3) as $run) {
-        $date = $run['date'] ?? '?';
-        $m_before = $run['before_mobile'] ?? 0;
-        $d_before = $run['before_desktop'] ?? 0;
-        $m_after = $run['after_mobile'] ?? 0;
-        $d_after = $run['after_desktop'] ?? 0;
-        $outcome = $run['outcome'] ?? '?';
-        $iters = $run['iterations'] ?? 1;
-        $m_delta = $m_after - $m_before;
-        $d_delta = $d_after - $d_before;
-
-        $m_delta_fmt = sprintf('%+d', $m_delta);
-        $d_delta_fmt = sprintf('%+d', $d_delta);
-        $out .= "- [{$date}] {$outcome} in {$iters} iter(s): Mobile {$m_before}→{$m_after} ({$m_delta_fmt}), Desktop {$d_before}→{$d_after} ({$d_delta_fmt})";
-        $change_keys = [];
-        foreach (($run['changes'] ?? []) as $c) {
-            $change_keys[] = is_array($c) ? ($c['key'] ?? '?') : $c;
-        }
-        if (!empty($change_keys)) {
-            $out .= " | Changed: " . implode(', ', array_slice($change_keys, 0, 10));
-        }
-        $out .= "\n";
-    }
-
-    return $out;
-}
 
 /**
  * Get optimization status of all server-side tools

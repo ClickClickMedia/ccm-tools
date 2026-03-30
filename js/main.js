@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.37.3
+ * Version: 7.38.0
  */
 
 (function() {
@@ -1536,9 +1536,7 @@
                 const response = await ajax('ccm_tools_measure_ttfb');
                 const data = response.data;
                 
-                if (data.html) {
-                    ttfbResult.innerHTML = data.html;
-                } else if (data.time) {
+                if (data.time) {
                     let ttfbClass = 'ccm-success';
                     let ttfbLabel = 'Fast';
                     

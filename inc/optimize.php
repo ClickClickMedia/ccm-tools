@@ -425,9 +425,9 @@ function ccm_tools_optimize_initial_setup() {
         $other_indexes_exist = false;
 
         foreach ($postmeta_indexes as $index) {
-            if ($index->Key_name === 'ccm_index') {
+            if ($index->Key_name === 'ccm_meta_key' || $index->Key_name === 'ccm_index') {
                 $ccm_index_exists = true;
-                if ($index->Sub_part == 200) {
+                if ($index->Sub_part == 191) {
                     $ccm_index_correct_size = true;
                 }
             } else {
@@ -435,25 +435,28 @@ function ccm_tools_optimize_initial_setup() {
             }
         }
 
-        // Drop any existing index on meta_key that isn't ccm_index
+        // Drop any existing index on meta_key that isn't ccm_meta_key
         if ($other_indexes_exist) {
             foreach ($postmeta_indexes as $index) {
-                if ($index->Key_name !== 'ccm_index') {
+                if ($index->Key_name !== 'ccm_meta_key' && $index->Key_name !== 'ccm_index') {
                     $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `{$index->Key_name}`");
                     $results[] = 'Existing index \'' . $index->Key_name . '\' removed from ' . $wpdb->postmeta;
                 }
             }
         }
 
-        // Add or update 'ccm_index' if it doesn't exist or has incorrect size
+        // Migrate legacy ccm_index to ccm_meta_key with correct size
+        if ($ccm_index_exists) {
+            // Drop any legacy ccm_index
+            $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
+        }
+
+        // Add or update 'ccm_meta_key' if it doesn't exist or has incorrect size
         if (!$ccm_index_exists || !$ccm_index_correct_size) {
-            if ($ccm_index_exists) {
-                $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
-            }
-            $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_index` (`meta_key`(200))");
-            $results[] = 'Index \'ccm_index\' added or updated on ' . $wpdb->postmeta . ' with size 200';
+            $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_meta_key` (`meta_key`(191))");
+            $results[] = 'Index \'ccm_meta_key\' added on ' . $wpdb->postmeta . ' with size 191';
         } else {
-            $results[] = 'Index \'ccm_index\' already exists on ' . $wpdb->postmeta . ' with correct size of 200';
+            $results[] = 'Index \'ccm_meta_key\' already exists on ' . $wpdb->postmeta . ' with correct size of 191';
         }
 
         // Delete transients
@@ -506,9 +509,9 @@ function ccm_tools_optimize_database() {
     $other_indexes_exist = false;
 
     foreach ($postmeta_indexes as $index) {
-        if ($index->Key_name === 'ccm_index') {
+        if ($index->Key_name === 'ccm_meta_key' || $index->Key_name === 'ccm_index') {
             $ccm_index_exists = true;
-            if ($index->Sub_part == 200) {
+            if ($index->Sub_part == 191) {
                 $ccm_index_correct_size = true;
             }
         } else {
@@ -516,25 +519,27 @@ function ccm_tools_optimize_database() {
         }
     }
 
-    // Drop any existing index on meta_key that isn't ccm_index
+    // Drop any existing index on meta_key that isn't ccm_meta_key
     if ($other_indexes_exist) {
         foreach ($postmeta_indexes as $index) {
-            if ($index->Key_name !== 'ccm_index') {
+            if ($index->Key_name !== 'ccm_meta_key' && $index->Key_name !== 'ccm_index') {
                 $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `{$index->Key_name}`");
                 $result .= '<p><span class="ccm-icon ccm-info">i</span>Existing index \'' . $index->Key_name . '\' removed from ' . $wpdb->postmeta . '</p>';
             }
         }
     }
 
-    // Add or update 'ccm_index' if it doesn't exist or has incorrect size
+    // Migrate legacy ccm_index to ccm_meta_key with correct size
+    if ($ccm_index_exists) {
+        $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
+    }
+
+    // Add or update 'ccm_meta_key' if it doesn't exist or has incorrect size
     if (!$ccm_index_exists || !$ccm_index_correct_size) {
-        if ($ccm_index_exists) {
-            $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
-        }
-        $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_index` (`meta_key`(200))");
-        $result .= '<p><span class="ccm-icon ccm-success">✓</span>Index \'ccm_index\' added or updated on ' . $wpdb->postmeta . ' with size 200</p>';
+        $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_meta_key` (`meta_key`(191))");
+        $result .= '<p><span class="ccm-icon ccm-success">✓</span>Index \'ccm_meta_key\' added on ' . $wpdb->postmeta . ' with size 191</p>';
     } else {
-        $result .= '<p><span class="ccm-icon ccm-info">i</span>Index \'ccm_index\' already exists on ' . $wpdb->postmeta . ' with correct size of 200</p>';
+        $result .= '<p><span class="ccm-icon ccm-info">i</span>Index \'ccm_meta_key\' already exists on ' . $wpdb->postmeta . ' with correct size of 191</p>';
     }
 
     // Delete transients
@@ -802,7 +807,7 @@ function ccm_tools_optimization_clean_trashed_comments() {
     $count = $wpdb->query(
         $wpdb->prepare(
             "DELETE FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
-            date('Y-m-d H:i:s', strtotime('-30 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
     
@@ -828,7 +833,7 @@ function ccm_tools_optimization_clean_trashed_posts() {
     $post_ids = $wpdb->get_col(
         $wpdb->prepare(
             "SELECT ID FROM {$wpdb->posts} WHERE post_status = 'trash' AND post_modified < %s",
-            date('Y-m-d H:i:s', strtotime('-30 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
     
@@ -848,6 +853,9 @@ function ccm_tools_optimization_clean_trashed_posts() {
         
         // Clean up comments
         $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_post_ID IN ({$ids_placeholder})");
+        
+        // Update term counts after removing posts
+        wp_defer_term_counting(false);
     }
     
     return array(
@@ -866,7 +874,7 @@ function ccm_tools_optimization_clean_auto_drafts() {
     $post_ids = $wpdb->get_col(
         $wpdb->prepare(
             "SELECT ID FROM {$wpdb->posts} WHERE post_status = 'auto-draft' AND post_modified < %s",
-            date('Y-m-d H:i:s', strtotime('-7 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-7 days'))
         )
     );
     
@@ -1084,7 +1092,10 @@ function ccm_tools_optimization_clean_oembed_cache() {
     global $wpdb;
     
     $count = $wpdb->query(
-        "DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE '%_oembed_%'"
+        $wpdb->prepare(
+            "DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE %s",
+            '%' . $wpdb->esc_like('_oembed_') . '%'
+        )
     );
     
     return array(

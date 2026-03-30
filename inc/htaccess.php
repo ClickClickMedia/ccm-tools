@@ -116,6 +116,11 @@ function ccm_tools_get_htaccess_options(): array {
  * @return string Optimized .htaccess content
  */
 function ccm_tools_htaccess_content($options = array()): string {
+    // Handle legacy $hardening parameter (backward compatibility)
+    if (is_bool($options)) {
+        $options = array('x_frame_options' => $options, 'block_author_scan' => true);
+    }
+    
     // Default options if none provided (backward compatibility)
     // Default all options if none provided (backward compatibility - all safe options enabled)
     if (empty($options) || !is_array($options)) {
@@ -137,29 +142,6 @@ function ccm_tools_htaccess_content($options = array()): string {
             'corp' => false,
             'block_author_scan' => true,
             // High risk options
-            'block_xmlrpc' => false,
-            'block_rest_api' => false,
-        );
-    }
-    
-    // Handle legacy $hardening parameter (backward compatibility)
-    if (is_bool($options)) {
-        $hardening = $options;
-        $options = array(
-            'caching' => true,
-            'compression' => true,
-            'security_headers' => true,
-            'hsts_basic' => true,
-            'https_redirect' => true,
-            'file_protection' => true,
-            'disable_indexes' => true,
-            'etag_removal' => true,
-            'x_frame_options' => $hardening,
-            'x_xss_protection' => false,
-            'hsts_subdomains' => false,
-            'coop' => false,
-            'corp' => false,
-            'block_author_scan' => true,
             'block_xmlrpc' => false,
             'block_rest_api' => false,
         );
@@ -604,16 +586,19 @@ function ccm_tools_display_htaccess(): string {
  */
 function ccm_tools_cleanup_htaccess_content(string $content): string {
     // Remove multiple consecutive blank lines and replace with single blank line
-    $content = preg_replace('/\n\s*\n\s*\n+/', "\n\n", $content);
+    $result = preg_replace('/\n\s*\n\s*\n+/', "\n\n", $content);
+    if ($result !== null) $content = $result;
     
     // Remove blank lines at the beginning of the file
     $content = ltrim($content, "\n\r\t ");
     
     // Ensure exactly one blank line after "# END CCM Optimise - DO NOT CHANGE!" if there's content after it
-    $content = preg_replace('/# END CCM Optimise - DO NOT CHANGE!\n+/', "# END CCM Optimise - DO NOT CHANGE!\n\n", $content);
+    $result = preg_replace('/# END CCM Optimise - DO NOT CHANGE!\n+/', "# END CCM Optimise - DO NOT CHANGE!\n\n", $content);
+    if ($result !== null) $content = $result;
     
     // Remove excessive blank lines at the end of CCM block when followed by other content
-    $content = preg_replace('/# END CCM Optimise - DO NOT CHANGE!\n\n+(\S)/', "# END CCM Optimise - DO NOT CHANGE!\n\n$1", $content);
+    $result = preg_replace('/# END CCM Optimise - DO NOT CHANGE!\n\n+(\S)/', "# END CCM Optimise - DO NOT CHANGE!\n\n$1", $content);
+    if ($result !== null) $content = $result;
     
     // Ensure single trailing newline at end of file
     $content = rtrim($content) . "\n";
@@ -649,7 +634,7 @@ function ccm_tools_update_htaccess(string $action, $options = array()): array {
             // Create new .htaccess file with optimizations
             $new_content = ccm_tools_htaccess_content($options);
             $new_content = ccm_tools_cleanup_htaccess_content($new_content);
-            $result = file_put_contents($htaccess_file, $new_content);
+            $result = file_put_contents($htaccess_file, $new_content, LOCK_EX);
             if ($result !== false) {
                 return array(
                     'success' => true, 
@@ -701,7 +686,7 @@ function ccm_tools_update_htaccess(string $action, $options = array()): array {
         // Clean up excessive blank lines
         $new_content = ccm_tools_cleanup_htaccess_content($new_content);
         
-        if (file_put_contents($htaccess_file, $new_content) !== false) {
+        if (file_put_contents($htaccess_file, $new_content, LOCK_EX) !== false) {
             return array(
                 'success' => true, 
                 'message' => __('Optimizations successfully added to .htaccess.', 'ccm-tools')
@@ -726,7 +711,7 @@ function ccm_tools_update_htaccess(string $action, $options = array()): array {
         // Clean up excessive blank lines
         $new_content = ccm_tools_cleanup_htaccess_content($new_content);
         
-        if (file_put_contents($htaccess_file, $new_content) !== false) {
+        if (file_put_contents($htaccess_file, $new_content, LOCK_EX) !== false) {
             return array(
                 'success' => true, 
                 'message' => __('Optimizations successfully updated.', 'ccm-tools')
@@ -753,7 +738,7 @@ function ccm_tools_update_htaccess(string $action, $options = array()): array {
         // Clean up excessive blank lines after removal
         $new_content = ccm_tools_cleanup_htaccess_content($new_content);
         
-        if (file_put_contents($htaccess_file, $new_content) !== false) {
+        if (file_put_contents($htaccess_file, $new_content, LOCK_EX) !== false) {
             return array(
                 'success' => true, 
                 'message' => __('Optimizations successfully removed from .htaccess.', 'ccm-tools')

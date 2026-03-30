@@ -1177,16 +1177,17 @@ function ccm_tools_webp_convert_to_picture_tags($content) {
     
     // Pass 2: Mark remaining img tags inside picture elements (to skip in pass 3)
     $content = preg_replace_callback(
-        '/<picture[^>]*>(.*?)<\/picture>/is',
+        '/<picture([^>]*)>(.*?)<\/picture>/is',
         function($matches) {
-            $picture_content = $matches[1];
+            $picture_attrs = $matches[1];
+            $picture_content = $matches[2];
             // Add data-inside-picture to any img tags inside this picture element
             $marked = preg_replace(
                 '/<img\s+/i',
                 '<img data-inside-picture="true" ',
                 $picture_content
             );
-            return '<picture>' . $marked . '</picture>';
+            return '<picture' . $picture_attrs . '>' . $marked . '</picture>';
         },
         $content
     );
@@ -1637,7 +1638,7 @@ function ccm_tools_webp_background_queue_script() {
             fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'action=ccm_tools_process_webp_queue'
+                body: 'action=ccm_tools_process_webp_queue&nonce=<?php echo wp_create_nonce('ccm-tools-nonce'); ?>'
             })
             .then(response => response.json())
             .then(data => {
