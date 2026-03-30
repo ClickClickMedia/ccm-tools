@@ -3748,7 +3748,15 @@ function ccm_tools_ajax_cf_update_setting(): void {
     }
 
     // Allowlist of settings that can be modified via this handler
-    $allowed_settings = array('minify', 'browser_cache_ttl', 'polish', 'security_level', 'ssl', 'automatic_platform_optimization', 'rocket_loader', 'always_online', 'webp');
+    $allowed_settings = array(
+        'minify', 'browser_cache_ttl', 'polish', 'security_level', 'ssl',
+        'automatic_platform_optimization', 'rocket_loader', 'always_online', 'webp', 'mirage',
+        'bot_fight_mode', 'browser_check', 'privacy_pass', 'server_side_exclude',
+        'challenge_ttl', 'ip_geolocation', 'opportunistic_onion', 'pseudo_ipv4',
+        'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
+        'early_hints', 'http2', 'http3', '0rtt', 'brotli',
+        'always_use_https', 'automatic_https_rewrites',
+    );
     if (!in_array($setting, $allowed_settings, true)) {
         wp_send_json_error(array('message' => __('Unknown Cloudflare setting.', 'ccm-tools')));
     }
@@ -3760,7 +3768,7 @@ function ccm_tools_ajax_cf_update_setting(): void {
             'css'  => (!empty($_POST['css']) && $_POST['css'] === 'on') ? 'on' : 'off',
             'html' => (!empty($_POST['html']) && $_POST['html'] === 'on') ? 'on' : 'off',
         );
-    } elseif ($setting === 'browser_cache_ttl') {
+    } elseif ($setting === 'browser_cache_ttl' || $setting === 'challenge_ttl') {
         $value = isset($_POST['value']) ? absint($_POST['value']) : 0;
     } elseif ($setting === 'polish') {
         $allowed_polish = array('off', 'lossless', 'lossy');
@@ -3790,8 +3798,14 @@ function ccm_tools_ajax_cf_update_setting(): void {
             'hostnames'     => array(),
             'cache_by_device_type' => false,
         );
+    } elseif ($setting === 'pseudo_ipv4') {
+        $allowed_pv4 = array('off', 'add_header', 'overwrite_header');
+        $value = isset($_POST['value']) ? sanitize_text_field($_POST['value']) : 'off';
+        if (!in_array($value, $allowed_pv4, true)) {
+            $value = 'off';
+        }
     } else {
-        // on/off toggle settings: rocket_loader, always_online, webp
+        // on/off toggle settings
         $value = (!empty($_POST['value']) && $_POST['value'] === 'on') ? 'on' : 'off';
     }
 

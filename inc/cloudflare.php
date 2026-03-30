@@ -275,10 +275,13 @@ function ccm_tools_cf_get_zone_status() {
     // Pick the settings we care about
     $feature_keys = array(
         'polish', 'minify', 'rocket_loader', 'always_online',
-        'browser_cache_ttl', 'development_mode', 'webp',
+        'browser_cache_ttl', 'development_mode', 'webp', 'mirage',
         'security_level', 'ssl', 'always_use_https', 'automatic_https_rewrites',
         'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
         'early_hints', 'http2', 'http3', '0rtt', 'brotli',
+        'bot_fight_mode', 'browser_check', 'privacy_pass',
+        'ip_geolocation', 'server_side_exclude', 'opportunistic_onion',
+        'pseudo_ipv4', 'challenge_ttl',
     );
 
     $features = array();
@@ -389,18 +392,21 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
 
     // Whitelist of allowed settings
     $allowed = array(
-        'rocket_loader', 'always_online', 'minify', 'browser_cache_ttl', 'polish', 'webp',
+        'rocket_loader', 'always_online', 'minify', 'browser_cache_ttl', 'polish', 'webp', 'mirage',
         'security_level', 'ssl', 'always_use_https', 'automatic_https_rewrites',
         'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
         'early_hints', 'http2', 'http3', '0rtt', 'brotli',
         'automatic_platform_optimization',
+        'bot_fight_mode', 'browser_check', 'privacy_pass',
+        'ip_geolocation', 'server_side_exclude', 'opportunistic_onion',
+        'pseudo_ipv4', 'challenge_ttl',
     );
     if (!in_array($setting, $allowed, true)) {
         return new WP_Error('invalid_setting', __('Invalid Cloudflare setting.', 'ccm-tools'));
     }
 
     // Pro+ features cannot be changed on the Free plan
-    $pro_only = array('polish', 'webp');
+    $pro_only = array('polish', 'webp', 'mirage');
     if (in_array($setting, $pro_only, true)) {
         $zone = ccm_tools_cf_api('zones/' . $settings['zone_id']);
         $plan_id = $zone['result']['plan']['legacy_id'] ?? 'free';
@@ -441,6 +447,8 @@ function ccm_tools_cf_apply_recommended(): array {
         'early_hints'              => 'on',
         'always_online'            => 'on',
         'hotlink_protection'       => 'off',
+        'browser_check'            => 'on',
+        'ip_geolocation'           => 'on',
     );
 
     $successes = array();

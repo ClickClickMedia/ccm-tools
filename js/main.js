@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.38.1
+ * Version: 7.39.0
  */
 
 (function() {
@@ -3640,6 +3640,8 @@
 
             // --- Toggleable on/off settings ---
             const toggleSettings = [
+                { key: 'bot_fight_mode', label: 'Bot Fight Mode', desc: 'Challenge requests matching patterns of known bots and automated traffic' },
+                { key: 'browser_check', label: 'Browser Integrity Check', desc: 'Evaluate HTTP headers for threats and block known bad bots' },
                 { key: 'rocket_loader', label: 'Rocket Loader', desc: 'Prioritise loading of your page content over scripts' },
                 { key: 'always_online', label: 'Always Online', desc: 'Show a cached version of your site if your server goes offline' },
             ];
@@ -3704,6 +3706,22 @@
                     html += '<label class="ccm-cf-minify-label"><input type="checkbox" data-cf-minify="' + type + '"' + chk + '> ' + type.toUpperCase() + '</label>';
                 }
                 html += '</div></td></tr>';
+            }
+
+            // --- Mirage (Pro+ image lazy load) ---
+            if (features.mirage !== undefined) {
+                if (isFreePlan) {
+                    html += '<tr><th>Mirage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Lazy load images and optimize for mobile visitors (Pro+ plan)</span></th>';
+                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" disabled' + (features.mirage === 'on' ? ' checked' : '') + '>';
+                    html += '<span class="ccm-toggle-slider"></span></label> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
+                } else if (isPremium) {
+                    const mChecked = features.mirage === 'on' ? ' checked' : '';
+                    html += '<tr><th>Mirage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Lazy load images and optimize for mobile visitors (Pro+ plan)</span></th>';
+                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="mirage"' + mChecked + '>';
+                    html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+                } else {
+                    html += cfStatusRow('Mirage', features.mirage === 'on' ? '<span class="ccm-success">\u2713 On</span>' : '<span class="ccm-text-muted">Off</span>');
+                }
             }
 
             // --- Browser Cache TTL (dropdown) ---
@@ -3971,6 +3989,40 @@
             html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
         }
 
+        // Server-side Excludes (toggle)
+        if (features.server_side_exclude !== undefined) {
+            const checked = features.server_side_exclude === 'on' ? ' checked' : '';
+            html += '<tr><th>Server-side Excludes<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Automatically hide specific content from suspicious visitors</span></th>';
+            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="server_side_exclude"' + checked + '>';
+            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+        }
+
+        // Privacy Pass (toggle)
+        if (features.privacy_pass !== undefined) {
+            const checked = features.privacy_pass === 'on' ? ' checked' : '';
+            html += '<tr><th>Privacy Pass<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Reduce CAPTCHAs for visitors using Privacy Pass tokens</span></th>';
+            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="privacy_pass"' + checked + '>';
+            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+        }
+
+        // Challenge Passage TTL (dropdown)
+        if (features.challenge_ttl !== undefined) {
+            html += '<tr><th>Challenge Passage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">How long a visitor who passed a challenge can access your site</span></th>';
+            html += '<td style="text-align: right;"><select data-cf-setting="challenge_ttl" class="ccm-cf-select">';
+            const ttlOptions = [
+                [300, '5 minutes'], [900, '15 minutes'], [1800, '30 minutes'],
+                [2700, '45 minutes'], [3600, '1 hour'], [7200, '2 hours'],
+                [10800, '3 hours'], [14400, '4 hours'], [28800, '8 hours'],
+                [57600, '16 hours'], [86400, '1 day'], [604800, '1 week'],
+                [2592000, '1 month'], [31536000, '1 year'],
+            ];
+            for (const [tval, tlabel] of ttlOptions) {
+                const sel = features.challenge_ttl === tval ? ' selected' : '';
+                html += '<option value="' + tval + '"' + sel + '>' + tlabel + '</option>';
+            }
+            html += '</select></td></tr>';
+        }
+
         html += '</table>';
         container.innerHTML = html;
 
@@ -4009,6 +4061,8 @@
             { key: 'always_use_https', label: 'Always Use HTTPS', desc: 'Redirect all HTTP requests to HTTPS' },
             { key: 'automatic_https_rewrites', label: 'Automatic HTTPS Rewrites', desc: 'Fix mixed content by rewriting HTTP URLs to HTTPS' },
             { key: 'opportunistic_encryption', label: 'Opportunistic Encryption', desc: 'Allow browsers to use HTTP/2 over an unencrypted connection' },
+            { key: 'ip_geolocation', label: 'IP Geolocation', desc: 'Include visitor country in CF-IPCountry header sent to your origin' },
+            { key: 'opportunistic_onion', label: 'Onion Routing', desc: 'Allow routing traffic through the Tor network when available' },
             { key: 'early_hints', label: 'Early Hints (103)', desc: 'Speed up page loads by sending link headers before the full response' },
             { key: 'http2', label: 'HTTP/2', desc: 'Accelerate content delivery with HTTP/2 protocol' },
             { key: 'http3', label: 'HTTP/3 (QUIC)', desc: 'Enable next-generation protocol using QUIC for faster connections' },
@@ -4023,6 +4077,22 @@
             html += '<tr><th>' + escHtml(item.label) + '<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">' + escHtml(item.desc) + '</span></th>';
             html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="' + item.key + '"' + checked + '>';
             html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+        }
+
+        // Pseudo IPv4 (dropdown)
+        if (features.pseudo_ipv4 !== undefined) {
+            html += '<tr><th>Pseudo IPv4<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Add an IPv4 header for IPv6 visitors for compatibility with older systems</span></th>';
+            html += '<td style="text-align: right;"><select data-cf-setting="pseudo_ipv4" class="ccm-cf-select">';
+            const pv4Options = [
+                ['off', 'Off'],
+                ['add_header', 'Add Header'],
+                ['overwrite_header', 'Overwrite Headers'],
+            ];
+            for (const [val, label] of pv4Options) {
+                const sel = features.pseudo_ipv4 === val ? ' selected' : '';
+                html += '<option value="' + val + '"' + sel + '>' + label + '</option>';
+            }
+            html += '</select></td></tr>';
         }
 
         html += '</table>';
