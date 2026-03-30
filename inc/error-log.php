@@ -591,6 +591,9 @@ function ccm_tools_format_error_log($content) {
         return $content;
     }
     
+    // Escape HTML to prevent stored XSS from log content
+    $content = htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    
     // Add HTML highlighting for fatal errors and stack traces
     $formatted = preg_replace(
         array(

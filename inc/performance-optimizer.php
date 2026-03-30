@@ -1580,6 +1580,8 @@ function ccm_tools_perf_inline_small_scripts( $tag, $handle, $src ) {
     if ( $content === false || $content === '' ) {
         return $tag;
     }
+    // Prevent </script> in JS file from prematurely closing the script block
+    $content = str_replace( '</script>', '<\/script>', $content );
     return '<script id="' . esc_attr( $handle ) . '-inline">' . "\n" . $content . "\n" . '</script>' . "\n";
 }
 

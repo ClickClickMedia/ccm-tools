@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.37.2
+ * Version: 7.37.3
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -21,7 +21,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.37.2');
+    define('CCM_HELPER_VERSION', '7.37.3');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -612,23 +612,7 @@ class CCMSettings {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
         
-        // Clear the opcache if available to ensure fresh constants
-        if (function_exists('opcache_reset')) {
-            opcache_reset();
-        }
-        
-        // Re-include wp-config.php to refresh constants
-        if (file_exists(ABSPATH . 'wp-config.php')) {
-            // Use include_once to avoid errors
-            @include_once ABSPATH . 'wp-config.php';
-        }
-        
-        // Clear opcache to ensure the latest constants are loaded
-        if (function_exists('opcache_reset')) {
-            opcache_reset();
-        }
-        
-        // Attempt to clear any PHP opcode cache
+        // Invalidate opcache for wp-config.php to ensure fresh constants
         if (function_exists('opcache_invalidate') && file_exists(ABSPATH . 'wp-config.php')) {
             opcache_invalidate(ABSPATH . 'wp-config.php', true);
         }
@@ -1032,9 +1016,6 @@ class CCMSettings {
                     <h2><?php _e('WordPress Environment', 'ccm-tools'); ?></h2>
                     <?php 
                     global $wp_version;
-                    
-                    // Delete the update cache to force a fresh check
-                    delete_site_transient('update_core');
                     
                     // Get update information
                     $wp_update_info = ccm_tools_check_wordpress_updates();

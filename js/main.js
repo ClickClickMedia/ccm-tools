@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.37.2
+ * Version: 7.37.3
  */
 
 (function() {
@@ -7278,7 +7278,9 @@
 
     function aiChatFormatMarkdown(text) {
         // Simple markdown → HTML for chat responses
-        let html = text
+        // Escape HTML first to prevent XSS from AI responses
+        let safe = escapeHtml(text);
+        let html = safe
             // Code blocks
             .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
             // Inline code

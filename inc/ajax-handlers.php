@@ -39,6 +39,10 @@ function ccm_tools_ajax_convert_single_table(): void {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('No table name provided.', 'ccm-tools') . '</p>');
     }
     
+    if (!ccm_tools_validate_table_name($table_name)) {
+        wp_send_json_error('<p class="ccm-error">' . esc_html__('Invalid table name.', 'ccm-tools') . '</p>');
+    }
+    
     $result = ccm_tools_convert_single_table($table_name);
     wp_send_json_success($result);
 }
@@ -240,6 +244,10 @@ function ccm_tools_ajax_optimize_single_table(): void {
     $table_name = isset($_POST['table_name']) ? sanitize_text_field($_POST['table_name']) : '';
     if (empty($table_name)) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('No table name provided.', 'ccm-tools') . '</p>');
+    }
+    
+    if (!ccm_tools_validate_table_name_optimize($table_name)) {
+        wp_send_json_error('<p class="ccm-error">' . esc_html__('Invalid table name.', 'ccm-tools') . '</p>');
     }
     
     $result = ccm_tools_optimize_single_table($table_name);
@@ -1706,9 +1714,12 @@ function ccm_tools_ajax_test_webp_conversion(): void {
     
     $file = $_FILES['test_image'];
     
-    // Validate file type
+    // Validate file type using server-side detection (not client-supplied Content-Type)
     $allowed_types = array('image/jpeg', 'image/png', 'image/gif');
-    if (!in_array($file['type'], $allowed_types)) {
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $real_mime = $finfo ? finfo_file($finfo, $file['tmp_name']) : $file['type'];
+    if ($finfo) { finfo_close($finfo); }
+    if (!in_array($real_mime, $allowed_types, true)) {
         wp_send_json_error(array('message' => __('Invalid file type. Please upload a JPG, PNG, or GIF image.', 'ccm-tools')));
     }
     
@@ -1857,10 +1868,11 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
  * This is called via AJAX from the frontend to convert queued images
  */
 add_action('wp_ajax_ccm_tools_process_webp_queue', 'ccm_tools_ajax_process_webp_queue');
-add_action('wp_ajax_nopriv_ccm_tools_process_webp_queue', 'ccm_tools_ajax_process_webp_queue');
 function ccm_tools_ajax_process_webp_queue(): void {
-    // No nonce check - this is a background process that should work for all visitors
-    // Rate limiting prevents abuse
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
     
     $queue = get_transient('ccm_webp_conversion_queue');
     
@@ -3611,12 +3623,12 @@ function ccm_tools_ajax_cf_connect(): void {
         wp_send_json_error(array('message' => $result->get_error_message()));
     }
 
-    // Save verified settings
-    ccm_tools_cf_save_settings(array(
+    // Save verified settings (merge with existing to preserve auto_purge etc.)
+    ccm_tools_cf_save_settings(array_merge(ccm_tools_cf_get_settings(), array(
         'api_token' => $token,
         'zone_id'   => $result['id'] ?? $zone_id,
         'connected' => true,
-    ));
+    )));
 
     // Clear detection transient so tab shows immediately
     delete_transient('ccm_tools_cf_detected');
@@ -3739,6 +3751,12 @@ function ccm_tools_ajax_cf_update_setting(): void {
     $setting = isset($_POST['setting']) ? sanitize_text_field($_POST['setting']) : '';
     if (empty($setting)) {
         wp_send_json_error(array('message' => __('No setting specified.', 'ccm-tools')));
+    }
+
+    // Allowlist of settings that can be modified via this handler
+    $allowed_settings = array('minify', 'browser_cache_ttl', 'polish', 'security_level', 'ssl', 'automatic_platform_optimization', 'rocket_loader', 'always_online', 'webp');
+    if (!in_array($setting, $allowed_settings, true)) {
+        wp_send_json_error(array('message' => __('Unknown Cloudflare setting.', 'ccm-tools')));
     }
 
     // Parse value based on setting type

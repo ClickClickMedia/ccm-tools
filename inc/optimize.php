@@ -62,8 +62,8 @@ function ccm_tools_get_optimization_options() {
     return array(
         // Safe options - checked by default
         'clear_transients' => array(
-            'label' => __('Clear expired transients', 'ccm-tools'),
-            'description' => __('Remove temporary cached data from the database', 'ccm-tools'),
+            'label' => __('Clear all transients', 'ccm-tools'),
+            'description' => __('Remove all temporary cached data from the database (including active transients)', 'ccm-tools'),
             'default' => true,
             'risk' => 'safe'
         ),

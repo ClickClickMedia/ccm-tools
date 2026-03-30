@@ -562,6 +562,8 @@ function ccm_tools_redis_flush_cache($selective = true) {
         
         if ($settings['scheme'] === 'unix' && !empty($settings['path'])) {
             $connected = @$redis->connect($settings['path']);
+        } elseif ($settings['scheme'] === 'tls') {
+            $connected = @$redis->connect('tls://' . $settings['host'], $settings['port'], $settings['timeout']);
         } else {
             $connected = @$redis->connect($settings['host'], $settings['port'], $settings['timeout']);
         }
@@ -572,7 +574,8 @@ function ccm_tools_redis_flush_cache($selective = true) {
         }
         
         if (!empty($settings['password'])) {
-            if (!@$redis->auth($settings['password'])) {
+            $auth = (!empty($settings['username'])) ? array($settings['username'], $settings['password']) : $settings['password'];
+            if (!@$redis->auth($auth)) {
                 $result['message'] = __('Redis authentication failed.', 'ccm-tools');
                 return $result;
             }
@@ -659,12 +662,15 @@ function ccm_tools_redis_get_stats() {
             
             if ($settings['scheme'] === 'unix' && !empty($settings['path'])) {
                 $redis->connect($settings['path']);
+            } elseif ($settings['scheme'] === 'tls') {
+                $redis->connect('tls://' . $settings['host'], $settings['port'], $settings['timeout']);
             } else {
                 $redis->connect($settings['host'], $settings['port'], $settings['timeout']);
             }
             
             if (!empty($settings['password'])) {
-                $redis->auth($settings['password']);
+                $auth = (!empty($settings['username'])) ? array($settings['username'], $settings['password']) : $settings['password'];
+                $redis->auth($auth);
             }
             
             if ($settings['database'] > 0) {

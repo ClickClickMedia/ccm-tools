@@ -293,6 +293,7 @@ function ccm_tools_webp_convert_with_gd($source_path, $dest_path, $quality, $res
             
         case 'png':
             $source_image = imagecreatefrompng($source_path);
+            if (!$source_image) { break; }
             // Preserve transparency
             imagepalettetotruecolor($source_image);
             imagealphablending($source_image, true);

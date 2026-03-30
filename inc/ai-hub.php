@@ -505,10 +505,12 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
         } elseif (is_int($settings[$key])) {
             $settings[$key] = (int)$value;
         } elseif (in_array($key, $css_keys, true)) {
-            // CSS code: strip PHP tags and null bytes, but preserve CSS content
+            // CSS code: strip HTML tags, PHP tags and null bytes to prevent XSS
             if (is_string($value)) {
+                $value = wp_strip_all_tags($value);
                 $value = str_replace(['<?php', '<?', '?>'], '', $value);
                 $value = str_replace("\0", '', $value);
+                $value = preg_replace('/javascript\s*:/i', '', $value);
                 $settings[$key] = $value;
             }
         } elseif (in_array($key, $url_array_keys, true)) {
