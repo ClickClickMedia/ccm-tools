@@ -1150,6 +1150,7 @@ function ccm_tools_render_redis_page() {
                                 <?php endif; ?>
                             </td>
                         </tr>
+                        <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
                         <tr>
                             <th><?php _e('Serializer', 'ccm-tools'); ?></th>
                             <td><code><?php echo esc_html($runtime['serializer'] ?? 'php'); ?></code></td>
@@ -1162,6 +1163,7 @@ function ccm_tools_render_redis_page() {
                             <th><?php _e('Async Flush (UNLINK)', 'ccm-tools'); ?></th>
                             <td><code><?php echo !empty($runtime['async_flush']) ? 'true' : 'false'; ?></code></td>
                         </tr>
+                        <?php endif; ?>
                         <tr>
                             <th><?php _e('Selective Flush', 'ccm-tools'); ?></th>
                             <td><code><?php echo !empty($runtime['selective_flush']) ? 'true' : 'false'; ?></code></td>
@@ -1540,10 +1542,25 @@ function ccm_tools_render_redis_page() {
                             'WP_REDIS_MAXTTL' => array('value' => $settings['max_ttl'], 'defined' => defined('WP_REDIS_MAXTTL')),
                             'WP_CACHE_KEY_SALT' => array('value' => $settings['key_salt'], 'defined' => defined('WP_CACHE_KEY_SALT')),
                             'WP_REDIS_SELECTIVE_FLUSH' => array('value' => $settings['selective_flush'] ? 'true' : 'false', 'defined' => defined('WP_REDIS_SELECTIVE_FLUSH')),
-                            'WP_REDIS_SERIALIZER' => array('value' => $settings['serializer'], 'defined' => defined('WP_REDIS_SERIALIZER')),
-                            'WP_REDIS_COMPRESSION' => array('value' => $settings['compression'], 'defined' => defined('WP_REDIS_COMPRESSION')),
-                            'WP_REDIS_ASYNC_FLUSH' => array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => defined('WP_REDIS_ASYNC_FLUSH')),
                         );
+
+                        // Premium-only settings: only show if defined in wp-config.php or premium is active
+                        if (ccm_tools_has_premium_feature('advanced_redis')) {
+                            $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => defined('WP_REDIS_SERIALIZER'));
+                            $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => defined('WP_REDIS_COMPRESSION'));
+                            $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => defined('WP_REDIS_ASYNC_FLUSH'));
+                        } else {
+                            // Still show if explicitly defined in wp-config.php
+                            if (defined('WP_REDIS_SERIALIZER')) {
+                                $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => true);
+                            }
+                            if (defined('WP_REDIS_COMPRESSION')) {
+                                $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => true);
+                            }
+                            if (defined('WP_REDIS_ASYNC_FLUSH')) {
+                                $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => true);
+                            }
+                        }
                         
                         foreach ($config_items as $constant => $item):
                             if (empty($item['value']) && !$item['defined']) continue;
