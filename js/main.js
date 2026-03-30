@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.39.2
+ * Version: 7.39.3
  */
 
 (function() {
@@ -3696,18 +3696,6 @@
                 }
             }
 
-            // --- Auto Minify (3 checkboxes: JS, CSS, HTML) ---
-            if (features.minify !== undefined) {
-                const m = features.minify || {};
-                html += '<tr><th>Auto Minify<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Minify JS, CSS, and HTML at Cloudflare\'s edge</span></th>';
-                html += '<td style="text-align: right;"><div class="ccm-cf-minify-toggles">';
-                for (const type of ['js', 'css', 'html']) {
-                    const chk = m[type] === 'on' ? ' checked' : '';
-                    html += '<label class="ccm-cf-minify-label"><input type="checkbox" data-cf-minify="' + type + '"' + chk + '> ' + type.toUpperCase() + '</label>';
-                }
-                html += '</div></td></tr>';
-            }
-
             // --- Mirage (Pro+ image lazy load) ---
             if (features.mirage !== undefined) {
                 if (isFreePlan) {
@@ -3780,13 +3768,6 @@
                 html += '<div class="ccm-notice" style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-warning-bg, #fff8e1); border-left: 3px solid var(--ccm-warning); border-radius: var(--ccm-radius);">';
                 html += '<span class="ccm-icon">⚠</span> ';
                 html += '<strong>Note:</strong> Cloudflare is handling image optimization (Polish/WebP). The CCM Tools WebP converter may not be needed for this site.';
-                html += '</div>';
-            }
-
-            if (features.minify && (features.minify.js === 'on' || features.minify.css === 'on' || features.minify.html === 'on')) {
-                html += '<div class="ccm-notice" style="margin-top: var(--ccm-space-sm); padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-warning-bg, #fff8e1); border-left: 3px solid var(--ccm-warning); border-radius: var(--ccm-radius);">';
-                html += '<span class="ccm-icon">⚠</span> ';
-                html += '<strong>Note:</strong> Cloudflare Auto Minify is enabled. This may conflict with CCM\'s HTML/CSS/JS minification in Performance settings.';
                 html += '</div>';
             }
 
@@ -3889,37 +3870,6 @@
             });
         });
 
-        // Minify checkboxes (send all 3 values together)
-        const minifyBoxes = container.querySelectorAll('[data-cf-minify]');
-        if (minifyBoxes.length) {
-            minifyBoxes.forEach(box => {
-                box.addEventListener('change', async function () {
-                    minifyBoxes.forEach(b => b.disabled = true);
-
-                    const params = {
-                        setting: 'minify',
-                        js: container.querySelector('[data-cf-minify="js"]').checked ? 'on' : 'off',
-                        css: container.querySelector('[data-cf-minify="css"]').checked ? 'on' : 'off',
-                        html: container.querySelector('[data-cf-minify="html"]').checked ? 'on' : 'off',
-                    };
-
-                    try {
-                        const res = await ajax('ccm_tools_cf_update_setting', params);
-                        if (res.success) {
-                            showNotification(res.data.message, 'success');
-                        } else {
-                            showNotification(res.data.message || 'Failed to update minify settings.', 'error');
-                            this.checked = !this.checked;
-                        }
-                    } catch (err) {
-                        showNotification('Failed: ' + err.message, 'error');
-                        this.checked = !this.checked;
-                    } finally {
-                        minifyBoxes.forEach(b => b.disabled = false);
-                    }
-                });
-            });
-        }
     }
 
     function cfStatusRow(label, value) {

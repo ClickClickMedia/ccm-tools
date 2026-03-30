@@ -274,7 +274,7 @@ function ccm_tools_cf_get_zone_status() {
 
     // Pick the settings we care about
     $feature_keys = array(
-        'polish', 'minify', 'rocket_loader', 'always_online',
+        'polish', 'rocket_loader', 'always_online',
         'browser_cache_ttl', 'development_mode', 'webp', 'mirage',
         'security_level', 'ssl', 'always_use_https', 'automatic_https_rewrites',
         'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
@@ -380,8 +380,8 @@ function ccm_tools_cf_toggle_dev_mode(bool $enable) {
 /**
  * Update a Cloudflare zone setting.
  *
- * @param string $setting Setting key (e.g. 'rocket_loader', 'always_online', 'minify').
- * @param mixed  $value   Setting value ('on'/'off', object for minify, integer for browser_cache_ttl).
+ * @param string $setting Setting key (e.g. 'rocket_loader', 'always_online').
+ * @param mixed  $value   Setting value ('on'/'off', integer for browser_cache_ttl).
  * @return true|WP_Error
  */
 function ccm_tools_cf_update_setting(string $setting, $value) {
@@ -392,7 +392,7 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
 
     // Whitelist of allowed settings
     $allowed = array(
-        'rocket_loader', 'always_online', 'minify', 'browser_cache_ttl', 'polish', 'webp', 'mirage',
+        'rocket_loader', 'always_online', 'browser_cache_ttl', 'polish', 'webp', 'mirage',
         'security_level', 'ssl', 'always_use_https', 'automatic_https_rewrites',
         'email_obfuscation', 'hotlink_protection', 'opportunistic_encryption',
         'early_hints', 'http2', 'http3', '0rtt', 'brotli',
