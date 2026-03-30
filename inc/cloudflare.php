@@ -443,6 +443,8 @@ function ccm_tools_cf_apply_recommended(): array {
         'rocket_loader'            => 'off',
         'email_obfuscation'        => 'on',
         'brotli'                   => 'on',
+        'http3'                    => 'on',
+        '0rtt'                     => 'on',
         'early_hints'              => 'on',
         'always_online'            => 'on',
         'hotlink_protection'       => 'off',
