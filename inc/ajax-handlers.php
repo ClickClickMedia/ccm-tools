@@ -3515,12 +3515,64 @@ function ccm_tools_ajax_redis_add_config(): void {
         $config['WP_REDIS_DISABLE_COMMENT'] = true;
     }
     
+    // Detect serializer/compression changes — must flush BEFORE writing wp-config.php
+    // because the current drop-in still uses the OLD serializer and can talk to Redis.
+    // After wp-config changes, the next PHP process would use the NEW serializer but
+    // find data encoded with the OLD one → deserialization failures → 500 errors.
+    $flush_reason = '';
+    $old_serializer  = defined('WP_REDIS_SERIALIZER')  ? strtolower(WP_REDIS_SERIALIZER)  : 'php';
+    $old_compression = defined('WP_REDIS_COMPRESSION') ? strtolower(WP_REDIS_COMPRESSION) : 'none';
+    $new_serializer  = isset($config['WP_REDIS_SERIALIZER'])  ? strtolower($config['WP_REDIS_SERIALIZER'])  : 'php';
+    $new_compression = isset($config['WP_REDIS_COMPRESSION']) ? strtolower($config['WP_REDIS_COMPRESSION']) : 'none';
+    
+    if ($new_serializer !== $old_serializer) {
+        $flush_reason = sprintf('serializer changed from %s to %s', $old_serializer, $new_serializer);
+    } elseif ($new_compression !== $old_compression) {
+        $flush_reason = sprintf('compression changed from %s to %s', $old_compression, $new_compression);
+    }
+    
+    $cache_flushed = false;
+    if ($flush_reason) {
+        // Flush with the CURRENT (old) serializer still active so Redis can process the command
+        try {
+            if (class_exists('Redis')) {
+                $redis = new Redis();
+                $redis_host = defined('WP_REDIS_HOST') ? WP_REDIS_HOST : '127.0.0.1';
+                $redis_port = defined('WP_REDIS_PORT') ? (int) WP_REDIS_PORT : 6379;
+                $redis_db   = defined('WP_REDIS_DATABASE') ? (int) WP_REDIS_DATABASE : 0;
+                $redis_timeout = defined('WP_REDIS_TIMEOUT') ? (float) WP_REDIS_TIMEOUT : 1;
+                
+                if (@$redis->connect($redis_host, $redis_port, $redis_timeout)) {
+                    if (defined('WP_REDIS_PASSWORD') && WP_REDIS_PASSWORD) {
+                        $auth = defined('WP_REDIS_USERNAME') && WP_REDIS_USERNAME
+                            ? [WP_REDIS_USERNAME, WP_REDIS_PASSWORD]
+                            : WP_REDIS_PASSWORD;
+                        @$redis->auth($auth);
+                    }
+                    if ($redis_db > 0) {
+                        $redis->select($redis_db);
+                    }
+                    $redis->flushDb();
+                    $cache_flushed = true;
+                }
+                $redis->close();
+            }
+        } catch (Exception $e) {
+            // Flush failed — proceed anyway, the drop-in has fallback handling
+        }
+    }
+    
     $result = ccm_tools_redis_add_config($config);
     
     if ($result['success']) {
+        $message = $result['message'];
+        if ($cache_flushed) {
+            $message .= ' ' . __('Redis cache was flushed automatically because ' . $flush_reason . '.', 'ccm-tools');
+        }
         wp_send_json_success(array(
-            'message' => $result['message'],
-            'backup_path' => isset($result['backup_path']) ? basename($result['backup_path']) : ''
+            'message' => $message,
+            'backup_path' => isset($result['backup_path']) ? basename($result['backup_path']) : '',
+            'cache_flushed' => $cache_flushed,
         ));
     } else {
         wp_send_json_error($result['message']);
