@@ -572,9 +572,10 @@ function ccm_tools_webp_process_output_buffer($html) {
     
     // Process background-image URLs if enabled
     if (!empty($settings['convert_bg_images']) && stripos($html, 'url(') !== false) {
-        // Pattern matches url() with the full URL structure, preserving original quote style
-        // Captures: 1=opening quote (if any), 2=URL, 3=closing quote (if any)
-        $pattern = '/url\s*\(\s*(["\']?)(https?:\/\/[^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
+        // Pattern matches url() containing image URLs — supports both absolute URLs
+        // (https://example.com/...) and relative paths (/wp-content/uploads/...).
+        // Captures: 1=opening quote (if any), 2=URL
+        $pattern = '/url\s*\(\s*(["\']?)([^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
         
         $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
             $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
@@ -1065,324 +1066,128 @@ function ccm_tools_webp_build_responsive_srcset($img_url, $webp = true) {
 /**
  * Convert img tags to picture tags with WebP sources
  * 
- * @param string $content The post content
+ * Uses display:contents on the <picture> wrapper so it's invisible to CSS layout.
+ * This means parent > img selectors still work and no formatting changes occur.
+ * The original <img> tag is kept completely unchanged as the fallback.
+ * 
+ * @param string $content The HTML content
  * @return string Modified content with picture tags
  */
 function ccm_tools_webp_convert_to_picture_tags($content) {
     $settings = ccm_tools_webp_get_settings();
     
-    // Check if feature is enabled
     if (empty($settings['enabled']) || empty($settings['use_picture_tags'])) {
         return $content;
     }
     
-    // Don't process if content is empty
     if (empty($content)) {
         return $content;
     }
     
-    // Get upload directory info
     $upload_dir = wp_upload_dir();
     
-    // APPROACH: Two-pass processing
-    // Pass 1: Process existing <picture> tags that don't have WebP sources - add WebP sources to them
-    // Pass 2: Convert standalone <img> tags to <picture> tags with WebP sources
-    
-    // Pass 1: Find picture tags and add WebP sources if missing
+    // Protect existing <picture> elements by replacing them with placeholders.
+    // This prevents double-wrapping and makes the function safely re-entrant
+    // (can be called from both the_content filter and output buffer).
+    $picture_placeholders = array();
     $content = preg_replace_callback(
-        '/<picture([^>]*)>(.*?)<\/picture>/is',
-        function($matches) use ($upload_dir) {
-            $picture_attrs = $matches[1];
-            $picture_content = $matches[2];
-            
-            // Check if this picture already has a WebP source
-            if (preg_match('/<source[^>]+type=["\']image\/webp["\'][^>]*>/i', $picture_content)) {
-                // Already has WebP source, skip
-                return $matches[0];
-            }
-            
-            // Find the img tag inside
-            if (!preg_match('/<img\s+([^>]*?)src=["\']([^"\']+)["\']([^>]*?)>/i', $picture_content, $img_match)) {
-                return $matches[0];
-            }
-            
-            $img_url = $img_match[2];
-            $img_basename = basename($img_url);
-            
-            // Check if this is a local upload
-            if (strpos($img_url, $upload_dir['baseurl']) === false && 
-                strpos($img_url, '/wp-content/uploads/') === false) {
-                return $matches[0];
-            }
-            
-            // Get WebP URL
-            $webp_url = ccm_tools_webp_get_or_create($img_url);
-            
-            if (!$webp_url || $webp_url === $img_url) {
-                return $matches[0];
-            }
-            
-            // Extract srcset from img tag if present
-            $srcset_webp = '';
-            $sizes_attr = '';
-            
-            if (preg_match('/srcset=["\']([^"\']+)["\']/', $picture_content, $srcset_match)) {
-                $original_srcset = $srcset_match[1];
-                // Convert srcset URLs to WebP
-                $srcset_webp = preg_replace('/\.(jpe?g|png|gif)(\s+\d+[wx])/i', '.webp$2', $original_srcset);
-                
-                // Extract sizes attribute if present
-                if (preg_match('/sizes=["\']([^"\']+)["\']/', $picture_content, $sizes_match)) {
-                    $sizes_attr = ' sizes="' . esc_attr($sizes_match[1]) . '"';
-                }
-            } else {
-                // No srcset present - try to build responsive srcset from WordPress metadata
-                // This is critical for PageSpeed optimization - serves appropriately sized images
-                $responsive = ccm_tools_webp_build_responsive_srcset($img_url, true);
-                
-                if (!empty($responsive['srcset'])) {
-                    $srcset_webp = $responsive['srcset'];
-                    $sizes_attr = ' sizes="' . esc_attr($responsive['sizes']) . '"';
-                }
-            }
-            
-            // Build the WebP source element
-            if (!empty($srcset_webp)) {
-                $webp_source = '<source type="image/webp" srcset="' . esc_attr($srcset_webp) . '"' . $sizes_attr . '>';
-            } else {
-                // Fallback to single image if no responsive srcset available
-                $webp_source = '<source type="image/webp" srcset="' . esc_attr($webp_url) . '">';
-            }
-            
-            // Also add responsive srcset to the original img tag for non-WebP fallback
-            $new_picture_content = $picture_content;
-            if (!empty($srcset_webp) && !preg_match('/srcset=["\']/', $picture_content)) {
-                // Build original format srcset
-                $responsive_original = ccm_tools_webp_build_responsive_srcset($img_url, false);
-                if (!empty($responsive_original['srcset'])) {
-                    // Add srcset and sizes to the img tag
-                    $new_picture_content = preg_replace(
-                        '/(<img\s+[^>]*?)(\s*\/?>)/i',
-                        '$1 srcset="' . esc_attr($responsive_original['srcset']) . '" sizes="' . esc_attr($responsive_original['sizes']) . '"$2',
-                        $picture_content
-                    );
-                }
-            }
-            
-            // Insert WebP source at the beginning of picture content
-            return '<picture' . $picture_attrs . '>' . $webp_source . $new_picture_content . '</picture>';
+        '/<picture\b[^>]*>.*?<\/picture>/is',
+        function($matches) use (&$picture_placeholders) {
+            $key = '<!--CCM_PICTURE_' . count($picture_placeholders) . '-->';
+            $picture_placeholders[$key] = $matches[0];
+            return $key;
         },
         $content
     );
     
-    // Pass 2: Mark remaining img tags inside picture elements (to skip in pass 3)
-    $content = preg_replace_callback(
-        '/<picture([^>]*)>(.*?)<\/picture>/is',
-        function($matches) {
-            $picture_attrs = $matches[1];
-            $picture_content = $matches[2];
-            // Add data-inside-picture to any img tags inside this picture element
-            $marked = preg_replace(
-                '/<img\s+/i',
-                '<img data-inside-picture="true" ',
-                $picture_content
-            );
-            return '<picture' . $picture_attrs . '>' . $marked . '</picture>';
-        },
-        $content
-    );
+    // Process standalone <img> tags that reference local uploads
+    $pattern = '/<img\s+[^>]*src=["\'][^"\']+\.(?:jpe?g|png|gif)["\'][^>]*\/?>/i';
     
-    // Pattern to match img tags - including WebP images (for fallback to original format)
-    $pattern = '/<img\s+([^>]*?)src=["\']([^"\']+\.(jpe?g|png|gif|webp))["\']([^>]*?)>/i';
-    
-    // Pass 3: Convert standalone img tags that are NOT inside picture elements
     $content = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-        $full_match = $matches[0];
-        $before_src = $matches[1];
-        $img_url = $matches[2];
-        $extension = strtolower($matches[3]);
-        $after_src = $matches[4];
+        $img_tag = $matches[0];
         
-        // Skip if already has data-no-picture marker (was already processed)
-        if (strpos($before_src, 'data-no-picture') !== false || strpos($after_src, 'data-no-picture') !== false) {
-            return $full_match;
+        // Extract src
+        if (!preg_match('/src=["\']([^"\']+)["\']/', $img_tag, $src_match)) {
+            return $img_tag;
         }
         
-        // Skip if marked as inside a picture element (from Pass 1)
-        if (strpos($before_src, 'data-inside-picture') !== false || strpos($after_src, 'data-inside-picture') !== false) {
-            return $full_match;
+        $original_src = $src_match[1];
+        
+        // Only process local uploads
+        if (strpos($original_src, $upload_dir['baseurl']) === false && 
+            strpos($original_src, '/wp-content/uploads/') === false) {
+            return $img_tag;
         }
         
-        // Check if this is a local upload - support both full URL and /wp-content/uploads/ path
-        if (strpos($img_url, $upload_dir['baseurl']) === false && 
-            strpos($img_url, '/wp-content/uploads/') === false) {
-            // External image, skip conversion
-            return $full_match;
+        // Get WebP URL — only if it already exists or can be created on-demand
+        $webp_url = ccm_tools_webp_get_or_create($original_src);
+        
+        if (!$webp_url || $webp_url === $original_src) {
+            return $img_tag;
         }
         
-        // Handle both scenarios: source is WebP or source is JPG/PNG/GIF
-        $is_source_webp = ($extension === 'webp');
-        $webp_url = '';
-        $original_url = '';
-        $original_extension = '';
-        
-        if ($is_source_webp) {
-            // Source is WebP - try to find original JPG/PNG fallback
-            $webp_url = $img_url;
-            
-            // Try to find the original file (check jpg, jpeg, png, gif)
-            $base_url = preg_replace('/\.webp$/i', '', $img_url);
-            
-            // Convert URL to path - handle both baseurl and /wp-content/uploads/ patterns
-            $base_path = '';
-            if (strpos($base_url, $upload_dir['baseurl']) !== false) {
-                $base_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $base_url);
-            } elseif (preg_match('#/wp-content/uploads/(.+)$#', $base_url, $path_match)) {
-                $base_path = $upload_dir['basedir'] . '/' . $path_match[1];
-            }
-            
-            if (empty($base_path)) {
-                return $full_match;
-            }
-            
-            foreach (array('jpg', 'jpeg', 'png', 'gif') as $try_ext) {
-                if (file_exists($base_path . '.' . $try_ext)) {
-                    $original_url = $base_url . '.' . $try_ext;
-                    $original_extension = $try_ext;
-                    break;
-                }
-            }
-            
-            // If no original found, can't create picture tag with fallback
-            if (empty($original_url)) {
-                return $full_match;
-            }
-        } else {
-            // Source is JPG/PNG/GIF - try to find or create WebP version
-            $original_url = $img_url;
-            $original_extension = $extension;
-            
-            // Use on-demand conversion if enabled
-            $webp_url = ccm_tools_webp_get_or_create($img_url);
-            
-            if (!$webp_url || $webp_url === $img_url) {
-                // No WebP version exists and couldn't create one, return original
-                return $full_match;
-            }
-        }
-        
-        // Extract srcset if present and convert URLs
-        $srcset_webp = '';
-        $srcset_original = '';
+        // Build verified WebP srcset — only include entries where the WebP file exists
+        $webp_srcset = '';
         $sizes_attr = '';
-        $img_attrs = $before_src . $after_src;
         
-        // Extract sizes attribute (needed for responsive source elements)
-        if (preg_match('/sizes=["\']([^"\']+)["\']/', $img_attrs, $sizes_match)) {
-            $sizes_attr = $sizes_match[1];
-        }
-        
-        // Check if image has full-width CSS classes but a restrictive sizes attribute
-        // This fixes blurry images where WordPress generates sizes based on width attribute
-        // but CSS makes the image display larger (e.g., w-100, object-fit-cover)
-        $has_fullwidth_class = preg_match('/class=["\'][^"\']*\b(w-100|w-full|object-fit-cover|object-cover|img-fluid)\b[^"\']*["\']/', $img_attrs);
-        
-        if ($has_fullwidth_class && !empty($sizes_attr)) {
-            // Check if sizes ends with a small fixed pixel value (e.g., "300px", "400px")
-            // These are often wrong for full-width images
-            if (preg_match('/\b(\d+)px\s*$/', $sizes_attr, $px_match)) {
-                $declared_size = intval($px_match[1]);
+        if (preg_match('/srcset=["\']([^"\']+)["\']/', $img_tag, $srcset_match)) {
+            $srcset_entries = preg_split('/,\s*/', $srcset_match[1]);
+            $webp_srcset_parts = array();
+            
+            foreach ($srcset_entries as $entry) {
+                $entry = trim($entry);
+                if (empty($entry)) continue;
                 
-                // Find the largest image in srcset to determine actual max size
-                $max_srcset_width = 0;
-                if (preg_match('/srcset=["\']([^"\']+)["\']/', $img_attrs, $srcset_check)) {
-                    if (preg_match_all('/(\d+)w/', $srcset_check[1], $width_matches)) {
-                        $max_srcset_width = max(array_map('intval', $width_matches[1]));
+                // Split into URL and descriptor (e.g., "300w" or "2x")
+                if (preg_match('/^(\S+)(\s+.+)$/', $entry, $entry_parts)) {
+                    $entry_url = $entry_parts[1];
+                    $descriptor = $entry_parts[2];
+                    
+                    // Verify WebP exists for this URL (don't trigger on-demand conversion)
+                    $webp_entry = ccm_tools_webp_get_or_create($entry_url, false);
+                    if ($webp_entry && $webp_entry !== $entry_url) {
+                        $webp_srcset_parts[] = $webp_entry . $descriptor;
                     }
                 }
-                
-                // If declared size is much smaller than max srcset width, use a responsive default
-                if ($max_srcset_width > 0 && $declared_size < ($max_srcset_width * 0.8)) {
-                    // Use 100vw up to the max srcset width
-                    $sizes_attr = '(max-width: ' . $max_srcset_width . 'px) 100vw, ' . $max_srcset_width . 'px';
-                }
             }
-        }
-        
-        // Extract srcset attribute
-        if (preg_match('/srcset=["\']([^"\']+)["\']/', $img_attrs, $srcset_match)) {
-            $srcset_value = $srcset_match[1];
             
-            if ($is_source_webp) {
-                // srcset is WebP, convert to original format
-                $srcset_webp = $srcset_value;
-                $srcset_original = preg_replace('/\.webp(\s)/i', '.' . $original_extension . '$1', $srcset_value);
-                $srcset_original = preg_replace('/\.webp(,)/i', '.' . $original_extension . '$1', $srcset_original);
-                $srcset_original = preg_replace('/\.webp$/i', '.' . $original_extension, $srcset_original);
-            } else {
-                // srcset is original format, convert to WebP
-                $srcset_original = $srcset_value;
-                $srcset_webp = preg_replace('/\.(jpe?g|png|gif)(\s)/i', '.webp$2', $srcset_value);
-                $srcset_webp = preg_replace('/\.(jpe?g|png|gif)(,)/i', '.webp$2', $srcset_webp);
-                $srcset_webp = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $srcset_webp);
+            if (!empty($webp_srcset_parts)) {
+                $webp_srcset = implode(', ', $webp_srcset_parts);
             }
         }
         
-        // Build sizes attribute string if present
-        $sizes_html = !empty($sizes_attr) ? ' sizes="' . esc_attr($sizes_attr) . '"' : '';
+        // Extract sizes attribute (mirrors whatever the original img has)
+        if (preg_match('/sizes=["\']([^"\']+)["\']/', $img_tag, $sizes_match)) {
+            $sizes_attr = ' sizes="' . esc_attr($sizes_match[1]) . '"';
+        }
         
-        // Build the picture element
-        // Apply styles to make picture element behave like the img it wraps:
-        // - display:block prevents inline spacing issues
-        // - width/height:100% ensures it fills containers like .ratio that use absolute positioning
-        // - The img inside will inherit object-fit from its own classes
-        $picture = '<picture style="display:block;width:100%;height:100%;">';
+        // Build picture element.
+        // display:contents makes the <picture> wrapper invisible to CSS layout —
+        // the browser still uses it for source selection, but CSS treats the <img>
+        // as if <picture> wasn't there. This preserves all parent > img selectors,
+        // flexbox/grid item behavior, and existing styling.
+        $picture = '<picture style="display:contents">';
         
-        // WebP source (first for browsers that support it)
-        if (!empty($srcset_webp)) {
-            $picture .= '<source type="image/webp" srcset="' . esc_attr($srcset_webp) . '"' . $sizes_html . '>';
+        // WebP source (browsers pick this if they support WebP)
+        if (!empty($webp_srcset)) {
+            $picture .= '<source type="image/webp" srcset="' . esc_attr($webp_srcset) . '"' . $sizes_attr . '>';
         } else {
             $picture .= '<source type="image/webp" srcset="' . esc_url($webp_url) . '">';
         }
         
-        // Original format source (fallback for browsers that don't support WebP)
-        $mime_type = 'image/' . ($original_extension === 'jpg' ? 'jpeg' : strtolower($original_extension));
-        if (!empty($srcset_original)) {
-            $picture .= '<source type="' . esc_attr($mime_type) . '" srcset="' . esc_attr($srcset_original) . '"' . $sizes_html . '>';
-        } else {
-            $picture .= '<source type="' . esc_attr($mime_type) . '" srcset="' . esc_url($original_url) . '">';
-        }
-        
-        // Use original format img tag as fallback (most compatible)
-        // Strip srcset and sizes from img tag since picture/source handles responsive behavior
-        $clean_before = preg_replace('/\s*srcset=["\'][^"\']*["\']/i', '', $before_src);
-        $clean_after = preg_replace('/\s*srcset=["\'][^"\']*["\']/i', '', $after_src);
-        $clean_before = preg_replace('/\s*sizes=["\'][^"\']*["\']/i', '', $clean_before);
-        $clean_after = preg_replace('/\s*sizes=["\'][^"\']*["\']/i', '', $clean_after);
-        
-        // Add inline styles to img to ensure it fills the picture container
-        // This is needed because CSS selectors like .ratio > * no longer target the img
-        // when it's wrapped in <picture>
-        $img_style = 'width:100%;height:100%;';
-        
-        // Check if img already has a style attribute and merge
-        if (preg_match('/style=["\']([^"\']*)["\']/', $clean_before . $clean_after, $style_match)) {
-            $existing_style = rtrim($style_match[1], ';');
-            $img_style = $existing_style . ';' . $img_style;
-            $clean_before = preg_replace('/\s*style=["\'][^"\']*["\']/i', '', $clean_before);
-            $clean_after = preg_replace('/\s*style=["\'][^"\']*["\']/i', '', $clean_after);
-        }
-        
-        $fallback_img = '<img style="' . esc_attr($img_style) . '" ' . $clean_before . 'src="' . esc_url($original_url) . '"' . $clean_after . ' data-no-picture="true">';
-        
-        $picture .= $fallback_img;
+        // Original <img> tag completely unchanged as fallback.
+        // We intentionally do NOT modify the img's src, srcset, sizes, style, or any
+        // other attributes. This ensures zero layout impact and full compatibility.
+        $picture .= $img_tag;
         $picture .= '</picture>';
         
         return $picture;
     }, $content);
     
-    // Pass 3: Remove the temporary data-inside-picture markers
-    $content = str_replace(' data-inside-picture="true"', '', $content);
+    // Restore protected picture elements
+    foreach ($picture_placeholders as $key => $original) {
+        $content = str_replace($key, $original, $content);
+    }
     
     return $content;
 }
@@ -1581,15 +1386,25 @@ function ccm_tools_webp_init() {
     if (!empty($settings['serve_webp']) || !empty($settings['use_picture_tags']) || !empty($settings['convert_bg_images'])) {
         add_action('template_redirect', 'ccm_tools_webp_start_output_buffer', 1);
         add_action('shutdown', 'ccm_tools_webp_end_output_buffer', 0);
+        
+        // Add Vary: Accept header so CDNs/proxies cache WebP and non-WebP versions separately
+        add_action('template_redirect', function() {
+            if (!is_admin()) {
+                header('Vary: Accept', false);
+            }
+        });
     }
     
-    // Hook into content for picture tag conversion
+    // Hook into content for picture tag conversion.
+    // The output buffer also calls convert_to_picture_tags on the full HTML, but these
+    // content filters catch AJAX-loaded content (e.g., WooCommerce) that bypasses OB.
+    // The function is safe to call twice — it protects existing <picture> elements.
     if (!empty($settings['use_picture_tags'])) {
         add_filter('the_content', 'ccm_tools_webp_filter_content', 999);
         add_filter('widget_text', 'ccm_tools_webp_filter_widget', 999);
         add_filter('widget_block_content', 'ccm_tools_webp_filter_widget', 999);
         
-        // WooCommerce specific hooks for product images
+        // WooCommerce specific hooks for product images (AJAX-loaded, bypass output buffer)
         add_filter('woocommerce_product_get_image', 'ccm_tools_webp_filter_wc_product_image', 999, 2);
         add_filter('woocommerce_single_product_image_thumbnail_html', 'ccm_tools_webp_filter_wc_single_product_image', 999, 2);
         
