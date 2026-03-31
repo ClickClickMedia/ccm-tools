@@ -305,10 +305,19 @@ function ccm_tools_redis_save_settings($settings) {
         $sanitized['selective_flush'] = (bool) $settings['selective_flush'];
     }
     if (isset($settings['compression'])) {
-        $sanitized['compression'] = in_array($settings['compression'], array('none', 'lzf', 'zstd', 'lz4')) ? $settings['compression'] : 'none';
+        $comp = $settings['compression'];
+        // Validate the compression algorithm is actually available in phpredis
+        if ($comp === 'lzf' && !defined('Redis::COMPRESSION_LZF')) { $comp = 'none'; }
+        if ($comp === 'lz4' && !defined('Redis::COMPRESSION_LZ4')) { $comp = 'none'; }
+        if ($comp === 'zstd' && !defined('Redis::COMPRESSION_ZSTD')) { $comp = 'none'; }
+        $sanitized['compression'] = in_array($comp, array('none', 'lzf', 'zstd', 'lz4')) ? $comp : 'none';
     }
     if (isset($settings['serializer'])) {
-        $sanitized['serializer'] = in_array($settings['serializer'], array('php', 'igbinary', 'msgpack')) ? $settings['serializer'] : 'php';
+        $ser = $settings['serializer'];
+        // Validate the serializer extension is actually installed
+        if ($ser === 'igbinary' && !extension_loaded('igbinary')) { $ser = 'php'; }
+        if ($ser === 'msgpack' && !extension_loaded('msgpack')) { $ser = 'php'; }
+        $sanitized['serializer'] = in_array($ser, array('php', 'igbinary', 'msgpack')) ? $ser : 'php';
     }
     if (isset($settings['async_flush'])) {
         $sanitized['async_flush'] = (bool) $settings['async_flush'];

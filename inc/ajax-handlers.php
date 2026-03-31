@@ -3304,17 +3304,32 @@ function ccm_tools_ajax_redis_save_settings(): void {
         $settings['username'] = sanitize_text_field($_POST['username']);
     }
     
-    // Serializer
+    // Serializer — validate the extension is actually available on the server
     if (isset($_POST['serializer'])) {
         $ser = sanitize_text_field($_POST['serializer']);
+        if ($ser === 'igbinary' && !extension_loaded('igbinary')) {
+            $ser = 'php'; // igbinary extension not installed
+        }
+        if ($ser === 'msgpack' && !extension_loaded('msgpack')) {
+            $ser = 'php'; // msgpack extension not installed
+        }
         if (in_array($ser, array('php', 'igbinary', 'msgpack'), true)) {
             $settings['serializer'] = $ser;
         }
     }
     
-    // Compression
+    // Compression — validate phpredis was compiled with the requested algorithm
     if (isset($_POST['compression'])) {
         $comp = sanitize_text_field($_POST['compression']);
+        if ($comp === 'lzf' && !defined('Redis::COMPRESSION_LZF')) {
+            $comp = 'none';
+        }
+        if ($comp === 'lz4' && !defined('Redis::COMPRESSION_LZ4')) {
+            $comp = 'none';
+        }
+        if ($comp === 'zstd' && !defined('Redis::COMPRESSION_ZSTD')) {
+            $comp = 'none';
+        }
         if (in_array($comp, array('none', 'lzf', 'lz4', 'zstd'), true)) {
             $settings['compression'] = $comp;
         }
@@ -3463,14 +3478,25 @@ function ccm_tools_ajax_redis_add_config(): void {
         $config['WP_REDIS_SELECTIVE_FLUSH'] = true;
     }
     
-    // Serializer (only write if non-default)
+    // Serializer (only write if non-default AND extension is available)
     if (!empty($settings['serializer']) && $settings['serializer'] !== 'php') {
-        $config['WP_REDIS_SERIALIZER'] = sanitize_text_field($settings['serializer']);
+        $ser = sanitize_text_field($settings['serializer']);
+        $ser_available = ($ser === 'igbinary' && extension_loaded('igbinary'))
+                      || ($ser === 'msgpack' && extension_loaded('msgpack'));
+        if ($ser_available) {
+            $config['WP_REDIS_SERIALIZER'] = $ser;
+        }
     }
     
-    // Compression (only write if non-default)
+    // Compression (only write if non-default AND phpredis supports it)
     if (!empty($settings['compression']) && $settings['compression'] !== 'none') {
-        $config['WP_REDIS_COMPRESSION'] = sanitize_text_field($settings['compression']);
+        $comp = sanitize_text_field($settings['compression']);
+        $comp_available = ($comp === 'lzf' && defined('Redis::COMPRESSION_LZF'))
+                       || ($comp === 'lz4' && defined('Redis::COMPRESSION_LZ4'))
+                       || ($comp === 'zstd' && defined('Redis::COMPRESSION_ZSTD'));
+        if ($comp_available) {
+            $config['WP_REDIS_COMPRESSION'] = $comp;
+        }
     }
     
     // Async flush
