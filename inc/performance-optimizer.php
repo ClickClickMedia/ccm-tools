@@ -1320,9 +1320,8 @@ function ccm_tools_perf_font_display_process_buffer($html) {
             $rule = $matches[0];
             $content = $matches[1];
             
-            // Check if font-display is already set (not commented out)
-            // Look for font-display that's not in a comment
-            if (preg_match('/(?<!\/\*\s*)font-display\s*:/i', $content)) {
+            // Check if font-display is already set
+            if (preg_match('/font-display\s*:/i', $content)) {
                 return $rule; // Already has font-display, don't modify
             }
             
