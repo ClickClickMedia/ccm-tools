@@ -379,7 +379,7 @@ function ccm_tools_parse_htaccess_options(): array {
         // Moderate options
         'x_frame_options', 'x_xss_protection', 'hsts_subdomains', 'coop', 'corp', 'block_author_scan',
         // High risk options
-        'block_xmlrpc', 'block_rest_api'
+        'block_xmlrpc', 'block_rest_api', 'block_rss_feeds'
     );
     
     // Parse options from POST - handle both array format and individual params

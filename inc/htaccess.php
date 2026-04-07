@@ -104,6 +104,11 @@ function ccm_tools_get_htaccess_options(): array {
                     'description' => 'Restricts REST API access. Will break: some Gutenberg features, headless WP, certain plugins.',
                     'default' => false,
                 ),
+                'block_rss_feeds' => array(
+                    'label' => 'Block RSS Feeds',
+                    'description' => 'Returns 410 Gone for all /feed/ URLs. Do NOT enable on blogs or sites using RSS subscribers/syndication.',
+                    'default' => false,
+                ),
             ),
         ),
     );
@@ -144,6 +149,7 @@ function ccm_tools_htaccess_content($options = array()): string {
             // High risk options
             'block_xmlrpc' => false,
             'block_rest_api' => false,
+            'block_rss_feeds' => false,
         );
     }
     
@@ -301,7 +307,7 @@ function ccm_tools_htaccess_content($options = array()): string {
     }
     
     // ===== HTTPS REDIRECT =====
-    if (!empty($options['https_redirect']) || !empty($options['block_author_scan'])) {
+    if (!empty($options['https_redirect']) || !empty($options['block_author_scan']) || !empty($options['block_rss_feeds'])) {
         $base .= "# Rewrite Rules\n";
         $base .= "<IfModule mod_rewrite.c>\n";
         $base .= "RewriteEngine On\n";
@@ -317,6 +323,11 @@ function ccm_tools_htaccess_content($options = array()): string {
             $base .= "# Block username enumeration\n";
             $base .= "RewriteCond %{QUERY_STRING} author=\\d\n";
             $base .= "RewriteRule ^(.*)$ /? [R=301,L]\n";
+        }
+        
+        if (!empty($options['block_rss_feeds'])) {
+            $base .= "# Block RSS feeds (410 Gone)\n";
+            $base .= "RewriteRule ^(.*/)?feed/?$ - [G,L]\n";
         }
         
         $base .= "</IfModule>\n\n";
@@ -404,6 +415,7 @@ function ccm_tools_detect_htaccess_options(string $content): array {
         // High risk options
         'block_xmlrpc' => strpos($content, '<Files xmlrpc.php>') !== false,
         'block_rest_api' => strpos($content, 'wp-json') !== false && strpos($content, 'wordpress_logged_in') !== false,
+        'block_rss_feeds' => strpos($content, 'feed/?$ - [G,L]') !== false,
     );
     return $options;
 }
