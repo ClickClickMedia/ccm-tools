@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.39.10
+ * Version: 7.40.2
  */
 
 (function() {
@@ -4991,6 +4991,199 @@
     ]);
 
     /**
+     * Map PageSpeed opportunity IDs to specific CCM Tools settings that address them.
+     * Used to build structured recommendations for the AI — turns "guessing" into
+     * a precise "this PSI issue → enable this setting" instruction.
+     */
+    const PSI_OPPORTUNITY_TO_CCM_SETTINGS = {
+        'render-blocking-resources': {
+            settings: ['defer_js', 'preload_css', 'critical_css'],
+            description: 'Defer JS, async-load CSS, inline critical CSS',
+        },
+        'unused-css-rules': {
+            settings: ['preload_css', 'critical_css', 'disable_block_css', 'disable_gutenberg_frontend'],
+            description: 'Async CSS + critical CSS, remove unused block/Gutenberg CSS',
+        },
+        'unused-javascript': {
+            settings: ['defer_js', 'delay_js', 'disable_emoji', 'disable_wp_embed', 'disable_jquery_migrate'],
+            description: 'Defer/delay JS, disable unused WP scripts',
+        },
+        'uses-responsive-images': {
+            settings: ['inject_srcset', 'inject_image_dimensions'],
+            description: 'Auto-inject srcset/sizes and dimensions',
+        },
+        'offscreen-images': {
+            settings: ['lazy_load_images', 'lazy_load_iframes'],
+            description: 'Enable lazy loading for images and iframes',
+        },
+        'uses-text-compression': {
+            settings: [],
+            htaccess: true,
+            description: 'Enable Gzip/Brotli via .htaccess (or Cloudflare Brotli)',
+            cf_settings: ['brotli'],
+        },
+        'uses-long-cache-ttl': {
+            settings: ['cache_control_meta', 'stale_while_revalidate', 'remove_query_strings'],
+            htaccess: true,
+            description: 'Browser caching via .htaccess, cache-control headers, remove query strings',
+            cf_settings: ['browser_cache_ttl'],
+        },
+        'server-response-time': {
+            settings: [],
+            redis: true,
+            description: 'Redis object cache for faster TTFB',
+            cf_settings: ['early_hints'],
+        },
+        'total-byte-weight': {
+            settings: ['minify_html', 'inline_small_scripts', 'inline_small_styles'],
+            webp: true,
+            description: 'Minify HTML, inline small assets, WebP images',
+        },
+        'dom-size': {
+            settings: ['warn_dom_size', 'disable_gutenberg_frontend'],
+            description: 'Monitor DOM size, remove Gutenberg bloat',
+        },
+        'uses-optimized-images': {
+            settings: [],
+            webp: true,
+            description: 'Convert to WebP via CCM WebP Converter',
+        },
+        'modern-image-formats': {
+            settings: [],
+            webp: true,
+            description: 'Convert to WebP via CCM WebP Converter',
+        },
+        'third-party-summary': {
+            settings: ['delay_third_party', 'delay_js'],
+            description: 'Delay third-party scripts until interaction',
+        },
+        'largest-contentful-paint-element': {
+            settings: ['lcp_fetchpriority', 'lcp_preload', 'preload_css_bg_image', 'priority_hints_above_fold'],
+            description: 'Preload LCP image, fetchpriority=high, preload CSS background',
+        },
+        'layout-shift-elements': {
+            settings: ['inject_image_dimensions', 'inject_srcset', 'font_display_swap'],
+            description: 'Inject image dimensions, font-display:swap for CLS',
+        },
+        'font-display': {
+            settings: ['font_display_swap', 'self_host_google_fonts'],
+            description: 'font-display:swap, self-host Google Fonts',
+        },
+        'efficient-animated-content': {
+            settings: ['video_lazy_load', 'video_preload_none'],
+            description: 'Lazy-load video, set preload=none',
+        },
+        'duplicated-javascript': {
+            settings: ['disable_jquery_migrate', 'disable_wp_embed'],
+            description: 'Remove duplicate jQuery/embed scripts',
+        },
+        'legacy-javascript': {
+            settings: ['disable_jquery_migrate', 'defer_js'],
+            description: 'Remove jQuery Migrate, defer legacy scripts',
+        },
+        'mainthread-work-breakdown': {
+            settings: ['delay_js', 'defer_js', 'passive_event_listeners'],
+            description: 'Delay/defer JS, passive listeners for reduced main thread work',
+        },
+        'bootup-time': {
+            settings: ['delay_js', 'defer_js', 'delay_third_party'],
+            description: 'Delay/defer JS to reduce boot time',
+        },
+        'uses-rel-preconnect': {
+            settings: ['preconnect', 'dns_prefetch'],
+            description: 'Enable preconnect and DNS prefetch',
+        },
+        'redirects': {
+            settings: [],
+            htaccess: true,
+            description: 'Optimize redirect chains via .htaccess',
+        },
+        'critical-request-chains': {
+            settings: ['preload_key_requests', 'critical_css', 'preload_css', 'lcp_preload'],
+            description: 'Preload key requests, inline critical CSS, preload LCP',
+        },
+        'unminified-css': {
+            settings: ['minify_html', 'inline_small_styles'],
+            description: 'Minify HTML (includes inline CSS), inline small stylesheets',
+        },
+        'unminified-javascript': {
+            settings: ['minify_html', 'inline_small_scripts'],
+            description: 'Minify HTML, inline small scripts',
+        },
+    };
+
+    /**
+     * Build structured PSI opportunity context for AI analysis.
+     * Maps each PSI opportunity to CCM settings that can fix it.
+     * Returns a formatted string the AI can use as precise instructions.
+     */
+    function buildPsiOpportunityContext(mobileOpps, desktopOpps) {
+        const allOpps = new Map();
+
+        const mergeOpps = (opps, strategy) => {
+            (opps || []).forEach(opp => {
+                const id = opp.id || (opp.title || '').toLowerCase().replace(/\s+/g, '-');
+                if (!id) return;
+                if (allOpps.has(id)) {
+                    const existing = allOpps.get(id);
+                    existing.strategies.push(strategy);
+                    if (opp.savings_ms) existing.savings_ms = Math.max(existing.savings_ms || 0, opp.savings_ms);
+                    if (opp.savings_bytes) existing.savings_bytes = Math.max(existing.savings_bytes || 0, opp.savings_bytes);
+                } else {
+                    allOpps.set(id, { ...opp, id, strategies: [strategy] });
+                }
+            });
+        };
+        mergeOpps(mobileOpps, 'mobile');
+        mergeOpps(desktopOpps, 'desktop');
+
+        if (!allOpps.size) return '';
+
+        let ctx = '\n## PAGESPEED OPPORTUNITIES → CCM TOOLS SETTINGS MAP\n';
+        ctx += 'The following PageSpeed issues were detected. For each, the SPECIFIC CCM Tools settings that address it are listed.\n';
+        ctx += 'PRIORITIZE settings that address the highest-savings opportunities first.\n\n';
+
+        // Sort by savings (ms first, then bytes)
+        const sorted = [...allOpps.values()].sort((a, b) => {
+            const aMs = a.savings_ms || 0;
+            const bMs = b.savings_ms || 0;
+            if (aMs !== bMs) return bMs - aMs;
+            return (b.savings_bytes || 0) - (a.savings_bytes || 0);
+        });
+
+        sorted.forEach(opp => {
+            const savings = opp.savings_ms ? `${opp.savings_ms}ms`
+                          : opp.savings_bytes ? `${Math.round(opp.savings_bytes / 1024)}KB` : '';
+            const strats = opp.strategies.join('+');
+            ctx += `### ${opp.title || opp.id} [${strats}]${savings ? ' — potential savings: ' + savings : ''}\n`;
+
+            // Find matching CCM settings
+            const oppId = opp.id || '';
+            let matched = false;
+            for (const [psiId, mapping] of Object.entries(PSI_OPPORTUNITY_TO_CCM_SETTINGS)) {
+                if (oppId.includes(psiId) || psiId.includes(oppId)) {
+                    matched = true;
+                    if (mapping.settings.length) {
+                        ctx += `  CCM Settings: ${mapping.settings.map(s => '`' + s + '`').join(', ')}\n`;
+                    }
+                    if (mapping.htaccess) ctx += '  Server: .htaccess optimizations (compression, caching)\n';
+                    if (mapping.webp) ctx += '  Images: WebP Converter\n';
+                    if (mapping.redis) ctx += '  Cache: Redis Object Cache\n';
+                    if (mapping.cf_settings) ctx += `  Cloudflare: ${mapping.cf_settings.join(', ')}\n`;
+                    ctx += `  Action: ${mapping.description}\n`;
+                    break;
+                }
+            }
+            if (!matched) {
+                ctx += '  No direct CCM setting — may require theme/plugin changes\n';
+            }
+            ctx += '\n';
+        });
+
+        return ctx;
+    }
+
+    /**
      * Initialize AI Hub event handlers
      */
     function initAiHubHandlers() {
@@ -5833,9 +6026,10 @@
                 '<p class="ccm-screenshot-hint">Click any image to open side-by-side lightbox comparison.</p>');
         }
 
-        // Scroll screenshots into view so the user sees the After column update
-        if (container) {
+        // Scroll screenshots into view only on first after-screenshot (not every iteration)
+        if (container && !container.dataset.afterScrolled) {
             container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            container.dataset.afterScrolled = '1';
         }
     }
 
@@ -6124,6 +6318,24 @@
                     aiLog(`Database: ${tools.database.tables_needing_optimization} table(s) need optimization (InnoDB/utf8mb4) — consider running Database tools.`, 'warn');
                 }
 
+                // Cloudflare optimization
+                if (tools.cloudflare?.connected && !tools.cloudflare?.optimized) {
+                    aiLog('Cloudflare connected but not fully optimized — applying recommended settings (Brotli, Early Hints, HTTP/3…)', 'warn');
+                    try {
+                        const cfRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'cloudflare' }, { timeout: 30000 });
+                        if (cfRes.data?.success) {
+                            aiLog(`Cloudflare: ${cfRes.data.message}`, 'success');
+                            toolsEnabled++;
+                        } else {
+                            aiLog(`Cloudflare: ${cfRes.data?.message || 'Failed'}`, 'warn');
+                        }
+                    } catch (e) { aiLog(`Cloudflare optimization failed: ${e.message}`, 'warn'); }
+                } else if (tools.cloudflare?.connected && tools.cloudflare?.optimized) {
+                    aiLog('Cloudflare performance settings optimized ✓', 'info');
+                } else if (tools.cloudflare?.available && !tools.cloudflare?.connected) {
+                    aiLog('Cloudflare available but not connected — connect via Cloudflare tab for edge caching + Brotli + Early Hints', 'info');
+                }
+
                 const msg = toolsEnabled > 0
                     ? `Enabled ${toolsEnabled} tool(s) for better baseline`
                     : 'All tools OK';
@@ -6150,12 +6362,15 @@
             aiUpdateStep('screenshots', 'active', 'Capturing…');
             aiLog('Capturing baseline screenshots + console check in background…', 'info');
 
-            // Screenshot promise (runs in background)
+            // Screenshot promise (runs in background) with resolved flag
+            let screenshotResolved = false;
             const screenshotPromise = (async () => {
                 try {
                     const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url, phase: 'before' }, { timeout: 300000 });
+                    screenshotResolved = true;
                     return ssRes.data || null;
                 } catch (e) {
+                    screenshotResolved = true;
                     aiLog(`Baseline screenshot capture failed: ${e.message} — continuing without visual comparison`, 'warn');
                     return null;
                 }
@@ -6191,9 +6406,8 @@
             // (show them ASAP for user feedback — don't wait for Desktop test)
             let baselineScreenshots = null;
             let screenshotRunId = '';
-            const screenshotReady = await Promise.race([screenshotPromise, new Promise(r => setTimeout(() => r('pending'), 0))]);
-            if (screenshotReady && screenshotReady !== 'pending') {
-                baselineScreenshots = screenshotReady;
+            if (screenshotResolved) {
+                baselineScreenshots = await screenshotPromise;
                 screenshotRunId = baselineScreenshots?.run_id || '';
                 const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
                 const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
@@ -6284,15 +6498,22 @@
                 const analysisLoading = $('#ai-analysis-loading');
                 if (analysisLoading) analysisLoading.style.display = 'block';
 
-                // Build comprehensive AI context: console errors + visual issues + failed settings
+                // Build comprehensive AI context: console errors + visual issues + failed settings + PSI opportunities
                 let aiSessionContext = consoleErrorContext || '';
                 const failedCtx = buildSessionFailedContext(sessionFailedBatches);
                 if (failedCtx) aiSessionContext += failedCtx;
 
+                // Build PSI opportunity → CCM settings map for AI
+                const psiCtx = buildPsiOpportunityContext(lastMobileOpportunities, lastDesktopOpportunities);
+                if (psiCtx) aiSessionContext += psiCtx;
+
                 const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
-                    result_id: aiHubState.lastResultId,
+                    result_id: aiHubState.resultIds.mobile || aiHubState.lastResultId,
+                    desktop_result_id: aiHubState.resultIds.desktop || 0,
                     url: url,
                     console_errors: aiSessionContext,
+                    mobile_opportunities: JSON.stringify((lastMobileOpportunities || []).slice(0, 20)),
+                    desktop_opportunities: JSON.stringify((lastDesktopOpportunities || []).slice(0, 20)),
                 }, { timeout: 120000 });
 
                 if (analysisLoading) analysisLoading.style.display = 'none';
@@ -6392,10 +6613,10 @@
                     // Update on-page toggles immediately
                     if (groupApplyData.settings) aiUpdatePageToggles(groupApplyData.settings);
 
-                    // Wait for caches / server-side hooks to take effect
-                    await aiSleep(3000);
+                    // Wait for server-side hooks + CDN cache to see the new page
+                    await aiSleep(5000);
 
-                    // Flush all caches so the retest hits live PHP output
+                    // Flush all caches so the retest hits the live PHP output
                     aiUpdateStep('flush-cache', 'active', `Flushing after ${groupLabel}…`);
                     try {
                         await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
@@ -6404,6 +6625,9 @@
                         aiLog(`  Cache flush failed: ${flushErr.message} — continuing`, 'warn');
                     }
                     aiUpdateStep('flush-cache', 'done', 'Flushed');
+
+                    // Extra wait after flush so CDN/edge caches serve the new version
+                    await aiSleep(3000);
 
                     // HTTP smoke test — verify site is still responding before triggering PageSpeed
                     aiLog(`  Smoke-testing ${url} after ${groupLabel}…`, 'info');
@@ -6511,17 +6735,27 @@
                 aiUpdateStep('apply', 'done', `${keptCount} kept, ${revertedCount} reverted${iterLabel}`);
                 showNotification(`${keptCount} of ${selectedFixes.length} settings kept after individual testing.`, 'success');
 
-                // Wait for final cache propagation before full validation
-                aiLog('Waiting 3s before final validation…', 'info');
-                await aiSleep(3000);
+                // Wait for caches to fully propagate — critical for accuracy
+                // Google PSI may cache the test URL for ~30s; Cloudflare edge cache needs time to purge
+                aiLog('Waiting 5s for all caches to propagate before final validation…', 'info');
+                await aiSleep(5000);
 
-                // Flush all caches before final PageSpeed tests
+                // Double-flush: first flush may not clear edge caches fully
                 aiUpdateStep('flush-cache', 'active', 'Flushing before final retest…');
                 try {
                     await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
-                    aiLog('Caches flushed before final validation', 'info');
+                    aiLog('First cache flush complete', 'info');
                 } catch (flushErr) {
-                    aiLog(`Cache flush failed: ${flushErr.message} — continuing`, 'warn');
+                    aiLog(`First cache flush failed: ${flushErr.message} — continuing`, 'warn');
+                }
+
+                // Brief wait then flush again for stubborn edge caches
+                await aiSleep(2000);
+                try {
+                    await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
+                    aiLog('Second cache flush complete — all layers cleared', 'info');
+                } catch (flushErr) {
+                    aiLog(`Second cache flush failed: ${flushErr.message} — continuing`, 'warn');
                 }
                 aiUpdateStep('flush-cache', 'done', 'Flushed ✓');
 
@@ -6665,6 +6899,12 @@
                             const visualParams = {
                                 before_desktop_url: beforeDesktopSrc,
                                 after_desktop_url: afterDesktopSrc,
+                                dynamic_content_hint: 'IMPORTANT: This site likely has rotating hero carousels/sliders, animated banners, and dynamic product grids. ' +
+                                    'Screenshots taken minutes apart will naturally show DIFFERENT carousel slides — this is NOT a regression. ' +
+                                    'ONLY flag issues where the page STRUCTURE is broken: missing navigation, collapsed sections, overlapping elements, ' +
+                                    'invisible text, broken grid layouts, or content pushed completely off-screen. ' +
+                                    'A carousel showing a different slide, or a product grid showing products in a different order, is EXPECTED DYNAMIC BEHAVIOR, not a layout regression. ' +
+                                    'Pixel differences in hero/slider areas should be IGNORED unless the slider container itself is structurally broken (zero height, missing entirely, etc.).',
                             };
                             if (beforeMobileSrc && afterMobileSrc) {
                                 visualParams.before_mobile_url = beforeMobileSrc;
@@ -6678,28 +6918,62 @@
                             const visualData = visualRes.data || {};
 
                             if (visualData.layout_ok === false) {
-                                // ANY layout_ok:false triggers rollback — severity doesn't matter
-                                // Layout integrity is MORE important than PageSpeed score
-                                hasLayoutRegression = true;
-                                const issueCount = (visualData.issues || []).length;
+                                const allIssues = visualData.issues || [];
+                                const issueCount = allIssues.length;
                                 const sevLabel = visualData.severity || 'unknown';
 
-                                // Check if any issues are screenshot capture inconsistencies
-                                const captureIssues = (visualData.issues || []).filter(i => i.likely_cause === 'screenshot_capture_inconsistency');
+                                // Filter out dynamic content false positives (carousels, sliders, rotating banners)
+                                const DYNAMIC_CONTENT_PATTERNS = [
+                                    /carousel/i, /slider/i, /slide/i, /rotating/i, /banner/i,
+                                    /different slide/i, /hero.*different/i, /different hero/i,
+                                    /swiper/i, /slick/i, /owl/i, /flickity/i,
+                                    /product.*order/i, /different product/i,
+                                ];
+                                const isDynamicContentIssue = (issue) => {
+                                    const text = `${issue.area || ''} ${issue.description || ''} ${issue.likely_cause || ''}`;
+                                    return DYNAMIC_CONTENT_PATTERNS.some(p => p.test(text));
+                                };
+
+                                const structuralIssues = allIssues.filter(i => !isDynamicContentIssue(i));
+                                const dynamicIssues = allIssues.filter(i => isDynamicContentIssue(i));
+
+                                // Check for screenshot capture inconsistencies
+                                const captureIssues = allIssues.filter(i => i.likely_cause === 'screenshot_capture_inconsistency');
                                 const isInconsistentCapture = captureIssues.length > 0;
 
-                                if (isInconsistentCapture) {
-                                    aiUpdateStep('visual-check', 'error', `Screenshot inconsistency`);
-                                    aiLog(`⚠ <strong>SCREENSHOT CAPTURE INCONSISTENCY</strong>: Screenshots were not captured in a consistent state — hero/banner content appeared in one but not the other. Rolling back for safety.`, 'error');
-                                } else {
-                                    aiUpdateStep('visual-check', 'error', `${issueCount} issue(s) [${sevLabel}]`);
-                                    aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${visualData.summary}`, 'error');
-                                }
-                                (visualData.issues || []).forEach(issue => {
-                                    aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description}`, 'error');
+                                // Log ALL issues for transparency
+                                allIssues.forEach(issue => {
+                                    const isDynamic = isDynamicContentIssue(issue);
+                                    const prefix = isDynamic ? '(dynamic content — ignored)' : '';
+                                    aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description} ${prefix}`, isDynamic ? 'warn' : 'error');
                                     if (issue.likely_cause) aiLog(`    Likely cause: ${issue.likely_cause}`, 'info');
                                     if (issue.suggested_fix) aiLog(`    Suggested fix: ${issue.suggested_fix}`, 'info');
                                 });
+
+                                if (isInconsistentCapture && structuralIssues.length === 0) {
+                                    // Only capture inconsistency — not a real regression
+                                    hasLayoutRegression = false;
+                                    aiUpdateStep('visual-check', 'done', 'Screenshot inconsistency (ignored)');
+                                    aiLog('Screenshot capture inconsistency detected — hero/slider content differs between captures. Ignoring as expected dynamic content.', 'warn');
+                                    visualRegressionContext = 'SCREENSHOT CAPTURE INCONSISTENCY: Before/after screenshots show different carousel/slider states. ' +
+                                        'This is expected dynamic content behavior, NOT a performance regression. Settings are safe. Continue optimizing.';
+                                } else if (structuralIssues.length === 0 && dynamicIssues.length > 0) {
+                                    // ALL issues are dynamic content — carousel slides, product rotations, etc.
+                                    hasLayoutRegression = false;
+                                    aiUpdateStep('visual-check', 'done', `${dynamicIssues.length} dynamic diff(s) — OK`);
+                                    aiLog(`Visual check: ${dynamicIssues.length} difference(s) detected but ALL are dynamic content (carousels, sliders, product grids). Not a regression.`, 'info');
+                                    visualRegressionContext = '';
+                                } else if (structuralIssues.length > 0) {
+                                    // Real structural issues found
+                                    hasLayoutRegression = true;
+                                    aiUpdateStep('visual-check', 'error', `${structuralIssues.length} structural issue(s) [${sevLabel}]`);
+                                    aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${structuralIssues.length} structural issue(s)${dynamicIssues.length ? ` + ${dynamicIssues.length} dynamic content diff(s) ignored` : ''}`, 'error');
+                                    visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
+                                        structuralIssues.map(i =>
+                                            `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
+                                        ).join('\n') +
+                                        '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back.';
+                                }
 
                                 // Log pixel check data if available
                                 if (visualData.pixel_check) {
@@ -6710,20 +6984,6 @@
                                     if (pc.mobile?.diff_percent >= 0) {
                                         aiLog(`  Pixel pre-check: Mobile above-fold diff = ${pc.mobile.diff_percent}%`, 'info');
                                     }
-                                }
-
-                                // Build context for next AI iteration
-                                if (isInconsistentCapture) {
-                                    visualRegressionContext = 'SCREENSHOT CAPTURE INCONSISTENCY: Before/after screenshots were not captured in a consistent state ' +
-                                        '(hero/banner content visible in one but not the other). This is NOT a performance regression — it is a screenshot timing issue. ' +
-                                        'Rolling back for safety. DO NOT change settings based on this — the current settings may be fine. ' +
-                                        'The system will retry with improved screenshot timing.';
-                                } else {
-                                    visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
-                                        (visualData.issues || []).map(i =>
-                                            `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
-                                        ).join('\n') +
-                                        '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back. DO NOT re-enable settings that cause layout shifts.';
                                 }
                             } else if (visualData.layout_ok === true && visualData.severity === 'minor') {
                                 aiUpdateStep('visual-check', 'done', 'Minor differences');
@@ -6829,20 +7089,32 @@
                     }
                     aiUpdateStep('flush-cache', 'done', 'Flushed ✓');
 
-                    // Confirmation PSI test — verify rollback actually restored scores
+                    // Confirmation PSI test — verify rollback actually restored scores (both strategies)
                     aiLog('Running post-rollback confirmation PSI test…', 'step');
                     try {
                         const confirmMobile = await aiRunPageSpeed(url, 'mobile');
                         const confirmPerf = confirmMobile.scores?.performance ?? 0;
                         const confirmDelta = confirmPerf - snapshotMobilePerf;
                         if (confirmDelta < -5) {
-                            aiLog(`⚠ Rollback confirmation: mobile score ${confirmPerf} is ${Math.abs(confirmDelta)}pts below pre-iteration snapshot (${snapshotMobilePerf}) — rollback may not have fully restored settings`, 'error');
-                            showNotification(`Warning: post-rollback score (${confirmPerf}) is ${Math.abs(confirmDelta)}pts below snapshot — check settings manually`, 'warning');
+                            aiLog(`⚠ Rollback mobile: score ${confirmPerf} is ${Math.abs(confirmDelta)}pts below snapshot (${snapshotMobilePerf}) — may not have fully restored`, 'error');
+                            showNotification(`Warning: post-rollback mobile (${confirmPerf}) is ${Math.abs(confirmDelta)}pts below snapshot`, 'warning');
                         } else {
-                            aiLog(`Rollback confirmed: mobile score ${confirmPerf} (snapshot was ${snapshotMobilePerf}, Δ${confirmDelta >= 0 ? '+' : ''}${confirmDelta})`, 'success');
+                            aiLog(`Rollback mobile confirmed: ${confirmPerf} (snapshot ${snapshotMobilePerf}, Δ${confirmDelta >= 0 ? '+' : ''}${confirmDelta})`, 'success');
                         }
                     } catch (confirmErr) {
-                        aiLog(`Post-rollback confirmation test failed: ${confirmErr.message}`, 'warn');
+                        aiLog(`Post-rollback mobile confirmation failed: ${confirmErr.message}`, 'warn');
+                    }
+                    try {
+                        const confirmDesktop = await aiRunPageSpeed(url, 'desktop');
+                        const confirmDkPerf = confirmDesktop.scores?.performance ?? 0;
+                        const confirmDkDelta = confirmDkPerf - snapshotDesktopPerf;
+                        if (confirmDkDelta < -5) {
+                            aiLog(`⚠ Rollback desktop: score ${confirmDkPerf} is ${Math.abs(confirmDkDelta)}pts below snapshot (${snapshotDesktopPerf})`, 'error');
+                        } else {
+                            aiLog(`Rollback desktop confirmed: ${confirmDkPerf} (snapshot ${snapshotDesktopPerf}, Δ${confirmDkDelta >= 0 ? '+' : ''}${confirmDkDelta})`, 'success');
+                        }
+                    } catch (confirmErr) {
+                        aiLog(`Post-rollback desktop confirmation failed: ${confirmErr.message}`, 'warn');
                     }
 
                     showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
@@ -7054,7 +7326,7 @@
 
         let html = `<div class="ccm-ai-remaining-panel">
             <h3>🎯 Remaining Recommendations to Reach 90+</h3>
-            <p class="ccm-text-muted" style="margin:0.25rem 0 1rem;">These issues require changes outside the Performance Optimizer — server configuration, theme/plugin modifications, or content optimization.</p>`;
+            <p class="ccm-text-muted" style="margin:0.25rem 0 1rem;">These issues were identified by PageSpeed Insights. Items with CCM settings may be addressable in future iterations; others require theme/plugin/server changes.</p>`;
 
         // Merge and deduplicate opportunities from both strategies
         const allOpps = new Map();
@@ -7078,17 +7350,52 @@
         mergeOpps(mobileOpps, 'Mobile');
         mergeOpps(desktopOpps, 'Desktop');
 
-        // Show PageSpeed opportunities
+        // Show PageSpeed opportunities with CCM settings mapping
         if (allOpps.size) {
             html += `<h4 style="margin:0 0 0.5rem;">PageSpeed Opportunities</h4>`;
             html += '<div class="ccm-ai-remaining-list">';
-            allOpps.forEach(opp => {
+
+            // Sort by savings
+            const sorted = [...allOpps.values()].sort((a, b) => {
+                const aMs = a.savings_ms || 0;
+                const bMs = b.savings_ms || 0;
+                if (aMs !== bMs) return bMs - aMs;
+                return (b.savings_bytes || 0) - (a.savings_bytes || 0);
+            });
+
+            sorted.forEach(opp => {
                 const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms`
                               : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '');
                 const strategyBadges = opp.strategies.map(s =>
                     `<span class="ccm-badge ccm-badge-info">${s}</span>`
                 ).join(' ');
                 const guidance = aiGetOpportunityGuidance(opp.id || opp.title);
+
+                // Find CCM settings mapping
+                const oppId = (opp.id || '').toLowerCase();
+                let ccmMapping = null;
+                for (const [psiId, mapping] of Object.entries(PSI_OPPORTUNITY_TO_CCM_SETTINGS)) {
+                    if (oppId.includes(psiId) || psiId.includes(oppId)) {
+                        ccmMapping = mapping;
+                        break;
+                    }
+                }
+
+                let ccmHtml = '';
+                if (ccmMapping) {
+                    const parts = [];
+                    if (ccmMapping.settings.length) {
+                        parts.push(ccmMapping.settings.map(s => `<code>${s}</code>`).join(', '));
+                    }
+                    if (ccmMapping.htaccess) parts.push('<span class="ccm-badge ccm-badge-success">.htaccess</span>');
+                    if (ccmMapping.webp) parts.push('<span class="ccm-badge ccm-badge-success">WebP</span>');
+                    if (ccmMapping.redis) parts.push('<span class="ccm-badge ccm-badge-success">Redis</span>');
+                    if (ccmMapping.cf_settings) parts.push('<span class="ccm-badge ccm-badge-success">Cloudflare</span>');
+                    if (parts.length) {
+                        ccmHtml = `<div class="ccm-ai-remaining-ccm" style="margin-top:0.25rem;font-size:0.85em;opacity:0.8;">CCM Fix: ${parts.join(' ')}</div>`;
+                    }
+                }
+
                 html += `<div class="ccm-ai-remaining-item">
                     <div class="ccm-ai-remaining-header">
                         <strong>${opp.title}</strong>
@@ -7096,6 +7403,7 @@
                         ${strategyBadges}
                     </div>
                     ${guidance ? `<p class="ccm-ai-remaining-guidance">${guidance}</p>` : ''}
+                    ${ccmHtml}
                 </div>`;
             });
             html += '</div>';

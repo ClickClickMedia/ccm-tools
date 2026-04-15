@@ -374,17 +374,73 @@ function ccm_tools_ajax_ai_hub_ai_analyze(): void {
         $context .= 'Database has ' . $toolStatus['database']['tables_needing_optimization'] . ' tables needing optimization. ';
     }
 
+    // Cloudflare status context
+    if (!empty($toolStatus['cloudflare']['connected'])) {
+        $context .= 'Cloudflare ACTIVE. ';
+        if (!empty($toolStatus['cloudflare']['plan'])) {
+            $context .= 'Plan: ' . $toolStatus['cloudflare']['plan'] . '. ';
+        }
+        if (!empty($toolStatus['cloudflare']['features'])) {
+            $cf_features = $toolStatus['cloudflare']['features'];
+            $cf_off = [];
+            if (($cf_features['brotli'] ?? '') !== 'on') $cf_off[] = 'Brotli';
+            if (($cf_features['early_hints'] ?? '') !== 'on') $cf_off[] = 'Early Hints';
+            if (($cf_features['http3'] ?? '') !== 'on') $cf_off[] = 'HTTP/3';
+            if (($cf_features['0rtt'] ?? '') !== 'on') $cf_off[] = '0-RTT';
+            if (($cf_features['always_use_https'] ?? '') !== 'on') $cf_off[] = 'Always HTTPS';
+            if (($cf_features['automatic_https_rewrites'] ?? '') !== 'on') $cf_off[] = 'Auto HTTPS Rewrites';
+            if (!empty($cf_off)) {
+                $context .= 'WARNING: Cloudflare features NOT optimized: ' . implode(', ', $cf_off) . '. These can be enabled via AI tool. ';
+            } else {
+                $context .= 'Cloudflare performance features optimized ✓. ';
+            }
+            // Warn about counter-productive settings
+            if (($cf_features['rocket_loader'] ?? '') === 'on') {
+                $context .= 'WARNING: Cloudflare Rocket Loader is ON — this conflicts with defer/delay JS settings and should be turned OFF. ';
+            }
+        }
+    } elseif (!empty($toolStatus['cloudflare']['available'])) {
+        $context .= 'Cloudflare module available but NOT connected. ';
+    }
+
     // Add console error context from previous iteration (if any)
     $consoleErrors = sanitize_textarea_field($_POST['console_errors'] ?? '');
     if (!empty($consoleErrors)) {
         $context .= "\n" . $consoleErrors;
     }
 
-    $result = ccm_tools_ai_hub_request('ai/analyze', [
+    // Desktop result ID (so hub can analyze both strategies)
+    $desktopResultId = (int)($_POST['desktop_result_id'] ?? 0);
+
+    // Mobile/desktop opportunities passed from JS (structured PSI data)
+    $mobileOpps = [];
+    $desktopOpps = [];
+    if (!empty($_POST['mobile_opportunities'])) {
+        $decoded = json_decode(wp_unslash($_POST['mobile_opportunities']), true);
+        if (is_array($decoded)) $mobileOpps = $decoded;
+    }
+    if (!empty($_POST['desktop_opportunities'])) {
+        $decoded = json_decode(wp_unslash($_POST['desktop_opportunities']), true);
+        if (is_array($decoded)) $desktopOpps = $decoded;
+    }
+
+    $requestBody = [
         'result_id'        => $resultId,
         'current_settings' => $currentSettings,
         'context'          => $context,
-    ]);
+    ];
+
+    if ($desktopResultId > 0) {
+        $requestBody['desktop_result_id'] = $desktopResultId;
+    }
+    if (!empty($mobileOpps)) {
+        $requestBody['mobile_opportunities'] = $mobileOpps;
+    }
+    if (!empty($desktopOpps)) {
+        $requestBody['desktop_opportunities'] = $desktopOpps;
+    }
+
+    $result = ccm_tools_ai_hub_request('ai/analyze', $requestBody);
 
     if (is_wp_error($result)) {
         wp_send_json_error(['message' => $result->get_error_message()]);
@@ -694,7 +750,8 @@ function ccm_tools_ajax_ai_apply_changes(): void {
 add_action('wp_ajax_ccm_tools_ai_snapshot_settings', 'ccm_tools_ajax_ai_snapshot_settings');
 
 /**
- * Save a snapshot of current performance settings (for rollback)
+ * Save a snapshot of current performance settings (for rollback).
+ * Uses a dedicated option instead of transient so cache flushes don't destroy it.
  */
 function ccm_tools_ajax_ai_snapshot_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -704,7 +761,10 @@ function ccm_tools_ajax_ai_snapshot_settings(): void {
     }
 
     $settings = ccm_tools_perf_get_settings();
-    set_transient('ccm_tools_perf_snapshot', $settings, HOUR_IN_SECONDS);
+    update_option('ccm_tools_perf_snapshot', [
+        'settings'  => $settings,
+        'timestamp' => time(),
+    ], false); // autoload=false — only needed during AI runs
 
     wp_send_json_success([
         'message'  => 'Settings snapshot saved',
@@ -724,7 +784,17 @@ function ccm_tools_ajax_ai_rollback_settings(): void {
         wp_send_json_error(['message' => 'Unauthorized']);
     }
 
-    $snapshot = get_transient('ccm_tools_perf_snapshot');
+    $snapshot_data = get_option('ccm_tools_perf_snapshot');
+
+    // Support both old transient format (flat array) and new option format (wrapped)
+    if (is_array($snapshot_data) && isset($snapshot_data['settings'])) {
+        $snapshot = $snapshot_data['settings'];
+    } elseif (is_array($snapshot_data) && !empty($snapshot_data)) {
+        $snapshot = $snapshot_data; // legacy flat format
+    } else {
+        // Fall back to transient for backwards compat
+        $snapshot = get_transient('ccm_tools_perf_snapshot');
+    }
 
     if (!is_array($snapshot) || empty($snapshot)) {
         wp_send_json_error(['message' => 'No snapshot found to rollback to']);
@@ -773,13 +843,26 @@ function ccm_tools_ajax_ai_flush_caches(): void {
     wp_cache_flush();
     $flushed[] = 'WP object cache';
 
-    // 3. Page cache plugins — function-based
+    // 3. Cloudflare cache purge (if connected)
+    if (function_exists('ccm_tools_cf_get_settings') && function_exists('ccm_tools_cf_purge_all')) {
+        $cf_settings = ccm_tools_cf_get_settings();
+        if (!empty($cf_settings['connected']) && !empty($cf_settings['zone_id'])) {
+            $cf_result = ccm_tools_cf_purge_all();
+            if (is_wp_error($cf_result)) {
+                $errors[] = 'Cloudflare: ' . $cf_result->get_error_message();
+            } else {
+                $flushed[] = 'Cloudflare';
+            }
+        }
+    }
+
+    // 4. Page cache plugins — function-based
     if (function_exists('rocket_clean_domain'))       { rocket_clean_domain();         $flushed[] = 'WP Rocket'; }
     if (function_exists('w3tc_flush_all'))            { w3tc_flush_all();              $flushed[] = 'W3 Total Cache'; }
     if (function_exists('wp_cache_clear_cache'))      { wp_cache_clear_cache();        $flushed[] = 'WP Super Cache'; }
     if (function_exists('sg_cachepress_purge_cache')) { sg_cachepress_purge_cache();   $flushed[] = 'SG Optimizer'; }
 
-    // 4. Page cache plugins — action-based (no-ops when plugin is inactive)
+    // 5. Page cache plugins — action-based (no-ops when plugin is inactive)
     do_action('litespeed_purge_all');
     do_action('autoptimize_action_cachepurged');
     do_action('cache_enabler_clear_complete_cache');
@@ -915,6 +998,12 @@ function ccm_tools_ajax_ai_hub_visual_compare(): void {
     }
     if (!empty($changes_applied) && is_array($changes_applied)) {
         $body['changes_applied'] = $changes_applied;
+    }
+
+    // Pass dynamic content hint so the hub AI knows to ignore carousel/slider differences
+    $dynamic_hint = sanitize_textarea_field($_POST['dynamic_content_hint'] ?? '');
+    if (!empty($dynamic_hint)) {
+        $body['dynamic_content_hint'] = $dynamic_hint;
     }
 
     $result = ccm_tools_ai_hub_request('ai/visual-compare', $body, 'POST', 120);
@@ -1090,6 +1179,34 @@ function ccm_tools_get_optimization_status(): array {
         ];
     }
 
+    // Cloudflare
+    if (function_exists('ccm_tools_cf_get_settings')) {
+        $cf = ccm_tools_cf_get_settings();
+        $cf_connected = !empty($cf['connected']) && !empty($cf['zone_id']);
+        $cf_status = [
+            'available' => true,
+            'connected' => $cf_connected,
+            'optimized' => false,
+        ];
+        if ($cf_connected && function_exists('ccm_tools_cf_get_zone_status')) {
+            $zone_status = ccm_tools_cf_get_zone_status();
+            if (!is_wp_error($zone_status) && !empty($zone_status['features'])) {
+                $features = $zone_status['features'];
+                $cf_status['features'] = $features;
+                // Check if key performance features are enabled
+                $cf_status['optimized'] = (
+                    ($features['brotli'] ?? '') === 'on' &&
+                    ($features['early_hints'] ?? '') === 'on' &&
+                    ($features['http3'] ?? '') === 'on'
+                );
+                $cf_status['plan'] = $zone_status['zone']['plan'] ?? 'Unknown';
+            }
+        }
+        $status['cloudflare'] = $cf_status;
+    } else {
+        $status['cloudflare'] = ['available' => false, 'connected' => false];
+    }
+
     return $status;
 }
 
@@ -1189,6 +1306,24 @@ function ccm_tools_ajax_ai_enable_tool(): void {
                 ccm_tools_perf_save_settings($settings);
                 $result['success'] = true;
                 $result['message'] = 'Performance optimizer enabled';
+            }
+            break;
+
+        case 'cloudflare':
+            if (function_exists('ccm_tools_cf_get_settings') && function_exists('ccm_tools_cf_apply_recommended')) {
+                $cf_settings = ccm_tools_cf_get_settings();
+                if (empty($cf_settings['connected']) || empty($cf_settings['zone_id'])) {
+                    $result['message'] = 'Cloudflare not connected — connect via Cloudflare tab first';
+                } else {
+                    $r = ccm_tools_cf_apply_recommended();
+                    $applied_count = count($r['applied'] ?? []);
+                    $failed_count = count($r['failed'] ?? []);
+                    $result['success'] = $applied_count > 0;
+                    $result['message'] = "CF recommended settings: {$applied_count} applied, {$failed_count} failed";
+                    $result['details'] = $r;
+                }
+            } else {
+                $result['message'] = 'Cloudflare module not available';
             }
             break;
     }

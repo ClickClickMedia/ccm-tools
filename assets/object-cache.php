@@ -360,7 +360,6 @@ class CCM_Redis_Object_Cache {
         }
 
         if (!class_exists('Redis')) {
-            $this->track_error('Redis PHP extension not loaded');
             return false;
         }
 
