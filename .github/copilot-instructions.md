@@ -85,6 +85,6 @@ All handlers in `inc/ajax-handlers.php`. Hook pattern: `add_action('wp_ajax_ccm_
 | WebP | `save_webp_settings`, `get_webp_stats`, `get_unconverted_images`, `convert_single_image`, `test_webp_conversion` |
 | Performance | `save_perf_settings`, `get_perf_settings` |
 | AI Hub | `ai_hub_save_settings`, `ai_hub_test_connection`, `ai_hub_run_pagespeed`, `ai_hub_get_results`, `ai_hub_ai_analyze`, `ai_hub_ai_optimize`, `ai_hub_visual_compare`, `ai_hub_console_check`, `ai_hub_get_latest_scores` |
-| AI Session | `ai_apply_changes`, `ai_save_run`, `ai_preflight`, `ai_enable_tool`, `ai_chat` |
+| AI Session | `ai_apply_changes`, `ai_save_run`, `ai_preflight`, `ai_enable_tool`, `ai_chat`, `ai_record_known_bad`, `ai_get_known_bad`, `ai_clear_known_bad` |
 | Cloudflare | `cf_connect`, `cf_disconnect`, `cf_get_status`, `cf_purge_all`, `cf_purge_urls`, `cf_dev_mode` |
 | Premium | `premium_refresh` |

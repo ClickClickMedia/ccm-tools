@@ -808,6 +808,174 @@ function ccm_tools_ajax_ai_rollback_settings(): void {
     ]);
 }
 
+// ─── AI Optimizer — Known-Bad Settings (per-URL learning) ────────
+//
+// When a setting causes a meaningful score drop on a given URL, persist it so
+// future runs on the same URL filter the recommendation out before applying.
+// This works around the hub-side AI re-suggesting site-incompatible toggles.
+
+const CCM_TOOLS_AI_KNOWN_BAD_OPTION   = 'ccm_tools_ai_known_bad';
+const CCM_TOOLS_AI_KNOWN_BAD_MAX_KEYS = 50;   // cap entries per URL
+const CCM_TOOLS_AI_KNOWN_BAD_TTL_DAYS = 60;   // expire stale entries
+
+/**
+ * Normalise a URL to a stable key for the known-bad map.
+ * Strips query strings and trailing slash so /page and /page?utm=… match.
+ */
+function ccm_tools_ai_url_key(string $url): string {
+    $parts = wp_parse_url($url);
+    if (!$parts || empty($parts['host'])) return md5($url);
+    $key = strtolower($parts['host']) . '/' . trim($parts['path'] ?? '', '/');
+    return md5($key);
+}
+
+/**
+ * Get the known-bad map for the given URL (or all URLs if $url is empty).
+ * Drops entries older than the TTL on read so the option doesn't grow forever.
+ *
+ * @return array<string, array{last_delta:int, last_seen:int, count:int}>
+ */
+function ccm_tools_ai_get_known_bad(string $url = ''): array {
+    $all = get_option(CCM_TOOLS_AI_KNOWN_BAD_OPTION, []);
+    if (!is_array($all)) return [];
+
+    $cutoff = time() - (CCM_TOOLS_AI_KNOWN_BAD_TTL_DAYS * 86400);
+    $changed = false;
+    foreach ($all as $urlKey => $entries) {
+        if (!is_array($entries)) {
+            unset($all[$urlKey]);
+            $changed = true;
+            continue;
+        }
+        foreach ($entries as $sk => $meta) {
+            if (!is_array($meta) || (int)($meta['last_seen'] ?? 0) < $cutoff) {
+                unset($all[$urlKey][$sk]);
+                $changed = true;
+            }
+        }
+        if (empty($all[$urlKey])) {
+            unset($all[$urlKey]);
+            $changed = true;
+        }
+    }
+    if ($changed) {
+        update_option(CCM_TOOLS_AI_KNOWN_BAD_OPTION, $all, false);
+    }
+
+    if ($url === '') return $all;
+    $urlKey = ccm_tools_ai_url_key($url);
+    return is_array($all[$urlKey] ?? null) ? $all[$urlKey] : [];
+}
+
+/**
+ * Record that a setting caused a regression on a URL.
+ * Increments `count` and refreshes `last_seen` if the entry already exists.
+ */
+function ccm_tools_ai_record_known_bad(string $url, string $setting_key, int $mobile_delta, int $desktop_delta): void {
+    if ($url === '' || $setting_key === '') return;
+
+    $all = get_option(CCM_TOOLS_AI_KNOWN_BAD_OPTION, []);
+    if (!is_array($all)) $all = [];
+
+    $urlKey = ccm_tools_ai_url_key($url);
+    if (!isset($all[$urlKey]) || !is_array($all[$urlKey])) $all[$urlKey] = [];
+
+    $existing = $all[$urlKey][$setting_key] ?? null;
+    $worstDelta = min($mobile_delta, $desktop_delta);
+    if (is_array($existing)) {
+        $all[$urlKey][$setting_key] = [
+            'last_delta' => $worstDelta,
+            'last_seen'  => time(),
+            'first_seen' => (int) ($existing['first_seen'] ?? time()),
+            'count'      => (int) ($existing['count'] ?? 0) + 1,
+        ];
+    } else {
+        $all[$urlKey][$setting_key] = [
+            'last_delta' => $worstDelta,
+            'last_seen'  => time(),
+            'first_seen' => time(),
+            'count'      => 1,
+        ];
+    }
+
+    // LRU-evict oldest entries if over cap
+    if (count($all[$urlKey]) > CCM_TOOLS_AI_KNOWN_BAD_MAX_KEYS) {
+        uasort($all[$urlKey], static fn($a, $b) => ($a['last_seen'] ?? 0) <=> ($b['last_seen'] ?? 0));
+        $all[$urlKey] = array_slice($all[$urlKey], -CCM_TOOLS_AI_KNOWN_BAD_MAX_KEYS, null, true);
+    }
+
+    update_option(CCM_TOOLS_AI_KNOWN_BAD_OPTION, $all, false);
+}
+
+add_action('wp_ajax_ccm_tools_ai_record_known_bad', 'ccm_tools_ajax_ai_record_known_bad');
+
+function ccm_tools_ajax_ai_record_known_bad(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $url           = esc_url_raw(sanitize_text_field($_POST['url'] ?? ''));
+    $setting_key   = sanitize_key($_POST['setting_key'] ?? '');
+    $mobile_delta  = (int) ($_POST['mobile_delta'] ?? 0);
+    $desktop_delta = (int) ($_POST['desktop_delta'] ?? 0);
+
+    if ($url === '' || $setting_key === '') {
+        wp_send_json_error(['message' => 'url and setting_key are required']);
+    }
+
+    ccm_tools_ai_record_known_bad($url, $setting_key, $mobile_delta, $desktop_delta);
+
+    wp_send_json_success([
+        'recorded' => true,
+        'count'    => count(ccm_tools_ai_get_known_bad($url)),
+    ]);
+}
+
+add_action('wp_ajax_ccm_tools_ai_get_known_bad', 'ccm_tools_ajax_ai_get_known_bad');
+
+function ccm_tools_ajax_ai_get_known_bad(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $url = esc_url_raw(sanitize_text_field($_POST['url'] ?? ''));
+    if ($url === '') {
+        wp_send_json_error(['message' => 'url is required']);
+    }
+
+    wp_send_json_success([
+        'url'         => $url,
+        'known_bad'   => ccm_tools_ai_get_known_bad($url),
+        'ttl_days'    => CCM_TOOLS_AI_KNOWN_BAD_TTL_DAYS,
+    ]);
+}
+
+add_action('wp_ajax_ccm_tools_ai_clear_known_bad', 'ccm_tools_ajax_ai_clear_known_bad');
+
+function ccm_tools_ajax_ai_clear_known_bad(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Unauthorized']);
+    }
+
+    $url = esc_url_raw(sanitize_text_field($_POST['url'] ?? ''));
+    $all = get_option(CCM_TOOLS_AI_KNOWN_BAD_OPTION, []);
+    if (!is_array($all)) $all = [];
+
+    if ($url === '') {
+        // Clear everything
+        update_option(CCM_TOOLS_AI_KNOWN_BAD_OPTION, [], false);
+        wp_send_json_success(['cleared' => 'all']);
+    }
+
+    $urlKey = ccm_tools_ai_url_key($url);
+    unset($all[$urlKey]);
+    update_option(CCM_TOOLS_AI_KNOWN_BAD_OPTION, $all, false);
+    wp_send_json_success(['cleared' => $url]);
+}
+
 // ─── AI Optimizer — Flush All Caches ─────────────────────────────
 
 add_action('wp_ajax_ccm_tools_ai_flush_caches', 'ccm_tools_ajax_ai_flush_caches');

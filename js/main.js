@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.40.2
+ * Version: 7.41.0
  */
 
 (function() {
@@ -6124,6 +6124,63 @@
     }
 
     /**
+     * Compare an AI-recommended value to a current setting value with the
+     * same coercion the server applies (bool, int, string, array of strings).
+     * Returns true if applying the recommendation would be a no-op.
+     */
+    function aiValuesEqual(currentVal, recommendedVal) {
+        if (typeof currentVal === 'boolean') {
+            return Boolean(recommendedVal) === currentVal;
+        }
+        if (typeof currentVal === 'number') {
+            const n = Number(recommendedVal);
+            return Number.isFinite(n) && n === currentVal;
+        }
+        if (Array.isArray(currentVal)) {
+            // Accept array OR comma/space/newline-separated string for the recommendation
+            let recArr = recommendedVal;
+            if (typeof recommendedVal === 'string') {
+                recArr = recommendedVal.split(/[,\s\n]+/).map(s => s.trim()).filter(Boolean);
+            }
+            if (!Array.isArray(recArr)) return false;
+            const cur = currentVal.map(s => String(s).trim()).filter(Boolean).sort();
+            const rec = recArr.map(s => String(s).trim()).filter(Boolean).sort();
+            if (cur.length !== rec.length) return false;
+            return cur.every((v, i) => v === rec[i]);
+        }
+        // String or null
+        return String(currentVal ?? '').trim() === String(recommendedVal ?? '').trim();
+    }
+
+    /**
+     * Build a section of AI context that lists settings the AI has recommended
+     * but which are already at the recommended value. Tells the model to stop
+     * suggesting them so iterations aren't wasted.
+     */
+    function buildSessionAlreadyAppliedContext(alreadyApplied) {
+        if (!alreadyApplied.size) return '';
+        let ctx = '\n## SETTINGS ALREADY AT RECOMMENDED VALUE — DO NOT RECOMMEND THESE AGAIN\n';
+        ctx += 'You previously recommended these settings, and they are already configured at the value you suggested. ';
+        ctx += 'Recommending them again wastes an iteration. Pick **different** levers next time.\n\n';
+        ctx += [...alreadyApplied].map(k => '- `' + k + '`').join('\n') + '\n\n';
+        return ctx;
+    }
+
+    /**
+     * Build context describing settings that caused regressions on THIS URL in
+     * previous optimisation runs (persisted across sessions). The AI must not
+     * recommend them again — they are already proven incompatible with the site.
+     */
+    function buildPersistentKnownBadContext(knownBad) {
+        if (!knownBad.size) return '';
+        let ctx = '\n## SETTINGS PROVEN INCOMPATIBLE WITH THIS SITE — DO NOT RECOMMEND THESE\n';
+        ctx += 'These settings have previously been applied to this URL and caused score regressions ';
+        ctx += '(rolled back automatically). They are recorded as site-incompatible and **must not** be recommended again.\n\n';
+        ctx += [...knownBad].map(k => '- `' + k + '`').join('\n') + '\n\n';
+        return ctx;
+    }
+
+    /**
      * Group related settings so paired toggles+data are tested together.
      * e.g. preload_css + critical_css + critical_css_code applied as one unit.
      */
@@ -6238,7 +6295,37 @@
 
         // Session-level tracking of failed settings for AI context
         const sessionFailedBatches = [];
+        // Keys the AI has recommended that are already at the recommended value
+        // (across iterations). Fed back to the AI so it stops re-suggesting them.
+        const sessionAlreadyAppliedKeys = new Set();
+        // Settings that have caused regressions on THIS URL in past runs
+        // (loaded from server option). Filtered out before apply.
+        const persistentKnownBadKeys = new Set();
+        // Fire-and-forget recorder so a setting that just regressed gets remembered
+        // for next time. Failures are non-fatal — the in-session ban still applies.
+        const recordKnownBad = (settingKey, mobileDelta, desktopDelta = 0) => {
+            persistentKnownBadKeys.add(settingKey);
+            ajax('ccm_tools_ai_record_known_bad', {
+                url,
+                setting_key: settingKey,
+                mobile_delta: mobileDelta | 0,
+                desktop_delta: desktopDelta | 0,
+            }, { timeout: 5000 }).catch(() => { /* non-fatal */ });
+        };
         let maxIterations = AI_MAX_ITERATIONS_FALLBACK;
+
+        // Load persistent known-bad settings for this URL (from previous runs).
+        try {
+            const knownBadRes = await ajax('ccm_tools_ai_get_known_bad', { url }, { timeout: 10000 });
+            const known = (knownBadRes && knownBadRes.data && knownBadRes.data.known_bad) || {};
+            Object.keys(known).forEach(k => persistentKnownBadKeys.add(k));
+            if (persistentKnownBadKeys.size > 0) {
+                aiLog(`Loaded <strong>${persistentKnownBadKeys.size}</strong> known-bad setting(s) from previous runs on this URL — they will be filtered out: ${[...persistentKnownBadKeys].map(k => '<code>' + k + '</code>').join(', ')}`, 'info');
+            }
+        } catch (kbErr) {
+            // Non-fatal — continue without persistent learning
+            aiLog(`Could not load known-bad setting list: ${kbErr.message}`, 'warn');
+        }
 
         try {
             // ── Step 0: Pre-flight — Check & enable server-side tools ──
@@ -6502,6 +6589,10 @@
                 let aiSessionContext = consoleErrorContext || '';
                 const failedCtx = buildSessionFailedContext(sessionFailedBatches);
                 if (failedCtx) aiSessionContext += failedCtx;
+                const alreadyAppliedCtx = buildSessionAlreadyAppliedContext(sessionAlreadyAppliedKeys);
+                if (alreadyAppliedCtx) aiSessionContext += alreadyAppliedCtx;
+                const persistBadCtx = buildPersistentKnownBadContext(persistentKnownBadKeys);
+                if (persistBadCtx) aiSessionContext += persistBadCtx;
 
                 // Build PSI opportunity → CCM settings map for AI
                 const psiCtx = buildPsiOpportunityContext(lastMobileOpportunities, lastDesktopOpportunities);
@@ -6567,19 +6658,77 @@
                     aiLog(`Merging <strong>${excludeSuggFixes.length}</strong> AI exclude suggestion(s) into fix list...`, 'info');
                 }
 
+                // ── Pre-filter: drop fixes whose recommended value already matches current ──
+                // and fixes that are recorded as persistently incompatible with this URL.
+                // Both cases waste an iteration if applied; tell the AI on next iteration.
+                let preFilteredFixes = allFixes;
+                try {
+                    const curRes = await ajax('ccm_tools_get_perf_settings', {}, { timeout: 10000 });
+                    const curSettings = (curRes && curRes.data) || {};
+                    const skipped = [];
+                    const blockedByHistory = [];
+                    preFilteredFixes = allFixes.filter(fix => {
+                        if (persistentKnownBadKeys.has(fix.setting_key)) {
+                            blockedByHistory.push(fix.setting_key);
+                            return false;
+                        }
+                        if (!Object.prototype.hasOwnProperty.call(curSettings, fix.setting_key)) return true;
+                        if (aiValuesEqual(curSettings[fix.setting_key], fix.recommended_value)) {
+                            skipped.push(fix.setting_key);
+                            sessionAlreadyAppliedKeys.add(fix.setting_key);
+                            return false;
+                        }
+                        return true;
+                    });
+                    if (skipped.length) {
+                        aiLog(`Skipped <strong>${skipped.length}</strong> recommendation(s) already at target value: ${skipped.map(k => '<code>' + k + '</code>').join(', ')}`, 'info');
+                    }
+                    if (blockedByHistory.length) {
+                        aiLog(`Blocked <strong>${blockedByHistory.length}</strong> recommendation(s) known to regress this URL from past runs: ${blockedByHistory.map(k => '<code>' + k + '</code>').join(', ')}`, 'warn');
+                    }
+                } catch (preFilterErr) {
+                    aiLog(`Pre-filter check failed: ${preFilterErr.message} — applying all recommendations`, 'warn');
+                }
+
+                if (!preFilteredFixes.length) {
+                    aiLog('All AI recommendations were already applied — nothing to do this iteration.', 'warn');
+                    // Still iterate so the AI sees the "already applied" context and tries fresh ideas
+                    if (iteration < maxIterations) {
+                        aiUpdateStep('apply', 'done', 'Nothing new to apply');
+                        aiUpdateStep('flush-cache', 'skipped', 'Skipped');
+                        aiUpdateStep('retest-mobile', 'skipped', 'Skipped');
+                        aiUpdateStep('retest-desktop', 'skipped', 'Skipped');
+                        aiUpdateStep('console-check', 'skipped', 'Skipped');
+                        aiUpdateStep('visual-check', 'skipped', 'Skipped');
+                        aiUpdateStep('compare', 'done', 'Iterating…');
+                        // Reset for next iter
+                        aiUpdateStep('analyze', 'pending', '');
+                        aiUpdateStep('apply', 'pending', '');
+                        aiUpdateStep('flush-cache', 'pending', '');
+                        aiUpdateStep('retest-mobile', 'pending', '');
+                        aiUpdateStep('retest-desktop', 'pending', '');
+                        aiUpdateStep('console-check', 'pending', '');
+                        aiUpdateStep('visual-check', 'pending', '');
+                        aiUpdateStep('compare', 'pending', '');
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+
                 // ── Incremental Per-Setting Apply (eliminates batch poisoning) ──
                 // Instead of applying all settings as one batch, test each setting (or
                 // related group) individually with a quick mobile PageSpeed check.
                 // Settings that hurt scores are reverted immediately and tracked as
                 // individually-failed — only surviving settings proceed to final validation.
                 const SINGLE_SETTING_TOLERANCE = 5; // pts drop allowed per individual setting (PSI variance is ~3)
-                const settingGroups = groupRelatedFixes(allFixes);
+                const settingGroups = groupRelatedFixes(preFilteredFixes);
                 const keptChanges = [];
                 const revertedSettings = [];
                 let runningMobilePerf = snapshotMobilePerf;
 
                 aiUpdateStep('apply', 'active', `Testing settings${iterLabel}…`);
-                aiLog(`Applying <strong>${allFixes.length}</strong> settings in <strong>${settingGroups.length}</strong> groups — testing each individually${iterLabel}…`, 'step');
+                aiLog(`Applying <strong>${preFilteredFixes.length}</strong> settings in <strong>${settingGroups.length}</strong> groups — testing each individually${iterLabel}…`, 'step');
 
                 for (let gi = 0; gi < settingGroups.length; gi++) {
                     const group = settingGroups[gi];
@@ -6607,6 +6756,9 @@
                     const groupChanges = groupApplyData.changes || [];
                     if (!groupChanges.length) {
                         aiLog(`  ${groupLabel} — no change (already at target value)`, 'info');
+                        // Mark every key in this group as "already applied" so the AI is
+                        // told not to re-suggest it on the next iteration.
+                        groupKeys.forEach(k => sessionAlreadyAppliedKeys.add(k));
                         continue;
                     }
 
@@ -6651,6 +6803,7 @@
                                 mobile_delta: -99,
                                 desktop_delta: 0,
                             });
+                            recordKnownBad(c.key, -99, 0);
                         });
                         continue;
                     }
@@ -6688,7 +6841,9 @@
                             aiLog(`  Revert failed: ${revertErr.message}`, 'error');
                         }
 
-                        // Track each reverted setting individually in the session
+                        // Track each reverted setting individually in the session,
+                        // and persist as known-bad if the drop is meaningful (-10 or worse)
+                        // so future runs on this URL skip the recommendation outright.
                         groupChanges.forEach(c => {
                             revertedSettings.push({ key: c.key, from: c.from, to: c.to, delta: quickDelta });
                             sessionFailedBatches.push({
@@ -6698,6 +6853,9 @@
                                 mobile_delta: quickDelta,
                                 desktop_delta: 0,
                             });
+                            if (quickDelta <= -10) {
+                                recordKnownBad(c.key, quickDelta, 0);
+                            }
                         });
                     } else {
                         // Setting is OK — keep it
@@ -6917,6 +7075,11 @@
                             const visualRes = await ajax('ccm_tools_ai_hub_visual_compare', visualParams, { timeout: 120000 });
                             const visualData = visualRes.data || {};
 
+                            // Hub may flag that screenshots had to be scaled to fit Claude Vision's 8000px limit.
+                            if (visualData.image_clamped) {
+                                aiLog('Visual check: tall screenshots auto-scaled to fit vision API limits ✓', 'info');
+                            }
+
                             if (visualData.layout_ok === false) {
                                 const allIssues = visualData.issues || [];
                                 const issueCount = allIssues.length;
@@ -6998,6 +7161,18 @@
                             }
                             break; // success — exit retry loop
                         } catch (visualErr) {
+                            // Detect the "image dimensions exceed max allowed size: 8000 pixels"
+                            // failure mode. The hub now auto-scales screenshots, but old hub
+                            // versions or fetch failures can still surface this. Don't retry —
+                            // the same oversized image will fail identically.
+                            const isOversized = /8000\s*pixels|exceed.*max.*size/i.test(visualErr.message || '');
+                            if (isOversized) {
+                                aiLog('Visual check skipped: page is too tall for the vision API (>8000px) and the hub could not auto-scale. Using score-based safety only — update your AI hub for full visual regression coverage.', 'warn');
+                                hasLayoutRegression = false;
+                                aiUpdateStep('visual-check', 'done', 'Skipped (tall page)');
+                                visualRegressionContext = 'VISUAL CHECK SKIPPED: page too tall for vision API. Be conservative with CSS layout changes on next iteration.';
+                                break; // exit retry loop — retrying won't help
+                            }
                             if (visualAttempts < maxVisualAttempts) {
                                 aiLog(`Visual check attempt ${visualAttempts} failed: ${visualErr.message} — retrying…`, 'warn');
                             } else {

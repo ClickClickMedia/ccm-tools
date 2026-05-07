@@ -1,5 +1,11 @@
 # CCM Tools — Changelog
 
+## v7.41.0
+- **AI Performance Optimiser — reliability fixes**
+  - **Visual check on tall pages no longer fails silently**: Hub now scales screenshots wider/taller than 7800px to fit Claude Vision's 8000px hard limit; plugin detects the legacy oversize error, logs a clear "skipped — page too tall" message, and stops uselessly retrying. New `image_clamped` flag surfaces when auto-scaling occurred.
+  - **Stops re-suggesting already-applied settings**: Before the apply loop runs, the plugin now compares each AI recommendation against current settings and drops anything that would be a no-op. Skipped keys are sent back to the AI on the next iteration so it picks fresh levers instead of wasting a slot.
+  - **Persistent per-URL learning**: Settings that cause a ≥10pt mobile drop on a URL are now remembered across runs (60-day TTL, 50-key cap, LRU evicted). On the next One-Click Optimise for the same URL, those settings are filtered out before apply and the AI is told they're proven incompatible. New AJAX handlers: `ccm_tools_ai_record_known_bad`, `ccm_tools_ai_get_known_bad`, `ccm_tools_ai_clear_known_bad`.
+
 ## v7.30.0
 - **INP & Interaction Optimizations — Passive Event Listeners + DOM Size Warning**
   - **Passive Event Listeners** (#27): Inline `wp_head` script (priority 1) overrides `EventTarget.prototype.addEventListener` globally — forces `{passive: true}` for scroll/wheel/touchstart/touchmove; fixes PageSpeed "Does not use passive listeners" audit; estimated 50–150ms TBT/INP improvement
