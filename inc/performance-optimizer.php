@@ -464,24 +464,52 @@ function ccm_tools_perf_defer_js($tag, $handle, $src) {
     if (strpos($tag, 'defer') !== false || strpos($tag, 'async') !== false) {
         return $tag;
     }
-    
+
     // Skip inline scripts
     if (empty($src)) {
         return $tag;
     }
-    
+
+    // Skip scripts with registered inline `before`/`after` companions —
+    // wp_add_inline_script(handle, ..., 'after') emits a sibling inline
+    // <script> that runs at parse time and references symbols from the
+    // parent (e.g. wp.i18n.setLocaleData). If we defer the parent, the
+    // inline runs before its dependency and throws ReferenceError.
+    if (ccm_tools_perf_has_inline_companion($handle)) {
+        return $tag;
+    }
+
     $settings = ccm_tools_perf_get_settings();
     $excludes = isset($settings['defer_js_excludes']) ? (array) $settings['defer_js_excludes'] : array();
-    
+
+    // Built-in always-exclude — known WP scripts that ship inline `-after`
+    // translations and break if deferred.
+    $always_exclude = array('jquery', 'jquery-core', 'jquery-migrate', 'wp-i18n', 'wp-hooks', 'wp-a11y', 'wp-polyfill');
+    $excludes = array_merge($excludes, $always_exclude);
+
     // Check if handle is excluded
     foreach ($excludes as $exclude) {
         if (strpos($handle, $exclude) !== false) {
             return $tag;
         }
     }
-    
+
     // Add defer attribute
     return str_replace(' src=', ' defer src=', $tag);
+}
+
+/**
+ * True if the script identified by $handle has an inline `before` or `after`
+ * companion registered via wp_add_inline_script(). Such scripts must not be
+ * deferred or delayed — their inline sibling runs at parse time and would
+ * reference symbols (wp, jQuery, …) that the parent hasn't defined yet.
+ */
+function ccm_tools_perf_has_inline_companion($handle) {
+    global $wp_scripts;
+    if (!($wp_scripts instanceof \WP_Scripts)) return false;
+    if (empty($wp_scripts->registered[$handle])) return false;
+    $extra = $wp_scripts->registered[$handle]->extra ?? array();
+    return !empty($extra['after']) || !empty($extra['before']);
 }
 
 /**
@@ -498,12 +526,17 @@ function ccm_tools_perf_delay_js($tag, $handle, $src) {
     if (empty($src)) {
         return $tag;
     }
-    
+
+    // Skip scripts with inline before/after companions (see defer_js for why)
+    if (ccm_tools_perf_has_inline_companion($handle)) {
+        return $tag;
+    }
+
     $settings = ccm_tools_perf_get_settings();
     $excludes = isset($settings['delay_js_excludes']) ? (array) $settings['delay_js_excludes'] : array();
-    
+
     // Always exclude jQuery and critical scripts
-    $always_exclude = array('jquery', 'jquery-core', 'jquery-migrate', 'wp-i18n', 'wp-hooks');
+    $always_exclude = array('jquery', 'jquery-core', 'jquery-migrate', 'wp-i18n', 'wp-hooks', 'wp-a11y', 'wp-polyfill');
     $excludes = array_merge($excludes, $always_exclude);
     
     // Check if handle is excluded

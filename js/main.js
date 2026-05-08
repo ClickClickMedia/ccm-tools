@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.41.1
+ * Version: 7.41.2
  */
 
 (function() {
@@ -7123,9 +7123,26 @@
                                     /swiper/i, /slick/i, /owl/i, /flickity/i,
                                     /product.*order/i, /different product/i,
                                 ];
+                                // Words that indicate the carousel/slider is broken — not just
+                                // showing a different slide. If any of these are in the description
+                                // or likely_cause, override the dynamic-content classification.
+                                const STRUCTURAL_BREAKAGE_PATTERNS = [
+                                    /not initiali[sz]ing/i, /failing to initiali[sz]e/i,
+                                    /stacked vertically/i, /stacked instead of/i, /flat list/i,
+                                    /broken/i, /regression/i, /unstyled/i, /missing/i,
+                                    /collapsed/i, /overlapping/i, /clipping/i, /truncated/i,
+                                    /layout regression/i, /falling back/i, /falls back/i,
+                                    /delay_js/i, /defer_js/i, /critical_css/i, /preload_css/i,
+                                ];
+                                const looksStructural = (text) => STRUCTURAL_BREAKAGE_PATTERNS.some(p => p.test(text));
                                 const isDynamicContentIssue = (issue) => {
-                                    const text = `${issue.area || ''} ${issue.description || ''} ${issue.likely_cause || ''}`;
-                                    return DYNAMIC_CONTENT_PATTERNS.some(p => p.test(text));
+                                    const text = `${issue.area || ''} ${issue.description || ''} ${issue.likely_cause || ''} ${issue.suggested_fix || ''}`;
+                                    if (!DYNAMIC_CONTENT_PATTERNS.some(p => p.test(text))) return false;
+                                    // Even if "carousel" appears, treat as structural if any
+                                    // breakage word is present — the AI is telling us the
+                                    // carousel is broken, not just on a different slide.
+                                    if (looksStructural(text)) return false;
+                                    return true;
                                 };
 
                                 const structuralIssues = allIssues.filter(i => !isDynamicContentIssue(i));

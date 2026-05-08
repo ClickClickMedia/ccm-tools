@@ -1,5 +1,13 @@
 # CCM Tools — Changelog
 
+## v7.41.2
+- **Fix `wp` / `jQuery` is not defined console errors caused by defer/delay**
+  - `defer_js` and `delay_js` now skip any script that has a registered `wp_add_inline_script(handle, ..., 'before'|'after')` companion. The inline `_after` runs at parse time and references symbols (`wp.i18n.setLocaleData`, `jQuery(...)`) that the parent hasn't defined yet — three of the four console errors on wendyshome.com.au were this exact pattern.
+  - Added `wp-a11y` and `wp-polyfill` to the always-exclude list for both defer and delay (previously only `delay_js` had a list, and it was missing these two).
+  - `defer_js` previously had **no** always-exclude list at all — it was happily deferring `wp-i18n`/`wp-a11y`/`wp-hooks`. Now mirrors `delay_js`.
+- **Visual regression check no longer dismisses real carousel breakage**
+  - Previous filter treated any AI report mentioning "carousel" or "slider" as expected dynamic content. The AI was correctly flagging "carousel JavaScript is not initializing properly, all testimonials stacked vertically" — that's a regression, not a slide change. New filter looks for breakage words (`not initializing`, `stacked vertically`, `broken`, `regression`, `unstyled`, `missing`, `falling back`, plus mentions of plugin setting names) and overrides the dynamic-content classification when present.
+
 ## v7.41.1
 - **AI Optimiser — guard against orphan parent toggles**
   - The AI sometimes recommends a feature toggle (`critical_css: true`, `preconnect: true`, `dns_prefetch: true`, `lcp_preload: true`, `preload_key_requests: true`, `delay_third_party: true`) without the companion data key in the same response. The toggle would flip on but do nothing — confusing in the UI and PSI variance could blame it for unrelated score drops.
