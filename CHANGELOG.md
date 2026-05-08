@@ -1,5 +1,11 @@
 # CCM Tools — Changelog
 
+## v7.41.1
+- **AI Optimiser — guard against orphan parent toggles**
+  - The AI sometimes recommends a feature toggle (`critical_css: true`, `preconnect: true`, `dns_prefetch: true`, `lcp_preload: true`, `preload_key_requests: true`, `delay_third_party: true`) without the companion data key in the same response. The toggle would flip on but do nothing — confusing in the UI and PSI variance could blame it for unrelated score drops.
+  - Server-side: `ccm_tools_ai_hub_apply_recommendations` now post-validates the result and forces the parent toggle back to false if the required data key is empty.
+  - Client-side: the apply pre-filter detects orphan parent toggles before they reach a test cycle and logs `Blocked N orphan toggle(s) — feature enabled without required data`. Saves a 30-second mobile retest per orphan.
+
 ## v7.41.0
 - **AI Performance Optimiser — reliability fixes**
   - **Visual check on tall pages no longer fails silently**: Hub now scales screenshots wider/taller than 7800px to fit Claude Vision's 8000px hard limit; plugin detects the legacy oversize error, logs a clear "skipped — page too tall" message, and stops uselessly retrying. New `image_clamped` flag surfaces when auto-scaling occurred.

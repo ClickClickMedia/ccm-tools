@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.41.0
+ * Version: 7.41.1
  */
 
 (function() {
@@ -6659,18 +6659,46 @@
                 }
 
                 // ── Pre-filter: drop fixes whose recommended value already matches current ──
-                // and fixes that are recorded as persistently incompatible with this URL.
-                // Both cases waste an iteration if applied; tell the AI on next iteration.
+                // and fixes that are recorded as persistently incompatible with this URL,
+                // and parent toggles being enabled without their required data key.
                 let preFilteredFixes = allFixes;
+                // Map of parent-toggle setting → the data key required for it to do anything
+                const PARENT_REQUIRES_DATA = {
+                    critical_css: 'critical_css_code',
+                    preconnect: 'preconnect_urls',
+                    dns_prefetch: 'dns_prefetch_urls',
+                    lcp_preload: 'lcp_preload_url',
+                    preload_key_requests: 'preload_key_urls',
+                    delay_third_party: 'delay_third_party_domains',
+                };
+                const isEmptyVal = (v) => v === undefined || v === null || v === '' || v === false ||
+                    (Array.isArray(v) && v.length === 0);
                 try {
                     const curRes = await ajax('ccm_tools_get_perf_settings', {}, { timeout: 10000 });
                     const curSettings = (curRes && curRes.data) || {};
+                    // Build a quick lookup of every recommendation in this batch for orphan detection
+                    const batchByKey = Object.create(null);
+                    allFixes.forEach(f => { batchByKey[f.setting_key] = f; });
                     const skipped = [];
                     const blockedByHistory = [];
+                    const blockedOrphan = [];
                     preFilteredFixes = allFixes.filter(fix => {
                         if (persistentKnownBadKeys.has(fix.setting_key)) {
                             blockedByHistory.push(fix.setting_key);
                             return false;
+                        }
+                        // Parent toggle being turned ON without its companion data key in
+                        // this batch AND no existing data → silent no-op on the server. Skip.
+                        if (PARENT_REQUIRES_DATA[fix.setting_key] && fix.recommended_value === true) {
+                            const dataKey = PARENT_REQUIRES_DATA[fix.setting_key];
+                            const dataInBatch = batchByKey[dataKey];
+                            const dataInBatchEmpty = !dataInBatch || isEmptyVal(dataInBatch.recommended_value);
+                            const dataInCurrentEmpty = isEmptyVal(curSettings[dataKey]);
+                            if (dataInBatchEmpty && dataInCurrentEmpty) {
+                                blockedOrphan.push(`${fix.setting_key} (no ${dataKey})`);
+                                sessionAlreadyAppliedKeys.add(fix.setting_key);
+                                return false;
+                            }
                         }
                         if (!Object.prototype.hasOwnProperty.call(curSettings, fix.setting_key)) return true;
                         if (aiValuesEqual(curSettings[fix.setting_key], fix.recommended_value)) {
@@ -6685,6 +6713,9 @@
                     }
                     if (blockedByHistory.length) {
                         aiLog(`Blocked <strong>${blockedByHistory.length}</strong> recommendation(s) known to regress this URL from past runs: ${blockedByHistory.map(k => '<code>' + k + '</code>').join(', ')}`, 'warn');
+                    }
+                    if (blockedOrphan.length) {
+                        aiLog(`Blocked <strong>${blockedOrphan.length}</strong> orphan toggle(s) — feature enabled without required data: ${blockedOrphan.map(k => '<code>' + k + '</code>').join(', ')}`, 'warn');
                     }
                 } catch (preFilterErr) {
                     aiLog(`Pre-filter check failed: ${preFilterErr.message} — applying all recommendations`, 'warn');

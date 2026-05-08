@@ -608,6 +608,23 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
         }
     }
 
+    // ── Post-apply validation: refuse to leave a parent toggle ON without its data.
+    // The AI sometimes recommends a feature toggle (e.g. critical_css: true) without
+    // the data key (e.g. critical_css_code), which produces a "feature on but no
+    // effect" state — confusing in the UI and PSI variance can blame it for score
+    // drops. Force any orphaned parent toggle back to false so the surface always
+    // matches reality.
+    $toggle_to_data = array_flip($data_to_toggle);
+    foreach ($toggle_to_data as $toggleKey => $dataKey) {
+        if (empty($settings[$toggleKey])) continue;
+        $dataVal = $settings[$dataKey] ?? null;
+        $isEmpty = ($dataVal === null) || $dataVal === '' || $dataVal === [] || $dataVal === false;
+        if ($isEmpty) {
+            $settings[$toggleKey] = false;
+            error_log("[ccm-tools] Refused to enable {$toggleKey} because {$dataKey} is empty.");
+        }
+    }
+
     if ($changed) {
         // Ensure the optimizer is enabled
         $settings['enabled'] = true;
