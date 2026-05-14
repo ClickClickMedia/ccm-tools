@@ -1,5 +1,11 @@
 # CCM Tools — Changelog
 
+## v7.41.3
+- **Fix silent "an error occurred" deactivation after auto-update**
+  - During a WP-Cron auto-update, WordPress's `Plugin_Upgrader` silently deactivates the plugin via `active_before`, replaces the files, then calls `activate_plugin()` to re-enable it. Both WP's `active_after` and our own `after_install` invoke `activate_plugin()` — and because the plugin is no longer in `active_plugins` at that point, WP runs the full activation path including `plugin_sandbox_scrape()`, which `include`s `ccm.php` a second time within the same request.
+  - The OLD `ccm.php` was already loaded at request boot, so the second include re-executed the unguarded global function definitions (`ccm_tools_hide_all_notices`, `ccm_initialize_plugin`, class `CCMSettings`, …) and PHP fatal'd with "Cannot redeclare function". WordPress's fatal-error handler caught it, paused the plugin, and surfaced the generic "an error occurred" notice — but with no entry in `debug.log` unless `WP_DEBUG_LOG` was enabled.
+  - Fix: added a `CCM_TOOLS_FILE_LOADED` sentinel at the very top of `ccm.php` that cleanly returns on the second include, so activation completes without re-declaring symbols.
+
 ## v7.41.2
 - **Fix `wp` / `jQuery` is not defined console errors caused by defer/delay**
   - `defer_js` and `delay_js` now skip any script that has a registered `wp_add_inline_script(handle, ..., 'before'|'after')` companion. The inline `_after` runs at parse time and references symbols (`wp.i18n.setLocaleData`, `jQuery(...)`) that the parent hasn't defined yet — three of the four console errors on wendyshome.com.au were this exact pattern.
