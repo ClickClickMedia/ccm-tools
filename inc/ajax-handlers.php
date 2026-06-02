@@ -3383,7 +3383,29 @@ function ccm_tools_ajax_redis_save_settings(): void {
             $flushed = true;
         }
     }
-    
+
+    // One-step Save: when Redis is actually live (our drop-in is installed),
+    // push the same settings to wp-config.php and make sure the deployed
+    // drop-in is current — so saving is no longer a two-step process that
+    // leaves wp-config out of sync. Skipped when Redis isn't enabled.
+    $config_written = false;
+    $dropin_synced  = false;
+    $dropin_status  = function_exists('ccm_tools_redis_dropin_status') ? ccm_tools_redis_dropin_status() : array('is_ccm' => false);
+    if (!empty($dropin_status['is_ccm'])
+        && function_exists('ccm_tools_redis_build_config_array')
+        && function_exists('ccm_tools_redis_add_config')
+    ) {
+        $fresh_settings = ccm_tools_redis_get_settings();
+        $cfg = ccm_tools_redis_add_config(ccm_tools_redis_build_config_array($fresh_settings));
+        // success with no 'unchanged' flag means a write actually happened
+        $config_written = !empty($cfg['success']) && empty($cfg['unchanged']);
+
+        if (function_exists('ccm_tools_redis_refresh_dropin')) {
+            $sync = ccm_tools_redis_refresh_dropin(false);
+            $dropin_synced = !empty($sync['changed']);
+        }
+    }
+
     // Build response message
     if (!$saved) {
         $message = __('Settings unchanged.', 'ccm-tools');
@@ -3391,6 +3413,12 @@ function ccm_tools_ajax_redis_save_settings(): void {
         $message = __('Redis settings saved. Cache flushed automatically because serializer or compression changed.', 'ccm-tools');
     } else {
         $message = __('Redis settings saved successfully.', 'ccm-tools');
+    }
+    if ($config_written) {
+        $message .= ' ' . __('wp-config.php updated.', 'ccm-tools');
+    }
+    if ($dropin_synced) {
+        $message .= ' ' . __('Drop-in refreshed.', 'ccm-tools');
     }
     
     // Re-read settings after save so the response contains the freshest merged values
@@ -3414,9 +3442,11 @@ function ccm_tools_ajax_redis_save_settings(): void {
 
     // update_option returns false when the value is unchanged, so treat that as success
     wp_send_json_success(array(
-        'message'       => $message,
-        'cache_flushed' => $flushed,
-        'active_config' => $active_config,
+        'message'        => $message,
+        'cache_flushed'  => $flushed,
+        'config_written' => $config_written,
+        'dropin_synced'  => $dropin_synced,
+        'active_config'  => $active_config,
     ));
 }
 
@@ -3441,80 +3471,11 @@ function ccm_tools_ajax_redis_add_config(): void {
         return;
     }
     
-    // Get current settings to use as config
+    // Get current settings and build the managed constant set. The builder is
+    // shared with the one-step Save flow so both paths emit an identical block.
     $settings = ccm_tools_redis_get_settings();
-    
-    $config = array(
-        'WP_REDIS_HOST' => sanitize_text_field($settings['host']),
-        'WP_REDIS_PORT' => absint($settings['port']),
-        'WP_REDIS_MAXTTL' => absint($settings['max_ttl']) ?: 3600,
-        'WP_REDIS_DISABLE_METRICS' => true,
-    );
-    
-    if (!empty($settings['key_salt'])) {
-        $config['WP_CACHE_KEY_SALT'] = sanitize_text_field($settings['key_salt']);
-    }
-    
-    if (!empty($settings['password'])) {
-        // Password is stored securely, pass as-is
-        $config['WP_REDIS_PASSWORD'] = $settings['password'];
-    }
-    
-    if (!empty($settings['username'])) {
-        $config['WP_REDIS_USERNAME'] = sanitize_text_field($settings['username']);
-    }
-    
-    if ($settings['database'] > 0) {
-        $config['WP_REDIS_DATABASE'] = absint($settings['database']);
-    }
-    
-    $config['WP_REDIS_SCHEME'] = sanitize_text_field($settings['scheme']);
-    
-    if (!empty($settings['path'])) {
-        $config['WP_REDIS_PATH'] = sanitize_text_field($settings['path']);
-    }
-    
-    if ($settings['selective_flush']) {
-        $config['WP_REDIS_SELECTIVE_FLUSH'] = true;
-    }
-    
-    // Serializer (only write if non-default AND extension is available)
-    if (!empty($settings['serializer']) && $settings['serializer'] !== 'php') {
-        $ser = sanitize_text_field($settings['serializer']);
-        $ser_available = ($ser === 'igbinary' && extension_loaded('igbinary'))
-                      || ($ser === 'msgpack' && extension_loaded('msgpack'));
-        if ($ser_available) {
-            $config['WP_REDIS_SERIALIZER'] = $ser;
-        }
-    }
-    
-    // Compression (only write if non-default AND phpredis supports it)
-    if (!empty($settings['compression']) && $settings['compression'] !== 'none') {
-        $comp = sanitize_text_field($settings['compression']);
-        $comp_available = ($comp === 'lzf' && defined('Redis::COMPRESSION_LZF'))
-                       || ($comp === 'lz4' && defined('Redis::COMPRESSION_LZ4'))
-                       || ($comp === 'zstd' && defined('Redis::COMPRESSION_ZSTD'));
-        if ($comp_available) {
-            $config['WP_REDIS_COMPRESSION'] = $comp;
-        }
-    }
-    
-    // Async flush
-    if (!empty($settings['async_flush'])) {
-        $config['WP_REDIS_ASYNC_FLUSH'] = true;
-    }
-    
-    // Timeouts — always write so Active Configuration shows wp-config.php source
-    $config['WP_REDIS_TIMEOUT'] = (float) ($settings['timeout'] ?? 1);
-    $config['WP_REDIS_READ_TIMEOUT'] = (float) ($settings['read_timeout'] ?? 1);
-    
-    // HTML footnote — disable_comment === true means footnote disabled
-    if (empty($settings['disable_comment'])) {
-        $config['WP_REDIS_DISABLE_COMMENT'] = false;
-    } else {
-        $config['WP_REDIS_DISABLE_COMMENT'] = true;
-    }
-    
+    $config   = ccm_tools_redis_build_config_array($settings);
+
     // Detect serializer/compression changes — must flush BEFORE writing wp-config.php
     // because the current drop-in still uses the OLD serializer and can talk to Redis.
     // After wp-config changes, the next PHP process would use the NEW serializer but

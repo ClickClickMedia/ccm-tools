@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.41.4
+ * Version: 7.42.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.41.4');
+    define('CCM_HELPER_VERSION', '7.42.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -119,6 +119,50 @@ if (!defined('CCM_HELPER_ROOT_PATH')) {
 
 if (!defined('CCM_HELPER_ROOT_URL')) {
     define('CCM_HELPER_ROOT_URL', plugin_dir_url(__FILE__));
+}
+
+/* ────────────────────────────────────────────────────────────────
+ *  Redis drop-in lifecycle (activation / deactivation)
+ *
+ *  Registered against the MAIN plugin file so they fire on genuine
+ *  user-initiated (de)activation. WordPress deactivates SILENTLY during
+ *  plugin updates ($silent = true), so these do NOT run mid-update — the
+ *  drop-in is instead refreshed by upgrader_process_complete / admin_init
+ *  in inc/redis-object-cache.php.
+ * ──────────────────────────────────────────────────────────────── */
+register_activation_hook(__FILE__, 'ccm_tools_on_activate');
+register_deactivation_hook(__FILE__, 'ccm_tools_on_deactivate');
+
+/**
+ * On (re)activation: if Redis was previously enabled, make sure the deployed
+ * drop-in is present and current. Covers the update deactivate→reactivate
+ * dance leaving a stale or missing drop-in.
+ */
+function ccm_tools_on_activate() {
+    require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php';
+    if (!function_exists('ccm_tools_redis_get_settings') || !function_exists('ccm_tools_redis_refresh_dropin')) {
+        return;
+    }
+    $settings = ccm_tools_redis_get_settings();
+    if (!empty($settings['enabled'])) {
+        ccm_tools_redis_refresh_dropin(true); // install if missing, refresh if outdated
+    }
+}
+
+/**
+ * On deactivation: remove our object-cache.php drop-in and strip the managed
+ * Redis block from wp-config.php (clean teardown). Only touches files we own.
+ */
+function ccm_tools_on_deactivate() {
+    require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php';
+    if (function_exists('ccm_tools_redis_uninstall_dropin')) {
+        ccm_tools_redis_uninstall_dropin(); // removes drop-in (ours only) + strips wp-config
+    }
+    // Belt-and-braces: ensure the wp-config block is gone even if the drop-in
+    // was already absent (uninstall_dropin early-returns in that case).
+    if (function_exists('ccm_tools_redis_remove_config')) {
+        ccm_tools_redis_remove_config();
+    }
 }
 
 // IMPORTANT: Load text domain only on init hook to avoid "too early" warnings

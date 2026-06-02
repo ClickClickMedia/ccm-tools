@@ -1,6 +1,6 @@
 # Performance Audit TODO — AI Reference Doc
 > Auto-updated after each version. Restart-safe: agent can read this file to resume work.
-> Last updated: v7.41.4 released ✅ (Redis alloptions OOM hardening)
+> Last updated: v7.42.0 released ✅ (Redis drop-in lifecycle automation + one-step Save)
 
 ---
 
@@ -17,12 +17,21 @@
 | v7.29.0 | #22, #25 (#23 skipped — duplicate of remove_query_strings) | ✅ Released |
 | v7.30.0 | #27, #28 | ✅ Released |
 | v7.41.4 | Redis `alloptions` 4 GB OOM hardening (P1–P4) | ✅ Released |
+| v7.42.0 | Redis drop-in lifecycle automation + one-step Save | ✅ Released |
 
 **Permanently skipped:** #2 (ES module type="module"), #3 (modulepreload) — unsafe for arbitrary WP scripts.
 
 ---
 
 ## Completed Items
+
+### ✅ Redis drop-in lifecycle automation + one-step Save (v7.42.0)
+Files: `ccm.php` (activation/deactivation hooks), `inc/redis-object-cache.php`, `inc/ajax-handlers.php`
+- **Auto-replace drop-in on update:** `upgrader_process_complete` + `admin_init` self-heal copy the bundled drop-in over the deployed one whenever it's newer (connection-less, won't clobber a foreign drop-in). This is what makes future fixes like v7.41.4 actually reach sites without a manual reinstall.
+- **Activation:** reinstalls/refreshes the drop-in when `enabled` (covers the update deactivate→reactivate dance).
+- **Disable/deactivation:** removes the drop-in AND strips the wp-config block (clean teardown; silent during updates so caching survives them).
+- **One-step Save:** Save rewrites wp-config + refreshes the drop-in when Redis is enabled; Enable writes wp-config too. wp-config write skipped when unchanged; backups pruned to last 5.
+- New helpers: `build_config_array()`, `managed_constants()`, `refresh_dropin()`, `remove_config()`, `prune_backups()`.
 
 ### ✅ Redis `alloptions` 4 GB OOM hardening (v7.41.4)
 Files: `assets/object-cache.php` (P1–P3), `inc/redis-object-cache.php` (P4)
