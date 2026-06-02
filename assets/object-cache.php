@@ -8,8 +8,8 @@
  * wp_cache_remember(), HTML footnote, KEEPTTL on incr/decr.
  * 
  * @package CCM_Tools
- * @version 7.19.0
- * 
+ * @version 7.41.4
+ *
  * This file should be placed in wp-content/object-cache.php
  */
 
@@ -209,6 +209,21 @@ class CCM_Redis_Object_Cache {
     /** @var array Ignored groups (never persisted to Redis) */
     private $ignored_groups = [];
 
+    /**
+     * Groups never written to Redis — the perf payoff is tiny but the
+     * blast radius is sitewide. The `options` group holds the `alloptions`
+     * blob read on virtually every request via wp_load_alloptions(); if a
+     * compressed/serialized copy ever fails to round-trip (the LZ4+igbinary
+     * length-prefix corruption that OOM'd thesportingbase.com on 2026-05-28
+     * and 2026-06-03), every worker that reads it tries to allocate ~4 GB
+     * and fatals. WP core already memoises alloptions per request, so
+     * skipping Redis costs at most one indexed wp_options SELECT per worker.
+     * Override with define('WP_REDIS_PERSIST_OPTIONS', true) to opt back in.
+     *
+     * @var array
+     */
+    private $skip_persistent_groups = ['options', 'site-options'];
+
     /** @var string Blog prefix for multisite */
     private $blog_prefix = '';
 
@@ -331,6 +346,12 @@ class CCM_Redis_Object_Cache {
             $this->compression = strtolower(WP_REDIS_COMPRESSION);
         }
 
+        // Allow opting the options group back into Redis persistence. Off by
+        // default since v7.41.4 — see $skip_persistent_groups for the why.
+        if (defined('WP_REDIS_PERSIST_OPTIONS') && WP_REDIS_PERSIST_OPTIONS) {
+            $this->skip_persistent_groups = [];
+        }
+
         // Retry settings
         if (defined('WP_REDIS_RETRY_INTERVAL')) {
             $this->retry_interval = max(0, (int) WP_REDIS_RETRY_INTERVAL);
@@ -426,6 +447,11 @@ class CCM_Redis_Object_Cache {
                 $this->detect_capabilities();
 
                 $this->redis_connected = true;
+
+                // Auto-flush if the serializer/compression changed under us
+                // (e.g. a manual wp-config edit, or an extension being removed).
+                $this->ensure_config_consistency();
+
                 return true;
 
             } catch (Exception $e) {
@@ -523,6 +549,50 @@ class CCM_Redis_Object_Cache {
         }
     }
 
+    /**
+     * Guard against serializer/compression drift.
+     *
+     * The plugin admin UI auto-flushes when these settings change through it,
+     * but that doesn't fire when an admin hand-edits wp-config.php or when a
+     * PHP extension (igbinary/lz4) is added or removed at the server level.
+     * In those cases every previously written value is now mis-encoded and
+     * will corrupt on read — the exact failure that OOM'd thesportingbase.com.
+     *
+     * We stamp the active encoding in a sentinel key and flush our own keys
+     * the moment it no longer matches. The sentinel is read/written with
+     * rawCommand so it bypasses OPT_SERIALIZER/OPT_COMPRESSION — otherwise the
+     * detector would itself be subject to the corruption it's trying to catch.
+     */
+    private function ensure_config_consistency() {
+        if (!$this->redis_connected || !$this->redis) {
+            return;
+        }
+
+        $sentinel_key = $this->key_salt . '__ccm_dropin_config_v1';
+        $current      = $this->serializer . '|' . $this->compression;
+
+        try {
+            $stored = $this->redis->rawCommand('GET', $sentinel_key);
+        } catch (Exception $e) {
+            return; // can't read sentinel — don't risk a spurious flush
+        }
+
+        if ($stored !== false && $stored !== null && $stored !== $current) {
+            $this->track_error(
+                "Redis encoding changed ({$stored} -> {$current}); flushing stale cache to avoid corrupt reads"
+            );
+            $this->flush(); // selective: only this site's salted keys
+        }
+
+        if ($stored !== $current) {
+            try {
+                $this->redis->rawCommand('SET', $sentinel_key, $current);
+            } catch (Exception $e) {
+                // Non-fatal: we'll re-detect and re-flush next request.
+            }
+        }
+    }
+
     /* ───── Key building ───── */
 
     private function build_key($key, $group = 'default') {
@@ -546,6 +616,9 @@ class CCM_Redis_Object_Cache {
      * Supports wildcard patterns (e.g. "wc_cache_*") via fnmatch().
      */
     private function should_persist($group) {
+        if (in_array($group, $this->skip_persistent_groups, true)) {
+            return false;
+        }
         if (in_array($group, $this->non_persistent_groups, true) || in_array($group, $this->ignored_groups, true)) {
             return false;
         }
@@ -732,6 +805,23 @@ class CCM_Redis_Object_Cache {
             });
 
             if ($value !== false) {
+                // Belt-and-braces (defends sites that set WP_REDIS_PERSIST_OPTIONS):
+                // the options group must round-trip as arrays. A corrupt blob can
+                // decode to a scalar/garbage whose serialized length prefix triggers
+                // a ~4 GB unserialize() OOM downstream. Treat non-array as a miss and
+                // let WP rebuild from the database.
+                if ($group === 'options'
+                    && ($key === 'alloptions' || $key === 'notoptions')
+                    && !is_array($value)
+                ) {
+                    $this->track_error(
+                        "options:{$key} returned non-array (" . gettype($value) . ') — treating as cache miss'
+                    );
+                    $found = false;
+                    $this->stats['misses']++;
+                    return false;
+                }
+
                 $found = true;
                 $this->stats['hits']++;
                 $this->cache[$group][$key] = $value;

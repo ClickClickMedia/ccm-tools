@@ -1485,7 +1485,20 @@ function ccm_tools_render_redis_page() {
                                 <span class="ccm-field-hint"><?php _e('Reduces memory usage at the cost of CPU; changing compression requires a cache flush', 'ccm-tools'); ?></span>
                             </div>
                         </div>
-                        
+
+                        <div class="ccm-form-grid">
+                            <div class="ccm-form-field ccm-form-field-full">
+                                <p class="ccm-note" style="border-left:3px solid #d98300;padding-left:10px;background:#fff8ec;">
+                                    <strong><?php _e('⚠ LZ4 + igbinary advisory', 'ccm-tools'); ?></strong><br>
+                                    <?php _e('This combination has caused production “Allowed memory size exhausted (4&nbsp;GB)” fatals when a compressed value fails to round-trip. The recommended setup is <strong>igbinary with no compression</strong>. If you enable both, test on staging first.', 'ccm-tools'); ?>
+                                </p>
+                                <p class="ccm-note">
+                                    <strong><?php _e('Skip caching for: options, site-options', 'ccm-tools'); ?></strong><br>
+                                    <?php _e('Since v7.41.4 the object-cache drop-in never persists the WordPress options/site-options groups to Redis. The <code>alloptions</code> blob is read on almost every request, so a single corrupt copy would take the whole site down — and WordPress already keeps it in per-request memory, so the Redis copy saved only one indexed query. To persist it anyway (not recommended), add <code>define(&#39;WP_REDIS_PERSIST_OPTIONS&#39;, true);</code> to wp-config.php.', 'ccm-tools'); ?>
+                                </p>
+                            </div>
+                        </div>
+
                         <div class="ccm-form-grid">
                             <div class="ccm-form-field ccm-form-field-full">
                                 <label class="ccm-checkbox-label">

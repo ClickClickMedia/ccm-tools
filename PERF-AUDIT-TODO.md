@@ -1,6 +1,6 @@
 # Performance Audit TODO — AI Reference Doc
 > Auto-updated after each version. Restart-safe: agent can read this file to resume work.
-> Last updated: v7.30.0 released ✅
+> Last updated: v7.41.4 released ✅ (Redis alloptions OOM hardening)
 
 ---
 
@@ -16,12 +16,22 @@
 | v7.28.0 | #18, #19, #20, #21 | ✅ Released |
 | v7.29.0 | #22, #25 (#23 skipped — duplicate of remove_query_strings) | ✅ Released |
 | v7.30.0 | #27, #28 | ✅ Released |
+| v7.41.4 | Redis `alloptions` 4 GB OOM hardening (P1–P4) | ✅ Released |
 
 **Permanently skipped:** #2 (ES module type="module"), #3 (modulepreload) — unsafe for arbitrary WP scripts.
 
 ---
 
 ## Completed Items
+
+### ✅ Redis `alloptions` 4 GB OOM hardening (v7.41.4)
+Files: `assets/object-cache.php` (P1–P3), `inc/redis-object-cache.php` (P4)
+- **Root cause:** LZ4+igbinary failed to round-trip the `alloptions` blob; the corrupt length prefix made `unserialize()` try to allocate 4,295,229,440 bytes → sitewide fatals (TSB, 2026-05-28 + 2026-06-03). v7.39.10 fixed only one trigger.
+- **P1:** drop-in no longer persists `options`/`site-options` to Redis (`$skip_persistent_groups`); override via `WP_REDIS_PERSIST_OPTIONS`. This alone closes the issue.
+- **P2:** `get()` rejects non-array `options:alloptions`/`options:notoptions` as a cache miss.
+- **P3:** `ensure_config_consistency()` auto-flushes on serializer/compression drift (sentinel key via `rawCommand`).
+- **P4:** admin UI warns on LZ4+igbinary and documents the skipped groups.
+- Drop-in `@version` 7.19.0 → 7.41.4 (triggers the outdated-drop-in reinstall notice).
 
 ### ✅ #1 — Inline Small Scripts & Styles (v7.25.0)
 Settings: `inline_small_scripts`, `inline_small_styles`, `inline_threshold_kb`
