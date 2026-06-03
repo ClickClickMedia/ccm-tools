@@ -1,5 +1,13 @@
 # CCM Tools — Changelog
 
+## v7.42.1
+- **Fix "plugin deactivated itself" after a manual zip install (duplicate folder)**
+  - Release zips are flat (files at the archive root). When a developer downloads `ccm-tools-<ver>.zip` and installs it via **Plugins → Add New → Upload**, WordPress names the destination folder after the *zip filename* — creating `wp-content/plugins/ccm-tools-<ver>/` alongside the canonical `ccm-tools/`. With two active copies, the old duplicate-detection guard made the plugin deactivate **itself** (often the good copy, whichever loaded first) — the "plugin deactivated itself after update" symptom several sites hit. (The in-dashboard auto-updater was unaffected because its `fix_source_dir` renames the folder.)
+  - **Prevent (root cause):** release zips now ship with a top-level `ccm-tools/` wrapper folder, so a manual upload always installs to `/wp-content/plugins/ccm-tools/` regardless of the zip filename. The 7.42.0 and 7.41.4 release assets were rebuilt with the wrapper too.
+  - **Heal (existing sites):** the duplicate guard no longer deactivates itself. From the canonical `/ccm-tools/` install it now detects version-suffixed `ccm-tools-*` duplicate folders, silently deactivates them (no teardown hooks fire — wp-config and the drop-in are never touched), deletes the stale folders via the filesystem API (no uninstall hooks, so shared options survive), and shows a notice listing what was removed. A copy running from a version-suffixed folder while the canonical exists stands down quietly and hands back to `/ccm-tools/`; a lone version-suffixed install keeps running and just warns to reinstall.
+- **Atomic object-cache drop-in replacement**
+  - The v7.42.0 auto-refresh wrote the drop-in with `copy()` straight over the live `wp-content/object-cache.php`, which truncates-then-writes — a concurrent request could read a half-written file and fatal. It now writes to a temp file and `rename()`s it into place (atomic on the same filesystem), so readers always see the old or new file whole.
+
 ## v7.42.0
 - **Redis drop-in lifecycle automation + one-step Save**
   - **Auto-replace the drop-in on plugin update.** Added `upgrader_process_complete` and an `admin_init` self-heal that bring the deployed `wp-content/object-cache.php` into line with the bundled version automatically. Previously a version bump (e.g. the v7.41.4 OOM fix) only raised an admin notice the user had to click — so fixes never reached sites until someone manually reinstalled. The refresh is connection-less, never overwrites another plugin's drop-in, only copies when the bundled `@version` is newer, and is guarded against AJAX/cron churn.

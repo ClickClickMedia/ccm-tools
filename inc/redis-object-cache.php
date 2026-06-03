@@ -744,8 +744,19 @@ function ccm_tools_redis_refresh_dropin($install_if_missing = false) {
         @copy($dest, WP_CONTENT_DIR . '/object-cache-backup-' . date('Y-m-d-His') . '.php');
     }
 
-    if (!@copy($source, $dest)) {
+    // Write atomically: copy to a temp file, then rename over the live drop-in.
+    // A plain copy() truncates-then-writes, so a concurrent request could read a
+    // half-written object-cache.php and fatal. rename() on the same filesystem
+    // is atomic, so readers always see either the old or the new file whole.
+    $tmp = $dest . '.tmp-' . wp_generate_password(6, false, false);
+    if (!@copy($source, $tmp)) {
+        @unlink($tmp);
         $result['message'] = 'copy failed (check permissions)';
+        return $result;
+    }
+    if (!@rename($tmp, $dest)) {
+        @unlink($tmp);
+        $result['message'] = 'atomic replace failed (check permissions)';
         return $result;
     }
 

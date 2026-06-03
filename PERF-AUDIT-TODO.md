@@ -1,6 +1,6 @@
 # Performance Audit TODO — AI Reference Doc
 > Auto-updated after each version. Restart-safe: agent can read this file to resume work.
-> Last updated: v7.42.0 released ✅ (Redis drop-in lifecycle automation + one-step Save)
+> Last updated: v7.42.1 released ✅ (duplicate-folder self-deactivation fix + wrapper-folder zips)
 
 ---
 
@@ -18,6 +18,7 @@
 | v7.30.0 | #27, #28 | ✅ Released |
 | v7.41.4 | Redis `alloptions` 4 GB OOM hardening (P1–P4) | ✅ Released |
 | v7.42.0 | Redis drop-in lifecycle automation + one-step Save | ✅ Released |
+| v7.42.1 | Duplicate-folder self-deactivation fix + wrapper-folder release zips | ✅ Released |
 
 **Permanently skipped:** #2 (ES module type="module"), #3 (modulepreload) — unsafe for arbitrary WP scripts.
 

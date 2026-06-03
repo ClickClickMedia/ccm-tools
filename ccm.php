@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.42.0
+ * Version: 7.42.1
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.42.0');
+    define('CCM_HELPER_VERSION', '7.42.1');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -87,25 +87,143 @@ function ccm_tools_hide_all_notices() {
  * Allows our plugin to still show its own notifications
  */
 function ccm_tools_custom_admin_notices() {
-    global $ccm_is_duplicate;
-    
-    // Only show our duplicate plugin warning if needed
-    if ($ccm_is_duplicate) {
-        echo '<div class="notice notice-error is-dismissible"><p>';
-        echo 'Another instance of CCM Tools is already active. Please deactivate it before using this version.';
-        echo '</p></div>';
+    // Duplicate installs are now resolved automatically (the canonical
+    // /ccm-tools/ install is kept and version-suffixed copies are removed), so
+    // the old "please deactivate the other instance" warning is no longer shown.
+    // This hook remains as the single allowed admin_notices callback on CCM
+    // Tools pages after remove_all_actions(); intentionally left as a no-op.
+}
+
+// ── Resolve duplicate installs ───────────────────────────────────────────
+// A manual upload of a version-suffixed release zip (e.g. ccm-tools-7.42.0.zip)
+// makes WordPress create wp-content/plugins/ccm-tools-7.42.0/ ALONGSIDE the
+// canonical ccm-tools/. Two active copies used to make this plugin deactivate
+// ITSELF (frequently the good one — whichever loaded first), which is the
+// "plugin deactivated itself after update" symptom. Instead: always keep the
+// canonical /ccm-tools/ install and clean up the version-suffixed duplicate(s).
+if ($ccm_is_duplicate) {
+    $ccm_current_dir = dirname(plugin_basename(__FILE__));
+
+    if ($ccm_current_dir === 'ccm-tools') {
+        // We are the canonical install — stay active and remove the duplicates.
+        add_action('admin_init', 'ccm_tools_cleanup_duplicate_installs');
+    } elseif (is_dir(WP_PLUGIN_DIR . '/ccm-tools')) {
+        // We are a version-suffixed copy and the canonical exists. Make sure the
+        // canonical is active, stand down quietly (silent = NO teardown hooks),
+        // and stop loading. The canonical instance deletes our folder on its
+        // next admin load.
+        add_action('admin_init', function () {
+            if (!function_exists('activate_plugin') || !function_exists('is_plugin_active')) {
+                require_once ABSPATH . 'wp-admin/includes/plugin.php';
+            }
+            if (!is_plugin_active('ccm-tools/ccm.php')) {
+                @activate_plugin('ccm-tools/ccm.php');
+            }
+            deactivate_plugins(plugin_basename(__FILE__), true); // silent: no deactivation hooks
+        });
+        return; // stop loading this duplicate copy
+    } else {
+        // Version-suffixed copy with NO canonical present — it is the only
+        // install, so keep running (never self-delete) and just warn the admin
+        // to reinstall into /ccm-tools/.
+        add_action('admin_notices', 'ccm_tools_nonstandard_folder_notice');
     }
 }
 
-// Only run duplicate checking if we're actually finding a duplicate
-if ($ccm_is_duplicate) {
-    // Deactivate the newer plugin
-    add_action('admin_init', function() {
-        deactivate_plugins(plugin_basename(__FILE__));
-    });
-    
-    // Stop loading this plugin
-    return;
+/**
+ * Remove version-suffixed duplicate CCM Tools folders (e.g. ccm-tools-7.42.0)
+ * left behind by a manual zip upload. Runs from the canonical /ccm-tools/
+ * install only. Deactivates duplicates silently (no teardown) and deletes the
+ * folder via the filesystem API (no uninstall hooks), so shared options, the
+ * wp-config Redis block and the object-cache drop-in are never touched.
+ */
+function ccm_tools_cleanup_duplicate_installs() {
+    if (!current_user_can('activate_plugins')) {
+        return;
+    }
+    require_once ABSPATH . 'wp-admin/includes/plugin.php';
+
+    $candidates = glob(WP_PLUGIN_DIR . '/ccm-tools-*', GLOB_ONLYDIR);
+    if (empty($candidates)) {
+        return;
+    }
+
+    $active  = (array) get_option('active_plugins', array());
+    $removed = array();
+
+    foreach ($candidates as $dir) {
+        $base = basename($dir);
+        if ($base === 'ccm-tools') {
+            continue; // never the canonical install
+        }
+        $main = $dir . '/ccm.php';
+        if (!file_exists($main)) {
+            continue;
+        }
+        // Safety: only remove folders that are genuinely a CCM Tools copy.
+        $data = get_plugin_data($main, false, false);
+        if (empty($data['Name']) || stripos($data['Name'], 'CCM Tools') === false) {
+            continue;
+        }
+
+        $entry = $base . '/ccm.php';
+        if (in_array($entry, $active, true)) {
+            deactivate_plugins($entry, true); // silent — no teardown
+        }
+
+        if (!function_exists('WP_Filesystem')) {
+            require_once ABSPATH . 'wp-admin/includes/file.php';
+        }
+        WP_Filesystem();
+        global $wp_filesystem;
+        if ($wp_filesystem && $wp_filesystem->is_dir($dir)) {
+            $wp_filesystem->delete($dir, true);
+            $removed[] = $base;
+        }
+    }
+
+    if (!empty($removed)) {
+        set_transient('ccm_tools_removed_duplicates', $removed, 600);
+    }
+}
+
+/**
+ * Notice shown after duplicate folders are cleaned up.
+ */
+add_action('admin_notices', 'ccm_tools_duplicate_cleanup_notice');
+function ccm_tools_duplicate_cleanup_notice() {
+    if (!current_user_can('activate_plugins')) {
+        return;
+    }
+    $removed = get_transient('ccm_tools_removed_duplicates');
+    if (empty($removed)) {
+        return;
+    }
+    delete_transient('ccm_tools_removed_duplicates');
+    echo '<div class="notice notice-success is-dismissible"><p><strong>CCM Tools:</strong> ';
+    printf(
+        /* translators: %s: list of removed plugin folder names */
+        esc_html__('Removed duplicate plugin folder(s) left by a manual install: %s. The canonical install at /wp-content/plugins/ccm-tools/ is active.', 'ccm-tools'),
+        esc_html(implode(', ', (array) $removed))
+    );
+    echo '</p></div>';
+}
+
+/**
+ * Notice shown when CCM Tools is running from a non-standard (version-suffixed)
+ * folder with no canonical /ccm-tools/ present.
+ */
+function ccm_tools_nonstandard_folder_notice() {
+    if (!current_user_can('activate_plugins')) {
+        return;
+    }
+    echo '<div class="notice notice-warning is-dismissible"><p><strong>CCM Tools:</strong> ';
+    printf(
+        /* translators: %s: current plugin folder name */
+        esc_html__('CCM Tools is installed in a non-standard folder (%s) instead of "ccm-tools". This can cause update and activation problems. Please reinstall CCM Tools so it lives in /wp-content/plugins/ccm-tools/.', 'ccm-tools'),
+        esc_html(dirname(plugin_basename(__FILE__)))
+    );
+    echo '</p></div>';
 }
 
 // Define plugin constants only if they don't already exist
