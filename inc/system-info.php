@@ -305,7 +305,7 @@ function ccm_tools_add_redis_configuration() {
     
     // Secondary constants - add if missing
     if (!isset($redis_config['constants']['WP_REDIS_MAXTTL'])) {
-        $redis_config_lines[] = "define('WP_REDIS_MAXTTL', 3600);";
+        $redis_config_lines[] = "define('WP_REDIS_MAXTTL', 604800);";
     }
     
     if (!isset($redis_config['constants']['WP_REDIS_DISABLE_METRICS'])) {

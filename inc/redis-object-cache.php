@@ -155,7 +155,12 @@ function ccm_tools_redis_get_settings() {
         'enabled' => false,
         'selective_flush' => true,
         'compression' => 'none',
-        'serializer' => 'php',
+        // Prefer igbinary when the extension is present: smaller payloads,
+        // faster encode/decode. Falls back to php where igbinary is absent.
+        // Only written to wp-config when non-php AND loaded (see
+        // ccm_tools_redis_build_config_array); the drop-in auto-flushes once
+        // on serializer drift, so the switch is safe on existing installs.
+        'serializer' => extension_loaded('igbinary') ? 'igbinary' : 'php',
         'async_flush' => false,
         'ignored_groups' => array('counts', 'plugins', 'themes'),
         'global_groups' => array(
@@ -603,7 +608,7 @@ function ccm_tools_redis_build_config_array($settings) {
     $config = array(
         'WP_REDIS_HOST'            => sanitize_text_field($settings['host']),
         'WP_REDIS_PORT'            => absint($settings['port']),
-        'WP_REDIS_MAXTTL'          => absint($settings['max_ttl']) ?: 3600,
+        'WP_REDIS_MAXTTL'          => absint($settings['max_ttl']) ?: 604800,
         'WP_REDIS_DISABLE_METRICS' => true,
     );
 
@@ -1269,7 +1274,7 @@ function ccm_tools_redis_add_config($config = array()) {
     $defaults = array(
         'WP_REDIS_HOST' => '127.0.0.1',
         'WP_REDIS_PORT' => 6379,
-        'WP_REDIS_MAXTTL' => 3600,
+        'WP_REDIS_MAXTTL' => 604800,
         'WP_REDIS_DISABLE_METRICS' => true,
         'WP_REDIS_DISABLE_COMMENT' => true,
     );
@@ -1702,7 +1707,7 @@ function ccm_tools_render_redis_page() {
                             </div>
                             <div class="ccm-form-field">
                                 <label for="redis-max-ttl"><?php _e('Max TTL (seconds)', 'ccm-tools'); ?></label>
-                                <input type="number" id="redis-max-ttl" name="max_ttl" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0" placeholder="3600">
+                                <input type="number" id="redis-max-ttl" name="max_ttl" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0" placeholder="604800">
                                 <span class="ccm-field-hint"><?php _e('0 = no limit', 'ccm-tools'); ?></span>
                             </div>
                         </div>
@@ -1826,8 +1831,8 @@ function ccm_tools_render_redis_page() {
                             <div class="ccm-form-field">
                                 <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
                                 <select id="redis-serializer" name="serializer">
-                                    <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP (default)', 'ccm-tools'); ?></option>
-                                    <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary')); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('faster, smaller', 'ccm-tools') . ')'; ?></option>
+                                    <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP', 'ccm-tools'); ?><?php echo extension_loaded('igbinary') ? ' (' . __('fallback', 'ccm-tools') . ')' : ' (' . __('default', 'ccm-tools') . ')'; ?></option>
+                                    <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary')); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('default — faster, smaller', 'ccm-tools') . ')'; ?></option>
                                     <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack')); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
                                 </select>
                                 <span class="ccm-field-hint"><?php _e('igbinary uses less memory; changing serializer requires a cache flush', 'ccm-tools'); ?></span>

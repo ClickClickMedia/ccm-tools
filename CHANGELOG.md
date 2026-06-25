@@ -1,5 +1,11 @@
 # CCM Tools — Changelog
 
+## v7.43.0
+- **Raise the default Redis max-TTL from 1 hour to 7 days (`604800`)**
+  - The managed `WP_REDIS_MAXTTL` default was `3600`, which capped *every* cache entry — including the many objects WordPress stores with no expiry (`expire = 0`) — at one hour. With `allkeys-lru` doing the real memory management (and 0 evictions / huge headroom on our boxes), a 1-hour cap just forced needless cache misses and DB churn. The new `604800` default keeps a sane safety ceiling while letting long-lived objects actually live. Applied consistently across the one-step Save flow, the legacy "Add to wp-config" path, the auto-generated config in System Info, and the settings-screen placeholder. Existing installs with an explicit Max TTL set are untouched.
+- **Default the Redis serializer to igbinary when the extension is present**
+  - igbinary produces smaller payloads and faster encode/decode than PHP's native serializer. The default serializer is now `igbinary` whenever `extension_loaded('igbinary')`, falling back to `php` otherwise. The constant is still only written to `wp-config.php` when non-php *and* the extension is loaded, and the drop-in's existing serializer-drift detection auto-flushes its own keys once on the switch, so existing installs migrate safely. (Compression is deliberately left at `none` — LZ4 + igbinary previously caused production OOMs; see v7.41.4.) The settings-screen labels now reflect which serializer is the active default.
+
 ## v7.42.1
 - **Fix "plugin deactivated itself" after a manual zip install (duplicate folder)**
   - Release zips are flat (files at the archive root). When a developer downloads `ccm-tools-<ver>.zip` and installs it via **Plugins → Add New → Upload**, WordPress names the destination folder after the *zip filename* — creating `wp-content/plugins/ccm-tools-<ver>/` alongside the canonical `ccm-tools/`. With two active copies, the old duplicate-detection guard made the plugin deactivate **itself** (often the good copy, whichever loaded first) — the "plugin deactivated itself after update" symptom several sites hit. (The in-dashboard auto-updater was unaffected because its `fix_source_dir` renames the folder.)
