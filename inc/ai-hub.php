@@ -1319,7 +1319,6 @@ function ccm_tools_get_optimization_status(): array {
             'available'      => !empty($extensions),
             'enabled'        => !empty($webp['enabled']),
             'serve_webp'     => !empty($webp['serve_webp']),
-            'picture_tags'   => !empty($webp['use_picture_tags']),
             'on_demand'      => !empty($webp['convert_on_demand']),
             'bg_images'      => !empty($webp['convert_bg_images']),
         ];
@@ -1450,11 +1449,10 @@ function ccm_tools_ajax_ai_enable_tool(): void {
                 $settings['enabled']           = true;
                 $settings['serve_webp']        = true;
                 $settings['convert_on_demand'] = true;
-                $settings['use_picture_tags']  = true;
                 $settings['convert_bg_images'] = true;
                 ccm_tools_webp_save_settings($settings);
                 $result['success'] = true;
-                $result['message'] = 'WebP enabled (on-demand, picture tags, BG images)';
+                $result['message'] = 'WebP enabled (on-demand, BG images)';
             } else {
                 $result['message'] = 'WebP converter not available (no image extension)';
             }

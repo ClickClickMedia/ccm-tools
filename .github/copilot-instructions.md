@@ -14,7 +14,7 @@ WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version
 | .htaccess | Gzip/Brotli, browser caching, security headers, HTTPS redirect, HSTS |
 | Error Log | Tail/filter PHP error log, Show Errors Only toggle, clear/download |
 | Debug Mode | Toggle WP_DEBUG / WP_DEBUG_LOG / WP_DEBUG_DISPLAY in wp-config.php |
-| WebP Converter | GD/ImageMagick bulk convert, `<picture>` tags, background images, WooCommerce |
+| WebP Converter | GD/ImageMagick bulk convert, on-demand, serves WebP by rewriting `<img>`/`<source>` src+srcset, background images |
 | Performance Optimizer | 30+ toggles: defer/delay JS+CSS, lazy load, image dims, fonts, HTML minify |
 | WooCommerce Tools | Admin payment toggle, cart/session tools |
 | Redis Object Cache | Custom drop-in, TCP/TLS/Unix, pipeline bulk ops, WooCommerce TTL caching |

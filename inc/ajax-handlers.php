@@ -1393,7 +1393,6 @@ function ccm_tools_ajax_save_webp_settings(): void {
         'convert_on_upload' => isset($_POST['convert_on_upload']) && $_POST['convert_on_upload'] === '1',
         'serve_webp' => isset($_POST['serve_webp']) && $_POST['serve_webp'] === '1',
         'convert_on_demand' => isset($_POST['convert_on_demand']) && $_POST['convert_on_demand'] === '1',
-        'use_picture_tags' => isset($_POST['use_picture_tags']) && $_POST['use_picture_tags'] === '1',
         'convert_bg_images' => isset($_POST['convert_bg_images']) && $_POST['convert_bg_images'] === '1',
         'keep_originals' => isset($_POST['keep_originals']) && $_POST['keep_originals'] === '1',
         'preferred_extension' => isset($_POST['preferred_extension']) ? sanitize_text_field($_POST['preferred_extension']) : 'auto'
@@ -1501,7 +1500,7 @@ function ccm_tools_ajax_import_webp_settings(): void {
     // Boolean settings
     $boolean_keys = array(
         'enabled', 'convert_on_upload', 'serve_webp', 'convert_on_demand',
-        'use_picture_tags', 'convert_bg_images', 'keep_original'
+        'convert_bg_images', 'keep_original'
     );
     
     foreach ($boolean_keys as $key) {

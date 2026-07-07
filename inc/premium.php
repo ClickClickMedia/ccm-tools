@@ -91,7 +91,7 @@ function ccm_tools_free_features(): array {
         array('name' => '.htaccess Optimization',        'description' => 'Caching, Gzip/Brotli, security headers, HSTS'),
         array('name' => 'Error Log Viewer',              'description' => 'Real-time log viewing, filtering, auto-refresh'),
         array('name' => 'Debug Mode Controls',           'description' => 'Toggle WP_DEBUG, logging, display'),
-        array('name' => 'WebP Image Converter',          'description' => 'Automatic WebP conversion, picture tags, on-demand & bulk convert'),
+        array('name' => 'WebP Image Converter',          'description' => 'Automatic WebP conversion, on-demand & bulk convert, srcset rewriting'),
         array('name' => 'Performance Optimizer',         'description' => 'Defer/delay JS, async CSS, critical CSS, resource hints, more'),
         array('name' => 'Basic Redis Object Cache',      'description' => 'Enable/disable, connect, flush, basic settings'),
         array('name' => 'WooCommerce Tools',             'description' => 'Admin payment toggle, store overview (when WooCommerce active)'),

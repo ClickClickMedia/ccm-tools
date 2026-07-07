@@ -102,7 +102,6 @@ function ccm_tools_webp_get_settings() {
         'convert_on_upload' => true,
         'serve_webp' => true,
         'convert_on_demand' => true,
-        'use_picture_tags' => false,
         'convert_bg_images' => false,
         'keep_originals' => true,
         'convert_existing' => false,
@@ -462,74 +461,32 @@ function ccm_tools_webp_filter_image_src($image, $attachment_id, $size) {
 }
 
 /**
- * Filter content to convert img src URLs to WebP (without using picture tags)
- * This runs AFTER WordPress has generated srcset, so it won't break srcset
- * 
+ * Filter content to convert <img>/<source> URLs to WebP.
+ * This runs AFTER WordPress has generated srcset, so it won't break srcset.
+ * Mainly a safety net for content that never reaches the output buffer.
+ *
  * @param string $content The content to filter
- * @return string Content with WebP src URLs
+ * @return string Content with WebP src/srcset URLs
  */
 function ccm_tools_webp_filter_content_src($content) {
     $settings = ccm_tools_webp_get_settings();
-    
+
     // Check if feature is enabled
     if (empty($settings['enabled']) || empty($settings['serve_webp'])) {
         return $content;
     }
-    
-    // Skip if picture tags are enabled (they handle WebP differently)
-    if (!empty($settings['use_picture_tags'])) {
-        return $content;
-    }
-    
+
     // Check if browser supports WebP
     if (!ccm_tools_webp_browser_supports_webp()) {
         return $content;
     }
-    
+
     // Don't process in admin, feeds, or REST API
     if (is_admin() || is_feed() || (defined('REST_REQUEST') && REST_REQUEST)) {
         return $content;
     }
-    
-    $upload_dir = wp_upload_dir();
-    
-    // Pattern to match img tags
-    $pattern = '/<img\s+([^>]*?)>/i';
-    
-    $content = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-        $img_tag = $matches[0];
-        $attrs = $matches[1];
-        
-        // Extract src
-        if (!preg_match('/src=["\']([^"\']+)["\']/', $attrs, $src_match)) {
-            return $img_tag;
-        }
-        
-        $original_src = $src_match[1];
-        
-        // Skip if already WebP
-        if (preg_match('/\.webp$/i', $original_src)) {
-            return $img_tag;
-        }
-        
-        // Check if this is a local upload - support both full URL and /wp-content/uploads/ path
-        if (strpos($original_src, $upload_dir['baseurl']) === false && 
-            strpos($original_src, '/wp-content/uploads/') === false) {
-            return $img_tag;
-        }
-        
-        // Try to get WebP version
-        $webp_src = ccm_tools_webp_get_or_create($original_src);
-        
-        if ($webp_src && $webp_src !== $original_src) {
-            // Replace src
-            $img_tag = str_replace($original_src, $webp_src, $img_tag);
-        }
-        
-        return $img_tag;
-    }, $content);
-    
-    return $content;
+
+    return ccm_tools_webp_process_img_tags($content, wp_upload_dir());
 }
 
 /**
@@ -598,64 +555,140 @@ function ccm_tools_webp_process_output_buffer($html) {
         }, $html);
     }
     
-    // Process <img> tags for picture tag conversion or src replacement
-    // This catches images in theme templates, page builders, etc. that bypass the_content filter
-    if (!empty($settings['use_picture_tags'])) {
-        // Use picture tag conversion for all img tags in the HTML
-        $html = ccm_tools_webp_convert_to_picture_tags($html);
-    } elseif (!empty($settings['serve_webp'])) {
-        // Convert img src URLs to WebP (without picture tags)
+    // Serve WebP by rewriting <img> and <source> src/srcset in the final HTML.
+    // This catches images in theme templates, page builders, and hand-coded
+    // <picture> elements that bypass WordPress's srcset filters.
+    if (!empty($settings['serve_webp'])) {
         $html = ccm_tools_webp_process_img_tags($html, $upload_dir);
     }
-    
+
     return $html;
 }
 
 /**
- * Process img tags in HTML to replace src with WebP URLs
- * Used when picture tags are disabled but serve_webp is enabled
- * 
- * @param string $html The HTML content
- * @param array $upload_dir The WordPress upload directory info
- * @return string Modified HTML with WebP src URLs
+ * Convert a local uploads image URL to its WebP counterpart when available.
+ *
+ * Returns the original URL unchanged when no WebP exists (and can't be created)
+ * or when the URL isn't a convertible local upload, so it is always safe to
+ * splice back into markup — no broken images.
+ *
+ * @param string $url       The original image URL
+ * @param bool   $on_demand Whether to allow on-demand conversion / queueing
+ * @return string WebP URL if available, otherwise the original URL
  */
-function ccm_tools_webp_process_img_tags($html, $upload_dir) {
-    // Pattern to match img tags
-    $pattern = '/<img\s+([^>]*?)>/i';
-    
-    $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-        $img_tag = $matches[0];
-        $attrs = $matches[1];
-        
-        // Extract src
-        if (!preg_match('/src=["\']([^"\']+)["\']/', $attrs, $src_match)) {
-            return $img_tag;
+function ccm_tools_webp_maybe_webp_url($url, $on_demand = true) {
+    $url = trim($url);
+    if ($url === '') {
+        return $url;
+    }
+
+    // get_or_create() already skips non-local and already-WebP URLs (returns
+    // false / the same URL), so a simple coalesce keeps the original safely.
+    $webp = ccm_tools_webp_get_or_create($url, $on_demand);
+    return ($webp && $webp !== $url) ? $webp : $url;
+}
+
+/**
+ * Rewrite every URL in a srcset attribute value to WebP where available.
+ *
+ * Preserves each candidate's descriptor (e.g. "300w", "2x") and keeps the
+ * original URL for any candidate that has no WebP version.
+ *
+ * @param string $srcset    The srcset attribute value
+ * @param bool   $on_demand Whether to allow on-demand conversion / queueing
+ * @return string Rewritten srcset value
+ */
+function ccm_tools_webp_rewrite_srcset($srcset, $on_demand = true) {
+    $entries = preg_split('/,\s*/', trim($srcset));
+    $out = array();
+
+    foreach ($entries as $entry) {
+        $entry = trim($entry);
+        if ($entry === '') {
+            continue;
         }
-        
-        $original_src = $src_match[1];
-        
-        // Skip if already WebP
-        if (preg_match('/\.webp$/i', $original_src)) {
-            return $img_tag;
+
+        // Split into "<url> <descriptor>" — the descriptor is optional.
+        if (preg_match('/^(\S+)(\s+.+)?$/s', $entry, $parts)) {
+            $webp = ccm_tools_webp_maybe_webp_url($parts[1], $on_demand);
+            $out[] = $webp . (isset($parts[2]) ? $parts[2] : '');
+        } else {
+            $out[] = $entry;
         }
-        
-        // Check if this is a local upload
-        if (strpos($original_src, $upload_dir['baseurl']) === false && 
-            strpos($original_src, '/wp-content/uploads/') === false) {
-            return $img_tag;
+    }
+
+    return implode(', ', $out);
+}
+
+/**
+ * Rewrite the src/srcset of a single <img> or <source> tag to WebP.
+ *
+ * All other attributes are left untouched. When the tag carries an explicit
+ * image type= hint (e.g. <source type="image/png">) and we swap in WebP, the
+ * hint is updated to image/webp so browser source-selection stays correct.
+ *
+ * @param string $tag A single <img ...> or <source ...> tag
+ * @return string The tag with WebP URLs where available
+ */
+function ccm_tools_webp_rewrite_media_tag($tag) {
+    $changed = false;
+
+    // src="..." — quotes are matched by [^"\'] so either quote style works.
+    if (preg_match('/(\ssrc=)(["\'])([^"\']*)\2/i', $tag, $m)) {
+        $webp = ccm_tools_webp_maybe_webp_url($m[3]);
+        if ($webp !== $m[3]) {
+            $tag = str_replace($m[0], $m[1] . $m[2] . $webp . $m[2], $tag);
+            $changed = true;
         }
-        
-        // Try to get WebP version
-        $webp_src = ccm_tools_webp_get_or_create($original_src);
-        
-        if ($webp_src && $webp_src !== $original_src) {
-            // Replace src
-            $img_tag = str_replace($original_src, $webp_src, $img_tag);
+    }
+
+    // srcset="..."
+    if (preg_match('/(\ssrcset=)(["\'])([^"\']*)\2/i', $tag, $m)) {
+        $new_srcset = ccm_tools_webp_rewrite_srcset($m[3]);
+        if ($new_srcset !== $m[3]) {
+            $tag = str_replace($m[0], $m[1] . $m[2] . $new_srcset . $m[2], $tag);
+            $changed = true;
         }
-        
-        return $img_tag;
+    }
+
+    // Keep an explicit image type hint consistent with the WebP we injected.
+    if ($changed && preg_match('/(\stype=)(["\'])image\/(?:png|jpe?g|gif)\2/i', $tag, $m)) {
+        $tag = str_replace($m[0], $m[1] . $m[2] . 'image/webp' . $m[2], $tag);
+    }
+
+    return $tag;
+}
+
+/**
+ * Rewrite <img> and <source> tags in HTML to serve WebP (src + srcset).
+ *
+ * Used by both the output buffer (whole page) and the content filters. Only
+ * local uploads with an available WebP are swapped; everything else is left
+ * exactly as-is, and the pass is idempotent (already-WebP URLs are skipped),
+ * so running it twice is harmless.
+ *
+ * @param string $html        The HTML content
+ * @param array  $upload_dir  The WordPress upload directory info (unused; kept
+ *                            for backwards-compatible call sites)
+ * @return string Modified HTML with WebP URLs
+ */
+function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
+    if (stripos($html, '<img') === false && stripos($html, '<source') === false) {
+        return $html;
+    }
+
+    // <img> tags — rewrite src + srcset.
+    $html = preg_replace_callback('/<img\b[^>]*>/i', function($matches) {
+        return ccm_tools_webp_rewrite_media_tag($matches[0]);
     }, $html);
-    
+
+    // <source> tags — rewrite src + srcset. This is what fixes hand-coded
+    // <picture> elements: the browser picks a matching <source>, not the <img>,
+    // so the <source> URLs are the ones that actually need to be WebP.
+    $html = preg_replace_callback('/<source\b[^>]*>/i', function($matches) {
+        return ccm_tools_webp_rewrite_media_tag($matches[0]);
+    }, $html);
+
     return $html;
 }
 
@@ -1064,182 +1097,6 @@ function ccm_tools_webp_build_responsive_srcset($img_url, $webp = true) {
 }
 
 /**
- * Convert img tags to picture tags with WebP sources
- * 
- * Uses display:contents on the <picture> wrapper so it's invisible to CSS layout.
- * This means parent > img selectors still work and no formatting changes occur.
- * The original <img> tag is kept completely unchanged as the fallback.
- * 
- * @param string $content The HTML content
- * @return string Modified content with picture tags
- */
-function ccm_tools_webp_convert_to_picture_tags($content) {
-    $settings = ccm_tools_webp_get_settings();
-    
-    if (empty($settings['enabled']) || empty($settings['use_picture_tags'])) {
-        return $content;
-    }
-    
-    if (empty($content)) {
-        return $content;
-    }
-    
-    $upload_dir = wp_upload_dir();
-    
-    // Protect existing <picture> elements by replacing them with placeholders.
-    // This prevents double-wrapping and makes the function safely re-entrant
-    // (can be called from both the_content filter and output buffer).
-    $picture_placeholders = array();
-    $content = preg_replace_callback(
-        '/<picture\b[^>]*>.*?<\/picture>/is',
-        function($matches) use (&$picture_placeholders) {
-            $key = '<!--CCM_PICTURE_' . count($picture_placeholders) . '-->';
-            $picture_placeholders[$key] = $matches[0];
-            return $key;
-        },
-        $content
-    );
-    
-    // Process standalone <img> tags that reference local uploads
-    $pattern = '/<img\s+[^>]*src=["\'][^"\']+\.(?:jpe?g|png|gif)["\'][^>]*\/?>/i';
-    
-    $content = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-        $img_tag = $matches[0];
-        
-        // Extract src
-        if (!preg_match('/src=["\']([^"\']+)["\']/', $img_tag, $src_match)) {
-            return $img_tag;
-        }
-        
-        $original_src = $src_match[1];
-        
-        // Only process local uploads
-        if (strpos($original_src, $upload_dir['baseurl']) === false && 
-            strpos($original_src, '/wp-content/uploads/') === false) {
-            return $img_tag;
-        }
-        
-        // Get WebP URL — only if it already exists or can be created on-demand
-        $webp_url = ccm_tools_webp_get_or_create($original_src);
-        
-        if (!$webp_url || $webp_url === $original_src) {
-            return $img_tag;
-        }
-        
-        // Build verified WebP srcset — only include entries where the WebP file exists
-        $webp_srcset = '';
-        $sizes_attr = '';
-        
-        if (preg_match('/srcset=["\']([^"\']+)["\']/', $img_tag, $srcset_match)) {
-            $srcset_entries = preg_split('/,\s*/', $srcset_match[1]);
-            $webp_srcset_parts = array();
-            
-            foreach ($srcset_entries as $entry) {
-                $entry = trim($entry);
-                if (empty($entry)) continue;
-                
-                // Split into URL and descriptor (e.g., "300w" or "2x")
-                if (preg_match('/^(\S+)(\s+.+)$/', $entry, $entry_parts)) {
-                    $entry_url = $entry_parts[1];
-                    $descriptor = $entry_parts[2];
-                    
-                    // Verify WebP exists for this URL (don't trigger on-demand conversion)
-                    $webp_entry = ccm_tools_webp_get_or_create($entry_url, false);
-                    if ($webp_entry && $webp_entry !== $entry_url) {
-                        $webp_srcset_parts[] = $webp_entry . $descriptor;
-                    }
-                }
-            }
-            
-            if (!empty($webp_srcset_parts)) {
-                $webp_srcset = implode(', ', $webp_srcset_parts);
-            }
-        }
-        
-        // Extract sizes attribute (mirrors whatever the original img has)
-        if (preg_match('/sizes=["\']([^"\']+)["\']/', $img_tag, $sizes_match)) {
-            $sizes_attr = ' sizes="' . esc_attr($sizes_match[1]) . '"';
-        }
-        
-        // Build picture element.
-        // display:contents makes the <picture> wrapper invisible to CSS layout —
-        // the browser still uses it for source selection, but CSS treats the <img>
-        // as if <picture> wasn't there. This preserves all parent > img selectors,
-        // flexbox/grid item behavior, and existing styling.
-        $picture = '<picture style="display:contents">';
-        
-        // WebP source (browsers pick this if they support WebP)
-        if (!empty($webp_srcset)) {
-            $picture .= '<source type="image/webp" srcset="' . esc_attr($webp_srcset) . '"' . $sizes_attr . '>';
-        } else {
-            $picture .= '<source type="image/webp" srcset="' . esc_url($webp_url) . '">';
-        }
-        
-        // Original <img> tag completely unchanged as fallback.
-        // We intentionally do NOT modify the img's src, srcset, sizes, style, or any
-        // other attributes. This ensures zero layout impact and full compatibility.
-        $picture .= $img_tag;
-        $picture .= '</picture>';
-        
-        return $picture;
-    }, $content);
-    
-    // Restore protected picture elements
-    foreach ($picture_placeholders as $key => $original) {
-        $content = str_replace($key, $original, $content);
-    }
-    
-    return $content;
-}
-
-/**
- * Filter to convert img tags in post content to picture tags
- * 
- * @param string $content The post content
- * @return string Modified content
- */
-function ccm_tools_webp_filter_content($content) {
-    // Don't process in admin, feeds, or REST API
-    if (is_admin() || is_feed() || (defined('REST_REQUEST') && REST_REQUEST)) {
-        return $content;
-    }
-    
-    return ccm_tools_webp_convert_to_picture_tags($content);
-}
-
-/**
- * Filter to convert img tags in widgets to picture tags
- * 
- * @param string $content The widget content
- * @return string Modified content
- */
-function ccm_tools_webp_filter_widget($content) {
-    return ccm_tools_webp_convert_to_picture_tags($content);
-}
-
-/**
- * Filter WooCommerce product thumbnail HTML to use picture tags
- * 
- * @param string $html The product thumbnail HTML
- * @param int $post_id The post ID
- * @return string Modified HTML
- */
-function ccm_tools_webp_filter_wc_product_image($html, $post_id = 0) {
-    return ccm_tools_webp_convert_to_picture_tags($html);
-}
-
-/**
- * Filter WooCommerce single product image HTML
- * 
- * @param string $html The image HTML
- * @param int $attachment_id The attachment ID
- * @return string Modified HTML
- */
-function ccm_tools_webp_filter_wc_single_product_image($html, $attachment_id = 0) {
-    return ccm_tools_webp_convert_to_picture_tags($html);
-}
-
-/**
  * Add WebP as allowed upload type
  */
 function ccm_tools_webp_allowed_mimes($mimes) {
@@ -1371,22 +1228,24 @@ function ccm_tools_webp_init() {
         // NOTE: Removed wp_get_attachment_image_src filter
         // Changing src before srcset calculation breaks WordPress's srcset generation
         // because WordPress compares src to metadata and returns empty srcset if they don't match
-        // Instead, we convert URLs in the final HTML output via the_content filter below
-        
-        // Add content filter to convert img src URLs to WebP (when picture tags disabled)
-        // This runs AFTER WordPress has generated the srcset
+        // Instead, we convert URLs in the final HTML output via the filters below + output buffer
+
+        // Rewrite <img>/<source> src + srcset to WebP in rendered content.
+        // Runs AFTER WordPress has generated the srcset. The output buffer below
+        // covers the whole page; these filters also catch content that renders
+        // outside the main buffer (e.g. AJAX-loaded fragments).
         add_filter('the_content', 'ccm_tools_webp_filter_content_src', 1000);
         add_filter('widget_text', 'ccm_tools_webp_filter_content_src', 1000);
         add_filter('widget_block_content', 'ccm_tools_webp_filter_content_src', 1000);
     }
-    
+
     // Use output buffering to catch ALL HTML including theme templates
     // This is necessary because images in page builders, custom themes, etc. don't go through the_content filter
-    // Enable when any of: serve_webp, use_picture_tags, or convert_bg_images is enabled
-    if (!empty($settings['serve_webp']) || !empty($settings['use_picture_tags']) || !empty($settings['convert_bg_images'])) {
+    // Enable when either serve_webp or convert_bg_images is enabled
+    if (!empty($settings['serve_webp']) || !empty($settings['convert_bg_images'])) {
         add_action('template_redirect', 'ccm_tools_webp_start_output_buffer', 1);
         add_action('shutdown', 'ccm_tools_webp_end_output_buffer', 0);
-        
+
         // Add Vary: Accept header so CDNs/proxies cache WebP and non-WebP versions separately
         add_action('template_redirect', function() {
             if (!is_admin()) {
@@ -1394,25 +1253,7 @@ function ccm_tools_webp_init() {
             }
         });
     }
-    
-    // Hook into content for picture tag conversion.
-    // The output buffer also calls convert_to_picture_tags on the full HTML, but these
-    // content filters catch AJAX-loaded content (e.g., WooCommerce) that bypasses OB.
-    // The function is safe to call twice — it protects existing <picture> elements.
-    if (!empty($settings['use_picture_tags'])) {
-        add_filter('the_content', 'ccm_tools_webp_filter_content', 999);
-        add_filter('widget_text', 'ccm_tools_webp_filter_widget', 999);
-        add_filter('widget_block_content', 'ccm_tools_webp_filter_widget', 999);
-        
-        // WooCommerce specific hooks for product images (AJAX-loaded, bypass output buffer)
-        add_filter('woocommerce_product_get_image', 'ccm_tools_webp_filter_wc_product_image', 999, 2);
-        add_filter('woocommerce_single_product_image_thumbnail_html', 'ccm_tools_webp_filter_wc_single_product_image', 999, 2);
-        
-        // NOTE: Removed post_thumbnail_html and wp_get_attachment_image hooks
-        // These run BEFORE themes add their own <picture> wrappers, causing double-wrapping
-        // Images from these hooks will still get WebP served via srcset filters instead
-    }
-    
+
     // Add background queue processor for on-demand conversion
     if (!empty($settings['convert_on_demand']) && !is_admin()) {
         add_action('wp_footer', 'ccm_tools_webp_background_queue_script', 999);
@@ -1632,23 +1473,6 @@ function ccm_tools_render_webp_page() {
                                 <div class="ccm-alert ccm-alert-info ccm-alert-small">
                                     <span class="ccm-icon">ℹ</span>
                                     <small><?php _e('First page load may be slightly slower while images are converted, but subsequent loads will be fast.', 'ccm-tools'); ?></small>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Use &lt;picture&gt; Tags', 'ccm-tools'); ?></th>
-                            <td>
-                                <label class="ccm-toggle">
-                                    <input type="checkbox" name="use_picture_tags" id="webp-picture-tags" value="1" <?php checked($settings['use_picture_tags'], true); ?>>
-                                    <span class="ccm-toggle-slider"></span>
-                                </label>
-                                <p class="ccm-note"><?php _e('Convert &lt;img&gt; tags to &lt;picture&gt; tags with WebP sources. This provides automatic fallback for browsers that don\'t support WebP.', 'ccm-tools'); ?></p>
-                                <div class="ccm-code-example">
-                                    <small><?php _e('Example output:', 'ccm-tools'); ?></small>
-                                    <pre>&lt;picture&gt;
-  &lt;source type="image/webp" srcset="image.webp"&gt;
-  &lt;img src="image.jpg" alt="..."&gt;
-&lt;/picture&gt;</pre>
                                 </div>
                             </td>
                         </tr>

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Pure CSS Stylesheet
  * A clean, modern UI without external dependencies
- * Version: 7.41.3
+ * Version: 7.44.0
  */
 
 /* ===================================
@@ -608,11 +608,9 @@
 .ccm-spinner-small {
     width: 16px;
     height: 16px;
-    border: 2px solid var(--ccm-border);
-    border-top-color: var(--ccm-primary);
-    border-radius: 50%;
-    animation: ccm-spin 0.8s linear infinite;
     display: inline-block;
+    vertical-align: middle;
+    background: url("../img/spinner.svg") center / contain no-repeat;
 }
 
 /* ===================================
@@ -860,17 +858,13 @@
     width: 40px;
     height: 40px;
     margin: var(--ccm-space-lg) auto;
-    border: 3px solid var(--ccm-border);
-    border-top-color: var(--ccm-primary);
-    border-radius: 50%;
-    animation: ccm-spin 0.8s linear infinite;
+    background: url("../img/spinner.svg") center / contain no-repeat;
 }
 
 .ccm-spinner-small {
     width: 20px;
     height: 20px;
     margin: 0;
-    border-width: 2px;
     display: inline-block;
     vertical-align: middle;
 }

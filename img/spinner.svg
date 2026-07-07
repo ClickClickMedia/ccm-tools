@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="17 17 62 62">
+  <defs>
+    <path id="s1" d="M62.9793 22.3074C64.3528 23.1004 64.8207 24.8586 64.0299 26.2283L56.4105 39.4259C55.5981 40.833 53.7945 41.3195 52.3837 40.5049C50.973 39.6904 50.485 37.8808 51.3016 36.4663L58.837 23.4142C59.673 21.9661 61.5275 21.4692 62.9756 22.3053L62.9793 22.3074Z"/>
+    <path id="s2" d="M77.8182 48.169C77.8182 49.755 76.5296 51.0436 74.948 51.0436L59.7092 51.0436C58.0845 51.0436 56.7614 49.7249 56.7614 48.0958C56.7614 46.4667 58.0845 45.1393 59.7178 45.1393L74.7885 45.1393C76.4606 45.1436 77.8182 46.4969 77.8182 48.169Z"/>
+    <path id="s3" d="M62.8418 73.9556C61.4683 74.7486 59.7119 74.2748 58.921 72.905L51.3017 59.7074C50.4893 58.3003 50.9698 56.4951 52.3806 55.6806C53.7914 54.866 55.6024 55.3482 56.4191 56.7627L63.9545 69.8148C64.7905 71.2629 64.2936 73.1174 62.8455 73.9535L62.8418 73.9556Z"/>
+    <path id="s4" d="M47.375 45.5399C45.9615 44.7254 44.1557 45.2081 43.3412 46.6217L31.0632 70.0193C30.2271 71.4674 30.7227 73.3206 32.1707 74.1567C32.6232 74.4196 33.1188 74.5402 33.6058 74.5402C34.597 74.5402 35.5667 74.0274 36.0968 73.1051L48.4524 49.5652C49.2669 48.1559 48.7843 46.3545 47.375 45.5399Z"/>
+    <path id="s5" d="M45.7633 51.0438L21.2114 51.0438C19.5393 51.0438 18.1818 49.6863 18.1818 48.0141C18.1818 47.2211 18.505 46.5057 19.0222 45.9842C19.5393 45.4627 20.259 45.1438 21.052 45.1438L45.7719 45.1438C47.4009 45.1438 48.7197 46.4626 48.7197 48.0874C48.7197 49.7121 47.3966 51.0438 45.7633 51.0438Z"/>
+    <path id="s6" d="M47.375 50.6472C45.9615 51.4617 44.1557 50.979 43.3412 49.5654L31.0632 26.1678C30.2271 24.7197 30.7227 22.8665 32.1707 22.0304C32.6232 21.7675 33.1188 21.6468 33.6058 21.6468C34.597 21.6468 35.5667 22.1597 36.0968 23.082L48.4524 46.6218C49.2669 48.0311 48.7843 49.8326 47.375 50.6472Z"/>
+    <radialGradient id="fadeGrad" cx="48" cy="48" r="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="black"/>
+      <stop offset="0.24" stop-color="black"/>
+      <stop offset="0.32" stop-color="white"/>
+      <stop offset="1" stop-color="white"/>
+    </radialGradient>
+    <mask id="centerFade" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
+      <rect width="96" height="96" fill="url(#fadeGrad)"/>
+    </mask>
+  </defs>
+  <g>
+    <animateTransform attributeName="transform" type="rotate" from="0 48 48" to="-360 48 48" dur="2s" repeatCount="indefinite"/>
+    <g opacity="0.2" fill="#FFFFFF">
+      <use href="#s1"/>
+      <use href="#s2"/>
+      <use href="#s3"/>
+      <use href="#s4"/>
+      <use href="#s5"/>
+      <use href="#s6"/>
+    </g>
+    <g fill="#94C83E" mask="url(#centerFade)">
+      <use href="#s5"><animate attributeName="opacity" values="1;0.5;0.25;0;0;0;1" dur="1s" repeatCount="indefinite"/></use>
+      <use href="#s6"><animate attributeName="opacity" values="0;1;0.5;0.25;0;0;0" dur="1s" repeatCount="indefinite"/></use>
+      <use href="#s1"><animate attributeName="opacity" values="0;0;1;0.5;0.25;0;0" dur="1s" repeatCount="indefinite"/></use>
+      <use href="#s2"><animate attributeName="opacity" values="0;0;0;1;0.5;0.25;0" dur="1s" repeatCount="indefinite"/></use>
+      <use href="#s3"><animate attributeName="opacity" values="0.25;0;0;0;1;0.5;0.25" dur="1s" repeatCount="indefinite"/></use>
+      <use href="#s4"><animate attributeName="opacity" values="0.5;0.25;0;0;0;1;0.5" dur="1s" repeatCount="indefinite"/></use>
+    </g>
+  </g>
+</svg>
