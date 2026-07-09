@@ -8,7 +8,7 @@
  * wp_cache_remember(), HTML footnote, KEEPTTL on incr/decr.
  * 
  * @package CCM_Tools
- * @version 7.41.4
+ * @version 7.44.1
  *
  * This file should be placed in wp-content/object-cache.php
  */
@@ -394,12 +394,27 @@ class CCM_Redis_Object_Cache {
         $scheme       = defined('WP_REDIS_SCHEME') ? WP_REDIS_SCHEME : 'tcp';
         $socket       = defined('WP_REDIS_PATH') ? WP_REDIS_PATH : '';
 
+        // Circuit-breaker: if the server recently refused a connection, skip
+        // retrying on every request so we don't flood the error log.
+        $backoff_ttl  = defined('WP_REDIS_REFUSED_BACKOFF') ? (int) WP_REDIS_REFUSED_BACKOFF : 60;
+        $backoff_file = $backoff_ttl > 0
+            ? sys_get_temp_dir() . '/ccm_redis_refused_' . md5($host . ':' . $port) . '.tmp'
+            : '';
+
+        if ($backoff_file && file_exists($backoff_file) && (time() - filemtime($backoff_file)) < $backoff_ttl) {
+            return false;
+        }
+
         $attempts = 0;
 
         while ($attempts < $this->retries) {
             $attempts++;
             try {
                 $this->redis = new Redis();
+
+                if (function_exists('error_clear_last')) {
+                    error_clear_last();
+                }
 
                 if ($scheme === 'unix' && $socket) {
                     $connected = @$this->redis->connect($socket, 0, $timeout, null, 0, $read_timeout);
@@ -421,7 +436,9 @@ class CCM_Redis_Object_Cache {
                 }
 
                 if (!$connected) {
-                    throw new Exception('Connection failed');
+                    $php_err = error_get_last();
+                    $msg     = ($php_err && !empty($php_err['message'])) ? $php_err['message'] : 'Connection failed';
+                    throw new Exception($msg);
                 }
 
                 // ACL auth (Redis 6.0+) or legacy auth
@@ -448,6 +465,11 @@ class CCM_Redis_Object_Cache {
 
                 $this->redis_connected = true;
 
+                // Clear any stale backoff flag now that we're connected
+                if ($backoff_file && file_exists($backoff_file)) {
+                    @unlink($backoff_file);
+                }
+
                 // Auto-flush if the serializer/compression changed under us
                 // (e.g. a manual wp-config edit, or an extension being removed).
                 $this->ensure_config_consistency();
@@ -464,7 +486,13 @@ class CCM_Redis_Object_Cache {
                     $jitter  = $base_ms * $attempts + random_int(0, $base_ms);
                     usleep($jitter * 1000);
                 } else {
-                    $this->track_error('Connection failed after ' . $attempts . ' attempts: ' . $e->getMessage());
+                    $msg = $e->getMessage();
+                    $this->track_error('Connection failed after ' . $attempts . ' attempts: ' . $msg);
+
+                    // Circuit-breaker: suppress future attempts for the backoff period
+                    if ($backoff_file && stripos($msg, 'refused') !== false) {
+                        @touch($backoff_file);
+                    }
                 }
             }
         }
