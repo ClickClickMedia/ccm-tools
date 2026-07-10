@@ -3263,6 +3263,11 @@ function ccm_tools_ajax_redis_save_settings(): void {
         }
     }
     if (isset($_POST['password'])) {
+        // Reject non-string password values (e.g. arrays)
+        if (!is_string($_POST['password'])) {
+            wp_send_json_error(array('message' => __('Invalid value.', 'ccm-tools')));
+            return;
+        }
         // Use wp_unslash to handle escaped characters properly
         $raw_password = (string) wp_unslash($_POST['password']);
         // Reject quotes/backslash/control chars: this value is later written
@@ -3271,6 +3276,7 @@ function ccm_tools_ajax_redis_save_settings(): void {
         // ccm_tools_redis_config_line()'s var_export()-based escaping).
         if ($raw_password !== '' && preg_match('/[\'"\\\\\x00-\x1F]/', $raw_password)) {
             wp_send_json_error(array('message' => __('Password contains disallowed characters (quotes, backslash, or control characters).', 'ccm-tools')));
+            return;
         }
         $settings['password'] = $raw_password;
     }
@@ -3308,11 +3314,17 @@ function ccm_tools_ajax_redis_save_settings(): void {
     
     // Username (ACL auth, Redis 6.0+)
     if (isset($_POST['username'])) {
+        // Reject non-string username values (e.g. arrays)
+        if (!is_string($_POST['username'])) {
+            wp_send_json_error(array('message' => __('Invalid value.', 'ccm-tools')));
+            return;
+        }
         $raw_username = (string) wp_unslash($_POST['username']);
         // Same rejection as password — this also ends up in a wp-config.php
         // define() literal.
         if ($raw_username !== '' && preg_match('/[\'"\\\\\x00-\x1F]/', $raw_username)) {
             wp_send_json_error(array('message' => __('Username contains disallowed characters (quotes, backslash, or control characters).', 'ccm-tools')));
+            return;
         }
         $settings['username'] = sanitize_text_field($raw_username);
     }

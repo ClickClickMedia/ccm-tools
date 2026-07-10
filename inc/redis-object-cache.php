@@ -711,7 +711,14 @@ function ccm_tools_redis_private_backup_dir() {
 
     $htaccess = $dir . '.htaccess';
     if (!file_exists($htaccess)) {
-        @file_put_contents($htaccess, "Order allow,deny\nDeny from all\n");
+        $htaccess_content = "<IfModule mod_authz_core.c>\n"
+            . "Require all denied\n"
+            . "</IfModule>\n"
+            . "<IfModule !mod_authz_core.c>\n"
+            . "Order allow,deny\n"
+            . "Deny from all\n"
+            . "</IfModule>\n";
+        @file_put_contents($htaccess, $htaccess_content);
     }
 
     $index = $dir . 'index.php';
