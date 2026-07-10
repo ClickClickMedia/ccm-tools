@@ -766,6 +766,22 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
         }
     }
 
+    // preload_css shares critical_css_code's precondition but has no entry in
+    // $data_to_toggle (critical_css_code maps only to critical_css above), so
+    // the self-heal loop never revisits it. The upfront precondition check
+    // earlier in this function only saw the PRE-sanitization value — and
+    // wp_strip_all_tags() (in the CSS sanitizer above) can delete an entire
+    // "<style>...</style>" payload down to '', which would otherwise leave
+    // preload_css=true with empty critical CSS on a live site. Re-check
+    // against the FINAL, sanitized value here, after all sanitization has run.
+    if (!empty($settings['preload_css'])) {
+        $finalCss = $settings['critical_css_code'] ?? '';
+        if (!is_string($finalCss) || $finalCss === '') {
+            $settings['preload_css'] = false;
+            error_log('[ccm-tools] Refused to enable preload_css because critical_css_code sanitized to empty.');
+        }
+    }
+
     if ($changed) {
         // Ensure the optimizer is enabled
         $settings['enabled'] = true;
