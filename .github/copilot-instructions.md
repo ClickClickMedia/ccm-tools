@@ -1,6 +1,6 @@
 ﻿# CCM Tools — Copilot Instructions
 
-WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version: 7.32.0**
+WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version: 7.45.0**
 
 > **Related projects in this workspace:** `ccm-api-hub` (AI/PageSpeed proxy API) · `ccm-premium` (subscription management)
 > **File structure:** [.file-structure.md](../.file-structure.md) *(local-only, git-ignored — update this file whenever files are added or deleted)*

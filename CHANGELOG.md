@@ -1,5 +1,11 @@
 # CCM Tools — Changelog
 
+## v7.45.0 — Security & AI safety hardening
+
+- **Security:** fixed an authenticated PHP-injection/RCE in the Redis object-cache config writer (Redis password/username are now var_export-safe and quote/control-char-rejected at input); moved secret-bearing wp-config backups out of the web root into uploads/ccm-private/ with a deny .htaccess.
+- **AI safety:** the AI apply path now validates every recommendation against a typed allow-list with preconditions — preload_css/critical_css require non-empty critical CSS (enforced before AND after sanitization), block-theme-incompatible settings are skipped on block themes, WooCommerce-only settings gated, and value type-mismatches are rejected (with benign int/bool normalization) instead of coerced.
+- **AI one-click optimize:** interim safety guardrails — infrastructure changes (.htaccess/Redis/WebP/Cloudflare) are no longer auto-applied during optimize (they are never rolled back); the visual-regression gate now fails closed (rolls back when it cannot confirm the page is intact on both mobile and desktop); and an uncaught error always rolls back to the pre-optimization snapshot.
+
 ## v7.44.0
 - **WebP is now actually served on sites that use `<picture>` elements**
   - On sites whose theme hand-codes `<picture>` markup (responsive `<source media="…" srcset="…">` children with an `<img>` fallback), the browser selects a matching `<source>` and serves *that* — it only falls back to the `<img>` when no source matches. The converter previously only rewrote the `<img>` `src` to WebP and never touched `<source>` elements, so the browser kept serving the original PNG/JPG from the source. The frontend WebP pass now rewrites `src` **and** `srcset` on both `<img>` **and** `<source>` tags, so the URL the browser actually picks is the WebP one. Each candidate is verified against the on-disk WebP (respecting the *Convert On-Demand* setting) and the original URL is kept whenever no WebP is available — no broken images. The pass is idempotent (already-`.webp` and non-upload URLs are skipped) and only runs for WebP-capable browsers (with `Vary: Accept` already set). An explicit `<source type="image/png|jpeg|gif">` hint is updated to `image/webp` when its URL is swapped.
