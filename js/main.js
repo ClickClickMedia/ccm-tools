@@ -6335,34 +6335,23 @@
                 const tools = preflightRes.data || {};
                 let toolsEnabled = 0;
 
+                // Infra changes (.htaccess/WebP/Redis/Cloudflare) are applied before the
+                // settings snapshot and are NEVER reverted by any rollback path — a bad
+                // .htaccess or Redis drop-in can leave the site broken with no recovery.
+                // AI Optimize no longer auto-enables them; surface a one-time notice and
+                // leave enabling to the user via the relevant tool's own tab.
+                aiLog('Infrastructure tools (.htaccess, WebP, Redis, Cloudflare) are no longer auto-enabled by AI Optimize — they aren\'t covered by rollback, so enable them manually from their own tabs if desired.', 'info');
+
                 // .htaccess
                 if (tools.htaccess && !tools.htaccess.applied && tools.htaccess.writable) {
-                    aiLog('.htaccess optimizations not applied — enabling caching, compression & security…', 'warn');
-                    try {
-                        const htRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'htaccess' }, { timeout: 15000 });
-                        if (htRes.data?.success) {
-                            aiLog(`.htaccess: ${htRes.data.message}`, 'success');
-                            toolsEnabled++;
-                        } else {
-                            aiLog(`.htaccess: ${htRes.data?.message || 'Failed'}`, 'warn');
-                        }
-                    } catch (e) { aiLog(`.htaccess enable failed: ${e.message}`, 'warn'); }
+                    aiLog('.htaccess optimizations not applied — enable manually via the .htaccess tool if desired.', 'info');
                 } else if (tools.htaccess?.applied) {
                     aiLog('.htaccess optimizations already applied ✓', 'info');
                 }
 
                 // WebP
                 if (tools.webp?.available && !tools.webp?.enabled) {
-                    aiLog('WebP converter not enabled — enabling with on-demand conversion & picture tags…', 'warn');
-                    try {
-                        const wpRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'webp' }, { timeout: 15000 });
-                        if (wpRes.data?.success) {
-                            aiLog(`WebP: ${wpRes.data.message}`, 'success');
-                            toolsEnabled++;
-                        } else {
-                            aiLog(`WebP: ${wpRes.data?.message || 'Failed'}`, 'warn');
-                        }
-                    } catch (e) { aiLog(`WebP enable failed: ${e.message}`, 'warn'); }
+                    aiLog('WebP converter not enabled — enable manually via the WebP tool if desired.', 'info');
                 } else if (tools.webp?.enabled) {
                     aiLog('WebP conversion already enabled ✓', 'info');
                 } else if (!tools.webp?.available) {
@@ -6371,16 +6360,7 @@
 
                 // Redis
                 if (tools.redis?.extension && !tools.redis?.dropin) {
-                    aiLog('Redis extension available but drop-in not installed — enabling…', 'warn');
-                    try {
-                        const rdRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'redis' }, { timeout: 15000 });
-                        if (rdRes.data?.success) {
-                            aiLog(`Redis: ${rdRes.data.message}`, 'success');
-                            toolsEnabled++;
-                        } else {
-                            aiLog(`Redis: ${rdRes.data?.message || 'Failed'}`, 'warn');
-                        }
-                    } catch (e) { aiLog(`Redis enable failed: ${e.message}`, 'warn'); }
+                    aiLog('Redis extension available but drop-in not installed — enable manually via the Redis tool if desired.', 'info');
                 } else if (tools.redis?.dropin) {
                     aiLog('Redis object cache active ✓', 'info');
                 } else {
@@ -6406,16 +6386,7 @@
 
                 // Cloudflare optimization
                 if (tools.cloudflare?.connected && !tools.cloudflare?.optimized) {
-                    aiLog('Cloudflare connected but not fully optimized — applying recommended settings (Brotli, Early Hints, HTTP/3…)', 'warn');
-                    try {
-                        const cfRes = await ajax('ccm_tools_ai_enable_tool', { tool: 'cloudflare' }, { timeout: 30000 });
-                        if (cfRes.data?.success) {
-                            aiLog(`Cloudflare: ${cfRes.data.message}`, 'success');
-                            toolsEnabled++;
-                        } else {
-                            aiLog(`Cloudflare: ${cfRes.data?.message || 'Failed'}`, 'warn');
-                        }
-                    } catch (e) { aiLog(`Cloudflare optimization failed: ${e.message}`, 'warn'); }
+                    aiLog('Cloudflare connected but not fully optimized — enable recommended settings (Brotli, Early Hints, HTTP/3…) manually via the Cloudflare tab if desired.', 'info');
                 } else if (tools.cloudflare?.connected && tools.cloudflare?.optimized) {
                     aiLog('Cloudflare performance settings optimized ✓', 'info');
                 } else if (tools.cloudflare?.available && !tools.cloudflare?.connected) {
@@ -7063,14 +7034,17 @@
                 }
 
                 // ── Visual Regression Check — AI compares before/after screenshots ──
+                // FAIL CLOSED: when we cannot affirmatively confirm the page is visually
+                // intact on BOTH viewports, hasLayoutRegression must end up true so the
+                // changes get rolled back rather than kept.
                 let hasLayoutRegression = false;
                 let visualRegressionContext = '';
-                const afterDesktopSrc = iterScreenshots?.desktop?.url || '';
-                const afterMobileSrc = iterScreenshots?.mobile?.url || '';
-                const beforeDesktopSrc = baselineScreenshots?.desktop?.url || '';
-                const beforeMobileSrc = baselineScreenshots?.mobile?.url || '';
+                const afterDesktopSrc = iterScreenshots?.desktop?.url || iterScreenshots?.desktop?.data_uri || '';
+                const afterMobileSrc = iterScreenshots?.mobile?.url || iterScreenshots?.mobile?.data_uri || '';
+                const beforeDesktopSrc = baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri || '';
+                const beforeMobileSrc = baselineScreenshots?.mobile?.url || baselineScreenshots?.mobile?.data_uri || '';
 
-                if (afterDesktopSrc && beforeDesktopSrc) {
+                if (afterDesktopSrc && beforeDesktopSrc && afterMobileSrc && beforeMobileSrc) {
                     // Always run visual check — retry once on failure
                     let visualAttempts = 0;
                     const maxVisualAttempts = 2;
@@ -7087,6 +7061,8 @@
                             const visualParams = {
                                 before_desktop_url: beforeDesktopSrc,
                                 after_desktop_url: afterDesktopSrc,
+                                before_mobile_url: beforeMobileSrc,
+                                after_mobile_url: afterMobileSrc,
                                 dynamic_content_hint: 'IMPORTANT: This site likely has rotating hero carousels/sliders, animated banners, and dynamic product grids. ' +
                                     'Screenshots taken minutes apart will naturally show DIFFERENT carousel slides — this is NOT a regression. ' +
                                     'ONLY flag issues where the page STRUCTURE is broken: missing navigation, collapsed sections, overlapping elements, ' +
@@ -7094,10 +7070,6 @@
                                     'A carousel showing a different slide, or a product grid showing products in a different order, is EXPECTED DYNAMIC BEHAVIOR, not a layout regression. ' +
                                     'Pixel differences in hero/slider areas should be IGNORED unless the slider container itself is structurally broken (zero height, missing entirely, etc.).',
                             };
-                            if (beforeMobileSrc && afterMobileSrc) {
-                                visualParams.before_mobile_url = beforeMobileSrc;
-                                visualParams.after_mobile_url = afterMobileSrc;
-                            }
                             if (allChanges.length > 0) {
                                 visualParams.changes_applied = JSON.stringify(allChanges.slice(-20));
                             }
@@ -7110,80 +7082,33 @@
                                 aiLog('Visual check: tall screenshots auto-scaled to fit vision API limits ✓', 'info');
                             }
 
-                            if (visualData.layout_ok === false) {
+                            const sevLabel = visualData.severity || 'unknown';
+                            const isSevereSeverity = sevLabel === 'high' || sevLabel === 'critical';
+                            const isLayoutBroken = visualData.layout_ok === false;
+
+                            // FAIL CLOSED: any explicit layout-broken verdict, or a high/critical
+                            // severity result, is treated as a real regression. No reclassification
+                            // (e.g. "dynamic content") downgrades or discards structural issues —
+                            // if the AI flagged it, we roll back.
+                            if (isLayoutBroken || isSevereSeverity) {
                                 const allIssues = visualData.issues || [];
                                 const issueCount = allIssues.length;
-                                const sevLabel = visualData.severity || 'unknown';
-
-                                // Filter out dynamic content false positives (carousels, sliders, rotating banners)
-                                const DYNAMIC_CONTENT_PATTERNS = [
-                                    /carousel/i, /slider/i, /slide/i, /rotating/i, /banner/i,
-                                    /different slide/i, /hero.*different/i, /different hero/i,
-                                    /swiper/i, /slick/i, /owl/i, /flickity/i,
-                                    /product.*order/i, /different product/i,
-                                ];
-                                // Words that indicate the carousel/slider is broken — not just
-                                // showing a different slide. If any of these are in the description
-                                // or likely_cause, override the dynamic-content classification.
-                                const STRUCTURAL_BREAKAGE_PATTERNS = [
-                                    /not initiali[sz]ing/i, /failing to initiali[sz]e/i,
-                                    /stacked vertically/i, /stacked instead of/i, /flat list/i,
-                                    /broken/i, /regression/i, /unstyled/i, /missing/i,
-                                    /collapsed/i, /overlapping/i, /clipping/i, /truncated/i,
-                                    /layout regression/i, /falling back/i, /falls back/i,
-                                    /delay_js/i, /defer_js/i, /critical_css/i, /preload_css/i,
-                                ];
-                                const looksStructural = (text) => STRUCTURAL_BREAKAGE_PATTERNS.some(p => p.test(text));
-                                const isDynamicContentIssue = (issue) => {
-                                    const text = `${issue.area || ''} ${issue.description || ''} ${issue.likely_cause || ''} ${issue.suggested_fix || ''}`;
-                                    if (!DYNAMIC_CONTENT_PATTERNS.some(p => p.test(text))) return false;
-                                    // Even if "carousel" appears, treat as structural if any
-                                    // breakage word is present — the AI is telling us the
-                                    // carousel is broken, not just on a different slide.
-                                    if (looksStructural(text)) return false;
-                                    return true;
-                                };
-
-                                const structuralIssues = allIssues.filter(i => !isDynamicContentIssue(i));
-                                const dynamicIssues = allIssues.filter(i => isDynamicContentIssue(i));
-
-                                // Check for screenshot capture inconsistencies
-                                const captureIssues = allIssues.filter(i => i.likely_cause === 'screenshot_capture_inconsistency');
-                                const isInconsistentCapture = captureIssues.length > 0;
 
                                 // Log ALL issues for transparency
                                 allIssues.forEach(issue => {
-                                    const isDynamic = isDynamicContentIssue(issue);
-                                    const prefix = isDynamic ? '(dynamic content — ignored)' : '';
-                                    aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description} ${prefix}`, isDynamic ? 'warn' : 'error');
+                                    aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description}`, 'error');
                                     if (issue.likely_cause) aiLog(`    Likely cause: ${issue.likely_cause}`, 'info');
                                     if (issue.suggested_fix) aiLog(`    Suggested fix: ${issue.suggested_fix}`, 'info');
                                 });
 
-                                if (isInconsistentCapture && structuralIssues.length === 0) {
-                                    // Only capture inconsistency — not a real regression
-                                    hasLayoutRegression = false;
-                                    aiUpdateStep('visual-check', 'done', 'Screenshot inconsistency (ignored)');
-                                    aiLog('Screenshot capture inconsistency detected — hero/slider content differs between captures. Ignoring as expected dynamic content.', 'warn');
-                                    visualRegressionContext = 'SCREENSHOT CAPTURE INCONSISTENCY: Before/after screenshots show different carousel/slider states. ' +
-                                        'This is expected dynamic content behavior, NOT a performance regression. Settings are safe. Continue optimizing.';
-                                } else if (structuralIssues.length === 0 && dynamicIssues.length > 0) {
-                                    // ALL issues are dynamic content — carousel slides, product rotations, etc.
-                                    hasLayoutRegression = false;
-                                    aiUpdateStep('visual-check', 'done', `${dynamicIssues.length} dynamic diff(s) — OK`);
-                                    aiLog(`Visual check: ${dynamicIssues.length} difference(s) detected but ALL are dynamic content (carousels, sliders, product grids). Not a regression.`, 'info');
-                                    visualRegressionContext = '';
-                                } else if (structuralIssues.length > 0) {
-                                    // Real structural issues found
-                                    hasLayoutRegression = true;
-                                    aiUpdateStep('visual-check', 'error', `${structuralIssues.length} structural issue(s) [${sevLabel}]`);
-                                    aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${structuralIssues.length} structural issue(s)${dynamicIssues.length ? ` + ${dynamicIssues.length} dynamic content diff(s) ignored` : ''}`, 'error');
-                                    visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
-                                        structuralIssues.map(i =>
-                                            `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
-                                        ).join('\n') +
-                                        '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back.';
-                                }
+                                hasLayoutRegression = true;
+                                aiUpdateStep('visual-check', 'error', `${issueCount} issue(s) [${sevLabel}]`);
+                                aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${issueCount} issue(s)`, 'error');
+                                visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
+                                    allIssues.map(i =>
+                                        `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
+                                    ).join('\n') +
+                                    '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back.';
 
                                 // Log pixel check data if available
                                 if (visualData.pixel_check) {
@@ -7214,42 +7139,34 @@
                             // the same oversized image will fail identically.
                             const isOversized = /8000\s*pixels|exceed.*max.*size/i.test(visualErr.message || '');
                             if (isOversized) {
-                                aiLog('Visual check skipped: page is too tall for the vision API (>8000px) and the hub could not auto-scale. Using score-based safety only — update your AI hub for full visual regression coverage.', 'warn');
-                                hasLayoutRegression = false;
-                                aiUpdateStep('visual-check', 'done', 'Skipped (tall page)');
-                                visualRegressionContext = 'VISUAL CHECK SKIPPED: page too tall for vision API. Be conservative with CSS layout changes on next iteration.';
+                                // FAIL CLOSED: cannot confirm visual integrity, so treat as a regression.
+                                aiLog('Visual check skipped: page is too tall for the vision API (>8000px) and the hub could not auto-scale. Cannot confirm visual integrity — failing closed and rolling back.', 'error');
+                                hasLayoutRegression = true;
+                                aiUpdateStep('visual-check', 'error', 'Skipped (tall page) — fail closed');
+                                visualRegressionContext = 'VISUAL CHECK SKIPPED: page too tall for vision API. Failing closed — treated as a potential layout regression and rolled back.';
                                 break; // exit retry loop — retrying won't help
                             }
                             if (visualAttempts < maxVisualAttempts) {
                                 aiLog(`Visual check attempt ${visualAttempts} failed: ${visualErr.message} — retrying…`, 'warn');
                             } else {
-                                // Visual check failed after retries. Only force rollback if scores ALSO dropped.
-                                // If scores are stable/improved, the failure is an infrastructure issue, not a layout problem.
-                                const vcMobileDelta = retestMobilePerf - snapshotMobilePerf;
-                                const vcDesktopDelta = retestDesktopPerf - snapshotDesktopPerf;
-                                const vcScoresOk = vcMobileDelta >= -PSI_NOISE && vcDesktopDelta >= -PSI_NOISE;
-
-                                if (vcScoresOk) {
-                                    aiLog(`Visual check failed: ${visualErr.message} — scores stable (M:${vcMobileDelta >= 0 ? '+' : ''}${vcMobileDelta}, D:${vcDesktopDelta >= 0 ? '+' : ''}${vcDesktopDelta}), proceeding with caution`, 'warn');
-                                    hasLayoutRegression = false;
-                                    aiUpdateStep('visual-check', 'done', 'Skipped (scores OK)');
-                                    visualRegressionContext = 'VISUAL CHECK COULD NOT COMPLETE (timeout/error) but scores are stable or improved. ' +
-                                        'Proceed with caution. Be conservative with CSS layout changes on next iteration.';
-                                } else {
-                                    aiLog(`Visual check failed AND scores dropped (M:${vcMobileDelta >= 0 ? '+' : ''}${vcMobileDelta}, D:${vcDesktopDelta >= 0 ? '+' : ''}${vcDesktopDelta}) — rolling back for safety`, 'error');
-                                    hasLayoutRegression = true;
-                                    aiUpdateStep('visual-check', 'error', 'Failed + scores down');
-                                    visualRegressionContext = 'VISUAL CHECK FAILED AND SCORES DROPPED. Cannot verify layout integrity and performance worsened. ' +
-                                        'Rolling back ALL changes. Avoid aggressive CSS/JS changes in next iteration.';
-                                }
+                                // FAIL CLOSED: visual check failed after retries — we cannot
+                                // affirmatively confirm the page is visually intact, so treat
+                                // this as a regression regardless of PSI score deltas.
+                                aiLog(`Visual check failed after ${maxVisualAttempts} attempts: ${visualErr.message} — cannot confirm layout integrity, failing closed and rolling back`, 'error');
+                                hasLayoutRegression = true;
+                                aiUpdateStep('visual-check', 'error', 'Failed — fail closed');
+                                visualRegressionContext = 'VISUAL CHECK FAILED (timeout/error). Cannot verify layout integrity. Failing closed — rolling back ALL changes.';
                             }
                         }
                     }
                 } else {
-                    // No screenshots available — still flag it clearly
-                    aiUpdateStep('visual-check', 'error', 'No screenshots');
-                    aiLog('Visual check: could not run — no before/after screenshots available', 'warn');
-                    visualRegressionContext = 'VISUAL CHECK UNAVAILABLE: No screenshots captured. Proceed with score-based evaluation only.';
+                    // FAIL CLOSED: screenshots missing (or only one of desktop/mobile
+                    // available) — we cannot affirmatively confirm the page is visually
+                    // intact on both viewports, so treat this as a regression.
+                    aiUpdateStep('visual-check', 'error', 'No screenshots — fail closed');
+                    aiLog('Visual check: could not run — before/after screenshots missing for desktop and/or mobile (both viewports required). Failing closed and rolling back.', 'error');
+                    hasLayoutRegression = true;
+                    visualRegressionContext = 'VISUAL CHECK UNAVAILABLE: Screenshots missing for desktop and/or mobile. Failing closed — treated as a potential layout regression and rolled back.';
                 }
 
                 // ── Evaluate results (smart rollback with net-gain logic) ──
@@ -7500,8 +7417,10 @@
             const errMsg = err.message || 'Optimization failed.';
             aiLog(`Error: ${errMsg}`, 'error');
             showNotification(errMsg, 'error');
-            // Best-effort rollback of any changes applied before the error
-            if (allChanges.length > 0 && !wasRolledBack) {
+            // Best-effort rollback of any changes applied before the error. Always
+            // attempt this even if an earlier iteration already rolled back — a later
+            // iteration may have re-applied changes that are now left half-applied.
+            if (allChanges.length > 0) {
                 aiLog('Attempting rollback due to unexpected error...', 'warn');
                 try {
                     await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 15000 });
