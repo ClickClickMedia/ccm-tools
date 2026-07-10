@@ -691,6 +691,38 @@ function ccm_tools_redis_prune_backups($dir, $glob_suffix, $keep = 5) {
 }
 
 /**
+ * Directory used to store wp-config.php backups.
+ *
+ * wp-config.php backups embed the site's Redis credentials (and everything
+ * else in wp-config.php) in plaintext, so they must never live under the web
+ * root where a misconfigured server could serve them as a static download.
+ * This stores them under wp-content/uploads instead, locked down with an
+ * .htaccess deny-all plus an empty index.php (created on first use, mirroring
+ * the convention already used elsewhere in this plugin).
+ *
+ * @return string Absolute path to the private backup directory, with a trailing slash.
+ */
+function ccm_tools_redis_private_backup_dir() {
+    $dir = trailingslashit(wp_upload_dir()['basedir']) . 'ccm-private/';
+
+    if (!file_exists($dir)) {
+        wp_mkdir_p($dir);
+    }
+
+    $htaccess = $dir . '.htaccess';
+    if (!file_exists($htaccess)) {
+        @file_put_contents($htaccess, "Order allow,deny\nDeny from all\n");
+    }
+
+    $index = $dir . 'index.php';
+    if (!file_exists($index)) {
+        @file_put_contents($index, "<?php\n// Silence is golden.\n");
+    }
+
+    return $dir;
+}
+
+/**
  * Bring the deployed wp-content/object-cache.php into line with the bundled
  * drop-in, WITHOUT requiring a live Redis connection.
  *
@@ -833,8 +865,11 @@ function ccm_tools_redis_remove_config() {
         return $result;
     }
 
+    // Back up outside the web root — wp-config.php holds the Redis
+    // credentials (and everything else) in plaintext.
+    $backup_dir      = ccm_tools_redis_private_backup_dir();
     $backup_filename = 'wp-config-backup-' . wp_generate_password(8, false, false) . '-' . date('Y-m-d-His') . '.php';
-    $backup_path     = dirname($real_config_path) . DIRECTORY_SEPARATOR . $backup_filename;
+    $backup_path     = $backup_dir . $backup_filename;
 
     if (!@copy($real_config_path, $backup_path)) {
         $result['message'] = __('Could not create backup of wp-config.php.', 'ccm-tools');
@@ -848,7 +883,7 @@ function ccm_tools_redis_remove_config() {
         @opcache_invalidate($real_config_path, true);
     }
 
-    ccm_tools_redis_prune_backups(dirname($real_config_path), 'wp-config-backup-*.php', 5);
+    ccm_tools_redis_prune_backups($backup_dir, 'wp-config-backup-*.php', 5);
 
     $result['success']     = true;
     $result['message']     = __('Redis configuration removed from wp-config.php.', 'ccm-tools');
@@ -1201,8 +1236,23 @@ function ccm_tools_redis_format_bytes($bytes) {
 }
 
 /**
+ * Build a single wp-config define() line with an injection-proof value
+ * literal. Using var_export() (rather than string interpolation) means the
+ * value can contain quotes, backslashes, or anything else and it will always
+ * be emitted as one safe PHP literal — no way to break out of the string and
+ * inject additional statements into wp-config.php.
+ *
+ * @param string $constant Constant name (already validated/whitelisted by caller).
+ * @param mixed  $value    Constant value (bool, int, float, or string).
+ * @return string A complete "define('CONST', <literal>);" line.
+ */
+function ccm_tools_redis_config_line(string $constant, $value): string {
+    return "define('" . $constant . "', " . var_export($value, true) . ");";
+}
+
+/**
  * Add Redis configuration to wp-config.php
- * 
+ *
  * @param array $config Configuration values to add
  * @return array Result with success status and message
  */
@@ -1291,14 +1341,10 @@ function ccm_tools_redis_add_config($config = array()) {
     $config_lines = array("\n/* CCM Tools Redis Configuration */");
     
     foreach ($config as $constant => $value) {
-        if (is_bool($value)) {
-            $value_str = $value ? 'true' : 'false';
-            $config_lines[] = "define('{$constant}', {$value_str});";
-        } elseif (is_int($value) || is_float($value)) {
-            $config_lines[] = "define('{$constant}', {$value});";
-        } else {
-            $config_lines[] = "define('{$constant}', '{$value}');";
-        }
+        // Route every value type through var_export() so nothing — booleans,
+        // numbers, or attacker-influenced strings (e.g. a Redis password) —
+        // can ever break out of the define() literal.
+        $config_lines[] = ccm_tools_redis_config_line($constant, $value);
     }
     
     // Only proceed if we have new constants to add
@@ -1344,9 +1390,12 @@ function ccm_tools_redis_add_config($config = array()) {
         return $result;
     }
 
-    // Create backup with secure filename
+    // Create backup with secure filename, stored outside the web root — wp-
+    // config.php holds the Redis credentials (and everything else) in
+    // plaintext.
+    $backup_dir      = ccm_tools_redis_private_backup_dir();
     $backup_filename = 'wp-config-backup-' . wp_generate_password(8, false, false) . '-' . date('Y-m-d-His') . '.php';
-    $backup_path = dirname($real_config_path) . DIRECTORY_SEPARATOR . $backup_filename;
+    $backup_path     = $backup_dir . $backup_filename;
 
     if (!@copy($real_config_path, $backup_path)) {
         $result['message'] = __('Could not create backup of wp-config.php.', 'ccm-tools');
@@ -1364,7 +1413,7 @@ function ccm_tools_redis_add_config($config = array()) {
         opcache_invalidate($real_config_path, true);
     }
 
-    ccm_tools_redis_prune_backups(dirname($real_config_path), 'wp-config-backup-*.php', 5);
+    ccm_tools_redis_prune_backups($backup_dir, 'wp-config-backup-*.php', 5);
 
     $result['success'] = true;
     $result['message'] = __('Redis configuration saved to wp-config.php successfully.', 'ccm-tools');

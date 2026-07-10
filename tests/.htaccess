@@ -1,0 +1,3 @@
+# Dev-only test scripts — never web-accessible
+Order allow,deny
+Deny from all
