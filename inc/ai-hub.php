@@ -512,12 +512,76 @@ function ccm_tools_ajax_ai_hub_ai_optimize(): void {
 }
 
 /**
+ * Map a current setting's PHP value to the local equivalent of the hub
+ * catalog's declared type ('bool'|'int'|'string'|'array'), or null when the
+ * current value doesn't correspond to one of those (shouldn't happen for
+ * anything in ccm_tools_perf_get_settings()'s defaults).
+ *
+ * @param mixed $current
+ * @return string|null
+ */
+function ccm_tools_ai_expected_type($current): ?string {
+    if (is_bool($current))  return 'bool';
+    if (is_int($current))   return 'int';
+    if (is_array($current)) return 'array';
+    if (is_string($current)) return 'string';
+    return null;
+}
+
+/**
+ * Normalize $value to $type's expected PHP shape when the shapes are
+ * genuinely equivalent, instead of rejecting benign wire-format wobble
+ * (e.g. a JSON number sent as a string, or a whole-number float where an
+ * int was expected). Mirrors the hub's `ccm_normalize_value()` in
+ * ccm-api-hub/includes/ai-allowlist.php so both layers agree.
+ *
+ * Deliberately does NOT extend this leniency to bool: only a real bool, or
+ * int 0/1, are accepted — a string is rejected outright, keeping the
+ * `(bool)"false" === true` trap closed (the model must never be able to
+ * "disable" a boolean by sending the string "false").
+ *
+ * string/array fields are unchanged: the value must already be that type.
+ *
+ * @param mixed  $value
+ * @param string $type
+ * @return array{ok: bool, value: mixed} $value is meaningful only when ok is true.
+ */
+function ccm_tools_ai_normalize_value($value, string $type): array {
+    switch ($type) {
+        case 'bool':
+            if (is_bool($value)) return ['ok' => true, 'value' => $value];
+            if (is_int($value) && ($value === 0 || $value === 1)) {
+                return ['ok' => true, 'value' => (bool) $value];
+            }
+            return ['ok' => false, 'value' => null];
+
+        case 'int':
+            if (is_int($value)) return ['ok' => true, 'value' => $value];
+            if (is_float($value) && floor($value) === $value) {
+                return ['ok' => true, 'value' => (int) $value];
+            }
+            if (is_string($value) && is_numeric($value)) {
+                $f = (float) $value;
+                if (floor($f) === $f) return ['ok' => true, 'value' => (int) $f];
+            }
+            return ['ok' => false, 'value' => null];
+
+        case 'string':
+            return is_string($value) ? ['ok' => true, 'value' => $value] : ['ok' => false, 'value' => null];
+
+        case 'array':
+            return is_array($value) ? ['ok' => true, 'value' => $value] : ['ok' => false, 'value' => null];
+    }
+    return ['ok' => false, 'value' => null];
+}
+
+/**
  * Apply AI recommendations to Performance Optimizer settings
- * 
+ *
  * Handles complex value types: booleans, integers, arrays (URL lists, exclude lists),
  * and large strings (critical CSS code). Auto-enables corresponding boolean toggles
  * when data values are set (e.g., setting preconnect_urls also enables preconnect).
- * 
+ *
  * @param array $recommendations Array of recommendations from AI analysis
  * @return bool Whether settings were successfully applied
  */
@@ -549,13 +613,27 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
     // Keys that contain a single URL
     $url_keys = ['lcp_preload_url'];
 
-    // Index proposed values across the whole batch so a precondition (e.g.
-    // preload_css requiring critical_css_code) can be satisfied by another
-    // recommendation in THIS SAME batch, not only by an already-saved setting.
-    $proposed = [];
+    // Index VALIDATED proposed values across the whole batch so a
+    // precondition (e.g. preload_css requiring critical_css_code) can be
+    // satisfied by another recommendation in THIS SAME batch, not only by
+    // an already-saved setting. Only a value that is a real known setting
+    // AND matches (after light normalization) that setting's current PHP
+    // type is stored — a hallucinated key or wrong-typed companion (e.g.
+    // critical_css_code: 123) must NEVER count as "present" (see Task 9
+    // review fix: this used to index raw, unvalidated values).
+    $validated_proposed = [];
     foreach ($recommendations as $r) {
         $k = $r['setting_key'] ?? '';
-        if ($k !== '') $proposed[$k] = $r['recommended_value'] ?? null;
+        $v = $r['recommended_value'] ?? null;
+        if ($k === '' || $v === null || !array_key_exists($k, $settings)) continue;
+
+        $expected_type = ccm_tools_ai_expected_type($settings[$k]);
+        if ($expected_type === null) continue;
+
+        $norm = ccm_tools_ai_normalize_value($v, $expected_type);
+        if ($norm['ok']) {
+            $validated_proposed[$k] = $norm['value']; // last valid occurrence wins
+        }
     }
 
     foreach ($recommendations as $rec) {
@@ -571,11 +649,15 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
         // unsafe recommendation can never be applied even if it slipped
         // past the hub (e.g. an older hub, or an unvalidated/manual call).
 
-        // preload_css / critical_css require non-empty critical_css_code,
-        // either recommended in this same batch or already saved.
+        // preload_css / critical_css require a non-empty, VALID-STRING
+        // critical_css_code, either recommended (and validated) in this
+        // same batch or already saved. An invalid companion — wrong type
+        // (e.g. int 123), empty, or simply absent — must NOT satisfy this:
+        // it is the only guard for preload_css (the orphan-toggle self-heal
+        // below only covers critical_css/critical_css_code, not preload_css).
         if ($key === 'preload_css' || $key === 'critical_css') {
-            $css_code = $proposed['critical_css_code'] ?? $settings['critical_css_code'] ?? '';
-            if (empty($css_code)) {
+            $css_code = $validated_proposed['critical_css_code'] ?? $settings['critical_css_code'] ?? '';
+            if (!is_string($css_code) || $css_code === '') {
                 error_log("[ccm-tools] AI rec skipped: '{$key}' requires non-empty critical_css_code.");
                 continue;
             }
@@ -597,27 +679,24 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
             continue;
         }
 
-        // ── Type-match: reject values whose PHP type doesn't match the
-        // existing setting's type instead of coercing (e.g. (bool)"false"
-        // === true would silently "enable" a boolean the AI meant to
-        // disable). A mismatch here means the model hallucinated a shape;
+        // ── Type-match (with light normalization): reject values whose PHP
+        // shape doesn't match — or normalize to — the existing setting's
+        // type instead of blindly coercing (e.g. (bool)"false" === true
+        // would silently "enable" a boolean the AI meant to disable — that
+        // trap stays closed: bool only accepts a real bool or int 0/1,
+        // never a string). A numeric string or whole-number float IS
+        // accepted for an int field (benign wire-format wobble). A mismatch
+        // that survives normalization means the model hallucinated a shape;
         // skip it rather than guess.
         $current = $settings[$key];
-        if (is_bool($current) && !is_bool($value)) {
-            error_log("[ccm-tools] AI rec skipped: '{$key}' expected bool, got " . gettype($value) . '.');
-            continue;
-        }
-        if (is_int($current) && !is_int($value)) {
-            error_log("[ccm-tools] AI rec skipped: '{$key}' expected int, got " . gettype($value) . '.');
-            continue;
-        }
-        if (is_array($current) && !is_array($value)) {
-            error_log("[ccm-tools] AI rec skipped: '{$key}' expected array, got " . gettype($value) . '.');
-            continue;
-        }
-        if (is_string($current) && !is_string($value)) {
-            error_log("[ccm-tools] AI rec skipped: '{$key}' expected string, got " . gettype($value) . '.');
-            continue;
+        $expected_type = ccm_tools_ai_expected_type($current);
+        if ($expected_type !== null) {
+            $norm = ccm_tools_ai_normalize_value($value, $expected_type);
+            if (!$norm['ok']) {
+                error_log("[ccm-tools] AI rec skipped: '{$key}' expected {$expected_type}, got " . gettype($value) . '.');
+                continue;
+            }
+            $value = $norm['value'];
         }
 
         // Type-match and sanitize the value
