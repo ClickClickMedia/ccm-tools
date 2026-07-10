@@ -549,6 +549,15 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
     // Keys that contain a single URL
     $url_keys = ['lcp_preload_url'];
 
+    // Index proposed values across the whole batch so a precondition (e.g.
+    // preload_css requiring critical_css_code) can be satisfied by another
+    // recommendation in THIS SAME batch, not only by an already-saved setting.
+    $proposed = [];
+    foreach ($recommendations as $r) {
+        $k = $r['setting_key'] ?? '';
+        if ($k !== '') $proposed[$k] = $r['recommended_value'] ?? null;
+    }
+
     foreach ($recommendations as $rec) {
         $key = $rec['setting_key'] ?? '';
         $value = $rec['recommended_value'] ?? null;
@@ -558,11 +567,64 @@ function ccm_tools_ai_hub_apply_recommendations(array $recommendations): bool {
         // Only apply known settings
         if (!array_key_exists($key, $settings)) continue;
 
+        // ── Preconditions: mirror the hub's server-side allow-list so an
+        // unsafe recommendation can never be applied even if it slipped
+        // past the hub (e.g. an older hub, or an unvalidated/manual call).
+
+        // preload_css / critical_css require non-empty critical_css_code,
+        // either recommended in this same batch or already saved.
+        if ($key === 'preload_css' || $key === 'critical_css') {
+            $css_code = $proposed['critical_css_code'] ?? $settings['critical_css_code'] ?? '';
+            if (empty($css_code)) {
+                error_log("[ccm-tools] AI rec skipped: '{$key}' requires non-empty critical_css_code.");
+                continue;
+            }
+        }
+
+        // Block themes: disabling block-library CSS or the Gutenberg
+        // frontend styles breaks rendering when the active theme depends
+        // on them (full-site-editing themes).
+        if (($key === 'disable_block_css' || $key === 'disable_gutenberg_frontend')
+            && function_exists('wp_is_block_theme') && wp_is_block_theme()) {
+            error_log("[ccm-tools] AI rec skipped: '{$key}' is incompatible with block themes.");
+            continue;
+        }
+
+        // woo_scripts_shop_only only makes sense (and is only safe) when
+        // WooCommerce is actually active.
+        if ($key === 'woo_scripts_shop_only' && !class_exists('WooCommerce')) {
+            error_log("[ccm-tools] AI rec skipped: 'woo_scripts_shop_only' requires WooCommerce.");
+            continue;
+        }
+
+        // ── Type-match: reject values whose PHP type doesn't match the
+        // existing setting's type instead of coercing (e.g. (bool)"false"
+        // === true would silently "enable" a boolean the AI meant to
+        // disable). A mismatch here means the model hallucinated a shape;
+        // skip it rather than guess.
+        $current = $settings[$key];
+        if (is_bool($current) && !is_bool($value)) {
+            error_log("[ccm-tools] AI rec skipped: '{$key}' expected bool, got " . gettype($value) . '.');
+            continue;
+        }
+        if (is_int($current) && !is_int($value)) {
+            error_log("[ccm-tools] AI rec skipped: '{$key}' expected int, got " . gettype($value) . '.');
+            continue;
+        }
+        if (is_array($current) && !is_array($value)) {
+            error_log("[ccm-tools] AI rec skipped: '{$key}' expected array, got " . gettype($value) . '.');
+            continue;
+        }
+        if (is_string($current) && !is_string($value)) {
+            error_log("[ccm-tools] AI rec skipped: '{$key}' expected string, got " . gettype($value) . '.');
+            continue;
+        }
+
         // Type-match and sanitize the value
         if (is_bool($settings[$key])) {
-            $settings[$key] = (bool)$value;
+            $settings[$key] = $value; // already type-checked above — no coercion
         } elseif (is_int($settings[$key])) {
-            $settings[$key] = (int)$value;
+            $settings[$key] = $value; // already type-checked above — no coercion
         } elseif (in_array($key, $css_keys, true)) {
             // CSS code: strip HTML tags, PHP tags and null bytes to prevent XSS
             if (is_string($value)) {
