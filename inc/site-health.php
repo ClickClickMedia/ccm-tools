@@ -23,9 +23,12 @@ if (!defined('CCM_TOOLS_PSI_ENDPOINT')) {
     define('CCM_TOOLS_PSI_ENDPOINT', 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
 }
 
-/** How many past runs to keep per strategy. */
+/**
+ * How many past runs to keep per strategy. Only the scores and a timestamp are
+ * stored per run, a few dozen bytes, so this can afford to be generous.
+ */
 if (!defined('CCM_TOOLS_SH_HISTORY_MAX')) {
-    define('CCM_TOOLS_SH_HISTORY_MAX', 20);
+    define('CCM_TOOLS_SH_HISTORY_MAX', 200);
 }
 
 // ─── Settings ───────────────────────────────────────────────────
@@ -259,22 +262,36 @@ function ccm_tools_sh_extract(array $body, string $url, string $strategy): array
 
     $audits = (!empty($lh['audits']) && is_array($lh['audits'])) ? $lh['audits'] : array();
 
-    // Lab metrics. displayValue is already localised by Google.
+    // Lab metrics. Each carries Google's published good / needs-improvement
+    // boundaries so the interface can show WHERE a value falls, not just what
+    // colour it is. A bare number cannot tell you whether 2.6s was a near miss
+    // or a long way off.
     $metric_ids = array(
-        'first-contentful-paint'   => __('First Contentful Paint', 'ccm-tools'),
-        'largest-contentful-paint' => __('Largest Contentful Paint', 'ccm-tools'),
-        'total-blocking-time'      => __('Total Blocking Time', 'ccm-tools'),
-        'cumulative-layout-shift'  => __('Cumulative Layout Shift', 'ccm-tools'),
-        'speed-index'              => __('Speed Index', 'ccm-tools'),
-        'server-response-time'     => __('Server Response Time', 'ccm-tools'),
+        'largest-contentful-paint' => array(__('Largest Contentful Paint', 'ccm-tools'), 'LCP',  2500, 4000),
+        'cumulative-layout-shift'  => array(__('Cumulative Layout Shift', 'ccm-tools'),  'CLS',  0.1,  0.25),
+        'total-blocking-time'      => array(__('Total Blocking Time', 'ccm-tools'),      'TBT',  200,  600),
+        'first-contentful-paint'   => array(__('First Contentful Paint', 'ccm-tools'),   'FCP',  1800, 3000),
+        'speed-index'              => array(__('Speed Index', 'ccm-tools'),              'SI',   3400, 5800),
+        'server-response-time'     => array(__('Server Response Time', 'ccm-tools'),     'TTFB', 800,  1800),
     );
-    foreach ($metric_ids as $id => $label) {
+    foreach ($metric_ids as $id => $meta) {
         if (!isset($audits[$id])) {
             continue;
         }
+        list($label, $abbr, $good, $poor) = $meta;
+
+        $numeric = isset($audits[$id]['numericValue']) && is_numeric($audits[$id]['numericValue'])
+            ? (float) $audits[$id]['numericValue']
+            : null;
+
         $out['metrics'][$id] = array(
             'label'   => $label,
+            'abbr'    => $abbr,
             'display' => isset($audits[$id]['displayValue']) ? (string) $audits[$id]['displayValue'] : '',
+            'numeric' => $numeric,
+            'good'    => $good,
+            'poor'    => $poor,
+            'band'    => $numeric === null ? '' : ($numeric <= $good ? 'good' : ($numeric <= $poor ? 'ok' : 'bad')),
             'score'   => isset($audits[$id]['score']) && $audits[$id]['score'] !== null
                 ? (float) $audits[$id]['score']
                 : null,
@@ -581,7 +598,123 @@ function ccm_tools_ajax_sh_clear_history(): void {
 // ─── Page ───────────────────────────────────────────────────────
 
 /**
+ * Score band for a 0-100 Lighthouse category score.
+ *
+ * @param int|null $score
+ * @return string good|ok|bad|none
+ */
+function ccm_tools_sh_band($score): string {
+    if ($score === null || $score === '') {
+        return 'none';
+    }
+    $score = (int) $score;
+    if ($score >= 90) { return 'good'; }
+    if ($score >= 50) { return 'ok'; }
+    return 'bad';
+}
+
+/**
+ * Render one score ring.
+ *
+ * The arc is drawn with stroke-dasharray on a circle, so the value is baked
+ * into the markup rather than animated into place by script. The page is
+ * correct the instant it paints and stays correct with JavaScript off.
+ *
+ * @param string   $label Category name.
+ * @param int|null $score 0-100, or null when not measured.
+ * @param string   $sub   Small line beneath the label.
+ * @return string
+ */
+function ccm_tools_sh_gauge(string $label, $score, string $sub = ''): string {
+    $band = ccm_tools_sh_band($score);
+    $r    = 46;
+    $circ = 2 * M_PI * $r;
+    $pct  = ($score === null) ? 0 : max(0, min(100, (int) $score)) / 100;
+    $off  = $circ * (1 - $pct);
+
+    $out  = '<div class="ccm-gauge ccm-gauge--' . esc_attr($band) . '">';
+    $out .= '<div class="ccm-gauge__ring">';
+    $out .= '<svg viewBox="0 0 108 108" aria-hidden="true" focusable="false">';
+    $out .= '<circle class="ccm-gauge__track" cx="54" cy="54" r="' . $r . '"/>';
+    $out .= '<circle class="ccm-gauge__value" cx="54" cy="54" r="' . $r . '"'
+          . ' stroke-dasharray="' . round($circ, 2) . '"'
+          . ' stroke-dashoffset="' . round($off, 2) . '"/>';
+    $out .= '</svg>';
+    $out .= '<div class="ccm-gauge__num">'
+          . ($score === null ? '<small>' . esc_html__('n/a', 'ccm-tools') . '</small>' : esc_html((string) (int) $score))
+          . '</div>';
+    $out .= '</div>';
+    $out .= '<div><div class="ccm-gauge__label">' . esc_html($label) . '</div>';
+    if ($sub !== '') {
+        $out .= '<div class="ccm-gauge__sub">' . esc_html($sub) . '</div>';
+    }
+    $out .= '</div></div>';
+
+    return $out;
+}
+
+/**
+ * Render a sparkline plus the latest value for one category's history.
+ *
+ * @param string $label  Category name.
+ * @param array  $points Chronological list of ints.
+ * @return string
+ */
+function ccm_tools_sh_trend(string $label, array $points): string {
+    $points = array_values(array_filter($points, 'is_numeric'));
+    $now    = $points ? (int) end($points) : null;
+    $band   = ccm_tools_sh_band($now);
+
+    $out = '<div class="ccm-trend" style="color: var(--ccm-' .
+        ($band === 'good' ? 'success' : ($band === 'ok' ? 'warning' : ($band === 'bad' ? 'error' : 'text-light'))) . ');">';
+    $out .= '<div class="ccm-trend__head">';
+    $out .= '<span class="ccm-trend__name">' . esc_html($label) . '</span>';
+
+    if (count($points) >= 2) {
+        $delta = $now - (int) $points[count($points) - 2];
+        $dir   = $delta > 0 ? 'up' : ($delta < 0 ? 'down' : 'flat');
+        $sign  = $delta > 0 ? '+' : '';
+        $out  .= '<span class="ccm-trend__delta ccm-trend__delta--' . $dir . '">'
+               . esc_html($sign . $delta) . '</span>';
+    }
+    $out .= '</div>';
+    $out .= '<div class="ccm-trend__now" style="color: var(--ccm-text);">'
+          . ($now === null ? '&ndash;' : esc_html((string) $now)) . '</div>';
+
+    if (count($points) >= 2) {
+        // Fixed 0-100 domain: a sparkline auto-scaled to its own min and max
+        // makes a wobble between 97 and 99 look like a cliff.
+        $w = 100.0; $h = 28.0; $n = count($points);
+        $step = $w / max(1, $n - 1);
+        $coords = array();
+        foreach ($points as $i => $v) {
+            $x = round($i * $step, 2);
+            $y = round($h - (max(0, min(100, (int) $v)) / 100) * $h, 2);
+            $coords[] = $x . ',' . $y;
+        }
+        $line = implode(' ', $coords);
+        $area = '0,' . $h . ' ' . $line . ' ' . round(($n - 1) * $step, 2) . ',' . $h;
+        list($lx, $ly) = explode(',', end($coords));
+
+        $out .= '<svg class="ccm-spark" viewBox="0 0 ' . $w . ' ' . $h . '" preserveAspectRatio="none" aria-hidden="true" focusable="false">';
+        $out .= '<polygon class="ccm-spark__area" points="' . esc_attr($area) . '"/>';
+        $out .= '<polyline class="ccm-spark__line" points="' . esc_attr($line) . '" vector-effect="non-scaling-stroke"/>';
+        $out .= '</svg>';
+        $out .= '<span class="sr-only">' . esc_html(sprintf(
+            /* translators: %d: number of recorded tests */
+            __('%d recorded tests', 'ccm-tools'), $n)) . '</span>';
+    }
+
+    $out .= '</div>';
+    return $out;
+}
+
+/**
  * Render the Site Health admin page.
+ *
+ * Reading order is deliberate: the thing you came for (scores) is first, the
+ * thing you act on (findings) is second, the record (history) is third, and
+ * the API key, which you set once and never touch again, is last.
  *
  * @return void
  */
@@ -595,6 +728,7 @@ function ccm_tools_render_site_health_page(): void {
     $key_locked = ccm_tools_sh_key_is_constant();
     $test_url   = $settings['last_url'] !== '' ? $settings['last_url'] : home_url('/');
     $history    = ccm_tools_sh_history();
+    $last       = $history ? end($history) : null;
     ?>
     <div class="wrap ccm-tools ccm-tools-site-health">
         <?php
@@ -604,154 +738,243 @@ function ccm_tools_render_site_health_page(): void {
         ?>
         <div class="ccm-content">
 
-            <?php if (!$has_key) : ?>
-            <div class="ccm-card">
-                <h2><?php _e('Connect PageSpeed Insights', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted">
-                    <?php _e('Site Health runs Google PageSpeed Insights against this site and tells you which CCM Tools settings would address what it finds. It never changes a setting on its own.', 'ccm-tools'); ?>
-                </p>
-                <ol class="ccm-text-muted" style="margin-left:1.2em;">
-                    <li><?php
-                    printf(
-                        /* translators: %s: link to the Google Cloud console */
-                        esc_html__('Create an API key in the %s.', 'ccm-tools'),
-                        '<a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">' . esc_html__('Google Cloud console', 'ccm-tools') . '</a>'
-                    ); ?></li>
-                    <li><?php _e('Enable the PageSpeed Insights API for that key.', 'ccm-tools'); ?></li>
-                    <li><?php _e('Restrict the key to the PageSpeed Insights API so it cannot be used for anything else.', 'ccm-tools'); ?></li>
-                </ol>
-                <p class="ccm-text-muted">
-                    <?php _e('The free quota is 25,000 requests a day, which is far more than this page will ever use.', 'ccm-tools'); ?>
-                </p>
+            <!-- Hero -->
+            <div class="ccm-hero">
+                <div class="ccm-hero__text">
+                    <h1><?php _e('Site Health', 'ccm-tools'); ?></h1>
+                    <div class="ccm-hero__meta">
+                        <span><?php echo esc_html(wp_parse_url(home_url(), PHP_URL_HOST)); ?></span>
+                        <?php if ($last) : ?>
+                            <span><?php printf(
+                                /* translators: %s: human readable time difference */
+                                esc_html__('last tested %s ago', 'ccm-tools'),
+                                esc_html(human_time_diff((int) $last['at']))
+                            ); ?></span>
+                            <span><?php printf(
+                                /* translators: %d: number of stored runs */
+                                esc_html(_n('%d run recorded', '%d runs recorded', count($history), 'ccm-tools')),
+                                count($history)
+                            ); ?></span>
+                        <?php else : ?>
+                            <span><?php _e('never tested', 'ccm-tools'); ?></span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div class="ccm-hero__actions">
+                    <div class="ccm-seg" role="group" aria-label="<?php esc_attr_e('Device', 'ccm-tools'); ?>">
+                        <input type="radio" name="sh-device" id="sh-dev-mobile" value="mobile" checked>
+                        <label for="sh-dev-mobile"><?php _e('Mobile', 'ccm-tools'); ?></label>
+                        <input type="radio" name="sh-device" id="sh-dev-desktop" value="desktop">
+                        <label for="sh-dev-desktop"><?php _e('Desktop', 'ccm-tools'); ?></label>
+                    </div>
+                    <button type="button" id="sh-run" class="ccm-button ccm-button-primary" <?php disabled(!$has_key); ?>>
+                        <?php _e('Run test', 'ccm-tools'); ?>
+                    </button>
+                </div>
             </div>
+
+            <!-- What gets tested -->
+            <div class="ccm-toolbar" style="margin-bottom: var(--ccm-space-lg);">
+                <label for="sh-url" style="font-size: var(--ccm-text-sm); font-weight: 600; color: var(--ccm-text-muted);">
+                    <?php _e('Page', 'ccm-tools'); ?>
+                </label>
+                <input type="url" id="sh-url" class="ccm-input" style="flex: 1 1 22rem; width: auto;"
+                       value="<?php echo esc_attr($test_url); ?>">
+                <span class="ccm-toolbar__spacer"></span>
+                <button type="button" id="sh-run-both" class="ccm-button ccm-button-secondary ccm-button-small" <?php disabled(!$has_key); ?>>
+                    <?php _e('Test both devices', 'ccm-tools'); ?>
+                </button>
+            </div>
+
+            <div id="sh-status" role="status" aria-live="polite"></div>
+
+            <?php if (!$has_key) : ?>
+                <div class="ccm-empty" id="sh-nokey">
+                    <span class="ccm-empty__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 11-7 7 5 5 0 017-7zm0 0L15 8m0 0l3 3 3-3-3-3"/></svg>
+                    </span>
+                    <h3><?php _e('Add a PageSpeed Insights key to begin', 'ccm-tools'); ?></h3>
+                    <p><?php _e('Site Health measures this site with Google PageSpeed Insights and tells you which CCM Tools settings address what it finds. It never changes a setting on its own.', 'ccm-tools'); ?></p>
+                    <button type="button" class="ccm-button ccm-button-primary" id="sh-jump-setup"><?php _e('Set up the key', 'ccm-tools'); ?></button>
+                </div>
+            <?php elseif (!$last) : ?>
+                <div class="ccm-empty" id="sh-never">
+                    <span class="ccm-empty__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+                    </span>
+                    <h3><?php _e('No test run yet', 'ccm-tools'); ?></h3>
+                    <p><?php _e('Pick a device and run a test. Mobile and desktop are measured separately and each takes up to a minute.', 'ccm-tools'); ?></p>
+                </div>
             <?php endif; ?>
 
-            <!-- API key -->
-            <div class="ccm-card">
-                <h2>
-                    <?php _e('API key', 'ccm-tools'); ?>
-                    <span id="sh-key-badge" class="ccm-badge <?php echo $has_key ? 'ccm-badge-success' : 'ccm-badge-warning'; ?>">
-                        <?php echo $has_key ? esc_html__('Configured', 'ccm-tools') : esc_html__('Not set', 'ccm-tools'); ?>
-                    </span>
-                </h2>
-                <?php if ($key_locked) : ?>
-                    <p class="ccm-text-muted">
-                        <?php _e('The key is defined as CCM_TOOLS_PSI_KEY in wp-config.php, which is the safer place for it. Remove that constant if you would rather manage it here.', 'ccm-tools'); ?>
-                    </p>
-                <?php else : ?>
-                    <div class="ccm-form-field">
-                        <label for="sh-api-key"><?php _e('PageSpeed Insights API key', 'ccm-tools'); ?></label>
-                        <input type="password" id="sh-api-key" class="ccm-input" autocomplete="off"
-                               value="<?php echo $has_key ? esc_attr(str_repeat('•', 16)) : ''; ?>"
-                               data-has-key="<?php echo $has_key ? '1' : '0'; ?>"
-                               placeholder="AIza...">
+            <!-- Scores -->
+            <div id="sh-scores-wrap" class="ccm-hide">
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow" id="sh-scores-eyebrow"><?php _e('Lighthouse', 'ccm-tools'); ?></span>
+                        <h2><?php _e('Scores', 'ccm-tools'); ?></h2>
+                        <p id="sh-scores-meta"></p>
                     </div>
-                    <div class="ccm-buttons" style="margin-top:0.75rem;">
-                        <button type="button" id="sh-save-key" class="ccm-button ccm-button-primary"><?php _e('Save key', 'ccm-tools'); ?></button>
+                </div>
+                <div class="ccm-gauges" id="sh-gauges"></div>
+            </div>
+
+            <!-- Core Web Vitals -->
+            <div id="sh-vitals-wrap" class="ccm-hide">
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php _e('Measured', 'ccm-tools'); ?></span>
+                        <h2><?php _e('Core Web Vitals', 'ccm-tools'); ?></h2>
+                        <p><?php _e('The marker shows where this page falls against Google\'s own good and poor boundaries.', 'ccm-tools'); ?></p>
                     </div>
-                    <p class="ccm-text-muted" style="font-size:0.85em;margin-top:0.5rem;">
-                        <?php _e('Stored in the database for this site only. To keep it out of the database entirely, define CCM_TOOLS_PSI_KEY in wp-config.php instead.', 'ccm-tools'); ?>
-                    </p>
-                <?php endif; ?>
-            </div>
-
-            <!-- Run a test -->
-            <div class="ccm-card">
-                <h2><?php _e('Run a test', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted"><?php _e('Mobile and desktop are measured separately. A run takes up to a minute each.', 'ccm-tools'); ?></p>
-                <div class="ccm-form-field">
-                    <label for="sh-url"><?php _e('Page to test', 'ccm-tools'); ?></label>
-                    <input type="url" id="sh-url" class="ccm-input" value="<?php echo esc_attr($test_url); ?>">
-                    <p class="ccm-text-muted" style="font-size:0.85em;"><?php _e('Must be a page on this site.', 'ccm-tools'); ?></p>
                 </div>
-                <div class="ccm-buttons" style="margin-top:0.75rem;">
-                    <button type="button" id="sh-run-mobile" class="ccm-button ccm-button-primary" <?php disabled(!$has_key); ?>><?php _e('Test mobile', 'ccm-tools'); ?></button>
-                    <button type="button" id="sh-run-desktop" class="ccm-button ccm-button-secondary" <?php disabled(!$has_key); ?>><?php _e('Test desktop', 'ccm-tools'); ?></button>
-                    <button type="button" id="sh-run-both" class="ccm-button ccm-button-secondary" <?php disabled(!$has_key); ?>><?php _e('Test both', 'ccm-tools'); ?></button>
+                <div class="ccm-metrics" id="sh-vitals"></div>
+                <div id="sh-field-wrap" class="ccm-hide" style="margin-top: var(--ccm-space-md);">
+                    <div class="ccm-panel">
+                        <div class="ccm-panel__head">
+                            <span><?php _e('Real visitors, last 28 days', 'ccm-tools'); ?></span>
+                            <span class="ccm-chip"><?php _e('Chrome UX Report', 'ccm-tools'); ?></span>
+                        </div>
+                        <div class="ccm-kv" id="sh-field"></div>
+                    </div>
                 </div>
-                <div id="sh-run-status" style="margin-top:0.75rem;"></div>
             </div>
 
-            <!-- Results -->
-            <div class="ccm-card" id="sh-results-card" style="display:none;">
-                <h2><?php _e('Results', 'ccm-tools'); ?> <span id="sh-results-meta" class="ccm-text-muted" style="font-weight:400;font-size:0.8em;"></span></h2>
-                <div id="sh-results"></div>
-            </div>
-
-            <!-- Recommendations -->
-            <div class="ccm-card" id="sh-findings-card" style="display:none;">
-                <h2><?php _e('What to do about it', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted">
-                    <?php _e('Ranked by how much time each one costs. Nothing here is applied for you. Where CCM Tools has a setting that addresses a finding, there is a link to it.', 'ccm-tools'); ?>
-                </p>
-                <div id="sh-findings"></div>
+            <!-- Findings -->
+            <div id="sh-findings-wrap" class="ccm-hide">
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php _e('Ranked by cost', 'ccm-tools'); ?></span>
+                        <h2><?php _e('What to fix', 'ccm-tools'); ?></h2>
+                        <p><?php _e('Nothing here is applied for you. Where CCM Tools has a setting that addresses a finding, there is a link straight to it.', 'ccm-tools'); ?></p>
+                    </div>
+                    <div class="ccm-row">
+                        <span class="ccm-chip" id="sh-findings-count"></span>
+                    </div>
+                </div>
+                <div class="ccm-findings" id="sh-findings"></div>
             </div>
 
             <!-- History -->
-            <div class="ccm-card" id="sh-history-card"<?php echo empty($history) ? ' style="display:none;"' : ''; ?>>
-                <h2>
-                    <?php _e('Score history', 'ccm-tools'); ?>
-                    <button type="button" id="sh-clear-history" class="ccm-button ccm-button-small ccm-button-secondary" style="float:right;"><?php _e('Clear', 'ccm-tools'); ?></button>
-                </h2>
-                <div id="sh-history">
-                    <?php ccm_tools_sh_render_history_table($history); ?>
+            <div id="sh-history-wrap"<?php echo $history ? '' : ' class="ccm-hide"'; ?>>
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php _e('Over time', 'ccm-tools'); ?></span>
+                        <h2><?php _e('History', 'ccm-tools'); ?></h2>
+                        <p><?php _e('Every run is kept, so you can tell whether a change actually helped.', 'ccm-tools'); ?></p>
+                    </div>
+                    <div class="ccm-row">
+                        <div class="ccm-seg" role="group" aria-label="<?php esc_attr_e('History device', 'ccm-tools'); ?>">
+                            <input type="radio" name="sh-hist-device" id="sh-hist-mobile" value="mobile" checked>
+                            <label for="sh-hist-mobile"><?php _e('Mobile', 'ccm-tools'); ?></label>
+                            <input type="radio" name="sh-hist-device" id="sh-hist-desktop" value="desktop">
+                            <label for="sh-hist-desktop"><?php _e('Desktop', 'ccm-tools'); ?></label>
+                        </div>
+                        <button type="button" id="sh-clear-history" class="ccm-button ccm-button-secondary ccm-button-small">
+                            <?php _e('Clear', 'ccm-tools'); ?>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="ccm-trends" id="sh-trends"></div>
+
+                <details class="ccm-disclose" style="margin-top: var(--ccm-space-md);">
+                    <summary>
+                        <?php _e('Every recorded run', 'ccm-tools'); ?>
+                        <span class="ccm-disclose__note" id="sh-log-count"></span>
+                    </summary>
+                    <div class="ccm-disclose__body ccm-panel__body--flush">
+                        <div class="ccm-table-wrap">
+                            <table class="ccm-table" id="sh-log">
+                                <thead>
+                                    <tr>
+                                        <th><?php _e('When', 'ccm-tools'); ?></th>
+                                        <th><?php _e('Device', 'ccm-tools'); ?></th>
+                                        <th><?php _e('Perf', 'ccm-tools'); ?></th>
+                                        <th><?php _e('A11y', 'ccm-tools'); ?></th>
+                                        <th><?php _e('Best pr.', 'ccm-tools'); ?></th>
+                                        <th><?php _e('SEO', 'ccm-tools'); ?></th>
+                                        <th><?php _e('Page', 'ccm-tools'); ?></th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <!-- Setup, last, because you do this once -->
+            <div class="ccm-section">
+                <div>
+                    <span class="ccm-section__eyebrow"><?php _e('One-off', 'ccm-tools'); ?></span>
+                    <h2><?php _e('Setup', 'ccm-tools'); ?></h2>
                 </div>
             </div>
 
+            <details class="ccm-disclose" id="sh-setup"<?php echo $has_key ? '' : ' open'; ?>>
+                <summary>
+                    <?php _e('PageSpeed Insights API key', 'ccm-tools'); ?>
+                    <span class="ccm-disclose__note">
+                        <?php if ($key_locked) : ?>
+                            <span class="ccm-chip ccm-chip--good"><?php _e('Set in wp-config.php', 'ccm-tools'); ?></span>
+                        <?php elseif ($has_key) : ?>
+                            <span class="ccm-chip ccm-chip--good"><?php _e('Configured', 'ccm-tools'); ?></span>
+                        <?php else : ?>
+                            <span class="ccm-chip ccm-chip--warn"><?php _e('Not set', 'ccm-tools'); ?></span>
+                        <?php endif; ?>
+                    </span>
+                </summary>
+                <div class="ccm-disclose__body">
+                    <?php if ($key_locked) : ?>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0;">
+                            <?php _e('The key is defined as CCM_TOOLS_PSI_KEY in wp-config.php, which keeps it out of the database. Remove that constant if you would rather manage it here.', 'ccm-tools'); ?>
+                        </p>
+                    <?php else : ?>
+                        <div class="ccm-grid-2">
+                            <div>
+                                <div class="ccm-form-field">
+                                    <label for="sh-api-key"><?php _e('API key', 'ccm-tools'); ?></label>
+                                    <input type="password" id="sh-api-key" class="ccm-input" autocomplete="off"
+                                           value="<?php echo $has_key ? esc_attr(str_repeat('•', 16)) : ''; ?>"
+                                           data-has-key="<?php echo $has_key ? '1' : '0'; ?>"
+                                           placeholder="AIza...">
+                                </div>
+                                <div class="ccm-row" style="margin-top: var(--ccm-space-sm);">
+                                    <button type="button" id="sh-save-key" class="ccm-button ccm-button-primary ccm-button-small">
+                                        <?php _e('Save key', 'ccm-tools'); ?>
+                                    </button>
+                                    <span id="sh-key-msg" class="ccm-text-muted" style="font-size: var(--ccm-text-xs);"></span>
+                                </div>
+                            </div>
+                            <div>
+                                <ol class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0; padding-left: 1.1em; line-height: 1.8;">
+                                    <li><?php
+                                    printf(
+                                        /* translators: %s: link to the Google Cloud console */
+                                        esc_html__('Create a key in the %s.', 'ccm-tools'),
+                                        '<a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">' . esc_html__('Google Cloud console', 'ccm-tools') . '</a>'
+                                    ); ?></li>
+                                    <li><?php _e('Enable the PageSpeed Insights API for it.', 'ccm-tools'); ?></li>
+                                    <li><?php _e('Restrict it to that API so it cannot be used for anything else.', 'ccm-tools'); ?></li>
+                                </ol>
+                                <p class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin-top: var(--ccm-space-sm);">
+                                    <?php _e('The free quota is 25,000 requests a day. Define CCM_TOOLS_PSI_KEY in wp-config.php to keep the key out of the database entirely.', 'ccm-tools'); ?>
+                                </p>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </details>
+
         </div>
     </div>
-    <?php
-}
 
-/**
- * Render the stored history as a table.
- *
- * @param array $history History rows.
- * @return void
- */
-function ccm_tools_sh_render_history_table(array $history): void {
-    if (empty($history)) {
-        echo '<p class="ccm-text-muted">' . esc_html__('No tests recorded yet.', 'ccm-tools') . '</p>';
-        return;
-    }
-
-    $rows = array_reverse($history);
-    ?>
-    <table class="ccm-table">
-        <thead>
-            <tr>
-                <th><?php _e('When', 'ccm-tools'); ?></th>
-                <th><?php _e('Device', 'ccm-tools'); ?></th>
-                <th><?php _e('Performance', 'ccm-tools'); ?></th>
-                <th><?php _e('Accessibility', 'ccm-tools'); ?></th>
-                <th><?php _e('Best practices', 'ccm-tools'); ?></th>
-                <th><?php _e('SEO', 'ccm-tools'); ?></th>
-                <th><?php _e('Page', 'ccm-tools'); ?></th>
-            </tr>
-        </thead>
-        <tbody>
-        <?php foreach ($rows as $row) :
-            $scores = isset($row['scores']) && is_array($row['scores']) ? $row['scores'] : array();
-            $cell = function ($key) use ($scores) {
-                if (!isset($scores[$key])) {
-                    return '<span class="ccm-text-muted">-</span>';
-                }
-                $v = (int) $scores[$key];
-                $class = $v >= 90 ? 'ccm-success' : ($v >= 50 ? 'ccm-warning' : 'ccm-error');
-                return '<span class="' . esc_attr($class) . '">' . esc_html($v) . '</span>';
-            };
-            ?>
-            <tr>
-                <td><?php echo esc_html(wp_date('j M Y, g:ia', (int) $row['at'])); ?></td>
-                <td><?php echo esc_html(isset($row['strategy']) && $row['strategy'] === 'desktop' ? __('Desktop', 'ccm-tools') : __('Mobile', 'ccm-tools')); ?></td>
-                <td><?php echo wp_kses_post($cell('performance')); ?></td>
-                <td><?php echo wp_kses_post($cell('accessibility')); ?></td>
-                <td><?php echo wp_kses_post($cell('best-practices')); ?></td>
-                <td><?php echo wp_kses_post($cell('seo')); ?></td>
-                <td class="ccm-text-muted"><?php echo esc_html(wp_parse_url((string) $row['url'], PHP_URL_PATH) ?: '/'); ?></td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
+    <script type="application/json" id="sh-bootstrap"><?php
+        echo wp_json_encode(array(
+            'history' => array_values($history),
+            'hasKey'  => $has_key,
+        ));
+    ?></script>
     <?php
 }

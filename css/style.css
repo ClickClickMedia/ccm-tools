@@ -10,7 +10,7 @@
  * down this file already reads them, so redefining the values here re-themes
  * the whole plugin without touching two thousand lines of component CSS.
  *
- * Version: 8.0.3
+ * Version: 8.1.0
  */
 
 /* ===================================
@@ -3527,3 +3527,621 @@ div.ccm-spinner-small,
 span.ccm-spinner-small { --ccm-size: 16px; }
 
 div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
+
+/* ═══════════════════════════════════════════════════════════════
+   UI KIT
+
+   Real components, not just recoloured boxes. The first pass of the
+   v8 restyle swapped the palette and left every page as a card with a
+   table in it, which is why it still read as the old plugin. These are
+   the pieces pages are rebuilt FROM: gauges, metric bars, finding rows,
+   section heads, segmented controls, sparklines, disclosures.
+
+   Everything here is presentational and page-agnostic. If a rule only
+   makes sense on one screen it belongs with that screen, not here.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Page hero ─────────────────────────────────────────────────
+   Title, one line of context, and the page's primary action. Replaces
+   the old pattern of burying the main action in the third card down. */
+
+.ccm-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--ccm-space-lg);
+    flex-wrap: wrap;
+    margin-bottom: var(--ccm-space-lg);
+}
+
+.ccm-hero__text { min-width: 0; }
+
+.ccm-hero h1 {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    color: var(--ccm-text);
+    line-height: 1.2;
+}
+
+.ccm-hero__meta {
+    margin-top: 0.3rem;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text-muted);
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.ccm-hero__meta > * + *::before {
+    content: "·";
+    margin-right: 0.5rem;
+    color: var(--ccm-border-dark);
+}
+
+.ccm-hero__actions {
+    display: flex;
+    gap: var(--ccm-space-sm);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* ── Section head ──────────────────────────────────────────────
+   An eyebrow plus a title, with an optional action on the right. Gives
+   a long page rhythm without wrapping every group in another card. */
+
+.ccm-section {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--ccm-space-md);
+    flex-wrap: wrap;
+    margin: var(--ccm-space-xl) 0 var(--ccm-space-md);
+}
+
+.ccm-section:first-child { margin-top: 0; }
+
+.ccm-section__eyebrow {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    color: var(--ccm-primary);
+    display: block;
+    margin-bottom: 0.2rem;
+}
+
+.ccm-section h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    color: var(--ccm-text);
+}
+
+.ccm-section p {
+    margin: 0.25rem 0 0;
+    font-size: var(--ccm-text-sm);
+    color: var(--ccm-text-muted);
+    max-width: 68ch;
+}
+
+/* ── Score gauge ───────────────────────────────────────────────
+   An SVG ring. The dash offset is set inline from the score so there is
+   no JS animation loop to keep in sync, and it still reads correctly
+   with JavaScript disabled. */
+
+.ccm-gauges {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--ccm-space-md);
+}
+
+.ccm-gauge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: var(--ccm-space-md) var(--ccm-space-sm);
+    border-radius: var(--ccm-radius-lg);
+    background: var(--ccm-glass);
+    border: 1px solid var(--ccm-glass-border);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    text-align: center;
+}
+
+.ccm-gauge__ring {
+    position: relative;
+    width: 108px;
+    height: 108px;
+    flex: 0 0 auto;
+}
+
+.ccm-gauge__ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    display: block;
+}
+
+.ccm-gauge__track {
+    fill: none;
+    stroke: var(--ccm-border);
+    stroke-width: 8;
+}
+
+.ccm-gauge__value {
+    fill: none;
+    stroke: var(--ccm-gauge-colour, var(--ccm-success));
+    stroke-width: 8;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 900ms var(--ccm-ease-settle);
+}
+
+.ccm-gauge__num {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 1.85rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--ccm-gauge-colour, var(--ccm-success));
+}
+
+.ccm-gauge__num small { font-size: 0.85rem; font-weight: 500; }
+
+.ccm-gauge__label {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text);
+}
+
+.ccm-gauge__sub {
+    font-size: var(--ccm-text-xs);
+    color: var(--ccm-text-muted);
+}
+
+.ccm-gauge--good { --ccm-gauge-colour: var(--ccm-success); }
+.ccm-gauge--ok   { --ccm-gauge-colour: var(--ccm-warning); }
+.ccm-gauge--bad  { --ccm-gauge-colour: var(--ccm-error); }
+.ccm-gauge--none { --ccm-gauge-colour: var(--ccm-text-light); }
+
+/* ── Metric with a threshold bar ───────────────────────────────
+   For anything with published good / needs-work / poor bands, like Core
+   Web Vitals. The bands are drawn to scale and a marker sits where the
+   measured value actually falls, which a number on its own cannot show. */
+
+.ccm-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: var(--ccm-space-md);
+}
+
+.ccm-metric {
+    padding: var(--ccm-space-md);
+    border-radius: var(--ccm-radius-lg);
+    background: var(--ccm-surface);
+    border: 1px solid var(--ccm-border);
+}
+
+.ccm-metric__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--ccm-space-sm);
+}
+
+.ccm-metric__name {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text);
+}
+
+.ccm-metric__abbr {
+    font-size: var(--ccm-text-xs);
+    color: var(--ccm-text-muted);
+    font-weight: 500;
+}
+
+.ccm-metric__value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 0.35rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ccm-metric-colour, var(--ccm-text));
+}
+
+.ccm-metric__value small {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ccm-text-muted);
+}
+
+.ccm-metric__bands {
+    display: flex;
+    height: 5px;
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-top: 0.7rem;
+    background: var(--ccm-border);
+}
+
+.ccm-metric__band { height: 100%; }
+.ccm-metric__band--good { background: color-mix(in srgb, var(--ccm-success) 55%, transparent); }
+.ccm-metric__band--ok   { background: color-mix(in srgb, var(--ccm-warning) 55%, transparent); }
+.ccm-metric__band--bad  { background: color-mix(in srgb, var(--ccm-error) 55%, transparent); }
+
+.ccm-metric__scale {
+    position: relative;
+    height: 12px;
+    margin-top: 2px;
+}
+
+.ccm-metric__marker {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    height: 8px;
+    border-radius: 1px;
+    background: var(--ccm-text);
+    transform: translateX(-1px);
+}
+
+.ccm-metric__legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--ccm-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.ccm-metric--good { --ccm-metric-colour: var(--ccm-success); }
+.ccm-metric--ok   { --ccm-metric-colour: var(--ccm-warning); }
+.ccm-metric--bad  { --ccm-metric-colour: var(--ccm-error); }
+
+/* ── Finding ───────────────────────────────────────────────────
+   A ranked recommendation. The impact bar is relative to the worst item
+   in the list, so the eye sorts them before the numbers are read. */
+
+.ccm-findings { display: grid; gap: 1px; background: var(--ccm-border); border-radius: var(--ccm-radius-lg); overflow: hidden; border: 1px solid var(--ccm-border); }
+
+.ccm-finding {
+    display: grid;
+    grid-template-columns: 4px 1fr auto;
+    gap: 0 var(--ccm-space-md);
+    align-items: center;
+    padding: 0;
+    background: var(--ccm-surface);
+    transition: background var(--ccm-transition-fast);
+}
+
+.ccm-finding:hover { background: var(--ccm-bg-secondary); }
+
+.ccm-finding__stripe { align-self: stretch; background: var(--ccm-finding-colour, var(--ccm-text-light)); }
+.ccm-finding--high   { --ccm-finding-colour: var(--ccm-error); }
+.ccm-finding--medium { --ccm-finding-colour: var(--ccm-warning); }
+.ccm-finding--low    { --ccm-finding-colour: var(--ccm-info); }
+
+.ccm-finding__body { padding: 0.85rem 0; min-width: 0; }
+
+.ccm-finding__title {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text);
+    margin: 0;
+}
+
+.ccm-finding__detail {
+    font-size: var(--ccm-text-xs);
+    color: var(--ccm-text-muted);
+    margin: 0.2rem 0 0;
+}
+
+.ccm-finding__fix {
+    margin-top: 0.45rem;
+    font-size: var(--ccm-text-xs);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.ccm-finding__fix a {
+    color: var(--ccm-primary);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--ccm-primary) 35%, transparent);
+}
+
+.ccm-finding__fix a:hover { border-bottom-color: var(--ccm-primary); }
+
+.ccm-finding__impact {
+    padding: 0.85rem var(--ccm-space-md) 0.85rem 0;
+    text-align: right;
+    min-width: 8.5rem;
+}
+
+.ccm-finding__cost {
+    font-size: var(--ccm-text-sm);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--ccm-finding-colour, var(--ccm-text));
+    white-space: nowrap;
+}
+
+.ccm-finding__bar {
+    height: 4px;
+    border-radius: 9999px;
+    background: var(--ccm-border);
+    margin-top: 0.35rem;
+    overflow: hidden;
+}
+
+.ccm-finding__bar i {
+    display: block;
+    height: 100%;
+    border-radius: 9999px;
+    background: var(--ccm-finding-colour, var(--ccm-text-light));
+}
+
+@media (max-width: 700px) {
+    .ccm-finding { grid-template-columns: 4px 1fr; }
+    .ccm-finding__impact { grid-column: 2; padding: 0 var(--ccm-space-md) 0.85rem 0; text-align: left; }
+}
+
+/* ── Segmented control ─────────────────────────────────────────
+   Radio inputs, not buttons, so it is keyboard and screen reader
+   correct without any JavaScript. */
+
+.ccm-seg {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    background: var(--ccm-surface);
+}
+
+.ccm-seg input { position: absolute; opacity: 0; pointer-events: none; }
+
+.ccm-seg label {
+    padding: 0.35rem 0.85rem;
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text-muted);
+    border-radius: calc(var(--ccm-radius) - 3px);
+    cursor: pointer;
+    transition: background var(--ccm-transition-fast), color var(--ccm-transition-fast);
+    user-select: none;
+}
+
+.ccm-seg label:hover { color: var(--ccm-text); }
+.ccm-seg input:checked + label { background: var(--ccm-primary-light); color: var(--ccm-primary); }
+.ccm-seg input:focus-visible + label { outline: 2px solid var(--ccm-brand-raw); outline-offset: 2px; }
+
+/* ── Sparkline ─────────────────────────────────────────────────
+   A trend needs a shape, not a column of numbers. Drawn as inline SVG
+   so it inherits currentColor and needs no chart library. */
+
+.ccm-spark {
+    display: block;
+    width: 100%;
+    height: 52px;
+    overflow: visible;
+}
+
+.ccm-spark__area { fill: color-mix(in srgb, currentColor 22%, transparent); stroke: none; }
+.ccm-spark__line { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.ccm-spark__dot  { fill: currentColor; stroke: var(--ccm-surface); stroke-width: 2; }
+
+.ccm-trend {
+    padding: var(--ccm-space-md);
+    border-radius: var(--ccm-radius-lg);
+    border: 1px solid var(--ccm-border);
+    background: var(--ccm-surface);
+}
+
+.ccm-trend__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--ccm-space-sm);
+    margin-bottom: 0.4rem;
+}
+
+.ccm-trend__name { font-size: var(--ccm-text-xs); font-weight: 600; color: var(--ccm-text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.ccm-trend__now  { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ccm-text); }
+
+.ccm-trend__delta { font-size: var(--ccm-text-xs); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ccm-trend__delta--up   { color: var(--ccm-success); }
+.ccm-trend__delta--down { color: var(--ccm-error); }
+.ccm-trend__delta--flat { color: var(--ccm-text-muted); }
+
+.ccm-trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--ccm-space-md); }
+
+/* ── Disclosure ────────────────────────────────────────────────
+   For setup and configuration that matters once. Uses native
+   details/summary so it works before any script runs. */
+
+.ccm-disclose {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-lg);
+    background: var(--ccm-surface);
+    overflow: hidden;
+}
+
+.ccm-disclose > summary {
+    padding: 0.85rem var(--ccm-space-md);
+    cursor: pointer;
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    list-style: none;
+    user-select: none;
+}
+
+.ccm-disclose > summary::-webkit-details-marker { display: none; }
+
+.ccm-disclose > summary::before {
+    content: "";
+    width: 0.5rem;
+    height: 0.5rem;
+    border-right: 2px solid var(--ccm-text-muted);
+    border-bottom: 2px solid var(--ccm-text-muted);
+    transform: rotate(-45deg);
+    transition: transform var(--ccm-transition);
+    flex: 0 0 auto;
+    margin-left: 0.15rem;
+}
+
+.ccm-disclose[open] > summary::before { transform: rotate(45deg); }
+.ccm-disclose > summary:hover { background: var(--ccm-bg-secondary); }
+.ccm-disclose__body { padding: 0 var(--ccm-space-md) var(--ccm-space-md); border-top: 1px solid var(--ccm-border); padding-top: var(--ccm-space-md); }
+.ccm-disclose__note { margin-left: auto; font-weight: 500; font-size: var(--ccm-text-xs); color: var(--ccm-text-muted); }
+
+/* ── Empty / waiting state ─────────────────────────────────────  */
+
+.ccm-empty {
+    text-align: center;
+    padding: var(--ccm-space-2xl) var(--ccm-space-lg);
+    border: 1px dashed var(--ccm-border-dark);
+    border-radius: var(--ccm-radius-lg);
+    color: var(--ccm-text-muted);
+}
+
+.ccm-empty h3 { margin: 0 0 0.35rem; font-size: var(--ccm-text-base); font-weight: 600; color: var(--ccm-text); }
+.ccm-empty p { margin: 0 auto var(--ccm-space-md); font-size: var(--ccm-text-sm); max-width: 46ch; }
+.ccm-empty__icon { display: block; margin: 0 auto var(--ccm-space-md); width: 34px; height: 34px; color: var(--ccm-text-light); }
+.ccm-empty__icon svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── Chip ──────────────────────────────────────────────────────  */
+
+.ccm-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: var(--ccm-radius-sm);
+    background: var(--ccm-bg-secondary);
+    color: var(--ccm-text-muted);
+    white-space: nowrap;
+    line-height: 1.6;
+}
+
+.ccm-chip--good { background: var(--ccm-success-bg); color: var(--ccm-success); }
+.ccm-chip--warn { background: var(--ccm-warning-bg); color: var(--ccm-warning); }
+.ccm-chip--bad  { background: var(--ccm-error-bg);   color: var(--ccm-error); }
+.ccm-chip--info { background: var(--ccm-info-bg);    color: var(--ccm-info); }
+
+/* ── Flat panel ────────────────────────────────────────────────
+   Dense content that should not read as another floating card. Glass on
+   glass gets muddy fast, so nested groups use this instead. */
+
+.ccm-panel {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-lg);
+    background: var(--ccm-surface);
+    overflow: hidden;
+}
+
+.ccm-panel__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ccm-space-md);
+    padding: 0.7rem var(--ccm-space-md);
+    border-bottom: 1px solid var(--ccm-border);
+    background: var(--ccm-bg-secondary);
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text);
+}
+
+.ccm-panel__body { padding: var(--ccm-space-md); }
+.ccm-panel__body--flush { padding: 0; }
+
+/* Key/value rows inside a panel, replacing a two-column table. */
+.ccm-kv { display: grid; }
+.ccm-kv > div {
+    display: grid;
+    grid-template-columns: minmax(9rem, 34%) 1fr;
+    gap: var(--ccm-space-md);
+    padding: 0.6rem var(--ccm-space-md);
+    border-bottom: 1px solid var(--ccm-border);
+    font-size: var(--ccm-text-sm);
+    align-items: baseline;
+}
+.ccm-kv > div:last-child { border-bottom: 0; }
+.ccm-kv dt, .ccm-kv .ccm-kv__k { color: var(--ccm-text-muted); margin: 0; font-weight: 500; }
+.ccm-kv dd, .ccm-kv .ccm-kv__v { margin: 0; color: var(--ccm-text); min-width: 0; overflow-wrap: anywhere; }
+.ccm-kv small { display: block; color: var(--ccm-text-muted); font-size: var(--ccm-text-xs); margin-top: 0.15rem; }
+
+@media (max-width: 620px) {
+    .ccm-kv > div { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+
+/* ── Progress ──────────────────────────────────────────────────  */
+
+.ccm-meter {
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--ccm-border);
+    overflow: hidden;
+}
+
+.ccm-meter i {
+    display: block;
+    height: 100%;
+    border-radius: 9999px;
+    background-image: var(--ccm-grad-primary);
+    transition: width 400ms var(--ccm-ease-settle);
+}
+
+/* ── Toolbar ───────────────────────────────────────────────────  */
+
+.ccm-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--ccm-space-sm);
+    flex-wrap: wrap;
+    padding: 0.7rem var(--ccm-space-md);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-lg);
+    background: var(--ccm-surface);
+}
+
+.ccm-toolbar__spacer { margin-left: auto; }
+
+/* ── Layout helpers ────────────────────────────────────────────  */
+
+.ccm-stack   { display: grid; gap: var(--ccm-space-lg); }
+.ccm-stack--sm { gap: var(--ccm-space-md); }
+.ccm-row     { display: flex; gap: var(--ccm-space-sm); align-items: center; flex-wrap: wrap; }
+.ccm-grid-2  { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--ccm-space-md); align-items: start; }
+.ccm-grid-3  { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--ccm-space-md); align-items: start; }
+.ccm-hide    { display: none !important; }
+
+/* Screen-reader-only text, e.g. the point count behind a sparkline. */
+.sr-only,
+.ccm-visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}

@@ -1,5 +1,38 @@
 # CCM Tools — Changelog
 
+## v8.1.0 — Site Health rebuilt, and a real component kit
+
+The v8.0.0 restyle swapped the palette and left every page's markup alone, so it
+still read as the old plugin with a new coat of paint. This starts fixing that
+properly, beginning with the page that needed it most.
+
+### A component kit, not just tokens
+
+New reusable pieces the pages are rebuilt *from* rather than decorated with: score
+gauges, metrics with threshold bars, ranked finding rows, section heads, segmented
+controls, sparklines, disclosures, flat panels, key/value lists, chips, toolbars and
+empty states. All presentational and page-agnostic, so the remaining pages can be
+rebuilt on the same vocabulary.
+
+### Site Health
+
+A full rebuild rather than a reskin.
+
+- **Scores are rings, not table rows.** Four gauges coloured by Google's own bands,
+  with the arc baked into the markup so the page is correct the instant it paints.
+- **Core Web Vitals show where you actually sit.** Each metric draws the good,
+  needs-improvement and poor bands to scale with a marker at the measured value.
+  A number alone cannot tell you whether 2.6s was a near miss or nowhere close.
+- **Findings are ranked with an impact bar** relative to the worst item, so the eye
+  sorts them before the numbers are read, with the CCM Tools setting that addresses
+  each one linked beside it.
+- **Full history, kept.** The cap went from 20 runs to 200 per device. Sparklines per
+  category on a fixed 0-100 scale, a change indicator against the previous run, and
+  every recorded run in an expandable log.
+- **Mobile and desktop are a segmented control**, not three separate buttons.
+- **The API key moved to the bottom**, collapsed, because you set it once.
+- Real-visitor data from the Chrome UX Report is shown when Google has it.
+
 ## v8.0.3 — Cloudflare Zone Features layout
 
 - **The Polish dropdown rendered as a full-width control tiled with dozens of
