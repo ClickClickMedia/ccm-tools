@@ -189,7 +189,10 @@ function ccm_tools_cf_detect(): array {
     $api_connected = !empty($cf_settings['connected']) && !empty($cf_settings['zone_id']);
 
     $cached = get_transient('ccm_tools_cf_detected');
-    if (is_array($cached)) {
+    // array_key_exists, not is_array alone: a cache entry written by an older
+    // version (or any malformed value) would otherwise be returned as-is and
+    // every caller reading ['detected'] would warn on an undefined index.
+    if (is_array($cached) && array_key_exists('detected', $cached)) {
         // Trust cache only when API is disconnected, or cache already says detected
         if (!$api_connected || !empty($cached['detected'])) {
             return $cached;

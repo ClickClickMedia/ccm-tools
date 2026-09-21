@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.0.0
+ * Version: 8.0.1
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,11 +36,54 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.0.0');
+    define('CCM_HELPER_VERSION', '8.0.1');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
 $ccm_is_duplicate = false;
+
+/**
+ * Convert a PHP ini size string to bytes.
+ *
+ * Declared at file scope. It used to be nested inside create_dashboard_page(),
+ * which meant it only existed once execution had passed its declaration part
+ * way down that method: anything earlier on the page that called it died with
+ * "call to undefined function".
+ *
+ * Returns -1 unchanged for an unlimited memory_limit, since -1 is numeric.
+ *
+ * @param string|int $size e.g. "512M", "1G", "-1".
+ * @return int Bytes.
+ */
+if (!function_exists('ccm_tools_convert_php_size_to_bytes')) {
+    function ccm_tools_convert_php_size_to_bytes($size) {
+        if (is_numeric($size)) {
+            return (int) $size;
+        }
+
+        $size = trim((string) $size);
+        if ($size === '') {
+            return 0;
+        }
+
+        $last = strtolower($size[strlen($size) - 1]);
+        $size = (int) $size;
+
+        // Deliberate fall-through: G multiplies three times, M twice, K once.
+        switch ($last) {
+            case 'g':
+                $size *= 1024;
+                // no break
+            case 'm':
+                $size *= 1024;
+                // no break
+            case 'k':
+                $size *= 1024;
+        }
+
+        return $size;
+    }
+}
 
 if (!function_exists('ccm_check_for_duplicates')) {
     function ccm_check_for_duplicates() {
@@ -1085,30 +1128,6 @@ class CCMSettings {
                 <div class="ccm-card">
                     <h2><?php _e('PHP Information', 'ccm-tools'); ?></h2>
                     <?php
-                    // Helper function to convert PHP size values to bytes
-                    if (!function_exists('ccm_tools_convert_php_size_to_bytes')) {
-                    function ccm_tools_convert_php_size_to_bytes($size) {
-                        if (is_numeric($size)) {
-                            return (int) $size;
-                        }
-                        
-                        $size = trim($size);
-                        $last = strtolower($size[strlen($size) - 1]);
-                        $size = (int) $size;
-                        
-                        switch ($last) {
-                            case 'g':
-                                $size *= 1024;
-                            case 'm':
-                                $size *= 1024;
-                            case 'k':
-                                $size *= 1024;
-                        }
-                        
-                        return $size;
-                    }
-                    }
-                    
                     // Get PHP settings
                     $memory_limit = ini_get('memory_limit');
                     $max_execution_time = (int) ini_get('max_execution_time');
@@ -1303,7 +1322,7 @@ class CCMSettings {
                             <td>
                                 <?php
                                 $cf_info = function_exists('ccm_tools_cf_detect') ? ccm_tools_cf_detect() : array('detected' => false);
-                                if ($cf_info['detected']) {
+                                if (!empty($cf_info['detected'])) {
                                     echo '<span class="ccm-success">✓ ' . esc_html__('Detected', 'ccm-tools') . '</span>';
                                     if (!empty($cf_info['ray_id'])) {
                                         echo ' <small style="color: var(--ccm-text-muted);">(Ray: ' . esc_html($cf_info['ray_id']) . ')</small>';

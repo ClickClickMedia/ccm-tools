@@ -1,5 +1,19 @@
 # CCM Tools — Changelog
 
+## v8.0.1 — Dashboard fatal
+
+- **Fixed a fatal on the CCM Tools dashboard.** `ccm_tools_convert_php_size_to_bytes()`
+  was declared *inside* `create_dashboard_page()`, roughly a hundred lines below the
+  new at-a-glance tiles that call it, so opening the dashboard died with "call to
+  undefined function". The helper now lives at file scope, which is where it always
+  should have been.
+- **Fixed an undefined index warning on the same page.** `ccm_tools_cf_detect()`
+  returned a cached array without checking it carried the key its callers read, so a
+  stale or malformed transient produced a PHP warning on every dashboard view.
+- **Added `tests/render_test.php`.** It stubs WordPress, loads every module and then
+  actually executes all eleven admin page callbacks. Neither bug above was visible to
+  `php -l` or to importing the files; only running the page finds them.
+
 ## v8.0.0 — Premium removed, AI optimiser removed, new UI
 
 Everything that used to be paid is now standard, the AI auto-optimiser is gone, and the whole admin interface has been rebuilt. This is a major version because the Premium page, the AI Performance Hub and their settings no longer exist.
