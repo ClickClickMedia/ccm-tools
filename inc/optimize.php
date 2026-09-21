@@ -21,38 +21,34 @@ function ccm_tools_get_safe_index_length() {
 }
 
 /**
- * Validate that a table name exists in the current database
- * Security: Prevents SQL injection by validating against actual database tables
- * 
+ * Validate that a table name exists in the current database.
+ *
+ * Thin wrapper around the canonical ccm_tools_validate_table_name() in
+ * tableconverter.php (both files are loaded together by ccm.php, so it's
+ * always available by call time). Kept under this name — rather than
+ * deleted and replaced — because ajax-handlers.php and other code in this
+ * file already call it directly; renaming would be a breaking change for
+ * callers this agent doesn't own.
+ *
  * @param string $table_name The table name to validate
  * @return bool True if valid, false otherwise
  */
 function ccm_tools_validate_table_name_optimize($table_name) {
-    global $wpdb;
-    
-    if (empty($table_name) || !is_string($table_name)) {
-        return false;
-    }
-    
-    // Get all tables in the database
-    $tables = $wpdb->get_col("SHOW TABLES");
-    
-    // Check if the provided table name exists in the database
-    return in_array($table_name, $tables, true);
+    return ccm_tools_validate_table_name($table_name);
 }
 
 /**
  * Get appropriate collation for WordPress databases.
  *
- * Always returns utf8mb4_unicode_520_ci to match WordPress core default.
- * Using utf8mb4_0900_ai_ci on MySQL 8.0+ would cause "Illegal mix of collations"
- * errors when JOINing with tables created by WordPress/plugins using 520_ci.
+ * Thin wrapper around the canonical ccm_tools_get_appropriate_collation()
+ * in tableconverter.php — see ccm_tools_validate_table_name_optimize()
+ * above for why the wrapper exists rather than a straight delete.
  *
  * @param string $version_string MySQL/MariaDB version (accepted for backward compat, ignored)
  * @return string Always 'utf8mb4_unicode_520_ci'
  */
 function ccm_tools_get_appropriate_collation_optimize($version_string = '') {
-    return 'utf8mb4_unicode_520_ci';
+    return ccm_tools_get_appropriate_collation($version_string);
 }
 
 /**
@@ -121,8 +117,7 @@ function ccm_tools_get_optimization_options() {
             'label' => __('Add postmeta composite index', 'ccm-tools'),
             'description' => __('Speed up custom field and metadata lookups with a high-performance covering index — especially effective on sites using ACF or WooCommerce', 'ccm-tools'),
             'default' => false,
-            'risk' => 'moderate',
-            'premium' => true
+            'risk' => 'moderate'
         ),
         'add_usermeta_index' => array(
             'label' => __('Add usermeta index', 'ccm-tools'),
@@ -484,6 +479,7 @@ function ccm_tools_optimize_initial_setup() {
 function ccm_tools_optimize_database() {
     global $wpdb;
     $result = '';
+    $errors = array();
 
     // Check MySQL/MariaDB version and determine appropriate collation
     $mysql_version = $wpdb->get_var("SELECT VERSION()");
@@ -496,8 +492,13 @@ function ccm_tools_optimize_database() {
         // Check if 'meta_key' index exists and remove it
         foreach ($postmeta_index as $index) {
             if ($index->Key_name === 'meta_key') {
-                $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `meta_key`");
-                $result .= '<p><span class="ccm-icon ccm-info">i</span>Existing \'meta_key\' index removed from ' . $wpdb->postmeta . '</p>';
+                $drop_result = $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `meta_key`");
+                if ($drop_result === false) {
+                    $errors[] = "Failed to drop 'meta_key' index from {$wpdb->postmeta}";
+                    $result .= '<p><span class="ccm-icon ccm-warning">!</span>Failed to remove existing \'meta_key\' index from ' . esc_html($wpdb->postmeta) . '</p>';
+                } else {
+                    $result .= '<p><span class="ccm-icon ccm-info">i</span>Existing \'meta_key\' index removed from ' . esc_html($wpdb->postmeta) . '</p>';
+                }
             }
         }
     }
@@ -523,48 +524,83 @@ function ccm_tools_optimize_database() {
     if ($other_indexes_exist) {
         foreach ($postmeta_indexes as $index) {
             if ($index->Key_name !== 'ccm_meta_key' && $index->Key_name !== 'ccm_index') {
-                $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `{$index->Key_name}`");
-                $result .= '<p><span class="ccm-icon ccm-info">i</span>Existing index \'' . $index->Key_name . '\' removed from ' . $wpdb->postmeta . '</p>';
+                $drop_result = $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `{$index->Key_name}`");
+                if ($drop_result === false) {
+                    $errors[] = "Failed to drop index '{$index->Key_name}' from {$wpdb->postmeta}";
+                    $result .= '<p><span class="ccm-icon ccm-warning">!</span>Failed to remove index \'' . esc_html($index->Key_name) . '\' from ' . esc_html($wpdb->postmeta) . '</p>';
+                } else {
+                    $result .= '<p><span class="ccm-icon ccm-info">i</span>Existing index \'' . esc_html($index->Key_name) . '\' removed from ' . esc_html($wpdb->postmeta) . '</p>';
+                }
             }
         }
     }
 
     // Migrate legacy ccm_index to ccm_meta_key with correct size
     if ($ccm_index_exists) {
-        $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
+        $drop_result = $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
+        if ($drop_result === false) {
+            $errors[] = "Failed to drop legacy 'ccm_index' from {$wpdb->postmeta}";
+        }
     }
 
     // Add or update 'ccm_meta_key' if it doesn't exist or has incorrect size
     if (!$ccm_index_exists || !$ccm_index_correct_size) {
-        $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_meta_key` (`meta_key`(191))");
-        $result .= '<p><span class="ccm-icon ccm-success">✓</span>Index \'ccm_meta_key\' added on ' . $wpdb->postmeta . ' with size 191</p>';
+        $add_result = $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_meta_key` (`meta_key`(191))");
+        if ($add_result === false) {
+            $error_msg = ccm_tools_log_db_error("Add ccm_meta_key index on {$wpdb->postmeta}");
+            $errors[] = "Failed to add 'ccm_meta_key' index to {$wpdb->postmeta}" . ($error_msg ? ': ' . $error_msg : '');
+            $result .= '<p><span class="ccm-icon ccm-error">✗</span>Failed to add index \'ccm_meta_key\' on ' . esc_html($wpdb->postmeta) . '</p>';
+        } else {
+            $result .= '<p><span class="ccm-icon ccm-success">✓</span>Index \'ccm_meta_key\' added on ' . esc_html($wpdb->postmeta) . ' with size 191</p>';
+        }
     } else {
-        $result .= '<p><span class="ccm-icon ccm-info">i</span>Index \'ccm_meta_key\' already exists on ' . $wpdb->postmeta . ' with correct size of 191</p>';
+        $result .= '<p><span class="ccm-icon ccm-info">i</span>Index \'ccm_meta_key\' already exists on ' . esc_html($wpdb->postmeta) . ' with correct size of 191</p>';
     }
 
     // Delete transients
     $transient_report = ccm_tools_clear_all_transients();
     foreach ($transient_report['details'] as $detail) {
         $icon_class = stripos($detail, 'Failed') !== false || stripos($detail, 'Warning') !== false ? 'ccm-warning' : 'ccm-info';
-        $result .= '<p><span class="ccm-icon ' . $icon_class . '">i</span>' . $detail . '</p>';
+        $result .= '<p><span class="ccm-icon ' . $icon_class . '">i</span>' . esc_html($detail) . '</p>';
     }
     if (!$transient_report['success']) {
         $result .= '<p><span class="ccm-icon ccm-warning">!</span>Some transient entries could not be removed</p>';
+        $errors[] = 'Some transient entries could not be removed';
     }
 
     // Optimize tables
     $tables = $wpdb->get_results("SHOW TABLES", 'ARRAY_N');
-    
+
     // Get database name for INFORMATION_SCHEMA queries
     $database_name = $wpdb->dbname;
     if (empty($database_name)) {
         $database_name = defined('DB_NAME') ? DB_NAME : '';
     }
-    
+
+    $tables_optimized = 0;
+    $tables_failed = 0;
+
     foreach ($tables as $table) {
         $table_name = $table[0];
-        $wpdb->query("OPTIMIZE TABLE `{$table_name}`");
-        $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . $table_name . ' optimized</p>';
+
+        // SECURITY: Validate table name exists in database to prevent SQL injection
+        if (!ccm_tools_validate_table_name_optimize($table_name)) {
+            $errors[] = "{$table_name}: Invalid table name — skipped for safety";
+            $result .= '<p><span class="ccm-icon ccm-warning">!</span>' . esc_html($table_name) . ' skipped (invalid table name)</p>';
+            $tables_failed++;
+            continue;
+        }
+
+        $optimize_result = $wpdb->query("OPTIMIZE TABLE `{$table_name}`");
+        if ($optimize_result === false) {
+            $error_msg = ccm_tools_log_db_error("Optimize table {$table_name}");
+            $errors[] = "{$table_name}: OPTIMIZE TABLE failed" . ($error_msg ? ': ' . $error_msg : '');
+            $result .= '<p><span class="ccm-icon ccm-error">✗</span>' . esc_html($table_name) . ' optimize failed' . ($error_msg ? ': ' . esc_html($error_msg) : '') . '</p>';
+            $tables_failed++;
+        } else {
+            $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . esc_html($table_name) . ' optimized</p>';
+            $tables_optimized++;
+        }
 
         // Update table collation if necessary - use INFORMATION_SCHEMA for MariaDB compatibility
         if (!empty($database_name)) {
@@ -572,12 +608,27 @@ function ccm_tools_optimize_database() {
                 $wpdb->prepare("SELECT TABLE_COLLATION as Collation FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s", $database_name, $table_name),
                 'OBJECT'
             );
-            
+
             if ($table_status && $table_status->Collation !== $collation) {
-                $wpdb->query("ALTER TABLE `{$table_name}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$collation}");
-                $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . $table_name . ' collation updated to ' . $collation . '</p>';
+                $collation_result = $wpdb->query("ALTER TABLE `{$table_name}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$collation}");
+                if ($collation_result === false) {
+                    $error_msg = ccm_tools_log_db_error("Collation update for table {$table_name}");
+                    $errors[] = "{$table_name}: collation update failed" . ($error_msg ? ': ' . $error_msg : '');
+                    $result .= '<p><span class="ccm-icon ccm-error">✗</span>' . esc_html($table_name) . ' collation update failed' . ($error_msg ? ': ' . esc_html($error_msg) : '') . '</p>';
+                } else {
+                    $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . esc_html($table_name) . ' collation updated to ' . esc_html($collation) . '</p>';
+                }
             }
         }
+    }
+
+    if (!empty($errors)) {
+        $error_list = '<div class="ccm-alert ccm-alert-error" style="margin-bottom: 1rem;"><strong>' . count($errors) . ' ' . __('error(s) occurred:', 'ccm-tools') . '</strong><ul>';
+        foreach ($errors as $error) {
+            $error_list .= '<li>' . esc_html($error) . '</li>';
+        }
+        $error_list .= '</ul></div>';
+        $result = $error_list . $result;
     }
 
     return $result;
@@ -944,7 +995,7 @@ function ccm_tools_optimization_add_termmeta_index() {
 
 /**
  * Add composite index to postmeta table (meta_key, meta_value, post_id)
- * Premium feature — massive performance improvement for meta queries, especially WooCommerce
+ * Massive performance improvement for meta queries, especially WooCommerce
  */
 function ccm_tools_optimization_add_postmeta_composite_index() {
     global $wpdb;

@@ -1,7 +1,7 @@
 /**
  * CCM Tools - Modern Vanilla JavaScript
  * Pure JS without jQuery or other dependencies
- * Version: 7.45.0
+ * Version: 8.0.0
  */
 
 (function() {
@@ -87,17 +87,6 @@
     }
 
     /**
-     * Show loading spinner in element
-     * @param {Element|string} target - Target element or selector
-     */
-    function showSpinner(target) {
-        const el = typeof target === 'string' ? $(target) : target;
-        if (el) {
-            el.innerHTML = '<div class="ccm-spinner"></div>';
-        }
-    }
-
-    /**
      * Remove existing spinners from element
      * @param {Element|string} target - Target element or selector
      */
@@ -106,25 +95,6 @@
         if (el) {
             const spinners = $$('.ccm-spinner', el);
             spinners.forEach(spinner => spinner.remove());
-        }
-    }
-
-    /**
-     * Show result message
-     * @param {Element|string} target - Target element or selector
-     * @param {string} message - Message to display
-     * @param {string} type - Message type (success, error, info, warning)
-     */
-    function showMessage(target, message, type = 'info') {
-        const el = typeof target === 'string' ? $(target) : target;
-        if (el) {
-            const icons = {
-                success: '✓',
-                error: '✗',
-                warning: '⚠',
-                info: 'ℹ'
-            };
-            el.innerHTML = `<p class="ccm-${type}"><span class="ccm-icon">${icons[type]}</span>${escapeHtml(message)}</p>`;
         }
     }
 
@@ -214,13 +184,16 @@
         
         const closeModal = () => {
             modal.classList.remove('ccm-modal-show');
+            // Remove the Escape listener on every dismissal path, not just Escape
+            // itself, otherwise a click-closed modal leaks a keydown listener.
+            document.removeEventListener('keydown', handleEscape);
             setTimeout(() => modal.remove(), 200);
         };
-        
+
         // Cancel button
         const cancelBtn = $('.ccm-modal-cancel', modal);
         cancelBtn.addEventListener('click', closeModal);
-        
+
         // Confirm button
         const confirmBtn = $('.ccm-modal-confirm', modal);
         confirmBtn.addEventListener('click', () => {
@@ -229,33 +202,41 @@
                 onConfirm();
             }
         });
-        
+
         // Close on overlay click
         modal.addEventListener('click', (e) => {
             if (e.target === modal) closeModal();
         });
-        
+
         // Close on Escape key
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
                 closeModal();
-                document.removeEventListener('keydown', handleEscape);
             }
         };
         document.addEventListener('keydown', handleEscape);
     }
 
     /**
-     * Escape HTML special characters
+     * Escape HTML special characters, including quotes, so the result is
+     * safe to insert into text content AND into HTML attribute values.
      * @param {string} str - String to escape
      * @returns {string}
      */
     function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[c]));
     }
+
+    // Alias: escHtml was a duplicate implementation used by the Cloudflare
+    // integration code; kept as an alias so no call site has to change.
+    const escHtml = escapeHtml;
 
     // ===================================
     // AJAX Handler
@@ -306,7 +287,14 @@
             if (result && result.success) {
                 return result;
             } else {
-                throw new Error(result?.data?.message || result?.data || 'Unknown error occurred');
+                // result.data can be a string, an object with a message key, or
+                // absent entirely. Never pass a raw object into Error() — that
+                // renders as the useless string "[object Object]".
+                const data = result?.data;
+                const message = (data && typeof data === 'object' && data.message)
+                    ? data.message
+                    : (typeof data === 'string' ? data : 'Unknown error occurred');
+                throw new Error(message);
             }
         } catch (error) {
             if (error.name === 'AbortError') {
@@ -354,300 +342,39 @@
         }
     }
 
-    // ===================================
-    // Progressive Table Operations
-    // ===================================
+    /** Cache of the most recently loaded optimization option metadata, used by the button handlers in initOptimizationOptions() */
+    let currentOptimizationOptions = null;
 
     /**
-     * Progressive table conversion
+     * Load optimization options and stats into the options panel.
+     * Safe to call repeatedly (e.g. to refresh stats after a run) — unlike
+     * initOptimizationOptions(), it never (re)binds any button handlers.
      */
-    async function convertTablesProgressively() {
-        const resultBox = $('#resultBox');
-        if (!resultBox) return;
-        
-        // Initialize progress display
-        resultBox.innerHTML = `
-            <div id="progress-info">
-                <div class="ccm-spinner" style="margin: 10px 0;"></div>
-                <p>Converting tables: <span id="progress-count">0</span>/<span id="total-count">0</span></p>
-                <div class="ccm-progress-bar"><div class="ccm-progress-fill" style="width: 0%"></div></div>
-            </div>
-        `;
-        
-        try {
-            // Get tables list
-            const response = await ajax('ccm_tools_get_tables_to_convert');
-            
-            if (!response?.data) {
-                resultBox.innerHTML = '<p class="ccm-error">Error: Could not get tables list</p>';
-                return;
-            }
-            
-            const tablesInfo = response.data;
-            
-            if (tablesInfo.total_count === 0) {
-                resultBox.innerHTML = '<p><span class="ccm-icon ccm-info">ℹ</span>All tables up to date. Nothing to change</p>';
-                return;
-            }
-            
-            let currentIndex = 0;
-            let tablesChanged = 0;
-            
-            // Update layout
-            resultBox.innerHTML = `
-                <div id="progress-info">
-                    <div class="ccm-spinner" style="margin: 10px 0;"></div>
-                    <p>Converting tables: <span id="progress-count">0</span>/<span id="total-count">${tablesInfo.total_count}</span></p>
-                    <div class="ccm-progress-bar"><div class="ccm-progress-fill" style="width: 0%"></div></div>
-                </div>
-                <p><span class="ccm-icon ccm-info">ℹ</span>${tablesInfo.total_count} Tables Found</p>
-                <table class="ccm-table">
-                    <thead><tr><th>Table</th><th>Engine</th><th>Collation</th><th>Status</th></tr></thead>
-                    <tbody></tbody>
-                </table>
-            `;
-            
-            const tbody = $('tbody', resultBox);
-            
-            // Process tables one by one
-            for (const table of tablesInfo.tables) {
-                try {
-                    const tableResponse = await ajax('ccm_tools_convert_single_table', { table_name: table.TABLE_NAME });
-                    const result = tableResponse.data;
-                    
-                    const rowClass = result.success ? 'success' : 'error';
-                    const statusIcon = result.success ? '✓' : '✗';
-                    
-                    if (result.success && result.changes_made) {
-                        tablesChanged++;
-                    }
-                    
-                    const originalEngine = result.original_engine || 'Unknown';
-                    const newEngine = result.new_engine || 'Unknown';
-                    const originalCollation = result.original_collation || 'Unknown';
-                    const newCollation = result.new_collation || 'Unknown';
-                    
-                    const engineIcon = originalEngine === newEngine ? 'info' : 'warning';
-                    const collationIcon = originalCollation === newCollation ? 'info' : 'warning';
-                    
-                    tbody.insertAdjacentHTML('beforeend', `
-                        <tr class="${rowClass}">
-                            <td>${escapeHtml(result.table_name || 'Unknown')}</td>
-                            <td>${escapeHtml(originalEngine)} <span class="ccm-icon ccm-${engineIcon}">→</span> ${escapeHtml(newEngine)}</td>
-                            <td>${escapeHtml(originalCollation)} <span class="ccm-icon ccm-${collationIcon}">→</span> ${escapeHtml(newCollation)}</td>
-                            <td><span class="ccm-icon ccm-${rowClass}">${statusIcon}</span></td>
-                        </tr>
-                    `);
-                } catch (error) {
-                    tbody.insertAdjacentHTML('beforeend', `
-                        <tr class="error">
-                            <td>${escapeHtml(table.TABLE_NAME)}</td>
-                            <td>Error: ${escapeHtml(error.message)}</td>
-                            <td>N/A</td>
-                            <td><span class="ccm-icon ccm-error">✗</span></td>
-                        </tr>
-                    `);
-                }
-                
-                currentIndex++;
-                const progress = Math.round((currentIndex / tablesInfo.total_count) * 100);
-                
-                const progressCount = $('#progress-count');
-                const progressFill = $('.ccm-progress-fill');
-                
-                if (progressCount) progressCount.textContent = currentIndex;
-                if (progressFill) progressFill.style.width = `${progress}%`;
-                
-                // Small delay to prevent overwhelming server
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            
-            // Complete
-            const progressInfo = $('#progress-info');
-            if (progressInfo) {
-                removeSpinner(progressInfo);
-                progressInfo.querySelector('p').innerHTML = '<span class="ccm-icon ccm-success">✓</span>Conversion completed!';
-            }
-            
-            resultBox.insertAdjacentHTML('afterbegin', `<p><span class="ccm-icon ccm-info">ℹ</span>${tablesChanged} Tables Changed</p>`);
-            
-        } catch (error) {
-            resultBox.innerHTML = `<p class="ccm-error">Error getting tables list: ${escapeHtml(error.message)}</p>`;
-        }
-    }
-
-    /**
-     * Progressive database optimization
-     */
-    async function optimizeDatabaseProgressively() {
-        const resultBox = $('#resultBox');
-        if (!resultBox) return;
-        
-        // Initialize progress display
-        resultBox.innerHTML = `
-            <div id="progress-info">
-                <div class="ccm-spinner" style="margin: 10px 0;"></div>
-                <p>Optimizing database: <span id="progress-count">0</span>/<span id="total-count">0</span></p>
-                <div class="ccm-progress-bar"><div class="ccm-progress-fill" style="width: 0%"></div></div>
-            </div>
-        `;
-        
-        try {
-            // Step 1: Initial setup
-            const setupResponse = await ajax('ccm_tools_optimize_initial_setup');
-            
-            let setupHtml = '<div id="setup-results">';
-            
-            if (setupResponse?.data?.success) {
-                setupHtml += '<p><span class="ccm-icon ccm-success">✓</span>Initial optimization setup completed</p>';
-                if (setupResponse.data.messages?.length > 0) {
-                    setupResponse.data.messages.forEach(message => {
-                        setupHtml += `<p><span class="ccm-icon ccm-info">ℹ</span>${escapeHtml(message)}</p>`;
-                    });
-                }
-            } else {
-                const errorMsg = setupResponse?.data?.message || 'Unknown error during initial setup';
-                setupHtml += `<p><span class="ccm-icon ccm-error">✗</span>Initial setup failed: ${escapeHtml(errorMsg)}</p>`;
-                resultBox.innerHTML = setupHtml + '</div>';
-                return;
-            }
-            
-            setupHtml += '</div>';
-            
-            // Step 2: Get tables to optimize
-            const tablesResponse = await ajax('ccm_tools_get_tables_to_optimize');
-            
-            if (!tablesResponse?.data?.tables) {
-                resultBox.innerHTML = setupHtml + '<p class="ccm-error">Error: Could not get tables list</p>';
-                return;
-            }
-            
-            const tablesInfo = tablesResponse.data;
-            
-            if (tablesInfo.total_count === 0) {
-                resultBox.innerHTML = setupHtml + '<p><span class="ccm-icon ccm-info">ℹ</span>No tables found to optimize</p>';
-                return;
-            }
-            
-            let currentIndex = 0;
-            let tablesOptimized = 0;
-            
-            // Update layout
-            resultBox.innerHTML = `
-                <div id="progress-info">
-                    <div class="ccm-spinner" style="margin: 10px 0;"></div>
-                    <p>Optimizing database: <span id="progress-count">0</span>/<span id="total-count">${tablesInfo.total_count}</span></p>
-                    <div class="ccm-progress-bar"><div class="ccm-progress-fill" style="width: 0%"></div></div>
-                </div>
-                ${setupHtml}
-                <p><span class="ccm-icon ccm-info">ℹ</span>${tablesInfo.total_count} Tables Found</p>
-                <table class="ccm-table">
-                    <thead><tr><th>Table</th><th>Optimization</th><th>Collation</th><th>Status</th></tr></thead>
-                    <tbody></tbody>
-                </table>
-            `;
-            
-            const tbody = $('tbody', resultBox);
-            
-            // Process tables
-            for (const tableName of tablesInfo.tables) {
-                try {
-                    const tableResponse = await ajax('ccm_tools_optimize_single_table', { table_name: tableName });
-                    const result = tableResponse.data;
-                    
-                    const rowClass = result.success ? 'success' : 'error';
-                    const statusIcon = result.success ? '✓' : '✗';
-                    
-                    if (result.success) tablesOptimized++;
-                    
-                    const originalCollation = result.original_collation || 'Unknown';
-                    const newCollation = result.new_collation || 'Unknown';
-                    const collationIcon = result.collation_updated ? 'warning' : 'info';
-                    
-                    let optimizationMsg = '';
-                    if (result.success && result.messages?.length > 0) {
-                        optimizationMsg = result.messages.join('; ');
-                    } else if (result.success) {
-                        optimizationMsg = 'Optimized successfully';
-                    } else {
-                        optimizationMsg = result.message || 'Failed';
-                    }
-                    
-                    tbody.insertAdjacentHTML('beforeend', `
-                        <tr class="${rowClass}">
-                            <td>${escapeHtml(result.table_name || tableName)}</td>
-                            <td>${escapeHtml(optimizationMsg)}</td>
-                            <td>${escapeHtml(originalCollation)} <span class="ccm-icon ccm-${collationIcon}">→</span> ${escapeHtml(newCollation)}</td>
-                            <td><span class="ccm-icon ccm-${rowClass}">${statusIcon}</span></td>
-                        </tr>
-                    `);
-                } catch (error) {
-                    tbody.insertAdjacentHTML('beforeend', `
-                        <tr class="error">
-                            <td>${escapeHtml(tableName)}</td>
-                            <td>Error: ${escapeHtml(error.message)}</td>
-                            <td>N/A</td>
-                            <td><span class="ccm-icon ccm-error">✗</span></td>
-                        </tr>
-                    `);
-                }
-                
-                currentIndex++;
-                const progress = Math.round((currentIndex / tablesInfo.total_count) * 100);
-                
-                const progressCount = $('#progress-count');
-                const progressFill = $('.ccm-progress-fill');
-                
-                if (progressCount) progressCount.textContent = currentIndex;
-                if (progressFill) progressFill.style.width = `${progress}%`;
-                
-                await new Promise(resolve => setTimeout(resolve, 200));
-            }
-            
-            // Complete
-            const progressInfo = $('#progress-info');
-            if (progressInfo) {
-                removeSpinner(progressInfo);
-                progressInfo.querySelector('p').innerHTML = '<span class="ccm-icon ccm-success">✓</span>Optimization completed!';
-            }
-            
-            resultBox.insertAdjacentHTML('afterbegin', `<p><span class="ccm-icon ccm-info">ℹ</span>${tablesOptimized} Tables Optimized</p>`);
-            
-        } catch (error) {
-            resultBox.innerHTML = `<p class="ccm-error">Error: ${escapeHtml(error.message)}</p>`;
-        }
-    }
-
-    /**
-     * Initialize optimization options on database page
-     */
-    async function initOptimizationOptions() {
+    async function loadOptimizationOptions() {
         const optionsContainer = $('#optimization-options');
         const runButton = $('#run-optimizations');
-        const selectSafeButton = $('#select-all-safe');
-        const deselectAllButton = $('#deselect-all');
-        const resultsBox = $('#optimization-results');
-        
+
         if (!optionsContainer) return;
-        
+
         try {
             // Load options and stats
             const response = await ajax('ccm_tools_get_optimization_options');
-            
+
             if (!response?.data?.options) {
                 optionsContainer.innerHTML = '<p class="ccm-error">Failed to load optimization options</p>';
                 return;
             }
-            
+
             const { options, stats } = response.data;
-            
+            currentOptimizationOptions = options;
+
             // Group options by risk level
             const groups = {
                 safe: { label: '✓ Safe Operations', items: [] },
                 moderate: { label: '⚡ Moderate Risk', items: [] },
                 high: { label: '⚠️ High Risk - Use With Caution', items: [] }
             };
-            
+
             // Populate groups
             for (const [key, opt] of Object.entries(options)) {
                 const risk = opt.risk || 'moderate';
@@ -655,40 +382,39 @@
                     groups[risk].items.push({ key, ...opt });
                 }
             }
-            
+
             // Build HTML
             let html = '';
-            
+
             for (const [riskLevel, group] of Object.entries(groups)) {
                 if (group.items.length === 0) continue;
-                
+
                 html += `<div class="ccm-opt-group ${riskLevel}">`;
                 html += `<div class="ccm-opt-group-header">${group.label}</div>`;
                 html += '<div class="ccm-opt-group-items">';
-                
+
                 for (const item of group.items) {
                     const stat = getStatForOption(item.key, stats);
                     const statClass = stat > 0 ? (riskLevel === 'high' ? 'warning' : 'has-items') : '';
                     const checked = item.default ? 'checked' : '';
-                    const premiumBadge = item.premium ? '<span class="ccm-opt-premium-badge">Premium</span>' : '';
-                    
+
                     html += `
-                        <div class="ccm-opt-item${item.premium ? ' ccm-opt-item-premium' : ''}">
+                        <div class="ccm-opt-item">
                             <input type="checkbox" id="opt-${item.key}" name="optimization[]" value="${item.key}" ${checked}>
                             <div class="ccm-opt-item-content">
-                                <label class="ccm-opt-item-label" for="opt-${item.key}">${escapeHtml(item.label)}${premiumBadge}</label>
+                                <label class="ccm-opt-item-label" for="opt-${item.key}">${escapeHtml(item.label)}</label>
                                 <span class="ccm-opt-item-desc">${escapeHtml(item.description)}</span>
                             </div>
                             ${stat !== null ? `<span class="ccm-opt-item-stat ${statClass}">${stat}</span>` : ''}
                         </div>
                     `;
                 }
-                
+
                 html += '</div></div>';
             }
-            
+
             optionsContainer.innerHTML = html;
-            
+
             // Disable and annotate options that are already applied or have nothing to do
             const nothingToDo = {
                 'optimize_tables': stats.tables_needing_optimization === 0,
@@ -729,44 +455,61 @@
                     statEl.style.color = 'var(--ccm-success)';
                 }
             }
-            
+
             // Enable run button
             if (runButton) {
                 runButton.disabled = false;
             }
-            
-            // Event handlers
-            if (runButton) {
-                runButton.addEventListener('click', async (e) => {
-                    e.preventDefault();
-                    await runSelectedOptimizations();
-                });
-            }
-            
-            if (selectSafeButton) {
-                selectSafeButton.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    // Check safe options, uncheck others
-                    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                        const optKey = cb.value;
-                        const opt = options[optKey];
-                        cb.checked = opt && opt.risk === 'safe';
-                    });
-                });
-            }
-            
-            if (deselectAllButton) {
-                deselectAllButton.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                        cb.checked = false;
-                    });
-                });
-            }
-            
+
         } catch (error) {
             optionsContainer.innerHTML = `<p class="ccm-error">Error loading options: ${escapeHtml(error.message)}</p>`;
         }
+    }
+
+    /**
+     * Initialize the optimization options panel and bind its buttons.
+     * Binds #run-optimizations, #select-all-safe and #deselect-all exactly
+     * once. loadOptimizationOptions() only ever replaces optionsContainer's
+     * own innerHTML — never these buttons — so it's called separately (and
+     * repeatedly, e.g. to refresh stats after a run) without rebinding them.
+     */
+    function initOptimizationOptions() {
+        const optionsContainer = $('#optimization-options');
+        const runButton = $('#run-optimizations');
+        const selectSafeButton = $('#select-all-safe');
+        const deselectAllButton = $('#deselect-all');
+
+        if (!optionsContainer) return;
+
+        if (runButton) {
+            runButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+                await runSelectedOptimizations();
+            });
+        }
+
+        if (selectSafeButton) {
+            selectSafeButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                // Check safe options, uncheck others
+                optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    const optKey = cb.value;
+                    const opt = currentOptimizationOptions && currentOptimizationOptions[optKey];
+                    cb.checked = opt && opt.risk === 'safe';
+                });
+            });
+        }
+
+        if (deselectAllButton) {
+            deselectAllButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.checked = false;
+                });
+            });
+        }
+
+        loadOptimizationOptions();
     }
     
     /**
@@ -1123,8 +866,11 @@
         if (runButton) runButton.disabled = false;
         optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
         
-        // Refresh stats after a short delay
-        setTimeout(() => initOptimizationOptions(), 1000);
+        // Refresh stats after a short delay. Use loadOptimizationOptions(), not
+        // initOptimizationOptions() — the latter would rebind the run/select
+        // buttons on top of their existing listeners, so a second click would
+        // start two concurrent runs, a third click three, and so on.
+        setTimeout(() => loadOptimizationOptions(), 1000);
     }
 
     /**
@@ -1317,7 +1063,12 @@
                     const response = await ajax('ccm_tools_update_debug_mode', { enable: !isEnabled });
                     showNotification(response.data.message, 'success');
                     setTimeout(() => {
-                        window.location.href = window.location.href.split('#')[0] + '&nocache=' + Date.now();
+                        // Replace (not append) the nocache param — otherwise it
+                        // accumulates on every toggle in this session.
+                        const nocacheUrl = new URL(window.location.href);
+                        nocacheUrl.hash = '';
+                        nocacheUrl.searchParams.set('nocache', Date.now());
+                        window.location.href = nocacheUrl.toString();
                     }, 1000);
                 } catch (error) {
                     if (resultBox) {
@@ -1343,7 +1094,12 @@
                     const response = await ajax('ccm_tools_update_debug_log', { enable: !isEnabled });
                     showNotification(response.data.message, 'success');
                     setTimeout(() => {
-                        window.location.href = window.location.href.split('#')[0] + '&nocache=' + Date.now();
+                        // Replace (not append) the nocache param — otherwise it
+                        // accumulates on every toggle in this session.
+                        const nocacheUrl = new URL(window.location.href);
+                        nocacheUrl.hash = '';
+                        nocacheUrl.searchParams.set('nocache', Date.now());
+                        window.location.href = nocacheUrl.toString();
                     }, 1000);
                 } catch (error) {
                     if (resultBox) {
@@ -1374,7 +1130,12 @@
                     const response = await ajax('ccm_tools_update_debug_display', { enable: !isEnabled });
                     showNotification(response.data.message, 'success');
                     setTimeout(() => {
-                        window.location.href = window.location.href.split('#')[0] + '&nocache=' + Date.now();
+                        // Replace (not append) the nocache param — otherwise it
+                        // accumulates on every toggle in this session.
+                        const nocacheUrl = new URL(window.location.href);
+                        nocacheUrl.hash = '';
+                        nocacheUrl.searchParams.set('nocache', Date.now());
+                        window.location.href = nocacheUrl.toString();
                     }, 1000);
                 } catch (error) {
                     if (resultBox) {
@@ -1489,29 +1250,36 @@
         const updateMemoryLimit = $('#update-memory-limit');
         
         if (updateMemoryLimit) {
-            updateMemoryLimit.addEventListener('click', async () => {
+            updateMemoryLimit.addEventListener('click', () => {
                 const memorySelect = $('#memory-limit');
                 if (!memorySelect) return;
-                
+
                 const newLimit = memorySelect.value;
-                updateMemoryLimit.disabled = true;
-                updateMemoryLimit.textContent = 'Updating...';
-                
-                try {
-                    // Note: PHP expects 'limit' not 'memory_limit'
-                    const response = await ajax('ccm_tools_update_memory_limit', { limit: newLimit });
-                    showNotification(response.data.message, 'success');
-                    if (response.data.reload !== false) {
-                        setTimeout(() => location.reload(), 1500);
-                    } else {
-                        updateMemoryLimit.disabled = false;
-                        updateMemoryLimit.textContent = 'Update';
-                    }
-                } catch (error) {
-                    showNotification(error.message, 'error');
-                    updateMemoryLimit.disabled = false;
-                    updateMemoryLimit.textContent = 'Update';
-                }
+
+                showConfirmModal(
+                    'This will update the PHP memory limit in wp-config.php. Continue?',
+                    async () => {
+                        updateMemoryLimit.disabled = true;
+                        updateMemoryLimit.textContent = 'Updating...';
+
+                        try {
+                            // Note: PHP expects 'limit' not 'memory_limit'
+                            const response = await ajax('ccm_tools_update_memory_limit', { limit: newLimit });
+                            showNotification(response.data.message, 'success');
+                            if (response.data.reload !== false) {
+                                setTimeout(() => location.reload(), 1500);
+                            } else {
+                                updateMemoryLimit.disabled = false;
+                                updateMemoryLimit.textContent = 'Update';
+                            }
+                        } catch (error) {
+                            showNotification(error.message, 'error');
+                            updateMemoryLimit.disabled = false;
+                            updateMemoryLimit.textContent = 'Update';
+                        }
+                    },
+                    'Update Memory Limit'
+                );
             });
         }
     }
@@ -1755,12 +1523,17 @@
             
             const data = response.data;
             
-            if (data.formatted_content || data.content) {
-                const content = data.formatted_content || data.content;
+            if (data.formatted_content) {
+                // Only ever render the server-escaped version. Never fall back
+                // to the raw data.content field — that field is unescaped log
+                // text and rendering it here would be a stored XSS hole.
                 const highlightClass = highlightEnabled ? 'highlight-enabled' : '';
-                logViewer.innerHTML = `<pre id="error-log-content" class="${highlightClass}">${content}</pre>`;
+                logViewer.innerHTML = `<pre id="error-log-content" class="${highlightClass}">${data.formatted_content}</pre>`;
             } else if (data.error) {
                 logViewer.innerHTML = `<p class="ccm-error">${escapeHtml(data.error)}</p>`;
+            } else if (data.content) {
+                // The server returned raw content but no safely-formatted version.
+                logViewer.innerHTML = `<p class="ccm-error">Unable to safely display log content.</p>`;
             } else {
                 logViewer.innerHTML = `
                     <div class="empty-log-message">
@@ -1931,16 +1704,6 @@
         
         // Refresh every 30 seconds (non-invasive)
         webpStatsRefreshInterval = setInterval(refreshWebPStats, 30000);
-    }
-
-    /**
-     * Stop WebP stats auto-refresh
-     */
-    function stopWebPStatsRefresh() {
-        if (webpStatsRefreshInterval) {
-            clearInterval(webpStatsRefreshInterval);
-            webpStatsRefreshInterval = null;
-        }
     }
 
     /**
@@ -2164,17 +1927,6 @@
                 reader.readAsText(file);
             });
         }
-    }
-
-    /**
-     * Format bytes to human readable
-     */
-    function formatBytes(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
     /**
@@ -2563,9 +2315,6 @@
                 settingsPreview.style.display = settingsPreview.style.display === 'none' ? 'block' : 'none';
             });
         }
-
-        // Initialize AI Hub handlers (now embedded in perf page)
-        try { initAiHubHandlers(); } catch (e) { console.error('CCM: AI Hub init error', e); }
     }
     
     /**
@@ -2871,7 +2620,6 @@
                 cron_interval: parseInt($('#perf-cron-interval')?.value) || 60,
                 disable_author_archives: $('#perf-disable-author-archives')?.checked ? '1' : '',
                 // INP / Interaction Optimizations (v7.30.0)
-                passive_event_listeners: $('#perf-passive-event-listeners')?.checked ? '1' : '',
                 warn_dom_size: $('#perf-warn-dom-size')?.checked ? '1' : '',
             };
             
@@ -3342,31 +3090,12 @@
             if (row) row.classList.add('ccm-front-page-row');
         });
 
-        // Load PageSpeed scores on dashboard
-        try {
-            if ($('#dashboard-pagespeed-scores')) {
-                loadDashboardPageSpeedScores();
-            }
-        } catch (e) { console.error('CCM: Dashboard PageSpeed init error', e); }
-
-        // Initialize AI Hub handlers on Premium page (not nested in perf page)
-        try {
-            if (!$('#save-perf-settings') && $('#ai-hub-save-btn')) {
-                initAiHubHandlers();
-            }
-        } catch (e) { console.error('CCM: AI Hub standalone init error', e); }
-
         // Initialize Cloudflare handlers if on CF page
         try {
             if ($('#cf-connection-form')) {
                 initCloudflareHandlers();
             }
         } catch (e) { console.error('CCM: Cloudflare init error', e); }
-
-        // Premium refresh handler
-        try {
-            initPremiumHandlers();
-        } catch (e) { console.error('CCM: Premium init error', e); }
     });
     
     // ===================================
@@ -3412,18 +3141,13 @@
                         zone_id: zoneId,
                     });
 
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                        if (statusSpan) {
-                            statusSpan.innerHTML = '<span class="ccm-success">✓ Connected — ' +
-                                escHtml(res.data.zone.name) + ' (' + escHtml(res.data.zone.plan) + ')</span>';
-                        }
-                        // Reload to show full dashboard
-                        setTimeout(() => location.reload(), 1500);
-                    } else {
-                        showNotification(res.data.message || 'Connection failed.', 'error');
-                        if (statusSpan) statusSpan.innerHTML = '<span class="ccm-error">✗ ' + escHtml(res.data.message) + '</span>';
+                    showNotification(res.data.message, 'success');
+                    if (statusSpan) {
+                        statusSpan.innerHTML = '<span class="ccm-success">✓ Connected — ' +
+                            escHtml(res.data.zone.name) + ' (' + escHtml(res.data.zone.plan) + ')</span>';
                     }
+                    // Reload to show full dashboard
+                    setTimeout(() => location.reload(), 1500);
                 } catch (err) {
                     showNotification('Connection failed: ' + err.message, 'error');
                 } finally {
@@ -3441,12 +3165,8 @@
                 disconnectBtn.disabled = true;
                 try {
                     const res = await ajax('ccm_tools_cf_disconnect');
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                        setTimeout(() => location.reload(), 1000);
-                    } else {
-                        showNotification(res.data.message || 'Disconnect failed.', 'error');
-                    }
+                    showNotification(res.data.message, 'success');
+                    setTimeout(() => location.reload(), 1000);
                 } catch (err) {
                     showNotification('Disconnect failed: ' + err.message, 'error');
                 } finally {
@@ -3472,16 +3192,12 @@
 
                 try {
                     const res = await ajax('ccm_tools_cf_apply_recommended');
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                        if (res.data.failed && res.data.failed.length) {
-                            showNotification('Failed: ' + res.data.failed.join(', '), 'warning');
-                        }
-                        // Reload zone status to reflect changes
-                        if (statusCard) loadCloudflareStatus(statusCard, devToggle);
-                    } else {
-                        showNotification(res.data.message || 'Failed to apply settings.', 'error');
+                    showNotification(res.data.message, 'success');
+                    if (res.data.failed && res.data.failed.length) {
+                        showNotification('Failed: ' + res.data.failed.join(', '), 'warning');
                     }
+                    // Reload zone status to reflect changes
+                    if (statusCard) loadCloudflareStatus(statusCard, devToggle);
                 } catch (err) {
                     showNotification('Failed: ' + err.message, 'error');
                 } finally {
@@ -3501,11 +3217,7 @@
 
                 try {
                     const res = await ajax('ccm_tools_cf_purge_all');
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                    } else {
-                        showNotification(res.data.message || 'Purge failed.', 'error');
-                    }
+                    showNotification(res.data.message, 'success');
                 } catch (err) {
                     showNotification('Purge failed: ' + err.message, 'error');
                 } finally {
@@ -3531,12 +3243,8 @@
 
                 try {
                     const res = await ajax('ccm_tools_cf_purge_urls', { urls });
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                        if (textarea) textarea.value = '';
-                    } else {
-                        showNotification(res.data.message || 'Purge failed.', 'error');
-                    }
+                    showNotification(res.data.message, 'success');
+                    if (textarea) textarea.value = '';
                 } catch (err) {
                     showNotification('Purge failed: ' + err.message, 'error');
                 } finally {
@@ -3556,13 +3264,8 @@
                     const res = await ajax('ccm_tools_cf_dev_mode', {
                         enable: enable ? '1' : '0',
                     });
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                        updateDevModeStatus(enable);
-                    } else {
-                        showNotification(res.data.message || 'Failed to toggle Dev Mode.', 'error');
-                        devToggle.checked = !enable; // Revert
-                    }
+                    showNotification(res.data.message, 'success');
+                    updateDevModeStatus(enable);
                 } catch (err) {
                     showNotification('Failed: ' + err.message, 'error');
                     devToggle.checked = !enable;
@@ -3583,12 +3286,7 @@
                     const res = await ajax('ccm_tools_cf_auto_purge', {
                         enable: enable ? '1' : '0',
                     });
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                    } else {
-                        showNotification(res.data.message || 'Failed to update auto-purge.', 'error');
-                        autoPurgeToggle.checked = !enable;
-                    }
+                    showNotification(res.data.message, 'success');
                 } catch (err) {
                     showNotification('Failed: ' + err.message, 'error');
                     autoPurgeToggle.checked = !enable;
@@ -3624,11 +3322,10 @@
 
             const zone = res.data.zone || {};
             const features = res.data.features || {};
-            const isPremium = container.dataset.premium === '1';
             const isFreePlan = !zone.plan_id || zone.plan_id === 'free';
 
             let html = '<table class="ccm-table">';
-            html += cfStatusRow('Zone', zone.name || '—');
+            html += cfStatusRow('Zone', escHtml(zone.name || '—'));
             html += cfStatusRow('Zone ID', '<code style="font-size: 0.85em;">' + escHtml(zone.id) + '</code>');
             html += cfStatusRow('Status', zone.status === 'active'
                 ? '<span class="ccm-success">✓ Active</span>'
@@ -3653,23 +3350,21 @@
                 html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
             }
 
-            // --- WebP (premium toggle / free read-only) ---
+            // --- WebP (editable; Cloudflare only exposes this on Pro+ plans) ---
             if (features.webp !== undefined) {
                 if (isFreePlan) {
                     html += '<tr><th>WebP Conversion<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Serve WebP images to supported browsers (Pro+ plan)</span></th>';
                     html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" disabled' + (features.webp === 'on' ? ' checked' : '') + '>';
                     html += '<span class="ccm-toggle-slider"></span></label> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
-                } else if (isPremium) {
+                } else {
                     const wChecked = features.webp === 'on' ? ' checked' : '';
                     html += '<tr><th>WebP Conversion<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Serve WebP images to supported browsers (Pro+ plan)</span></th>';
                     html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="webp"' + wChecked + '>';
                     html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-                } else {
-                    html += cfStatusRow('WebP Conversion', features.webp === 'on' ? '<span class="ccm-success">\u2713 On</span>' : '<span class="ccm-text-muted">Off</span>');
                 }
             }
 
-            // --- Polish (premium dropdown / free read-only) ---
+            // --- Polish (editable; Cloudflare only exposes this on Pro+ plans) ---
             if (features.polish !== undefined) {
                 if (isFreePlan) {
                     html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
@@ -3680,7 +3375,7 @@
                         html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
                     }
                     html += '</select> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
-                } else if (isPremium) {
+                } else {
                     html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
                     html += '<td style="text-align: right;"><select data-cf-setting="polish" class="ccm-cf-select">';
                     const polishOptions = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
@@ -3689,25 +3384,20 @@
                         html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
                     }
                     html += '</select></td></tr>';
-                } else {
-                    const plabel = features.polish === 'off' ? 'Off' : features.polish === 'lossless' ? 'Lossless' : features.polish === 'lossy' ? 'Lossy' : escHtml(features.polish);
-                    html += cfStatusRow('Polish (Image Optimization)', '<span class="ccm-text-muted">' + plabel + '</span>');
                 }
             }
 
-            // --- Mirage (Pro+ image lazy load) ---
+            // --- Mirage (editable; Cloudflare only exposes this on Pro+ plans) ---
             if (features.mirage !== undefined) {
                 if (isFreePlan) {
                     html += '<tr><th>Mirage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Lazy load images and optimize for mobile visitors (Pro+ plan)</span></th>';
                     html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" disabled' + (features.mirage === 'on' ? ' checked' : '') + '>';
                     html += '<span class="ccm-toggle-slider"></span></label> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
-                } else if (isPremium) {
+                } else {
                     const mChecked = features.mirage === 'on' ? ' checked' : '';
                     html += '<tr><th>Mirage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Lazy load images and optimize for mobile visitors (Pro+ plan)</span></th>';
                     html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="mirage"' + mChecked + '>';
                     html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-                } else {
-                    html += cfStatusRow('Mirage', features.mirage === 'on' ? '<span class="ccm-success">\u2713 On</span>' : '<span class="ccm-text-muted">Off</span>');
                 }
             }
 
@@ -3732,19 +3422,13 @@
                 html += '</select></td></tr>';
             }
 
-            // --- APO (premium toggle / free read-only) ---
+            // --- APO ---
             if (features.apo !== undefined) {
                 const apoEnabled = features.apo && features.apo.enabled;
-                if (isPremium) {
-                    const apoChecked = apoEnabled ? ' checked' : '';
-                    html += '<tr><th>Automatic Platform Optimization (APO)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Cloudflare\'s WordPress-specific full-page caching at the edge</span></th>';
-                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="automatic_platform_optimization"' + apoChecked + '>';
-                    html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-                } else {
-                    html += cfStatusRow('Automatic Platform Optimization (APO)', apoEnabled
-                        ? '<span class="ccm-success">\u2713 Enabled</span>'
-                        : '<span class="ccm-text-muted">Disabled</span>');
-                }
+                const apoChecked = apoEnabled ? ' checked' : '';
+                html += '<tr><th>Automatic Platform Optimization (APO)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Cloudflare\'s WordPress-specific full-page caching at the edge</span></th>';
+                html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="automatic_platform_optimization"' + apoChecked + '>';
+                html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
             }
 
             // Development mode (read-only here — separate toggle below)
@@ -3775,50 +3459,42 @@
             // Bind toggle/select events
             bindCfSettingControls(container);
 
-            // Render premium-only panels
-            if (isPremium) {
-                // Render Security Settings panel
-                renderCfSecurityPanel(features);
+            // Render Security Settings panel
+            renderCfSecurityPanel(features);
 
-                // Bind "Under Attack" toggle
-                const uaToggle = $('#cf-under-attack-toggle');
-                if (uaToggle) {
-                    uaToggle.addEventListener('change', async function () {
-                        const enable = this.checked;
-                        const box = $('#cf-under-attack-box');
-                        this.disabled = true;
+            // Bind "Under Attack" toggle
+            const uaToggle = $('#cf-under-attack-toggle');
+            if (uaToggle) {
+                uaToggle.addEventListener('change', async function () {
+                    const enable = this.checked;
+                    const box = $('#cf-under-attack-box');
+                    this.disabled = true;
 
-                        if (enable && !confirm('Enable "I\'m Under Attack" mode? All visitors will see a challenge page for ~5 seconds.')) {
-                            this.checked = false;
-                            this.disabled = false;
-                            return;
-                        }
+                    if (enable && !confirm('Enable "I\'m Under Attack" mode? All visitors will see a challenge page for ~5 seconds.')) {
+                        this.checked = false;
+                        this.disabled = false;
+                        return;
+                    }
 
-                        try {
-                            const newLevel = enable ? 'under_attack' : 'high';
-                            const res = await ajax('ccm_tools_cf_update_setting', { setting: 'security_level', value: newLevel });
-                            if (res.success) {
-                                showNotification(enable ? 'Under Attack mode enabled.' : 'Under Attack mode disabled (Security Level set to High).', 'success');
-                                if (box) box.classList.toggle('ccm-cf-under-attack-active', enable);
-                                // Update Security Level dropdown if present
-                                const secSelect = document.querySelector('[data-cf-setting="security_level"]');
-                                if (secSelect) secSelect.value = newLevel;
-                            } else {
-                                showNotification(res.data.message || 'Failed to update.', 'error');
-                                this.checked = !enable;
-                            }
-                        } catch (err) {
-                            showNotification('Failed: ' + err.message, 'error');
-                            this.checked = !enable;
-                        } finally {
-                            this.disabled = false;
-                        }
-                    });
-                }
-
-                // Render Network Settings panel
-                renderCfNetworkPanel(features);
+                    try {
+                        const newLevel = enable ? 'under_attack' : 'high';
+                        const res = await ajax('ccm_tools_cf_update_setting', { setting: 'security_level', value: newLevel });
+                        showNotification(enable ? 'Under Attack mode enabled.' : 'Under Attack mode disabled (Security Level set to High).', 'success');
+                        if (box) box.classList.toggle('ccm-cf-under-attack-active', enable);
+                        // Update Security Level dropdown if present
+                        const secSelect = document.querySelector('[data-cf-setting="security_level"]');
+                        if (secSelect) secSelect.value = newLevel;
+                    } catch (err) {
+                        showNotification('Failed: ' + err.message, 'error');
+                        this.checked = !enable;
+                    } finally {
+                        this.disabled = false;
+                    }
+                });
             }
+
+            // Render Network Settings panel
+            renderCfNetworkPanel(features);
 
         } catch (err) {
             container.innerHTML = '<p class="ccm-error">Failed to load zone status: ' + escHtml(err.message) + '</p>';
@@ -3847,18 +3523,13 @@
 
                 try {
                     const res = await ajax('ccm_tools_cf_update_setting', params);
-                    if (res.success) {
-                        showNotification(res.data.message, 'success');
-                        // Sync Under Attack toggle when security_level dropdown changes
-                        if (setting === 'security_level') {
-                            const uaToggle = $('#cf-under-attack-toggle');
-                            const uaBox = $('#cf-under-attack-box');
-                            if (uaToggle) uaToggle.checked = (this.value === 'under_attack');
-                            if (uaBox) uaBox.classList.toggle('ccm-cf-under-attack-active', this.value === 'under_attack');
-                        }
-                    } else {
-                        showNotification(res.data.message || 'Failed to update setting.', 'error');
-                        if (isToggle) this.checked = !this.checked;
+                    showNotification(res.data.message, 'success');
+                    // Sync Under Attack toggle when security_level dropdown changes
+                    if (setting === 'security_level') {
+                        const uaToggle = $('#cf-under-attack-toggle');
+                        const uaBox = $('#cf-under-attack-box');
+                        if (uaToggle) uaToggle.checked = (this.value === 'under_attack');
+                        if (uaBox) uaBox.classList.toggle('ccm-cf-under-attack-active', this.value === 'under_attack');
                     }
                 } catch (err) {
                     showNotification('Failed: ' + err.message, 'error');
@@ -4057,10 +3728,6 @@
     async function loadCfAnalytics(container) {
         try {
             const res = await ajax('ccm_tools_cf_analytics');
-            if (!res.success) {
-                container.innerHTML = '<p class="ccm-text-muted" style="padding: var(--ccm-space-sm) 0;">⚠ ' + escHtml(res.data.message || 'Failed to load analytics.') + '</p>';
-                return;
-            }
 
             const d = res.data;
             const req = d.requests || {};
@@ -4133,10 +3800,6 @@
     async function loadCfDnsRecords(container) {
         try {
             const res = await ajax('ccm_tools_cf_dns_records');
-            if (!res.success) {
-                container.innerHTML = '<p class="ccm-text-muted" style="padding: var(--ccm-space-sm) 0;">⚠ ' + escHtml(res.data.message || 'Failed to load DNS records.') + '</p>';
-                return;
-            }
 
             const records = res.data.records || [];
             if (!records.length) {
@@ -4203,132 +3866,6 @@
     }
 
     // ===================================
-    // Premium Subscription Handlers
-    // ===================================
-
-    /**
-     * Initialize premium-related UI handlers
-     */
-    function initPremiumHandlers() {
-        const refreshBtn = $('#premium-refresh-btn');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', async () => {
-                refreshBtn.disabled = true;
-                refreshBtn.textContent = 'Checking…';
-                try {
-                    const res = await ajax('ccm_tools_premium_refresh', {});
-                    if (res.success) {
-                        showNotification(
-                            res.data.premium ? 'Premium subscription active!' : 'No active premium subscription.',
-                            res.data.premium ? 'success' : 'info'
-                        );
-                        // Reload to reflect updated premium status across all sections
-                        setTimeout(() => location.reload(), 800);
-                    } else {
-                        showNotification(res.data || 'Failed to check premium status.', 'error');
-                    }
-                } catch (e) {
-                    showNotification('Error checking premium status.', 'error');
-                } finally {
-                    refreshBtn.disabled = false;
-                    refreshBtn.textContent = 'Refresh Status';
-                }
-            });
-        }
-    }
-
-    // ===================================
-    // Dashboard PageSpeed Scores
-    // ===================================
-
-    /**
-     * Load latest PageSpeed scores for the dashboard card
-     */
-    async function loadDashboardPageSpeedScores() {
-        const container = $('#dashboard-pagespeed-scores');
-        if (!container) return;
-
-        function scoreColor(score) {
-            const n = parseInt(score, 10);
-            if (isNaN(n)) return '';
-            if (n >= 90) return 'green';
-            if (n >= 50) return 'orange';
-            return 'red';
-        }
-
-        function timeAgo(dateStr) {
-            if (!dateStr) return '';
-            const d = new Date(dateStr);
-            const now = new Date();
-            const diff = Math.floor((now - d) / 1000);
-            if (diff < 60) return 'just now';
-            if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-            if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-            return `${Math.floor(diff / 86400)}d ago`;
-        }
-
-        function renderColumn(data, label, icon) {
-            if (!data) return `<div class="ccm-dashboard-ps-col"><div class="ccm-dashboard-ps-col-label">${icon} ${escapeHtml(label)}</div><p class="ccm-text-muted" style="margin:0;">No results</p></div>`;
-
-            const perf = parseInt(data.performance, 10);
-            const perfColor = scoreColor(perf);
-            const perfDisplay = isNaN(perf) ? '—' : perf;
-
-            const secondaryScores = [
-                { label: 'Accessibility', value: data.accessibility },
-                { label: 'Best Practices', value: data.best_practices },
-                { label: 'SEO', value: data.seo },
-            ];
-
-            let secondaryHtml = secondaryScores.map(s => {
-                const v = parseInt(s.value, 10);
-                const c = scoreColor(v);
-                return `<div class="ccm-dashboard-ps-secondary-item"><span class="ccm-dashboard-ps-secondary-dot ccm-dot-${c || ''}"></span>${escapeHtml(s.label)} <span class="ccm-dashboard-ps-secondary-val">${isNaN(v) ? '—' : v}</span></div>`;
-            }).join('');
-
-            return `<div class="ccm-dashboard-ps-col">
-                <div class="ccm-dashboard-ps-col-label">${icon} ${escapeHtml(label)}</div>
-                <div class="ccm-dashboard-ps-hero">
-                    <div class="ccm-dashboard-ps-hero-circle ccm-score-${perfColor}">${perfDisplay}</div>
-                    <div class="ccm-dashboard-ps-hero-text"><strong>Performance</strong>Core Web Vitals score</div>
-                </div>
-                <div class="ccm-dashboard-ps-secondary">${secondaryHtml}</div>
-            </div>`;
-        }
-
-        try {
-            const res = await ajax('ccm_tools_ai_hub_get_latest_scores', {}, { timeout: 30000 });
-            const data = res.data || {};
-
-            if (!data.mobile && !data.desktop) {
-                const adminUrl = ccmToolsData.ajax_url.replace('admin-ajax.php', '');
-                container.innerHTML = '<p class="ccm-text-muted">No PageSpeed results yet. <a href="' + adminUrl + 'admin.php?page=ccm-tools-perf">Run a test</a></p>';
-                return;
-            }
-
-            let html = '<div class="ccm-dashboard-ps-grid">';
-            html += renderColumn(data.mobile, 'Mobile', '📱');
-            html += renderColumn(data.desktop, 'Desktop', '🖥️');
-            html += '</div>';
-
-            // Meta footer with URL and time
-            const testedUrl = data.mobile_url || data.desktop_url || '';
-            const testedDate = data.mobile_date || data.desktop_date || '';
-            if (testedUrl || testedDate) {
-                html += '<div class="ccm-dashboard-ps-meta">';
-                if (testedUrl) html += `<span>${escapeHtml(testedUrl)}</span>`;
-                if (testedDate) html += `<span>${timeAgo(testedDate)}</span>`;
-                html += '</div>';
-            }
-
-            container.innerHTML = html;
-        } catch (err) {
-            container.innerHTML = '<p class="ccm-text-muted">Could not load PageSpeed scores.</p>';
-            console.error('CCM: Dashboard PageSpeed error', err);
-        }
-    }
-
-    // ===================================
     // Redis Object Cache Functions
     // ===================================
     
@@ -4392,8 +3929,8 @@
                 : '<span class="ccm-badge">Plugin Settings</span>';
 
             html += '<tr>'
-                  + '<td><code>' + constant + '</code></td>'
-                  + '<td>' + (val || '') + '</td>'
+                  + '<td><code>' + escapeHtml(constant) + '</code></td>'
+                  + '<td>' + escapeHtml(val || '') + '</td>'
                   + '<td>' + badge + '</td>'
                   + '</tr>';
         }
@@ -4415,18 +3952,24 @@
         
         // Update Drop-In (when version mismatch detected)
         if (updateDropinBtn) {
-            updateDropinBtn.addEventListener('click', async () => {
-                updateDropinBtn.disabled = true;
-                updateDropinBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Updating...';
-                try {
-                    const response = await ajax('ccm_tools_redis_enable', { force: 'true' });
-                    showNotification(response.data.message || 'Drop-in updated successfully!', 'success');
-                    setTimeout(() => location.reload(), 1500);
-                } catch (error) {
-                    showNotification(error.message, 'error');
-                    updateDropinBtn.disabled = false;
-                    updateDropinBtn.innerHTML = 'Update Drop-In';
-                }
+            updateDropinBtn.addEventListener('click', () => {
+                showConfirmModal(
+                    'This will force-replace the existing object-cache.php drop-in. Continue?',
+                    async () => {
+                        updateDropinBtn.disabled = true;
+                        updateDropinBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Updating...';
+                        try {
+                            const response = await ajax('ccm_tools_redis_enable', { force: 'true' });
+                            showNotification(response.data.message || 'Drop-in updated successfully!', 'success');
+                            setTimeout(() => location.reload(), 1500);
+                        } catch (error) {
+                            showNotification(error.message, 'error');
+                            updateDropinBtn.disabled = false;
+                            updateDropinBtn.innerHTML = 'Update Drop-In';
+                        }
+                    },
+                    'Update Drop-In'
+                );
             });
         }
         
@@ -4912,3217 +4455,6 @@
         }
     }
     
-    // ===================================
-    // AI Hub Functions — One-Click Optimize + Dual Strategy
-    // ===================================
-
-    /** State for the current AI session */
-    let aiHubState = {
-        lastResultId: null,     // most recent result_id (mobile — used for AI analysis)
-        resultIds: {},          // { mobile: id, desktop: id }
-        sessionActive: false,
-        confirmedFixes: null,   // Promise resolver for user confirmation
-        beforeScores: null,     // { mobile: {}, desktop: {} }
-        afterScores: null,
-    };
-
-    // ─── Activity Log (terminal-style) ────────────
-
-    /**
-     * Append a timestamped entry to the activity log.
-     * @param {string} message - Text to log
-     * @param {'info'|'success'|'warn'|'error'|'step'|'ai'} type - Log entry type
-     */
-    function aiLog(message, type = 'info') {
-        const wrapper = $('#ai-activity-log-wrapper');
-        const log = $('#ai-activity-log');
-        if (!log) return;
-        if (wrapper) wrapper.style.display = 'block';
-
-        const now = new Date();
-        const ts = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const prefixes = {
-            info: '<span class="ccm-log-prefix ccm-log-info">INFO</span>',
-            success: '<span class="ccm-log-prefix ccm-log-success">DONE</span>',
-            warn: '<span class="ccm-log-prefix ccm-log-warn">WARN</span>',
-            error: '<span class="ccm-log-prefix ccm-log-error">FAIL</span>',
-            step: '<span class="ccm-log-prefix ccm-log-step">STEP</span>',
-            ai: '<span class="ccm-log-prefix ccm-log-ai"> AI </span>',
-        };
-        const prefix = prefixes[type] || prefixes.info;
-        const entry = document.createElement('div');
-        entry.className = 'ccm-log-entry';
-        entry.innerHTML = `<span class="ccm-log-ts">${ts}</span> ${prefix} ${message}`;
-        log.appendChild(entry);
-        log.scrollTop = log.scrollHeight;
-    }
-
-    function aiLogClear() {
-        const log = $('#ai-activity-log');
-        if (log) log.innerHTML = '';
-    }
-
-    /**
-     * Known perf-optimizer setting keys (for auto-fix detection)
-     */
-    const PERF_SETTING_KEYS = new Set([
-        'enabled', 'defer_js', 'delay_js', 'preload_css', 'preconnect', 'dns_prefetch',
-        'remove_query_strings', 'disable_emoji', 'disable_dashicons', 'lazy_load_iframes',
-        'youtube_facade', 'lcp_fetchpriority', 'lcp_preload', 'font_display_swap',
-        'speculation_rules', 'critical_css', 'disable_jquery_migrate', 'disable_block_css',
-        'disable_woocommerce_cart_fragments', 'reduce_heartbeat', 'disable_xmlrpc',
-        'disable_rsd_wlw', 'disable_shortlink', 'disable_rest_api_links', 'disable_oembed',
-        'video_lazy_load', 'video_preload_none',
-        'lazy_load_images', 'image_decoding_async', 'prefetch_on_hover',
-        'remove_generator_tag', 'remove_adjacent_post_links', 'disable_admin_bar',
-        'inline_small_scripts', 'inline_small_styles', 'inline_threshold_kb',
-        'inject_image_dimensions', 'inject_srcset',
-        'minify_html', 'preload_key_requests', 'preload_key_urls', 'disable_wp_embed', 'self_host_google_fonts',
-        'preload_css_bg_image', 'preload_css_bg_url', 'priority_hints_above_fold', 'priority_hints_selectors',
-        'delay_third_party', 'delay_third_party_domains',
-        'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate',
-        'disable_wp_cron', 'cron_interval', 'disable_author_archives',
-        'passive_event_listeners', 'warn_dom_size',
-        // Deep analysis data keys (auto-applied by apply_recommendations)
-        'critical_css_code', 'preconnect_urls', 'dns_prefetch_urls',
-        'lcp_preload_url', 'defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes',
-        'delay_js_timeout', 'speculation_eagerness', 'heartbeat_interval',
-    ]);
-
-    /**
-     * Map PageSpeed opportunity IDs to specific CCM Tools settings that address them.
-     * Used to build structured recommendations for the AI — turns "guessing" into
-     * a precise "this PSI issue → enable this setting" instruction.
-     */
-    const PSI_OPPORTUNITY_TO_CCM_SETTINGS = {
-        'render-blocking-resources': {
-            settings: ['defer_js', 'preload_css', 'critical_css'],
-            description: 'Defer JS, async-load CSS, inline critical CSS',
-        },
-        'unused-css-rules': {
-            settings: ['preload_css', 'critical_css', 'disable_block_css', 'disable_gutenberg_frontend'],
-            description: 'Async CSS + critical CSS, remove unused block/Gutenberg CSS',
-        },
-        'unused-javascript': {
-            settings: ['defer_js', 'delay_js', 'disable_emoji', 'disable_wp_embed', 'disable_jquery_migrate'],
-            description: 'Defer/delay JS, disable unused WP scripts',
-        },
-        'uses-responsive-images': {
-            settings: ['inject_srcset', 'inject_image_dimensions'],
-            description: 'Auto-inject srcset/sizes and dimensions',
-        },
-        'offscreen-images': {
-            settings: ['lazy_load_images', 'lazy_load_iframes'],
-            description: 'Enable lazy loading for images and iframes',
-        },
-        'uses-text-compression': {
-            settings: [],
-            htaccess: true,
-            description: 'Enable Gzip/Brotli via .htaccess (or Cloudflare Brotli)',
-            cf_settings: ['brotli'],
-        },
-        'uses-long-cache-ttl': {
-            settings: ['cache_control_meta', 'stale_while_revalidate', 'remove_query_strings'],
-            htaccess: true,
-            description: 'Browser caching via .htaccess, cache-control headers, remove query strings',
-            cf_settings: ['browser_cache_ttl'],
-        },
-        'server-response-time': {
-            settings: [],
-            redis: true,
-            description: 'Redis object cache for faster TTFB',
-            cf_settings: ['early_hints'],
-        },
-        'total-byte-weight': {
-            settings: ['minify_html', 'inline_small_scripts', 'inline_small_styles'],
-            webp: true,
-            description: 'Minify HTML, inline small assets, WebP images',
-        },
-        'dom-size': {
-            settings: ['warn_dom_size', 'disable_gutenberg_frontend'],
-            description: 'Monitor DOM size, remove Gutenberg bloat',
-        },
-        'uses-optimized-images': {
-            settings: [],
-            webp: true,
-            description: 'Convert to WebP via CCM WebP Converter',
-        },
-        'modern-image-formats': {
-            settings: [],
-            webp: true,
-            description: 'Convert to WebP via CCM WebP Converter',
-        },
-        'third-party-summary': {
-            settings: ['delay_third_party', 'delay_js'],
-            description: 'Delay third-party scripts until interaction',
-        },
-        'largest-contentful-paint-element': {
-            settings: ['lcp_fetchpriority', 'lcp_preload', 'preload_css_bg_image', 'priority_hints_above_fold'],
-            description: 'Preload LCP image, fetchpriority=high, preload CSS background',
-        },
-        'layout-shift-elements': {
-            settings: ['inject_image_dimensions', 'inject_srcset', 'font_display_swap'],
-            description: 'Inject image dimensions, font-display:swap for CLS',
-        },
-        'font-display': {
-            settings: ['font_display_swap', 'self_host_google_fonts'],
-            description: 'font-display:swap, self-host Google Fonts',
-        },
-        'efficient-animated-content': {
-            settings: ['video_lazy_load', 'video_preload_none'],
-            description: 'Lazy-load video, set preload=none',
-        },
-        'duplicated-javascript': {
-            settings: ['disable_jquery_migrate', 'disable_wp_embed'],
-            description: 'Remove duplicate jQuery/embed scripts',
-        },
-        'legacy-javascript': {
-            settings: ['disable_jquery_migrate', 'defer_js'],
-            description: 'Remove jQuery Migrate, defer legacy scripts',
-        },
-        'mainthread-work-breakdown': {
-            settings: ['delay_js', 'defer_js', 'passive_event_listeners'],
-            description: 'Delay/defer JS, passive listeners for reduced main thread work',
-        },
-        'bootup-time': {
-            settings: ['delay_js', 'defer_js', 'delay_third_party'],
-            description: 'Delay/defer JS to reduce boot time',
-        },
-        'uses-rel-preconnect': {
-            settings: ['preconnect', 'dns_prefetch'],
-            description: 'Enable preconnect and DNS prefetch',
-        },
-        'redirects': {
-            settings: [],
-            htaccess: true,
-            description: 'Optimize redirect chains via .htaccess',
-        },
-        'critical-request-chains': {
-            settings: ['preload_key_requests', 'critical_css', 'preload_css', 'lcp_preload'],
-            description: 'Preload key requests, inline critical CSS, preload LCP',
-        },
-        'unminified-css': {
-            settings: ['minify_html', 'inline_small_styles'],
-            description: 'Minify HTML (includes inline CSS), inline small stylesheets',
-        },
-        'unminified-javascript': {
-            settings: ['minify_html', 'inline_small_scripts'],
-            description: 'Minify HTML, inline small scripts',
-        },
-    };
-
-    /**
-     * Build structured PSI opportunity context for AI analysis.
-     * Maps each PSI opportunity to CCM settings that can fix it.
-     * Returns a formatted string the AI can use as precise instructions.
-     */
-    function buildPsiOpportunityContext(mobileOpps, desktopOpps) {
-        const allOpps = new Map();
-
-        const mergeOpps = (opps, strategy) => {
-            (opps || []).forEach(opp => {
-                const id = opp.id || (opp.title || '').toLowerCase().replace(/\s+/g, '-');
-                if (!id) return;
-                if (allOpps.has(id)) {
-                    const existing = allOpps.get(id);
-                    existing.strategies.push(strategy);
-                    if (opp.savings_ms) existing.savings_ms = Math.max(existing.savings_ms || 0, opp.savings_ms);
-                    if (opp.savings_bytes) existing.savings_bytes = Math.max(existing.savings_bytes || 0, opp.savings_bytes);
-                } else {
-                    allOpps.set(id, { ...opp, id, strategies: [strategy] });
-                }
-            });
-        };
-        mergeOpps(mobileOpps, 'mobile');
-        mergeOpps(desktopOpps, 'desktop');
-
-        if (!allOpps.size) return '';
-
-        let ctx = '\n## PAGESPEED OPPORTUNITIES → CCM TOOLS SETTINGS MAP\n';
-        ctx += 'The following PageSpeed issues were detected. For each, the SPECIFIC CCM Tools settings that address it are listed.\n';
-        ctx += 'PRIORITIZE settings that address the highest-savings opportunities first.\n\n';
-
-        // Sort by savings (ms first, then bytes)
-        const sorted = [...allOpps.values()].sort((a, b) => {
-            const aMs = a.savings_ms || 0;
-            const bMs = b.savings_ms || 0;
-            if (aMs !== bMs) return bMs - aMs;
-            return (b.savings_bytes || 0) - (a.savings_bytes || 0);
-        });
-
-        sorted.forEach(opp => {
-            const savings = opp.savings_ms ? `${opp.savings_ms}ms`
-                          : opp.savings_bytes ? `${Math.round(opp.savings_bytes / 1024)}KB` : '';
-            const strats = opp.strategies.join('+');
-            ctx += `### ${opp.title || opp.id} [${strats}]${savings ? ' — potential savings: ' + savings : ''}\n`;
-
-            // Find matching CCM settings
-            const oppId = opp.id || '';
-            let matched = false;
-            for (const [psiId, mapping] of Object.entries(PSI_OPPORTUNITY_TO_CCM_SETTINGS)) {
-                if (oppId.includes(psiId) || psiId.includes(oppId)) {
-                    matched = true;
-                    if (mapping.settings.length) {
-                        ctx += `  CCM Settings: ${mapping.settings.map(s => '`' + s + '`').join(', ')}\n`;
-                    }
-                    if (mapping.htaccess) ctx += '  Server: .htaccess optimizations (compression, caching)\n';
-                    if (mapping.webp) ctx += '  Images: WebP Converter\n';
-                    if (mapping.redis) ctx += '  Cache: Redis Object Cache\n';
-                    if (mapping.cf_settings) ctx += `  Cloudflare: ${mapping.cf_settings.join(', ')}\n`;
-                    ctx += `  Action: ${mapping.description}\n`;
-                    break;
-                }
-            }
-            if (!matched) {
-                ctx += '  No direct CCM setting — may require theme/plugin changes\n';
-            }
-            ctx += '\n';
-        });
-
-        return ctx;
-    }
-
-    /**
-     * Initialize AI Hub event handlers
-     */
-    function initAiHubHandlers() {
-        const saveBtn = $('#ai-hub-save-btn');
-        const testBtn = $('#ai-hub-test-btn');
-        const runBtn = $('#ai-ps-run-btn');
-        const oneClickBtn = $('#ai-one-click-btn');
-
-        if (saveBtn) saveBtn.addEventListener('click', aiHubSaveSettings);
-        if (testBtn) testBtn.addEventListener('click', aiHubTestConnection);
-        if (runBtn) runBtn.addEventListener('click', aiTestOnly);
-        if (oneClickBtn) oneClickBtn.addEventListener('click', aiOneClickOptimize);
-
-        const logClearBtn = $('#ai-log-clear-btn');
-        if (logClearBtn) logClearBtn.addEventListener('click', aiLogClear);
-
-        // Strategy tab switching
-        document.addEventListener('click', (e) => {
-            if (e.target.matches('.ccm-ai-tab')) {
-                const strategy = e.target.dataset.strategy;
-                $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === strategy));
-                $$('.ccm-ai-strategy-panel').forEach(p => {
-                    p.style.display = p.id === `ai-results-${strategy}` ? 'block' : 'none';
-                    p.classList.toggle('active', p.id === `ai-results-${strategy}`);
-                });
-            }
-        });
-
-        // Load history on init
-        aiHubLoadHistory();
-
-        // AI Chat widget
-        initAiChat();
-
-        // URL picker (searchable page selector)
-        initAiUrlPicker();
-    }
-
-    // ─── URL Picker (Page/Post/CPT search) ────────────
-
-    function initAiUrlPicker() {
-        const searchInput = $('#ai-ps-url-search');
-        const hiddenInput = $('#ai-ps-url');
-        const selectedEl = $('#ai-ps-url-selected');
-        const dropdown = $('#ai-ps-url-dropdown');
-        if (!searchInput || !hiddenInput || !dropdown) return;
-
-        let debounceTimer = null;
-        let currentResults = [];
-
-        // Show selected state, hide search input
-        function showSelected(title, url, type) {
-            hiddenInput.value = url;
-            const badge = selectedEl.querySelector('.ccm-url-picker-badge');
-            const urlSpan = selectedEl.querySelector('.ccm-url-picker-url');
-            if (badge) badge.textContent = type || 'Page';
-            if (urlSpan) urlSpan.textContent = url;
-            selectedEl.style.display = 'flex';
-            searchInput.style.display = 'none';
-            dropdown.style.display = 'none';
-            searchInput.value = '';
-        }
-
-        // Clear selection, show search input
-        function clearSelection() {
-            hiddenInput.value = '';
-            selectedEl.style.display = 'none';
-            searchInput.style.display = '';
-            searchInput.value = '';
-            searchInput.focus();
-        }
-
-        // Clear button
-        const clearBtn = selectedEl.querySelector('.ccm-url-picker-clear');
-        if (clearBtn) clearBtn.addEventListener('click', clearSelection);
-
-        // Render dropdown results
-        function renderDropdown(results) {
-            currentResults = results;
-            if (!results.length) {
-                dropdown.innerHTML = '<div class="ccm-url-picker-empty">No pages found</div>';
-                dropdown.style.display = 'block';
-                return;
-            }
-            dropdown.innerHTML = results.map((r, i) => `
-                <div class="ccm-url-picker-item" data-index="${i}">
-                    <span class="ccm-url-picker-item-type">${r.type}</span>
-                    <span class="ccm-url-picker-item-title">${r.title}</span>
-                    <span class="ccm-url-picker-item-url">${r.url}</span>
-                </div>
-            `).join('');
-            dropdown.style.display = 'block';
-        }
-
-        // Fetch results
-        async function fetchPages(search) {
-            try {
-                const res = await ajax('ccm_tools_search_pages', { search });
-                renderDropdown(res.data || []);
-            } catch (e) {
-                dropdown.innerHTML = '<div class="ccm-url-picker-empty">Search failed</div>';
-                dropdown.style.display = 'block';
-            }
-        }
-
-        // Input event with debounce
-        searchInput.addEventListener('input', () => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => fetchPages(searchInput.value), 250);
-        });
-
-        // Show all pages on focus (if empty)
-        searchInput.addEventListener('focus', () => {
-            if (!searchInput.value && !dropdown.innerHTML) {
-                fetchPages('');
-            } else if (dropdown.innerHTML) {
-                dropdown.style.display = 'block';
-            }
-        });
-
-        // Item click
-        dropdown.addEventListener('click', (e) => {
-            const item = e.target.closest('.ccm-url-picker-item');
-            if (!item) return;
-            const idx = parseInt(item.dataset.index, 10);
-            const r = currentResults[idx];
-            if (r) showSelected(r.title, r.url, r.type);
-        });
-
-        // Close dropdown on outside click
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.ccm-url-picker')) {
-                dropdown.style.display = 'none';
-            }
-        });
-
-        // Keyboard navigation
-        searchInput.addEventListener('keydown', (e) => {
-            const items = dropdown.querySelectorAll('.ccm-url-picker-item');
-            if (!items.length) return;
-
-            const active = dropdown.querySelector('.ccm-url-picker-item-active');
-            let idx = active ? parseInt(active.dataset.index, 10) : -1;
-
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                idx = Math.min(idx + 1, items.length - 1);
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                idx = Math.max(idx - 1, 0);
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                if (active) { active.click(); return; }
-                // If nothing selected and there's text, allow submitting the first result
-                if (items[0]) { items[0].click(); return; }
-            } else if (e.key === 'Escape') {
-                dropdown.style.display = 'none';
-                return;
-            } else {
-                return;
-            }
-
-            items.forEach(it => it.classList.remove('ccm-url-picker-item-active'));
-            if (items[idx]) {
-                items[idx].classList.add('ccm-url-picker-item-active');
-                items[idx].scrollIntoView({ block: 'nearest' });
-            }
-        });
-    }
-
-    // ─── Hub Connection ────────────
-
-    async function aiHubSaveSettings() {
-        const btn = $('#ai-hub-save-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
-
-        try {
-            const hubUrl = ($('#ai-hub-url') || {}).value || '';
-            const apiKey = ($('#ai-hub-key') || {}).value || '';
-
-            await ajax('ccm_tools_ai_hub_save_settings', {
-                enabled: 1,
-                hub_url: hubUrl,
-                api_key: apiKey,
-            });
-
-            showNotification('Settings saved.', 'success');
-            const oneClickBtn = $('#ai-one-click-btn');
-            if (oneClickBtn && apiKey) oneClickBtn.disabled = false;
-        } catch (err) {
-            showNotification(err.message || 'Failed to save settings.', 'error');
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
-        }
-    }
-
-    async function aiHubTestConnection() {
-        const btn = $('#ai-hub-test-btn');
-        const resultEl = $('#ai-hub-test-result');
-        const statusBadge = $('#ai-hub-status');
-
-        if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
-        if (resultEl) resultEl.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div>';
-
-        try {
-            const res = await ajax('ccm_tools_ai_hub_test_connection', {}, { timeout: 15000 });
-            const d = res.data;
-
-            if (statusBadge) { statusBadge.textContent = 'Connected'; statusBadge.className = 'ccm-badge ccm-badge-success'; }
-
-            let html = `<div class="ccm-success" style="padding: 0.5rem 0;">✅ ${d.message || 'Connected'}`;
-            if (d.version) html += ` — Hub v${d.version}`;
-            html += '</div>';
-
-            if (d.features) {
-                const feats = Object.entries(d.features).filter(([, v]) => v).map(([k]) => k).join(', ');
-                if (feats) html += `<small>Features: ${feats}</small>`;
-            }
-
-            if (resultEl) resultEl.innerHTML = html;
-            const oneClickBtn = $('#ai-one-click-btn');
-            if (oneClickBtn) oneClickBtn.disabled = false;
-
-            // Refresh subscription status after successful connection test
-            refreshSubscriptionStatus();
-        } catch (err) {
-            if (statusBadge) { statusBadge.textContent = 'Disconnected'; statusBadge.className = 'ccm-badge ccm-badge-error'; }
-            if (resultEl) resultEl.innerHTML = `<div class="ccm-error">❌ ${err.message || 'Connection failed'}</div>`;
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
-        }
-    }
-
-    /**
-     * Refresh the Subscription Status card via AJAX without a full page reload.
-     */
-    async function refreshSubscriptionStatus() {
-        try {
-            const res = await ajax('ccm_tools_premium_refresh', {});
-            if (!res.success) return;
-
-            const card = document.querySelector('.ccm-card-premium');
-            if (!card) return;
-
-            const headerBadge = card.querySelector('.ccm-card-header .ccm-premium-badge');
-            const body = card.querySelector('.ccm-card-body');
-            if (!body) return;
-
-            if (res.data.premium) {
-                // Update badge to Active
-                if (headerBadge) {
-                    headerBadge.textContent = 'Active';
-                    headerBadge.className = 'ccm-premium-badge ccm-premium-badge-pro';
-                }
-
-                // Also update the nav bar premium badge
-                const navBadge = document.querySelector('.ccm-premium-badge-free');
-                if (navBadge && navBadge.closest('.ccm-header-nav, .ccm-nav, nav')) {
-                    navBadge.textContent = 'Premium';
-                    navBadge.className = 'ccm-premium-badge ccm-premium-badge-pro';
-                    navBadge.removeAttribute('href');
-                }
-
-                const status = res.data.status || {};
-                let html = '<div class="ccm-premium-status-active">';
-                html += '<p>Your premium subscription is <strong class="ccm-success">active</strong>.</p>';
-                if (status.plan && status.plan !== 'developer') {
-                    html += `<p>Plan: <strong>${escHtml(status.plan.charAt(0).toUpperCase() + status.plan.slice(1))}</strong></p>`;
-                }
-                if (status.expires) {
-                    const expDate = new Date(status.expires);
-                    const formatted = expDate.toLocaleDateString('en-AU', { year: 'numeric', month: 'long', day: 'numeric' });
-                    html += `<p>Renews: <strong>${escHtml(formatted)}</strong></p>`;
-                }
-                html += '<div class="ccm-premium-active-features" style="margin-top: var(--ccm-space-md);">';
-                html += '<h4>Your Premium Features</h4>';
-                html += '<div class="ccm-premium-active-feature"><span>🤖</span> <strong>AI Performance Hub</strong> — AI-powered PageSpeed analysis and automated optimization</div>';
-                html += '<div class="ccm-premium-active-feature"><span>⚡</span> <strong>Advanced Redis Configuration</strong> — Enterprise-grade Redis object cache tuning</div>';
-                html += '</div>';
-                html += '<p style="margin-top: var(--ccm-space-md);">';
-                html += '<button type="button" id="premium-refresh-btn" class="ccm-button ccm-button-small ccm-button-secondary">Refresh Status</button>';
-                html += '</p>';
-                html += '</div>';
-                body.innerHTML = html;
-
-                // Re-attach refresh handler
-                initPremiumHandlers();
-
-                showNotification('Premium subscription active!', 'success');
-            }
-        } catch (e) {
-            // Silent fail — subscription status simply stays as-is
-        }
-    }
-
-    /**
-     * Escape HTML for safe insertion.
-     */
-    function escHtml(str) {
-        if (!str && str !== 0) return '';
-        const div = document.createElement('div');
-        div.appendChild(document.createTextNode(String(str)));
-        return div.innerHTML;
-    }
-
-    // ─── PageSpeed render helpers ────────────
-
-    /**
-     * Return the Google-standard score color class:
-     * 90-100 = green, 50-89 = orange, 0-49 = red
-     */
-    function aiScoreColorClass(score) {
-        const num = parseInt(score, 10);
-        if (isNaN(num)) return '';
-        if (num >= 90) return 'ccm-score-green';
-        if (num >= 50) return 'ccm-score-orange';
-        return 'ccm-score-red';
-    }
-
-    function aiRenderScores(scores, suffix) {
-        const container = $(`#ai-ps-scores-${suffix}`);
-        if (!container) return;
-
-        const categories = [
-            { key: 'performance', label: 'Performance' },
-            { key: 'accessibility', label: 'Accessibility' },
-            { key: 'best_practices', label: 'Best Practices' },
-            { key: 'seo', label: 'SEO' },
-        ];
-
-        container.innerHTML = categories.map(cat => {
-            const score = scores[cat.key] ?? '—';
-            const colorClass = aiScoreColorClass(score);
-            return `<div class="ccm-ai-score-circle-wrap">
-                <div class="ccm-ai-score-circle ${colorClass}"><span>${score}</span></div>
-                <div class="ccm-ai-score-label">${cat.label}</div>
-            </div>`;
-        }).join('');
-    }
-
-    function aiRenderMetrics(metrics, suffix) {
-        const container = $(`#ai-ps-metrics-${suffix}`);
-        if (!container) return;
-
-        const defs = [
-            { key: 'fcp_ms', label: 'First Contentful Paint', unit: 'ms', good: 1800, poor: 3000 },
-            { key: 'lcp_ms', label: 'Largest Contentful Paint', unit: 'ms', good: 2500, poor: 4000 },
-            { key: 'cls', label: 'Cumulative Layout Shift', unit: '', good: 0.1, poor: 0.25 },
-            { key: 'tbt_ms', label: 'Total Blocking Time', unit: 'ms', good: 200, poor: 600 },
-            { key: 'si_ms', label: 'Speed Index', unit: 'ms', good: 3400, poor: 5800 },
-            { key: 'tti_ms', label: 'Time To Interactive', unit: 'ms', good: 3800, poor: 7300 },
-        ];
-
-        let html = '<table class="ccm-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
-        defs.forEach(m => {
-            const val = metrics[m.key];
-            if (val !== undefined && val !== null) {
-                const numVal = parseFloat(val);
-                const display = m.unit === 'ms' ? `${Number(val).toLocaleString()} ms` : val;
-                let colorClass = '';
-                if (!isNaN(numVal)) {
-                    if (numVal <= m.good) colorClass = 'ccm-score-green';
-                    else if (numVal <= m.poor) colorClass = 'ccm-score-orange';
-                    else colorClass = 'ccm-score-red';
-                }
-                html += `<tr><td>${m.label}</td><td class="${colorClass}" style="font-weight:600;">${display}</td></tr>`;
-            }
-        });
-        html += '</tbody></table>';
-        container.innerHTML = html;
-    }
-
-    function aiRenderOpportunities(opportunities, suffix) {
-        const container = $(`#ai-ps-opportunities-${suffix}`);
-        if (!container) return;
-
-        if (!opportunities.length) {
-            container.innerHTML = '<p class="ccm-success" style="padding: 0.5rem 0;">No significant opportunities found — great job!</p>';
-            return;
-        }
-
-        let html = '<table class="ccm-table"><thead><tr><th>Issue</th><th>Savings</th></tr></thead><tbody>';
-        opportunities.forEach(opp => {
-            const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms`
-                          : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '—');
-            html += `<tr><td>${opp.title || opp.id || 'Unknown'}</td><td>${savings}</td></tr>`;
-        });
-        html += '</tbody></table>';
-        container.innerHTML = html;
-
-        // Auto-open the accordion if there are opportunities
-        const accordion = container.closest('.ccm-ai-accordion');
-        if (accordion && opportunities.length) accordion.open = true;
-    }
-
-    /**
-     * Render results for a single strategy into the tabbed panels
-     */
-    function aiShowResultsForStrategy(data, strategy) {
-        aiRenderScores(data.scores || {}, strategy);
-        aiRenderMetrics(data.metrics || {}, strategy);
-        aiRenderOpportunities(data.opportunities || [], strategy);
-        const area = $('#ai-results-area');
-        if (area) area.style.display = 'block';
-    }
-
-    // ─── Run a single PageSpeed test ────────────
-
-    async function aiRunPageSpeed(url, strategy) {
-        const res = await ajax('ccm_tools_ai_hub_run_pagespeed', {
-            url: url,
-            strategy: strategy,
-            force: 1,
-        }, { timeout: 120000 });
-
-        const data = res.data || {};
-        aiHubState.resultIds[strategy] = data.result_id || data.id || null;
-        return data;
-    }
-
-    // ─── Test Only (runs both strategies, no AI) ────────────
-
-    async function aiTestOnly() {
-        const btn = $('#ai-ps-run-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
-
-        aiLogClear();
-        aiLog('Starting PageSpeed test (both strategies)…', 'step');
-
-        try {
-            const url = ($('#ai-ps-url') || {}).value || '';
-            aiLog(`Target URL: <strong>${url}</strong>`, 'info');
-
-            // Run mobile
-            aiLog('Testing Mobile…', 'step');
-            const mobileData = await aiRunPageSpeed(url, 'mobile');
-            aiShowResultsForStrategy(mobileData, 'mobile');
-            aiLog(`Mobile Performance: <strong>${mobileData.scores?.performance ?? '—'}</strong>`, 'info');
-
-            // Run desktop
-            aiLog('Testing Desktop…', 'step');
-            const desktopData = await aiRunPageSpeed(url, 'desktop');
-            aiShowResultsForStrategy(desktopData, 'desktop');
-            aiLog(`Desktop Performance: <strong>${desktopData.scores?.performance ?? '—'}</strong>`, 'info');
-
-            // Default to mobile tab
-            $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === 'mobile'));
-            $$('.ccm-ai-strategy-panel').forEach(p => {
-                p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
-            });
-
-            aiLog('PageSpeed tests complete!', 'success');
-            showNotification('PageSpeed tests complete (Mobile + Desktop)!', 'success');
-        } catch (err) {
-            aiLog(`Error: ${err.message || 'PageSpeed test failed.'}`, 'error');
-            showNotification(err.message || 'PageSpeed test failed.', 'error');
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = 'Test Only'; }
-        }
-    }
-
-    // ─── Step Progress UI ────────────
-
-    const AI_STEPS = [
-        { id: 'preflight',      label: 'Pre-flight Check' },
-        { id: 'snapshot',       label: 'Save Snapshot' },
-        { id: 'screenshots',    label: 'Screenshots' },
-        { id: 'test-mobile',    label: 'Test Mobile' },
-        { id: 'test-desktop',   label: 'Test Desktop' },
-        { id: 'analyze',        label: 'AI Analysis' },
-        { id: 'apply',          label: 'Apply Changes' },
-        { id: 'flush-cache',    label: 'Flush Caches' },
-        { id: 'retest-mobile',  label: 'Re-test Mobile' },
-        { id: 'retest-desktop', label: 'Re-test Desktop' },
-        { id: 'console-check',  label: 'Console Check' },
-        { id: 'visual-check',   label: 'Visual Check' },
-        { id: 'compare',        label: 'Compare Results' },
-    ];
-
-    function aiRenderSteps() {
-        const container = $('#ai-steps');
-        if (!container) return;
-        container.innerHTML = AI_STEPS.map(s =>
-            `<div class="ccm-ai-step" id="ai-step-${s.id}" data-status="pending">
-                <span class="ccm-ai-step-indicator"></span>
-                <span class="ccm-ai-step-label">${s.label}</span>
-                <span class="ccm-ai-step-status"></span>
-            </div>`
-        ).join('');
-        const progressEl = $('#ai-progress');
-        if (progressEl) progressEl.style.display = 'block';
-    }
-
-    function aiUpdateStep(stepId, status, detail) {
-        const el = $(`#ai-step-${stepId}`);
-        if (!el) return;
-        el.dataset.status = status; // pending | active | done | error | skipped
-        const statusEl = el.querySelector('.ccm-ai-step-status');
-        if (statusEl && detail) statusEl.textContent = detail;
-    }
-
-    // ─── Render AI analysis ────────────
-
-    function aiRenderAnalysis(data) {
-        const container = $('#ai-analysis-results');
-        if (!container) return;
-
-        const analysis = data.analysis || data;
-        let html = '';
-
-        if (analysis.summary) {
-            html += `<div style="background:var(--ccm-bg-light,#f9fafb);border-radius:6px;padding:1rem;margin-bottom:1rem;">
-                <strong>Summary</strong><p style="margin:0.5rem 0 0;">${analysis.summary}</p></div>`;
-        }
-
-        if (analysis.warnings && analysis.warnings.length) {
-            html += '<div style="margin-bottom:1rem;"><h4 style="margin:0 0 0.5rem;">⚠️ Warnings</h4><ul>';
-            analysis.warnings.forEach(w => { html += `<li>${w}</li>`; });
-            html += '</ul></div>';
-        }
-
-        if (data.tokens_used) {
-            html += `<p style="margin-top:1rem;font-size:0.8rem;opacity:0.6;">Tokens: ${Number(data.tokens_used).toLocaleString()} | Model: ${data.model || '?'} | Cost: ~$${data.estimated_cost || '?'}</p>`;
-        }
-
-        container.innerHTML = html;
-        container.style.display = html ? 'block' : 'none';
-    }
-
-    // ─── Fix Summary (auto vs manual) ────────────
-
-    function aiRenderFixSummary(recommendations, manualActions) {
-        const container = $('#ai-fix-summary');
-        if (!container) return [];
-
-        const autoFixes = (recommendations || []).filter(r => PERF_SETTING_KEYS.has(r.setting_key));
-        const manualFixes = (recommendations || []).filter(r => !PERF_SETTING_KEYS.has(r.setting_key));
-        const manual = [...manualFixes, ...(manualActions || []).map(a => ({ reason: a, setting_key: null, impact: 'info' }))];
-
-        let html = '';
-
-        // Auto-fixable (informational — no checkboxes, auto-applied)
-        if (autoFixes.length) {
-            html += `<div class="ccm-ai-fix-section ccm-ai-fix-auto">
-                <h4>⚡ Auto-Applying (${autoFixes.length})</h4>
-                <p class="ccm-text-muted" style="margin:0 0 0.75rem;">These changes are being applied automatically.</p>`;
-            autoFixes.forEach(fix => {
-                const displayValue = aiFormatValue(fix.recommended_value);
-                const impact = fix.impact || fix.estimated_impact || 'medium';
-                const risk = fix.risk || 'low';
-                html += `<div class="ccm-ai-fix-item">
-                    <div class="ccm-ai-fix-details">
-                        <strong>${aiSettingLabel(fix.setting_key)}</strong>
-                        <span class="ccm-badge ccm-badge-${impact === 'high' ? 'error' : (impact === 'medium' ? 'warning' : 'info')}">${impact} impact</span>
-                        <span class="ccm-badge ccm-badge-${risk === 'high' ? 'error' : (risk === 'medium' ? 'warning' : 'info')}">${risk} risk</span>
-                        <p class="ccm-text-muted" style="margin:0.25rem 0 0;">${fix.reason || ''}</p>
-                        <code style="word-break:break-all;">${fix.setting_key} → ${displayValue}</code>
-                    </div>
-                </div>`;
-            });
-            html += '</div>';
-        }
-
-        // Manual items
-        if (manual.length) {
-            html += `<div class="ccm-ai-fix-section ccm-ai-fix-manual" style="margin-top:1rem;">
-                <h4>🔧 Manual Fixes (${manual.length})</h4>
-                <p class="ccm-text-muted" style="margin:0 0 0.75rem;">These require manual action and cannot be applied automatically.</p>`;
-            manual.forEach(fix => {
-                html += `<div class="ccm-ai-fix-item ccm-ai-fix-item-manual">
-                    <div class="ccm-ai-fix-details">
-                        ${fix.setting_key ? `<strong>${fix.setting_key}</strong>` : ''}
-                        <p style="margin:0.25rem 0 0;">${fix.reason || fix}</p>
-                    </div>
-                </div>`;
-            });
-            html += '</div>';
-        }
-
-        if (!autoFixes.length && !manual.length) {
-            html = '<p class="ccm-success" style="padding:1rem;">No additional optimizations recommended — your site looks great!</p>';
-        }
-
-        container.innerHTML = html;
-        container.style.display = 'block';
-
-        // Return auto fixes for automatic application
-        return autoFixes;
-    }
-
-    /** Human-friendly label for perf setting keys */
-    function aiSettingLabel(key) {
-        const labels = {
-            defer_js: 'Defer JavaScript', delay_js: 'Delay JavaScript', preload_css: 'Async CSS Loading',
-            preconnect: 'Preconnect Hints', dns_prefetch: 'DNS Prefetch', remove_query_strings: 'Remove Query Strings',
-            disable_emoji: 'Disable Emoji Scripts', disable_dashicons: 'Disable Dashicons',
-            lazy_load_iframes: 'Lazy Load Iframes', youtube_facade: 'YouTube Lite Embeds',
-            lcp_fetchpriority: 'LCP Fetchpriority', lcp_preload: 'LCP Image Preload',
-            font_display_swap: 'Font Display: Swap',
-            speculation_rules: 'Speculation Rules', critical_css: 'Critical CSS',
-            critical_css_code: 'Critical CSS Code (generated)', preconnect_urls: 'Preconnect URLs',
-            dns_prefetch_urls: 'DNS Prefetch URLs', lcp_preload_url: 'LCP Image URL',
-            defer_js_excludes: 'Defer JS Exclude List', delay_js_excludes: 'Delay JS Exclude List',
-            preload_css_excludes: 'Async CSS Exclude List', delay_js_timeout: 'Delay JS Timeout',
-            speculation_eagerness: 'Speculation Eagerness', heartbeat_interval: 'Heartbeat Interval',
-            disable_jquery_migrate: 'Disable jQuery Migrate', disable_block_css: 'Disable Block CSS',
-            disable_woocommerce_cart_fragments: 'Disable Cart Fragments', reduce_heartbeat: 'Reduce Heartbeat',
-            disable_xmlrpc: 'Disable XML-RPC', disable_rsd_wlw: 'Remove RSD/WLW Links',
-            disable_shortlink: 'Remove Shortlink', disable_rest_api_links: 'Remove REST API Link',
-            disable_oembed: 'Disable oEmbed', enabled: 'Performance Optimizer',
-            video_lazy_load: 'Video Lazy Load', video_preload_none: 'Video Preload: None',
-            lazy_load_images: 'Lazy Load Images',
-            image_decoding_async: 'Image Decoding: Async',
-            prefetch_on_hover: 'Prefetch on Hover',
-            remove_generator_tag: 'Remove Generator Tag',
-            remove_adjacent_post_links: 'Remove Adjacent Post Links',
-            disable_admin_bar: 'Disable Admin Bar (Frontend)',
-            inline_small_scripts: 'Inline Small Scripts',
-            inline_small_styles: 'Inline Small Styles',
-            inline_threshold_kb: 'Inline Threshold (KB)',
-            inject_image_dimensions: 'Inject Image Dimensions',
-            inject_srcset: 'Inject Responsive srcset',
-            minify_html: 'Minify HTML Output',
-            preload_key_requests: 'Preload Key Requests',
-            preload_key_urls: 'Preload Key URLs',
-            disable_wp_embed: 'Disable wp-embed Script',
-            self_host_google_fonts: 'Self-host Google Fonts',
-            preload_css_bg_image: 'Preload LCP CSS Background Image',
-            preload_css_bg_url: 'LCP Background Image URL',
-            priority_hints_above_fold: 'Priority Hints (Above-fold Images)',
-            priority_hints_selectors: 'Priority Hints CSS Selectors',
-            delay_third_party: 'Delay Third-party Scripts',
-            delay_third_party_domains: 'Third-party Domains to Delay',
-            disable_gutenberg_frontend: 'Disable Gutenberg Frontend Assets',
-            woo_scripts_shop_only: 'WooCommerce Assets on Shop Pages Only',
-            cache_control_meta: 'Enable Cache-Control Header',
-            stale_while_revalidate: 'Stale-While-Revalidate',
-            // v7.29.0
-            disable_wp_cron: 'Throttle WP Cron',
-            cron_interval: 'Cron Check Interval',
-            disable_author_archives: 'Disable Author Archives',
-            // v7.30.0
-            passive_event_listeners: 'Passive Event Listeners',
-            warn_dom_size: 'DOM Size Warning',
-        };
-        return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    }
-
-    /** Format a recommended_value for display in the fix summary */
-    function aiFormatValue(value) {
-        if (Array.isArray(value)) {
-            if (value.length === 0) return '[]';
-            if (value.length <= 3) return JSON.stringify(value);
-            return `[${value.slice(0, 3).map(v => `"${v}"`).join(', ')}, …+${value.length - 3}]`;
-        }
-        if (typeof value === 'string' && value.length > 80) {
-            return `"${value.substring(0, 77)}…" (${value.length} chars)`;
-        }
-        return String(value);
-    }
-
-
-
-    // ─── Update page toggles in real time ────────────
-
-    function aiUpdatePageToggles(settings) {
-        if (!settings) return;
-
-        // Special ID mappings where key → DOM id doesn't follow the standard pattern
-        const idOverrides = {
-            enabled: 'perf-master-enable',
-        };
-
-        Object.entries(settings).forEach(([key, value]) => {
-            const domId = idOverrides[key] || `perf-${key.replace(/_/g, '-')}`;
-            const el = $(`#${domId}`);
-            if (!el) return;
-
-            if (el.type === 'checkbox') {
-                const newChecked = !!value;
-                if (el.checked !== newChecked) {
-                    el.checked = newChecked;
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            } else if (el.tagName === 'TEXTAREA') {
-                // Critical CSS code, URL lists (newline-separated)
-                el.value = Array.isArray(value) ? value.join('\n') : String(value || '');
-            } else if (el.tagName === 'SELECT') {
-                el.value = String(value || '');
-            } else if (el.type === 'text' || el.type === 'url' || el.type === 'number') {
-                // Text inputs for URLs, comma-separated lists, numbers
-                if (Array.isArray(value)) {
-                    el.value = value.join(', ');
-                } else {
-                    el.value = String(value || '');
-                }
-            }
-        });
-    }
-
-    // ─── Before / After Comparison ────────────
-
-    function aiRenderBeforeAfter(before, after) {
-        const container = $('#ai-before-after');
-        if (!container) return;
-
-        const strategies = ['mobile', 'desktop'];
-        const categories = ['performance', 'accessibility', 'best_practices', 'seo'];
-
-        let html = '<h3 style="margin-bottom:1rem;">Before / After Comparison</h3>';
-        html += '<div class="ccm-ai-comparison">';
-
-        strategies.forEach(strategy => {
-            const b = (before || {})[strategy] || {};
-            const a = (after || {})[strategy] || {};
-            html += `<div class="ccm-ai-comparison-col">
-                <h4 style="text-transform:capitalize;margin-bottom:0.5rem;">${strategy}</h4>
-                <table class="ccm-table"><thead><tr><th>Category</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>`;
-
-            categories.forEach(cat => {
-                const bv = b[cat] ?? '—';
-                const av = a[cat] ?? '—';
-                const bNum = parseInt(bv, 10);
-                const aNum = parseInt(av, 10);
-                let change = '—';
-                let changeClass = '';
-                if (!isNaN(bNum) && !isNaN(aNum)) {
-                    const diff = aNum - bNum;
-                    change = (diff > 0 ? '+' : '') + diff;
-                    changeClass = diff > 0 ? 'ccm-score-green' : (diff < 0 ? 'ccm-score-red' : '');
-                }
-                const label = cat === 'best_practices' ? 'Best Practices' : cat.charAt(0).toUpperCase() + cat.slice(1);
-                const beforeColor = aiScoreColorClass(bv);
-                const afterColor = aiScoreColorClass(av);
-                html += `<tr><td>${label}</td><td class="${beforeColor}">${bv}</td><td class="${afterColor}"><strong>${av}</strong></td><td class="${changeClass}"><strong>${change}</strong></td></tr>`;
-            });
-
-            html += '</tbody></table></div>';
-        });
-
-        html += '</div>';
-        container.innerHTML = html;
-        container.style.display = 'block';
-    }
-
-    /**
-     * Show baseline (before) screenshots immediately — after column stays as placeholder.
-     */
-    function aiShowBaselineScreenshots(data) {
-        const container = $('#ai-screenshots');
-        if (!container || !data) return;
-
-        const desktopSrc = data.desktop?.url || data.desktop?.data_uri || '';
-        const mobileSrc = data.mobile?.url || data.mobile?.data_uri || '';
-        if (!desktopSrc && !mobileSrc) return;
-
-        let html = '<h3>Page Screenshots</h3>';
-
-        // Desktop row
-        if (desktopSrc) {
-            html += `<h4 class="ccm-screenshot-heading">DESKTOP (1920×1080) — above the fold · click to view full page</h4>
-            <div class="ccm-screenshot-row">
-                <div class="ccm-screenshot-col">
-                    <div class="ccm-screenshot-label">Before</div>
-                    <img src="${desktopSrc}" alt="Before — Desktop"
-                         class="ccm-screenshot-img" data-viewport="desktop" data-phase="before" />
-                </div>
-                <div class="ccm-screenshot-col ccm-screenshot-placeholder" id="ss-after-desktop">
-                    <div class="ccm-screenshot-label ccm-screenshot-label-after">After</div>
-                    <div class="ccm-screenshot-waiting">
-                        <div class="ccm-spinner ccm-spinner-small"></div>
-                        <span>Waiting for optimisation…</span>
-                    </div>
-                </div>
-            </div>`;
-        }
-
-        // Mobile row
-        if (mobileSrc) {
-            html += `<h4 class="ccm-screenshot-heading">MOBILE (375×812) — above the fold · click to view full page</h4>
-            <div class="ccm-screenshot-row ccm-screenshot-row-mobile">
-                <div class="ccm-screenshot-col ccm-screenshot-col-mobile">
-                    <div class="ccm-screenshot-label">Before</div>
-                    <img src="${mobileSrc}" alt="Before — Mobile"
-                         class="ccm-screenshot-img" data-viewport="mobile" data-phase="before" />
-                </div>
-                <div class="ccm-screenshot-col ccm-screenshot-col-mobile ccm-screenshot-placeholder" id="ss-after-mobile">
-                    <div class="ccm-screenshot-label ccm-screenshot-label-after">After</div>
-                    <div class="ccm-screenshot-waiting">
-                        <div class="ccm-spinner ccm-spinner-small"></div>
-                        <span>Waiting for optimisation…</span>
-                    </div>
-                </div>
-            </div>`;
-        }
-
-        container.innerHTML = html;
-        container.style.display = 'block';
-
-        // Scroll screenshots into view so the user sees them immediately
-        container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    /**
-     * Fill in the "After" column with captured screenshots and enable lightbox.
-     * @param {object} data - Screenshot data with desktop/mobile URLs
-     * @param {number} [iteration] - Optional iteration number to display in label
-     */
-    function aiShowAfterScreenshots(data, iteration) {
-        if (!data) return;
-
-        const afterDesktopSrc = data.desktop?.url || data.desktop?.data_uri || '';
-        const afterMobileSrc = data.mobile?.url || data.mobile?.data_uri || '';
-        const iterLabel = iteration ? ` <small>(Iter ${iteration})</small>` : '';
-
-        if (afterDesktopSrc) {
-            const el = document.getElementById('ss-after-desktop');
-            if (el) {
-                el.classList.remove('ccm-screenshot-placeholder');
-                el.innerHTML = `<div class="ccm-screenshot-label ccm-screenshot-label-after">After${iterLabel}</div>` +
-                    `<img src="${afterDesktopSrc}" alt="After — Desktop"
-                          class="ccm-screenshot-img" data-viewport="desktop" data-phase="after" />`;
-            }
-        }
-
-        if (afterMobileSrc) {
-            const el = document.getElementById('ss-after-mobile');
-            if (el) {
-                el.classList.remove('ccm-screenshot-placeholder');
-                el.innerHTML = `<div class="ccm-screenshot-label ccm-screenshot-label-after">After${iterLabel}</div>` +
-                    `<img src="${afterMobileSrc}" alt="After — Mobile"
-                          class="ccm-screenshot-img" data-viewport="mobile" data-phase="after" />`;
-            }
-        }
-
-        // Add "Compare" button hint
-        const container = $('#ai-screenshots');
-        if (container && !container.querySelector('.ccm-screenshot-hint')) {
-            container.insertAdjacentHTML('afterbegin',
-                '<p class="ccm-screenshot-hint">Click any image to open side-by-side lightbox comparison.</p>');
-        }
-
-        // Scroll screenshots into view only on first after-screenshot (not every iteration)
-        if (container && !container.dataset.afterScrolled) {
-            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            container.dataset.afterScrolled = '1';
-        }
-    }
-
-    /**
-     * Lightbox overlay for side-by-side screenshot comparison.
-     * Shows Before + After for the clicked viewport (desktop or mobile).
-     */
-    function aiOpenScreenshotLightbox(viewport) {
-        const container = $('#ai-screenshots');
-        if (!container) return;
-
-        const imgs = container.querySelectorAll(`.ccm-screenshot-img[data-viewport="${viewport}"]`);
-        const beforeImg = [...imgs].find(i => i.dataset.phase === 'before');
-        const afterImg = [...imgs].find(i => i.dataset.phase === 'after');
-        if (!beforeImg) return;
-
-        // Build overlay
-        const overlay = document.createElement('div');
-        overlay.className = 'ccm-lightbox-overlay';
-
-        const isMobile = viewport === 'mobile';
-        const label = isMobile ? 'Mobile (375×812)' : 'Desktop (1920×1080)';
-
-        let inner = `
-            <div class="ccm-lightbox-header">
-                <h3>${label}</h3>
-                <button class="ccm-lightbox-close" title="Close (Esc)">×</button>
-            </div>
-            <div class="ccm-lightbox-body${isMobile ? ' ccm-lightbox-body-mobile' : ''}">
-                <div class="ccm-lightbox-panel">
-                    <div class="ccm-lightbox-label">Before</div>
-                    <img src="${beforeImg.src}" alt="Before — ${label}" />
-                </div>`;
-
-        if (afterImg) {
-            inner += `
-                <div class="ccm-lightbox-panel">
-                    <div class="ccm-lightbox-label ccm-lightbox-label-after">After</div>
-                    <img src="${afterImg.src}" alt="After — ${label}" />
-                </div>`;
-        }
-
-        inner += '</div>';
-        overlay.innerHTML = inner;
-        document.body.appendChild(overlay);
-
-        // Trap focus & lock scroll
-        document.body.style.overflow = 'hidden';
-
-        // Close handlers
-        const close = () => { overlay.remove(); document.body.style.overflow = ''; };
-        overlay.querySelector('.ccm-lightbox-close').addEventListener('click', close);
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-        const onKey = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
-        document.addEventListener('keydown', onKey);
-    }
-
-    // Delegate click on screenshot images → open lightbox
-    document.addEventListener('click', (e) => {
-        const img = e.target.closest('.ccm-screenshot-img');
-        if (!img) return;
-        const viewport = img.dataset.viewport;
-        if (viewport) aiOpenScreenshotLightbox(viewport);
-    });
-
-    // ─── One-Click Optimize (iterative improvement loop with rollback) ────────────
-
-    const AI_MAX_ITERATIONS_FALLBACK = 10; // Fallback if hub doesn't provide a value
-    const PSI_NOISE = 3; // PageSpeed variance tolerance (±3 points is normal)
-
-    /**
-     * Build context about settings that failed in this session.
-     * This is CRITICAL for the AI to avoid recommending the same settings again.
-     */
-    function buildSessionFailedContext(failedBatches) {
-        if (!failedBatches.length) return '';
-        let ctx = '\n## FAILED SETTINGS IN THIS SESSION — DO NOT RECOMMEND THESE AGAIN\n';
-        ctx += 'The following settings were applied and ROLLED BACK because they caused score regression, console errors, or layout issues.\n';
-        ctx += '**You MUST NOT recommend any of these settings again.** Recommend DIFFERENT settings instead.\n\n';
-        const allFailedKeys = new Set();
-        failedBatches.forEach((batch, i) => {
-            ctx += `### Failed Iteration ${batch.iteration}: ${batch.reason}\n`;
-            ctx += `Score impact: Mobile ${batch.mobile_delta >= 0 ? '+' : ''}${batch.mobile_delta}, Desktop ${batch.desktop_delta >= 0 ? '+' : ''}${batch.desktop_delta}\n`;
-            batch.settings.forEach(s => {
-                ctx += `- \`${s.key}\`: set to ${JSON.stringify(s.to)} — **ROLLED BACK**\n`;
-                allFailedKeys.add(s.key);
-            });
-            ctx += '\n';
-        });
-        ctx += `**Banned setting keys for this session:** ${[...allFailedKeys].map(k => '`' + k + '`').join(', ')}\n\n`;
-        return ctx;
-    }
-
-    /**
-     * Compare an AI-recommended value to a current setting value with the
-     * same coercion the server applies (bool, int, string, array of strings).
-     * Returns true if applying the recommendation would be a no-op.
-     */
-    function aiValuesEqual(currentVal, recommendedVal) {
-        if (typeof currentVal === 'boolean') {
-            return Boolean(recommendedVal) === currentVal;
-        }
-        if (typeof currentVal === 'number') {
-            const n = Number(recommendedVal);
-            return Number.isFinite(n) && n === currentVal;
-        }
-        if (Array.isArray(currentVal)) {
-            // Accept array OR comma/space/newline-separated string for the recommendation
-            let recArr = recommendedVal;
-            if (typeof recommendedVal === 'string') {
-                recArr = recommendedVal.split(/[,\s\n]+/).map(s => s.trim()).filter(Boolean);
-            }
-            if (!Array.isArray(recArr)) return false;
-            const cur = currentVal.map(s => String(s).trim()).filter(Boolean).sort();
-            const rec = recArr.map(s => String(s).trim()).filter(Boolean).sort();
-            if (cur.length !== rec.length) return false;
-            return cur.every((v, i) => v === rec[i]);
-        }
-        // String or null
-        return String(currentVal ?? '').trim() === String(recommendedVal ?? '').trim();
-    }
-
-    /**
-     * Build a section of AI context that lists settings the AI has recommended
-     * but which are already at the recommended value. Tells the model to stop
-     * suggesting them so iterations aren't wasted.
-     */
-    function buildSessionAlreadyAppliedContext(alreadyApplied) {
-        if (!alreadyApplied.size) return '';
-        let ctx = '\n## SETTINGS ALREADY AT RECOMMENDED VALUE — DO NOT RECOMMEND THESE AGAIN\n';
-        ctx += 'You previously recommended these settings, and they are already configured at the value you suggested. ';
-        ctx += 'Recommending them again wastes an iteration. Pick **different** levers next time.\n\n';
-        ctx += [...alreadyApplied].map(k => '- `' + k + '`').join('\n') + '\n\n';
-        return ctx;
-    }
-
-    /**
-     * Build context describing settings that caused regressions on THIS URL in
-     * previous optimisation runs (persisted across sessions). The AI must not
-     * recommend them again — they are already proven incompatible with the site.
-     */
-    function buildPersistentKnownBadContext(knownBad) {
-        if (!knownBad.size) return '';
-        let ctx = '\n## SETTINGS PROVEN INCOMPATIBLE WITH THIS SITE — DO NOT RECOMMEND THESE\n';
-        ctx += 'These settings have previously been applied to this URL and caused score regressions ';
-        ctx += '(rolled back automatically). They are recorded as site-incompatible and **must not** be recommended again.\n\n';
-        ctx += [...knownBad].map(k => '- `' + k + '`').join('\n') + '\n\n';
-        return ctx;
-    }
-
-    /**
-     * Group related settings so paired toggles+data are tested together.
-     * e.g. preload_css + critical_css + critical_css_code applied as one unit.
-     */
-    function groupRelatedFixes(fixes) {
-        const SETTING_PARENT = {
-            'critical_css': 'preload_css',
-            'critical_css_code': 'preload_css',
-            'preload_css_excludes': 'preload_css',
-            'preconnect_urls': 'preconnect',
-            'dns_prefetch_urls': 'dns_prefetch',
-            'defer_js_excludes': 'defer_js',
-            'delay_js_excludes': 'delay_js',
-            'delay_js_timeout': 'delay_js',
-            'lcp_preload_url': 'lcp_preload',
-            'heartbeat_interval': 'reduce_heartbeat',
-            'speculation_eagerness': 'speculation_rules',
-            'priority_hints_selectors': 'priority_hints_above_fold',
-            'preload_key_urls': 'preload_key_requests',
-            'delay_third_party_domains': 'delay_third_party',
-        };
-        const groupMap = new Map();
-        for (const fix of fixes) {
-            const groupKey = SETTING_PARENT[fix.setting_key] || fix.setting_key;
-            if (!groupMap.has(groupKey)) groupMap.set(groupKey, []);
-            groupMap.get(groupKey).push(fix);
-        }
-        return [...groupMap.values()];
-    }
-
-    /**
-     * HTTP smoke test — fetches the URL bypassing all caches and checks:
-     *   1. HTTP 200 response
-     *   2. No PHP fatal/parse errors in the body
-     *   3. Page contains </html> (not truncated)
-     *   4. Body size is ≥ 40% of the baseline (not a blank/error page)
-     *
-     * @param {string} url              The page URL to test
-     * @param {number} baselineBodySize Byte count from pre-optimization baseline (0 == skip size check)
-     * @returns {Promise<{ok: boolean, reason: string}>}
-     */
-    async function aiHttpSmokeTest(url, baselineBodySize = 0) {
-        try {
-            const controller = new AbortController();
-            const tid = setTimeout(() => controller.abort(), 30000);
-            const bustUrl = url + (url.includes('?') ? '&' : '?') + '_ccm_nc=' + Date.now();
-            const res = await fetch(bustUrl, {
-                signal:  controller.signal,
-                headers: { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
-                cache:   'no-store',
-            });
-            clearTimeout(tid);
-
-            if (res.status !== 200) {
-                return { ok: false, reason: `HTTP ${res.status}` };
-            }
-
-            const body = await res.text();
-
-            if (/Fatal error:|Parse error:|Uncaught Error:/i.test(body)) {
-                const m = body.match(/(Fatal error:|Parse error:|Uncaught Error:)[^\n<]*/i);
-                return { ok: false, reason: `PHP error: ${m ? m[0].trim() : 'detected'}` };
-            }
-
-            if (!body.includes('</html>')) {
-                return { ok: false, reason: 'Missing </html> — page may be truncated' };
-            }
-
-            if (baselineBodySize > 0 && body.length < baselineBodySize * 0.4) {
-                return { ok: false, reason: `Body too small: ${body.length.toLocaleString()}B vs baseline ${baselineBodySize.toLocaleString()}B` };
-            }
-
-            return { ok: true, reason: `HTTP 200, ${Math.round(body.length / 1024)}KB` };
-        } catch (err) {
-            if (err.name === 'AbortError') return { ok: false, reason: 'Timeout (30s)' };
-            return { ok: false, reason: `Fetch failed: ${err.message}` };
-        }
-    }
-
-    async function aiOneClickOptimize() {
-        const btn = $('#ai-one-click-btn');
-        if (btn) { btn.disabled = true; btn.textContent = 'Optimizing…'; }
-
-        // Reset state
-        aiHubState.beforeScores = {};
-        aiHubState.afterScores = {};
-        aiHubState.resultIds = {};
-        const fixSummary = $('#ai-fix-summary');
-        const beforeAfter = $('#ai-before-after');
-        const analysisResults = $('#ai-analysis-results');
-        const remainingRecs = $('#ai-remaining-recommendations');
-        const screenshots = $('#ai-screenshots');
-        if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
-        if (beforeAfter) { beforeAfter.style.display = 'none'; beforeAfter.innerHTML = ''; }
-        if (analysisResults) { analysisResults.style.display = 'none'; analysisResults.innerHTML = ''; }
-        if (remainingRecs) { remainingRecs.style.display = 'none'; remainingRecs.innerHTML = ''; }
-        if (screenshots) { screenshots.style.display = 'none'; screenshots.innerHTML = ''; }
-
-        // Render step indicators & clear log
-        aiRenderSteps();
-        aiLogClear();
-        aiLog('Starting One-Click Optimize…', 'step');
-
-        const url = ($('#ai-ps-url') || {}).value || '';
-        aiLog(`Target URL: <strong>${url}</strong>`, 'info');
-
-        // Track final opportunities for remaining recommendations
-        let lastMobileOpportunities = [];
-        let lastDesktopOpportunities = [];
-        let lastManualActions = [];
-        let allChanges = []; // accumulate across iterations
-        let wasRolledBack = false;
-
-        // Session-level tracking of failed settings for AI context
-        const sessionFailedBatches = [];
-        // Keys the AI has recommended that are already at the recommended value
-        // (across iterations). Fed back to the AI so it stops re-suggesting them.
-        const sessionAlreadyAppliedKeys = new Set();
-        // Settings that have caused regressions on THIS URL in past runs
-        // (loaded from server option). Filtered out before apply.
-        const persistentKnownBadKeys = new Set();
-        // Fire-and-forget recorder so a setting that just regressed gets remembered
-        // for next time. Failures are non-fatal — the in-session ban still applies.
-        const recordKnownBad = (settingKey, mobileDelta, desktopDelta = 0) => {
-            persistentKnownBadKeys.add(settingKey);
-            ajax('ccm_tools_ai_record_known_bad', {
-                url,
-                setting_key: settingKey,
-                mobile_delta: mobileDelta | 0,
-                desktop_delta: desktopDelta | 0,
-            }, { timeout: 5000 }).catch(() => { /* non-fatal */ });
-        };
-        let maxIterations = AI_MAX_ITERATIONS_FALLBACK;
-
-        // Load persistent known-bad settings for this URL (from previous runs).
-        try {
-            const knownBadRes = await ajax('ccm_tools_ai_get_known_bad', { url }, { timeout: 10000 });
-            const known = (knownBadRes && knownBadRes.data && knownBadRes.data.known_bad) || {};
-            Object.keys(known).forEach(k => persistentKnownBadKeys.add(k));
-            if (persistentKnownBadKeys.size > 0) {
-                aiLog(`Loaded <strong>${persistentKnownBadKeys.size}</strong> known-bad setting(s) from previous runs on this URL — they will be filtered out: ${[...persistentKnownBadKeys].map(k => '<code>' + k + '</code>').join(', ')}`, 'info');
-            }
-        } catch (kbErr) {
-            // Non-fatal — continue without persistent learning
-            aiLog(`Could not load known-bad setting list: ${kbErr.message}`, 'warn');
-        }
-
-        try {
-            // ── Step 0: Pre-flight — Check & enable server-side tools ──
-            aiUpdateStep('preflight', 'active', 'Checking tools…');
-            aiLog('Running pre-flight tool checks…', 'step');
-            try {
-                const preflightRes = await ajax('ccm_tools_ai_preflight', {}, { timeout: 15000 });
-                const tools = preflightRes.data || {};
-                let toolsEnabled = 0;
-
-                // Infra changes (.htaccess/WebP/Redis/Cloudflare) are applied before the
-                // settings snapshot and are NEVER reverted by any rollback path — a bad
-                // .htaccess or Redis drop-in can leave the site broken with no recovery.
-                // AI Optimize no longer auto-enables them; surface a one-time notice and
-                // leave enabling to the user via the relevant tool's own tab.
-                aiLog('Infrastructure tools (.htaccess, WebP, Redis, Cloudflare) are no longer auto-enabled by AI Optimize — they aren\'t covered by rollback, so enable them manually from their own tabs if desired.', 'info');
-
-                // .htaccess
-                if (tools.htaccess && !tools.htaccess.applied && tools.htaccess.writable) {
-                    aiLog('.htaccess optimizations not applied — enable manually via the .htaccess tool if desired.', 'info');
-                } else if (tools.htaccess?.applied) {
-                    aiLog('.htaccess optimizations already applied ✓', 'info');
-                }
-
-                // WebP
-                if (tools.webp?.available && !tools.webp?.enabled) {
-                    aiLog('WebP converter not enabled — enable manually via the WebP tool if desired.', 'info');
-                } else if (tools.webp?.enabled) {
-                    aiLog('WebP conversion already enabled ✓', 'info');
-                } else if (!tools.webp?.available) {
-                    aiLog('WebP not available (no GD/ImageMagick with WebP support)', 'info');
-                }
-
-                // Redis
-                if (tools.redis?.extension && !tools.redis?.dropin) {
-                    aiLog('Redis extension available but drop-in not installed — enable manually via the Redis tool if desired.', 'info');
-                } else if (tools.redis?.dropin) {
-                    aiLog('Redis object cache active ✓', 'info');
-                } else {
-                    aiLog('Redis not available on this server', 'info');
-                }
-
-                // Performance optimizer master toggle
-                if (tools.performance && !tools.performance.enabled) {
-                    aiLog('Performance Optimizer disabled — enabling…', 'warn');
-                    try {
-                        await ajax('ccm_tools_ai_enable_tool', { tool: 'performance' }, { timeout: 10000 });
-                        aiLog('Performance Optimizer enabled.', 'success');
-                        toolsEnabled++;
-                        // Live-update the master toggle on the page
-                        aiUpdatePageToggles({ enabled: true });
-                    } catch (e) { aiLog(`Perf enable failed: ${e.message}`, 'warn'); }
-                }
-
-                // Database status note
-                if (tools.database?.needs_optimization) {
-                    aiLog(`Database: ${tools.database.tables_needing_optimization} table(s) need optimization (InnoDB/utf8mb4) — consider running Database tools.`, 'warn');
-                }
-
-                // Cloudflare optimization
-                if (tools.cloudflare?.connected && !tools.cloudflare?.optimized) {
-                    aiLog('Cloudflare connected but not fully optimized — enable recommended settings (Brotli, Early Hints, HTTP/3…) manually via the Cloudflare tab if desired.', 'info');
-                } else if (tools.cloudflare?.connected && tools.cloudflare?.optimized) {
-                    aiLog('Cloudflare performance settings optimized ✓', 'info');
-                } else if (tools.cloudflare?.available && !tools.cloudflare?.connected) {
-                    aiLog('Cloudflare available but not connected — connect via Cloudflare tab for edge caching + Brotli + Early Hints', 'info');
-                }
-
-                const msg = toolsEnabled > 0
-                    ? `Enabled ${toolsEnabled} tool(s) for better baseline`
-                    : 'All tools OK';
-                aiUpdateStep('preflight', 'done', msg);
-                if (toolsEnabled > 0) {
-                    aiLog(`Pre-flight: enabled ${toolsEnabled} server-side tool(s). Waiting 3s for changes to take effect…`, 'info');
-                    await aiSleep(3000);
-                } else {
-                    aiLog('Pre-flight: all server-side tools already configured ✓', 'success');
-                }
-            } catch (e) {
-                aiLog(`Pre-flight check failed: ${e.message} — continuing anyway`, 'warn');
-                aiUpdateStep('preflight', 'done', 'Skipped');
-            }
-
-            // ── Step 1: Save Settings Snapshot (for rollback) ──
-            aiUpdateStep('snapshot', 'active', 'Saving…');
-            aiLog('Saving settings snapshot for rollback safety…', 'step');
-            await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
-            aiUpdateStep('snapshot', 'done', 'Saved');
-            aiLog('Snapshot saved.', 'success');
-
-            // ── Kick off Screenshots + Console Check in background (parallel with PSI tests) ──
-            aiUpdateStep('screenshots', 'active', 'Capturing…');
-            aiLog('Capturing baseline screenshots + console check in background…', 'info');
-
-            // Screenshot promise (runs in background) with resolved flag
-            let screenshotResolved = false;
-            const screenshotPromise = (async () => {
-                try {
-                    const ssRes = await ajax('ccm_tools_ai_hub_screenshot', { url, phase: 'before' }, { timeout: 300000 });
-                    screenshotResolved = true;
-                    return ssRes.data || null;
-                } catch (e) {
-                    screenshotResolved = true;
-                    aiLog(`Baseline screenshot capture failed: ${e.message} — continuing without visual comparison`, 'warn');
-                    return null;
-                }
-            })();
-
-            // Console check promise (runs in background)
-            const consolePromise = (async () => {
-                try {
-                    const baselineConsole = await ajax('ccm_tools_ai_hub_console_check', {
-                        url: url,
-                        wait_seconds: 12,
-                    }, { timeout: 60000 });
-                    return baselineConsole.data || {};
-                } catch (e) {
-                    aiLog(`Baseline console check failed: ${e.message} — continuing without baseline`, 'warn');
-                    return {};
-                }
-            })();
-
-            // ── Step 2: Test Mobile (baseline) — runs while screenshots/console capture ──
-            aiUpdateStep('test-mobile', 'active', 'Running…');
-            aiLog('Running Mobile PageSpeed test…', 'step');
-            const mobileData = await aiRunPageSpeed(url, 'mobile');
-            aiShowResultsForStrategy(mobileData, 'mobile');
-            aiHubState.beforeScores.mobile = mobileData.scores || {};
-            aiHubState.lastResultId = aiHubState.resultIds.mobile;
-            lastMobileOpportunities = mobileData.opportunities || [];
-            const mobilePerf = mobileData.scores?.performance ?? '—';
-            aiUpdateStep('test-mobile', 'done', `Perf: ${mobilePerf}`);
-            aiLog(`Mobile scores — Performance: <strong>${mobilePerf}</strong>, LCP: ${mobileData.metrics?.lcp_ms ?? '—'}ms, CLS: ${mobileData.metrics?.cls ?? '—'}`, 'info');
-
-            // ── Check if screenshots finished during Mobile test ──
-            // (show them ASAP for user feedback — don't wait for Desktop test)
-            let baselineScreenshots = null;
-            let screenshotRunId = '';
-            if (screenshotResolved) {
-                baselineScreenshots = await screenshotPromise;
-                screenshotRunId = baselineScreenshots?.run_id || '';
-                const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
-                const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
-                if (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri) {
-                    aiLog(`Baseline desktop screenshot captured (${dkSize}KB, ${baselineScreenshots.desktop.format || 'jpeg'})`, 'success');
-                }
-                if (baselineScreenshots?.mobile?.url || baselineScreenshots?.mobile?.data_uri) {
-                    aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format || 'jpeg'})`, 'success');
-                }
-                aiShowBaselineScreenshots(baselineScreenshots);
-                aiUpdateStep('screenshots', 'done', 'Captured');
-            }
-
-            // ── Step 3: Test Desktop (baseline) ──
-            aiUpdateStep('test-desktop', 'active', 'Running…');
-            aiLog('Running Desktop PageSpeed test…', 'step');
-            const desktopData = await aiRunPageSpeed(url, 'desktop');
-            aiShowResultsForStrategy(desktopData, 'desktop');
-            aiHubState.beforeScores.desktop = desktopData.scores || {};
-            lastDesktopOpportunities = desktopData.opportunities || [];
-            const desktopPerf = desktopData.scores?.performance ?? '—';
-            aiUpdateStep('test-desktop', 'done', `Perf: ${desktopPerf}`);
-            aiLog(`Desktop scores — Performance: <strong>${desktopPerf}</strong>, LCP: ${desktopData.metrics?.lcp_ms ?? '—'}ms, CLS: ${desktopData.metrics?.cls ?? '—'}`, 'info');
-
-            // Show results (default mobile tab)
-            $$('.ccm-ai-tab').forEach(t => t.classList.toggle('active', t.dataset.strategy === 'mobile'));
-            $$('.ccm-ai-strategy-panel').forEach(p => {
-                p.style.display = p.id === 'ai-results-mobile' ? 'block' : 'none';
-            });
-
-            // ── Await Screenshots if not yet resolved (should be done by now) ──
-            if (!baselineScreenshots) {
-                baselineScreenshots = await screenshotPromise;
-                screenshotRunId = baselineScreenshots?.run_id || '';
-                if (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri) {
-                    const dkSize = Math.round((baselineScreenshots?.desktop?.size_bytes || 0) / 1024);
-                    const mbSize = Math.round((baselineScreenshots?.mobile?.size_bytes || 0) / 1024);
-                    aiLog(`Baseline desktop screenshot captured (${dkSize}KB, ${baselineScreenshots.desktop.format || 'jpeg'})`, 'success');
-                    if (baselineScreenshots?.mobile?.url || baselineScreenshots?.mobile?.data_uri) {
-                        aiLog(`Baseline mobile screenshot captured (${mbSize}KB, ${baselineScreenshots.mobile.format || 'jpeg'})`, 'success');
-                    }
-                    aiShowBaselineScreenshots(baselineScreenshots);
-                    aiUpdateStep('screenshots', 'done', 'Captured');
-                } else {
-                    aiUpdateStep('screenshots', 'done', 'Skipped');
-                }
-            }
-
-            // ── Await Baseline Console Check results ──
-            let baselineConsoleErrors = [];
-            const consoleData = await consolePromise;
-            baselineConsoleErrors = consoleData.errors || [];
-            const baseWarnCount = (consoleData.warnings || []).length;
-            if (baselineConsoleErrors.length > 0) {
-                aiLog(`Baseline: ${baselineConsoleErrors.length} pre-existing console error(s) detected (will be excluded from post-change diff)`, 'warn');
-                baselineConsoleErrors.forEach(e => aiLog(`  Pre-existing: ${e.message} <small>(${e.source})</small>`, 'info'));
-            } else {
-                aiLog(`Baseline: no console errors ✓${baseWarnCount > 0 ? ` (${baseWarnCount} warning(s))` : ''}`, 'success');
-            }
-
-            // Track snapshot scores (updated after each successful keep)
-            let snapshotMobilePerf = mobileData.scores?.performance ?? 0;
-            let snapshotDesktopPerf = desktopData.scores?.performance ?? 0;
-            let consoleErrorContext = ''; // accumulated for AI context
-            let iteration = 0;
-            let hasApplied = false;
-
-            // Capture baseline body size for HTTP smoke-test comparison
-            let baselineBodySize = 0;
-            try {
-                const bsRes = await fetch(url + (url.includes('?') ? '&' : '?') + '_ccm_nc=' + Date.now(), { cache: 'no-store' });
-                const bsText = await bsRes.text();
-                baselineBodySize = bsText.length;
-                aiLog(`Baseline body size: ${Math.round(baselineBodySize / 1024)}KB`, 'info');
-            } catch (_) { /* non-fatal — smoke test will skip size check */ }
-
-            // ── Iterative improvement loop ──
-            while (iteration < maxIterations) {
-                iteration++;
-                const iterLabel = iteration > 1 ? ` (Iter ${iteration})` : '';
-                if (iteration > 1) {
-                    aiLog(`── Iteration ${iteration}/${maxIterations} ──`, 'step');
-                }
-
-                // ── AI Analysis ──
-                aiUpdateStep('analyze', 'active', `Analyzing${iterLabel}…`);
-                aiLog(`Sending results to AI for analysis${iterLabel}…`, 'ai');
-                const analysisLoading = $('#ai-analysis-loading');
-                if (analysisLoading) analysisLoading.style.display = 'block';
-
-                // Build comprehensive AI context: console errors + visual issues + failed settings + PSI opportunities
-                let aiSessionContext = consoleErrorContext || '';
-                const failedCtx = buildSessionFailedContext(sessionFailedBatches);
-                if (failedCtx) aiSessionContext += failedCtx;
-                const alreadyAppliedCtx = buildSessionAlreadyAppliedContext(sessionAlreadyAppliedKeys);
-                if (alreadyAppliedCtx) aiSessionContext += alreadyAppliedCtx;
-                const persistBadCtx = buildPersistentKnownBadContext(persistentKnownBadKeys);
-                if (persistBadCtx) aiSessionContext += persistBadCtx;
-
-                // Build PSI opportunity → CCM settings map for AI
-                const psiCtx = buildPsiOpportunityContext(lastMobileOpportunities, lastDesktopOpportunities);
-                if (psiCtx) aiSessionContext += psiCtx;
-
-                const analysisRes = await ajax('ccm_tools_ai_hub_ai_analyze', {
-                    result_id: aiHubState.resultIds.mobile || aiHubState.lastResultId,
-                    desktop_result_id: aiHubState.resultIds.desktop || 0,
-                    url: url,
-                    console_errors: aiSessionContext,
-                    mobile_opportunities: JSON.stringify((lastMobileOpportunities || []).slice(0, 20)),
-                    desktop_opportunities: JSON.stringify((lastDesktopOpportunities || []).slice(0, 20)),
-                }, { timeout: 120000 });
-
-                if (analysisLoading) analysisLoading.style.display = 'none';
-
-                const analysisData = analysisRes.data || {};
-                const analysis = analysisData.analysis || analysisData;
-                aiRenderAnalysis(analysisData);
-
-                // Read max_iterations from hub if provided (first iteration only)
-                if (iteration === 1 && analysisData.max_iterations && analysisData.max_iterations > 0) {
-                    maxIterations = analysisData.max_iterations;
-                    aiLog(`Hub max iterations: ${maxIterations}`, 'info');
-                }
-
-                const recCount = (analysis.recommendations || []).length;
-                const manualCount = (analysis.manual_actions || []).length;
-                lastManualActions = analysis.manual_actions || [];
-                aiUpdateStep('analyze', 'done', `${recCount} recommendations${iterLabel}`);
-                aiLog(`AI returned <strong>${recCount}</strong> auto-fixable + <strong>${manualCount}</strong> manual recommendations.`, 'ai');
-
-                if (analysis.summary) {
-                    aiLog(`Summary: ${analysis.summary}`, 'ai');
-                }
-
-                if (analysis.tokens_used) {
-                    aiLog(`Tokens: ${Number(analysis.tokens_used).toLocaleString()} | Model: ${analysis.model || analysisData.model || '?'} | Cost: ~$${analysis.estimated_cost || analysisData.estimated_cost || '?'}`, 'info');
-                }
-
-                if (recCount === 0) {
-                    aiLog('AI found no further optimizations to apply.', 'info');
-                    showNotification('AI found no further optimizations to try.', 'info');
-                    break;
-                }
-
-                // ── Auto-select all applicable fixes (no user interaction) ──
-                const autoFixes = aiRenderFixSummary(analysis.recommendations || [], analysis.manual_actions || []);
-                const selectedFixes = autoFixes || [];
-
-                // Merge exclude_suggestions (arrays of handles) into fix list
-                const excludeSuggFixes = Object.entries(analysis.exclude_suggestions || {})
-                    .filter(([k, v]) => Array.isArray(v) && v.length > 0 && PERF_SETTING_KEYS.has(k))
-                    .map(([k, v]) => ({ setting_key: k, recommended_value: v, reason: 'AI exclude suggestion', estimated_impact: 'low', risk: 'none' }));
-                const allFixes = [...selectedFixes, ...excludeSuggFixes];
-
-                if (!allFixes.length) {
-                    aiLog('No auto-fixable recommendations found - only manual fixes.', 'warn');
-                    showNotification('No auto-fixable recommendations found.', 'info');
-                    break;
-                }
-                if (excludeSuggFixes.length) {
-                    aiLog(`Merging <strong>${excludeSuggFixes.length}</strong> AI exclude suggestion(s) into fix list...`, 'info');
-                }
-
-                // ── Pre-filter: drop fixes whose recommended value already matches current ──
-                // and fixes that are recorded as persistently incompatible with this URL,
-                // and parent toggles being enabled without their required data key.
-                let preFilteredFixes = allFixes;
-                // Map of parent-toggle setting → the data key required for it to do anything
-                const PARENT_REQUIRES_DATA = {
-                    critical_css: 'critical_css_code',
-                    preconnect: 'preconnect_urls',
-                    dns_prefetch: 'dns_prefetch_urls',
-                    lcp_preload: 'lcp_preload_url',
-                    preload_key_requests: 'preload_key_urls',
-                    delay_third_party: 'delay_third_party_domains',
-                };
-                const isEmptyVal = (v) => v === undefined || v === null || v === '' || v === false ||
-                    (Array.isArray(v) && v.length === 0);
-                try {
-                    const curRes = await ajax('ccm_tools_get_perf_settings', {}, { timeout: 10000 });
-                    const curSettings = (curRes && curRes.data) || {};
-                    // Build a quick lookup of every recommendation in this batch for orphan detection
-                    const batchByKey = Object.create(null);
-                    allFixes.forEach(f => { batchByKey[f.setting_key] = f; });
-                    const skipped = [];
-                    const blockedByHistory = [];
-                    const blockedOrphan = [];
-                    preFilteredFixes = allFixes.filter(fix => {
-                        if (persistentKnownBadKeys.has(fix.setting_key)) {
-                            blockedByHistory.push(fix.setting_key);
-                            return false;
-                        }
-                        // Parent toggle being turned ON without its companion data key in
-                        // this batch AND no existing data → silent no-op on the server. Skip.
-                        if (PARENT_REQUIRES_DATA[fix.setting_key] && fix.recommended_value === true) {
-                            const dataKey = PARENT_REQUIRES_DATA[fix.setting_key];
-                            const dataInBatch = batchByKey[dataKey];
-                            const dataInBatchEmpty = !dataInBatch || isEmptyVal(dataInBatch.recommended_value);
-                            const dataInCurrentEmpty = isEmptyVal(curSettings[dataKey]);
-                            if (dataInBatchEmpty && dataInCurrentEmpty) {
-                                blockedOrphan.push(`${fix.setting_key} (no ${dataKey})`);
-                                sessionAlreadyAppliedKeys.add(fix.setting_key);
-                                return false;
-                            }
-                        }
-                        if (!Object.prototype.hasOwnProperty.call(curSettings, fix.setting_key)) return true;
-                        if (aiValuesEqual(curSettings[fix.setting_key], fix.recommended_value)) {
-                            skipped.push(fix.setting_key);
-                            sessionAlreadyAppliedKeys.add(fix.setting_key);
-                            return false;
-                        }
-                        return true;
-                    });
-                    if (skipped.length) {
-                        aiLog(`Skipped <strong>${skipped.length}</strong> recommendation(s) already at target value: ${skipped.map(k => '<code>' + k + '</code>').join(', ')}`, 'info');
-                    }
-                    if (blockedByHistory.length) {
-                        aiLog(`Blocked <strong>${blockedByHistory.length}</strong> recommendation(s) known to regress this URL from past runs: ${blockedByHistory.map(k => '<code>' + k + '</code>').join(', ')}`, 'warn');
-                    }
-                    if (blockedOrphan.length) {
-                        aiLog(`Blocked <strong>${blockedOrphan.length}</strong> orphan toggle(s) — feature enabled without required data: ${blockedOrphan.map(k => '<code>' + k + '</code>').join(', ')}`, 'warn');
-                    }
-                } catch (preFilterErr) {
-                    aiLog(`Pre-filter check failed: ${preFilterErr.message} — applying all recommendations`, 'warn');
-                }
-
-                if (!preFilteredFixes.length) {
-                    aiLog('All AI recommendations were already applied — nothing to do this iteration.', 'warn');
-                    // Still iterate so the AI sees the "already applied" context and tries fresh ideas
-                    if (iteration < maxIterations) {
-                        aiUpdateStep('apply', 'done', 'Nothing new to apply');
-                        aiUpdateStep('flush-cache', 'skipped', 'Skipped');
-                        aiUpdateStep('retest-mobile', 'skipped', 'Skipped');
-                        aiUpdateStep('retest-desktop', 'skipped', 'Skipped');
-                        aiUpdateStep('console-check', 'skipped', 'Skipped');
-                        aiUpdateStep('visual-check', 'skipped', 'Skipped');
-                        aiUpdateStep('compare', 'done', 'Iterating…');
-                        // Reset for next iter
-                        aiUpdateStep('analyze', 'pending', '');
-                        aiUpdateStep('apply', 'pending', '');
-                        aiUpdateStep('flush-cache', 'pending', '');
-                        aiUpdateStep('retest-mobile', 'pending', '');
-                        aiUpdateStep('retest-desktop', 'pending', '');
-                        aiUpdateStep('console-check', 'pending', '');
-                        aiUpdateStep('visual-check', 'pending', '');
-                        aiUpdateStep('compare', 'pending', '');
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-
-                // ── Incremental Per-Setting Apply (eliminates batch poisoning) ──
-                // Instead of applying all settings as one batch, test each setting (or
-                // related group) individually with a quick mobile PageSpeed check.
-                // Settings that hurt scores are reverted immediately and tracked as
-                // individually-failed — only surviving settings proceed to final validation.
-                const SINGLE_SETTING_TOLERANCE = 5; // pts drop allowed per individual setting (PSI variance is ~3)
-                const settingGroups = groupRelatedFixes(preFilteredFixes);
-                const keptChanges = [];
-                const revertedSettings = [];
-                let runningMobilePerf = snapshotMobilePerf;
-
-                aiUpdateStep('apply', 'active', `Testing settings${iterLabel}…`);
-                aiLog(`Applying <strong>${preFilteredFixes.length}</strong> settings in <strong>${settingGroups.length}</strong> groups — testing each individually${iterLabel}…`, 'step');
-
-                for (let gi = 0; gi < settingGroups.length; gi++) {
-                    const group = settingGroups[gi];
-                    const groupKeys = group.map(f => f.setting_key);
-                    const groupLabel = groupKeys.map(k => aiSettingLabel(k)).join(' + ');
-                    aiUpdateStep('apply', 'active', `${gi + 1}/${settingGroups.length}: ${groupLabel}`);
-
-                    // Log what we're applying
-                    group.forEach(fix => {
-                        aiLog(`[${gi + 1}/${settingGroups.length}] Applying <code>${fix.setting_key}</code> → <code>${aiFormatValue(fix.recommended_value)}</code>`, 'info');
-                    });
-
-                    // Apply this group
-                    let groupApplyData;
-                    try {
-                        const groupApplyRes = await ajax('ccm_tools_ai_apply_changes', {
-                            recommendations: JSON.stringify(group),
-                        }, { timeout: 30000 });
-                        groupApplyData = groupApplyRes.data || {};
-                    } catch (applyErr) {
-                        aiLog(`  Failed to apply ${groupLabel}: ${applyErr.message}`, 'error');
-                        continue;
-                    }
-
-                    const groupChanges = groupApplyData.changes || [];
-                    if (!groupChanges.length) {
-                        aiLog(`  ${groupLabel} — no change (already at target value)`, 'info');
-                        // Mark every key in this group as "already applied" so the AI is
-                        // told not to re-suggest it on the next iteration.
-                        groupKeys.forEach(k => sessionAlreadyAppliedKeys.add(k));
-                        continue;
-                    }
-
-                    // Update on-page toggles immediately
-                    if (groupApplyData.settings) aiUpdatePageToggles(groupApplyData.settings);
-
-                    // Wait for server-side hooks + CDN cache to see the new page
-                    await aiSleep(5000);
-
-                    // Flush all caches so the retest hits the live PHP output
-                    aiUpdateStep('flush-cache', 'active', `Flushing after ${groupLabel}…`);
-                    try {
-                        await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
-                        aiLog(`  Caches flushed after ${groupLabel}`, 'info');
-                    } catch (flushErr) {
-                        aiLog(`  Cache flush failed: ${flushErr.message} — continuing`, 'warn');
-                    }
-                    aiUpdateStep('flush-cache', 'done', 'Flushed');
-
-                    // Extra wait after flush so CDN/edge caches serve the new version
-                    await aiSleep(3000);
-
-                    // HTTP smoke test — verify site is still responding before triggering PageSpeed
-                    aiLog(`  Smoke-testing ${url} after ${groupLabel}…`, 'info');
-                    const groupSmokeResult = await aiHttpSmokeTest(url, baselineBodySize);
-                    if (!groupSmokeResult.ok) {
-                        aiLog(`  ⛔ Smoke test FAILED after ${groupLabel}: ${groupSmokeResult.reason} — reverting immediately`, 'error');
-                        aiUpdateStep('flush-cache', 'error', `Smoke fail: ${groupSmokeResult.reason.substring(0, 30)}`);
-                        const revertPayload = groupChanges.map(c => ({ setting_key: c.key, recommended_value: c.from }));
-                        try {
-                            const revertRes = await ajax('ccm_tools_ai_apply_changes', { recommendations: JSON.stringify(revertPayload) }, { timeout: 30000 });
-                            if (revertRes.data?.settings) aiUpdatePageToggles(revertRes.data.settings);
-                        } catch (revertErr) {
-                            aiLog(`  Smoke-test revert failed: ${revertErr.message}`, 'error');
-                        }
-                        groupChanges.forEach(c => {
-                            revertedSettings.push({ key: c.key, from: c.from, to: c.to, delta: -99 });
-                            sessionFailedBatches.push({
-                                iteration,
-                                settings: [{ key: c.key, from: c.from, to: c.to }],
-                                reason: `Smoke test failed: ${groupSmokeResult.reason}`,
-                                mobile_delta: -99,
-                                desktop_delta: 0,
-                            });
-                            recordKnownBad(c.key, -99, 0);
-                        });
-                        continue;
-                    }
-                    aiLog(`  Smoke test OK: ${groupSmokeResult.reason}`, 'success');
-
-                    // Quick mobile-only retest to detect harmful settings
-                    aiLog(`  Quick mobile test after ${groupLabel}…`, 'info');
-                    let quickMobile;
-                    try {
-                        quickMobile = await aiRunPageSpeed(url, 'mobile');
-                    } catch (testErr) {
-                        aiLog(`  Mobile test failed: ${testErr.message} — keeping setting (benefit of the doubt)`, 'warn');
-                        keptChanges.push(...groupChanges);
-                        continue;
-                    }
-
-                    const quickMobilePerf = quickMobile.scores?.performance ?? 0;
-                    const quickDelta = quickMobilePerf - runningMobilePerf;
-
-                    if (quickDelta < -SINGLE_SETTING_TOLERANCE) {
-                        // This setting/group hurt scores — revert it
-                        aiLog(`  ⚠ ${groupLabel} dropped mobile by ${quickDelta}pts (${runningMobilePerf} → ${quickMobilePerf}) — reverting`, 'error');
-
-                        // Build revert payload using original values from the changes
-                        const revertPayload = groupChanges.map(c => ({
-                            setting_key: c.key,
-                            recommended_value: c.from,
-                        }));
-                        try {
-                            const revertRes = await ajax('ccm_tools_ai_apply_changes', {
-                                recommendations: JSON.stringify(revertPayload),
-                            }, { timeout: 30000 });
-                            if (revertRes.data?.settings) aiUpdatePageToggles(revertRes.data.settings);
-                        } catch (revertErr) {
-                            aiLog(`  Revert failed: ${revertErr.message}`, 'error');
-                        }
-
-                        // Track each reverted setting individually in the session,
-                        // and persist as known-bad if the drop is meaningful (-10 or worse)
-                        // so future runs on this URL skip the recommendation outright.
-                        groupChanges.forEach(c => {
-                            revertedSettings.push({ key: c.key, from: c.from, to: c.to, delta: quickDelta });
-                            sessionFailedBatches.push({
-                                iteration,
-                                settings: [{ key: c.key, from: c.from, to: c.to }],
-                                reason: `Single-setting mobile test: dropped ${Math.abs(quickDelta)}pts`,
-                                mobile_delta: quickDelta,
-                                desktop_delta: 0,
-                            });
-                            if (quickDelta <= -10) {
-                                recordKnownBad(c.key, quickDelta, 0);
-                            }
-                        });
-                    } else {
-                        // Setting is OK — keep it
-                        const indicator = quickDelta > 0 ? `+${quickDelta}` : quickDelta === 0 ? '±0' : `${quickDelta}`;
-                        aiLog(`  ✓ ${groupLabel} — mobile ${indicator}pts (${runningMobilePerf} → ${quickMobilePerf}) — keeping`, 'success');
-                        keptChanges.push(...groupChanges);
-                        runningMobilePerf = quickMobilePerf; // update running baseline
-                    }
-                }
-
-                // Incremental summary
-                const keptCount = keptChanges.length;
-                const revertedCount = revertedSettings.length;
-                aiLog(`Incremental apply done: <strong>${keptCount}</strong> kept, <strong>${revertedCount}</strong> reverted`, keptCount > 0 ? 'success' : 'warn');
-                if (revertedCount > 0) {
-                    aiLog('Reverted: ' + revertedSettings.map(s => `<code>${s.key}</code> (${s.delta}pts)`).join(', '), 'warn');
-                }
-
-                // backward-compat: rest of loop references `changes`
-                const changes = keptChanges;
-                allChanges = allChanges.concat(changes);
-                hasApplied = changes.length > 0;
-
-                // If ALL settings were individually reverted, skip final validation
-                if (keptCount === 0) {
-                    aiUpdateStep('apply', 'done', `0 survived${iterLabel}`);
-                    ['flush-cache', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'skipped', 'Skipped'));
-                    showNotification('All settings caused individual score drops — retrying', 'warning');
-                    aiLog(`All ${selectedFixes.length} settings failed individually — requesting different approach`, 'step');
-                    // Reset steps for next iteration
-                    ['analyze', 'apply', 'flush-cache', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'pending', ''));
-                    continue; // next iteration — AI will see sessionFailedBatches and try something new
-                }
-
-                aiUpdateStep('apply', 'done', `${keptCount} kept, ${revertedCount} reverted${iterLabel}`);
-                showNotification(`${keptCount} of ${selectedFixes.length} settings kept after individual testing.`, 'success');
-
-                // Wait for caches to fully propagate — critical for accuracy
-                // Google PSI may cache the test URL for ~30s; Cloudflare edge cache needs time to purge
-                aiLog('Waiting 5s for all caches to propagate before final validation…', 'info');
-                await aiSleep(5000);
-
-                // Double-flush: first flush may not clear edge caches fully
-                aiUpdateStep('flush-cache', 'active', 'Flushing before final retest…');
-                try {
-                    await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
-                    aiLog('First cache flush complete', 'info');
-                } catch (flushErr) {
-                    aiLog(`First cache flush failed: ${flushErr.message} — continuing`, 'warn');
-                }
-
-                // Brief wait then flush again for stubborn edge caches
-                await aiSleep(2000);
-                try {
-                    await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
-                    aiLog('Second cache flush complete — all layers cleared', 'info');
-                } catch (flushErr) {
-                    aiLog(`Second cache flush failed: ${flushErr.message} — continuing`, 'warn');
-                }
-                aiUpdateStep('flush-cache', 'done', 'Flushed ✓');
-
-                // HTTP smoke test before committing to full PageSpeed run
-                aiLog(`Smoke-testing ${url} before final validation…`, 'info');
-                const finalSmokeResult = await aiHttpSmokeTest(url, baselineBodySize);
-                if (!finalSmokeResult.ok) {
-                    aiLog(`⛔ Smoke test FAILED before final validation: ${finalSmokeResult.reason} — rolling back`, 'error');
-                    aiUpdateStep('flush-cache', 'error', `Smoke fail: ${finalSmokeResult.reason.substring(0, 30)}`);
-                    await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 10000 });
-                    aiLog('Rolled back due to smoke test failure before final validation.', 'warn');
-                    wasRolledBack = true;
-                    // Flush after rollback
-                    try {
-                        await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
-                        aiLog('Caches flushed after rollback (smoke test path)', 'info');
-                    } catch (_) {}
-                    showNotification(`Site health check failed — rolled back: ${finalSmokeResult.reason}`, 'warning');
-                    sessionFailedBatches.push({
-                        iteration,
-                        settings: changes.map(c => ({ key: c.key, from: c.from, to: c.to })),
-                        reason: `Final smoke test failed: ${finalSmokeResult.reason}`,
-                        mobile_delta: -99,
-                        desktop_delta: -99,
-                    });
-                    if (iteration < maxIterations) {
-                        await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
-                        ['analyze', 'apply', 'flush-cache', 'retest-mobile', 'retest-desktop', 'console-check', 'visual-check', 'compare'].forEach(s => aiUpdateStep(s, 'pending', ''));
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-                aiLog(`Smoke test OK: ${finalSmokeResult.reason}`, 'success');
-
-                // ── Re-test Mobile ──
-                aiUpdateStep('retest-mobile', 'active', `Re-testing${iterLabel}…`);
-                aiLog(`Re-testing Mobile PageSpeed${iterLabel}…`, 'step');
-                const mobileRetest = await aiRunPageSpeed(url, 'mobile');
-                const retestMobilePerf = mobileRetest.scores?.performance ?? 0;
-                aiHubState.afterScores.mobile = mobileRetest.scores || {};
-                lastMobileOpportunities = mobileRetest.opportunities || [];
-                aiUpdateStep('retest-mobile', 'done', `Perf: ${retestMobilePerf}${iterLabel}`);
-                aiLog(`Mobile re-test — Performance: <strong>${retestMobilePerf}</strong>, LCP: ${mobileRetest.metrics?.lcp_ms ?? '—'}ms`, 'info');
-
-                // ── Re-test Desktop ──
-                aiUpdateStep('retest-desktop', 'active', `Re-testing${iterLabel}…`);
-                aiLog(`Re-testing Desktop PageSpeed${iterLabel}…`, 'step');
-                const desktopRetest = await aiRunPageSpeed(url, 'desktop');
-                const retestDesktopPerf = desktopRetest.scores?.performance ?? 0;
-                aiHubState.afterScores.desktop = desktopRetest.scores || {};
-                lastDesktopOpportunities = desktopRetest.opportunities || [];
-                aiUpdateStep('retest-desktop', 'done', `Perf: ${retestDesktopPerf}${iterLabel}`);
-                aiLog(`Desktop re-test — Performance: <strong>${retestDesktopPerf}</strong>, LCP: ${desktopRetest.metrics?.lcp_ms ?? '—'}ms`, 'info');
-
-                // ── Console Error Check — detect broken JS functionality ──
-                let newConsoleErrors = [];
-                try {
-                    aiUpdateStep('console-check', 'active', 'Checking…');
-                    aiLog('Running console error check (headless Chromium)…', 'step');
-                    const consoleRes = await ajax('ccm_tools_ai_hub_console_check', {
-                        url: url,
-                        wait_seconds: 12,
-                    }, { timeout: 60000 });
-                    const consoleData = consoleRes.data || {};
-                    const afterErrors = consoleData.errors || [];
-                    const afterWarnings = consoleData.warnings || [];
-
-                    // Diff: only NEW errors not present in baseline
-                    const baselineMsgs = new Set(baselineConsoleErrors.map(e => e.message));
-                    newConsoleErrors = afterErrors.filter(e => !baselineMsgs.has(e.message));
-
-                    if (newConsoleErrors.length > 0) {
-                        aiUpdateStep('console-check', 'error', `${newConsoleErrors.length} NEW error(s)`);
-                        aiLog(`⚠ <strong>${newConsoleErrors.length} NEW console error(s)</strong> detected after changes:`, 'error');
-                        newConsoleErrors.forEach(e => {
-                            aiLog(`  <code>${e.message}</code> <small>(${e.source}:${e.line})</small>`, 'error');
-                        });
-                        // Build context for next AI iteration
-                        consoleErrorContext = 'CONSOLE ERRORS AFTER LAST CHANGES:\n' +
-                            newConsoleErrors.map(e => `- ${e.message} (${e.source}:${e.line})`).join('\n') +
-                            '\nThese errors were NOT present before changes were applied. The settings that caused JS breakage were rolled back.';
-                    } else {
-                        const totalAfter = afterErrors.length;
-                        const warnCount = afterWarnings.length;
-                        aiUpdateStep('console-check', 'done', 'No new errors ✓');
-                        aiLog(`Console check: no new JS errors ✓${totalAfter > 0 ? ` (${totalAfter} pre-existing)` : ''}${warnCount > 0 ? `, ${warnCount} warning(s)` : ''}`, 'success');
-                        consoleErrorContext = '';
-                    }
-                } catch (consoleErr) {
-                    aiLog(`Console check failed: ${consoleErr.message} — continuing with score-based evaluation only`, 'warn');
-                    aiUpdateStep('console-check', 'done', 'Skipped');
-                }
-
-                // ── Per-iteration screenshot (capture visual state after changes) ──
-                let iterScreenshots = null;
-                if (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri) {
-                    try {
-                        aiLog(`Capturing screenshot after iteration ${iteration}…`, 'info');
-                        const iterSsParams = { url, phase: 'after' };
-                        if (screenshotRunId) iterSsParams.run_id = screenshotRunId;
-                        const iterSsRes = await ajax('ccm_tools_ai_hub_screenshot', iterSsParams, { timeout: 300000 });
-                        iterScreenshots = iterSsRes.data || null;
-                        if (iterScreenshots?.desktop?.url || iterScreenshots?.desktop?.data_uri ||
-                            iterScreenshots?.mobile?.url || iterScreenshots?.mobile?.data_uri) {
-                            const dkSize = Math.round((iterScreenshots?.desktop?.size_bytes || 0) / 1024);
-                            const mbSize = Math.round((iterScreenshots?.mobile?.size_bytes || 0) / 1024);
-                            aiLog(`Iteration ${iteration} screenshots captured (desktop: ${dkSize}KB, mobile: ${mbSize}KB)`, 'success');
-                            aiShowAfterScreenshots(iterScreenshots, iteration);
-                            aiLog('After screenshots updated — scroll to see comparison ↓', 'info');
-                        } else {
-                            aiLog(`Iteration ${iteration} screenshot returned no images`, 'warn');
-                        }
-                    } catch (ssErr) {
-                        aiLog(`Iteration ${iteration} screenshot failed: ${ssErr.message}`, 'warn');
-                    }
-                }
-
-                // ── Visual Regression Check — AI compares before/after screenshots ──
-                // FAIL CLOSED: when we cannot affirmatively confirm the page is visually
-                // intact on BOTH viewports, hasLayoutRegression must end up true so the
-                // changes get rolled back rather than kept.
-                let hasLayoutRegression = false;
-                let visualRegressionContext = '';
-                const afterDesktopSrc = iterScreenshots?.desktop?.url || iterScreenshots?.desktop?.data_uri || '';
-                const afterMobileSrc = iterScreenshots?.mobile?.url || iterScreenshots?.mobile?.data_uri || '';
-                const beforeDesktopSrc = baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri || '';
-                const beforeMobileSrc = baselineScreenshots?.mobile?.url || baselineScreenshots?.mobile?.data_uri || '';
-
-                if (afterDesktopSrc && beforeDesktopSrc && afterMobileSrc && beforeMobileSrc) {
-                    // Always run visual check — retry once on failure
-                    let visualAttempts = 0;
-                    const maxVisualAttempts = 2;
-                    while (visualAttempts < maxVisualAttempts) {
-                        visualAttempts++;
-                        try {
-                            aiUpdateStep('visual-check', 'active', visualAttempts > 1 ? 'Retrying…' : 'Analyzing…');
-                            if (visualAttempts === 1) {
-                                aiLog('Running visual regression check (AI comparing before/after screenshots)…', 'step');
-                            } else {
-                                aiLog('Retrying visual regression check…', 'warn');
-                            }
-
-                            const visualParams = {
-                                before_desktop_url: beforeDesktopSrc,
-                                after_desktop_url: afterDesktopSrc,
-                                before_mobile_url: beforeMobileSrc,
-                                after_mobile_url: afterMobileSrc,
-                                dynamic_content_hint: 'IMPORTANT: This site likely has rotating hero carousels/sliders, animated banners, and dynamic product grids. ' +
-                                    'Screenshots taken minutes apart will naturally show DIFFERENT carousel slides — this is NOT a regression. ' +
-                                    'ONLY flag issues where the page STRUCTURE is broken: missing navigation, collapsed sections, overlapping elements, ' +
-                                    'invisible text, broken grid layouts, or content pushed completely off-screen. ' +
-                                    'A carousel showing a different slide, or a product grid showing products in a different order, is EXPECTED DYNAMIC BEHAVIOR, not a layout regression. ' +
-                                    'Pixel differences in hero/slider areas should be IGNORED unless the slider container itself is structurally broken (zero height, missing entirely, etc.).',
-                            };
-                            if (allChanges.length > 0) {
-                                visualParams.changes_applied = JSON.stringify(allChanges.slice(-20));
-                            }
-
-                            const visualRes = await ajax('ccm_tools_ai_hub_visual_compare', visualParams, { timeout: 120000 });
-                            const visualData = visualRes.data || {};
-
-                            // Hub may flag that screenshots had to be scaled to fit Claude Vision's 8000px limit.
-                            if (visualData.image_clamped) {
-                                aiLog('Visual check: tall screenshots auto-scaled to fit vision API limits ✓', 'info');
-                            }
-
-                            const sevLabel = visualData.severity || 'unknown';
-                            const isSevereSeverity = sevLabel === 'high' || sevLabel === 'critical';
-                            const isLayoutBroken = visualData.layout_ok === false;
-
-                            // FAIL CLOSED: any explicit layout-broken verdict, or a high/critical
-                            // severity result, is treated as a real regression. No reclassification
-                            // (e.g. "dynamic content") downgrades or discards structural issues —
-                            // if the AI flagged it, we roll back.
-                            if (isLayoutBroken || isSevereSeverity) {
-                                const allIssues = visualData.issues || [];
-                                const issueCount = allIssues.length;
-
-                                // Log ALL issues for transparency
-                                allIssues.forEach(issue => {
-                                    aiLog(`  Layout issue in <strong>${issue.area}</strong>: ${issue.description}`, 'error');
-                                    if (issue.likely_cause) aiLog(`    Likely cause: ${issue.likely_cause}`, 'info');
-                                    if (issue.suggested_fix) aiLog(`    Suggested fix: ${issue.suggested_fix}`, 'info');
-                                });
-
-                                hasLayoutRegression = true;
-                                aiUpdateStep('visual-check', 'error', `${issueCount} issue(s) [${sevLabel}]`);
-                                aiLog(`⚠ <strong>LAYOUT REGRESSION DETECTED (${sevLabel})</strong>: ${issueCount} issue(s)`, 'error');
-                                visualRegressionContext = 'VISUAL REGRESSION DETECTED AFTER LAST CHANGES:\n' +
-                                    allIssues.map(i =>
-                                        `- ${i.area}: ${i.description} (cause: ${i.likely_cause || 'unknown'}, fix: ${i.suggested_fix || 'unknown'})`
-                                    ).join('\n') +
-                                    '\nThese layout issues were visible in before/after screenshot comparison. The settings that caused visual breakage were rolled back.';
-
-                                // Log pixel check data if available
-                                if (visualData.pixel_check) {
-                                    const pc = visualData.pixel_check;
-                                    if (pc.desktop?.diff_percent >= 0) {
-                                        aiLog(`  Pixel pre-check: Desktop above-fold diff = ${pc.desktop.diff_percent}%`, 'info');
-                                    }
-                                    if (pc.mobile?.diff_percent >= 0) {
-                                        aiLog(`  Pixel pre-check: Mobile above-fold diff = ${pc.mobile.diff_percent}%`, 'info');
-                                    }
-                                }
-                            } else if (visualData.layout_ok === true && visualData.severity === 'minor') {
-                                aiUpdateStep('visual-check', 'done', 'Minor differences');
-                                aiLog(`Visual check: minor differences detected (acceptable) — ${visualData.summary}`, 'info');
-                            } else {
-                                aiUpdateStep('visual-check', 'done', 'Layout OK ✓');
-                                aiLog(`Visual check: no layout regressions ✓${visualData.summary ? ' — ' + visualData.summary : ''}`, 'success');
-                            }
-
-                            if (visualData.tokens_used) {
-                                aiLog(`Visual check tokens: ${Number(visualData.tokens_used).toLocaleString()} | Cost: ~$${visualData.cost_usd || '?'}`, 'info');
-                            }
-                            break; // success — exit retry loop
-                        } catch (visualErr) {
-                            // Detect the "image dimensions exceed max allowed size: 8000 pixels"
-                            // failure mode. The hub now auto-scales screenshots, but old hub
-                            // versions or fetch failures can still surface this. Don't retry —
-                            // the same oversized image will fail identically.
-                            const isOversized = /8000\s*pixels|exceed.*max.*size/i.test(visualErr.message || '');
-                            if (isOversized) {
-                                // FAIL CLOSED: cannot confirm visual integrity, so treat as a regression.
-                                aiLog('Visual check skipped: page is too tall for the vision API (>8000px) and the hub could not auto-scale. Cannot confirm visual integrity — failing closed and rolling back.', 'error');
-                                hasLayoutRegression = true;
-                                aiUpdateStep('visual-check', 'error', 'Skipped (tall page) — fail closed');
-                                visualRegressionContext = 'VISUAL CHECK SKIPPED: page too tall for vision API. Failing closed — treated as a potential layout regression and rolled back.';
-                                break; // exit retry loop — retrying won't help
-                            }
-                            if (visualAttempts < maxVisualAttempts) {
-                                aiLog(`Visual check attempt ${visualAttempts} failed: ${visualErr.message} — retrying…`, 'warn');
-                            } else {
-                                // FAIL CLOSED: visual check failed after retries — we cannot
-                                // affirmatively confirm the page is visually intact, so treat
-                                // this as a regression regardless of PSI score deltas.
-                                aiLog(`Visual check failed after ${maxVisualAttempts} attempts: ${visualErr.message} — cannot confirm layout integrity, failing closed and rolling back`, 'error');
-                                hasLayoutRegression = true;
-                                aiUpdateStep('visual-check', 'error', 'Failed — fail closed');
-                                visualRegressionContext = 'VISUAL CHECK FAILED (timeout/error). Cannot verify layout integrity. Failing closed — rolling back ALL changes.';
-                            }
-                        }
-                    }
-                } else {
-                    // FAIL CLOSED: screenshots missing (or only one of desktop/mobile
-                    // available) — we cannot affirmatively confirm the page is visually
-                    // intact on both viewports, so treat this as a regression.
-                    aiUpdateStep('visual-check', 'error', 'No screenshots — fail closed');
-                    aiLog('Visual check: could not run — before/after screenshots missing for desktop and/or mobile (both viewports required). Failing closed and rolling back.', 'error');
-                    hasLayoutRegression = true;
-                    visualRegressionContext = 'VISUAL CHECK UNAVAILABLE: Screenshots missing for desktop and/or mobile. Failing closed — treated as a potential layout regression and rolled back.';
-                }
-
-                // ── Evaluate results (smart rollback with net-gain logic) ──
-                const mobileChange = retestMobilePerf - snapshotMobilePerf;
-                const desktopChange = retestDesktopPerf - snapshotDesktopPerf;
-                const netChange = mobileChange + desktopChange;
-
-                // KEEP changes if:
-                // 1. Both scores within noise tolerance (neither dropped meaningfully)
-                // 2. Net positive AND neither dropped catastrophically (>15 points)
-                // 3. AND no new console errors (functionality must not break)
-                // 4. AND no critical layout regressions (visual integrity must be preserved)
-                const bothStable = mobileChange >= -PSI_NOISE && desktopChange >= -PSI_NOISE;
-                const netPositive = netChange > 0 && mobileChange > -15 && desktopChange > -15;
-                const hasNewConsoleErrors = newConsoleErrors.length > 0;
-                let keepChanges = (bothStable || netPositive) && !hasNewConsoleErrors && !hasLayoutRegression;
-
-                // Force rollback if new console errors detected, regardless of scores
-                if (hasNewConsoleErrors && (bothStable || netPositive)) {
-                    aiLog(`Scores improved (net +${netChange}) but NEW console errors detected — rolling back to protect functionality`, 'error');
-                    showNotification('New JS errors detected — rolling back despite score improvement', 'warning');
-                }
-
-                // Force rollback if layout regression detected, regardless of scores
-                if (hasLayoutRegression && !hasNewConsoleErrors && (bothStable || netPositive)) {
-                    aiLog(`Scores improved (net +${netChange}) but LAYOUT REGRESSION detected — rolling back to protect visual integrity`, 'error');
-                    showNotification('Layout regression detected — rolling back despite score improvement', 'warning');
-                }
-
-                if (!keepChanges) {
-                    // ── ROLLBACK — net negative, catastrophic drop, or console errors ──
-                    const rollbackReason = hasNewConsoleErrors
-                        ? `New JS console errors detected (${newConsoleErrors.length})`
-                        : hasLayoutRegression
-                            ? `Layout regression detected — visual integrity compromised`
-                            : `Scores regressed — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange} (net: ${netChange >= 0 ? '+' : ''}${netChange})`;
-                    aiLog(`${rollbackReason}. Rolling back…`, 'error');
-                    showNotification(
-                        hasNewConsoleErrors
-                            ? `JS errors detected — rolling back to protect functionality`
-                            : hasLayoutRegression
-                                ? `Layout regression detected — rolling back to protect visual integrity`
-                                : `Net negative (${netChange >= 0 ? '+' : ''}${netChange}). Rolling back…`,
-                        'warning'
-                    );
-                    aiUpdateStep('compare', 'active', 'Rolling back…');
-
-                    await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 10000 });
-                    aiLog('Settings rolled back to snapshot.', 'warn');
-                    wasRolledBack = true;
-
-                    // Flush caches after rollback so the confirmation test sees rolled-back state
-                    aiUpdateStep('flush-cache', 'active', 'Flushing after rollback…');
-                    try {
-                        await ajax('ccm_tools_ai_flush_caches', {}, { timeout: 15000 });
-                        aiLog('Caches flushed after rollback', 'info');
-                    } catch (flushErr) {
-                        aiLog(`Post-rollback cache flush failed: ${flushErr.message}`, 'warn');
-                    }
-                    aiUpdateStep('flush-cache', 'done', 'Flushed ✓');
-
-                    // Confirmation PSI test — verify rollback actually restored scores (both strategies)
-                    aiLog('Running post-rollback confirmation PSI test…', 'step');
-                    try {
-                        const confirmMobile = await aiRunPageSpeed(url, 'mobile');
-                        const confirmPerf = confirmMobile.scores?.performance ?? 0;
-                        const confirmDelta = confirmPerf - snapshotMobilePerf;
-                        if (confirmDelta < -5) {
-                            aiLog(`⚠ Rollback mobile: score ${confirmPerf} is ${Math.abs(confirmDelta)}pts below snapshot (${snapshotMobilePerf}) — may not have fully restored`, 'error');
-                            showNotification(`Warning: post-rollback mobile (${confirmPerf}) is ${Math.abs(confirmDelta)}pts below snapshot`, 'warning');
-                        } else {
-                            aiLog(`Rollback mobile confirmed: ${confirmPerf} (snapshot ${snapshotMobilePerf}, Δ${confirmDelta >= 0 ? '+' : ''}${confirmDelta})`, 'success');
-                        }
-                    } catch (confirmErr) {
-                        aiLog(`Post-rollback mobile confirmation failed: ${confirmErr.message}`, 'warn');
-                    }
-                    try {
-                        const confirmDesktop = await aiRunPageSpeed(url, 'desktop');
-                        const confirmDkPerf = confirmDesktop.scores?.performance ?? 0;
-                        const confirmDkDelta = confirmDkPerf - snapshotDesktopPerf;
-                        if (confirmDkDelta < -5) {
-                            aiLog(`⚠ Rollback desktop: score ${confirmDkPerf} is ${Math.abs(confirmDkDelta)}pts below snapshot (${snapshotDesktopPerf})`, 'error');
-                        } else {
-                            aiLog(`Rollback desktop confirmed: ${confirmDkPerf} (snapshot ${snapshotDesktopPerf}, Δ${confirmDkDelta >= 0 ? '+' : ''}${confirmDkDelta})`, 'success');
-                        }
-                    } catch (confirmErr) {
-                        aiLog(`Post-rollback desktop confirmation failed: ${confirmErr.message}`, 'warn');
-                    }
-
-                    showNotification('Settings rolled back to pre-optimization snapshot.', 'info');
-
-                    // Track this failed batch so AI avoids the same settings on next iteration
-                    sessionFailedBatches.push({
-                        iteration,
-                        settings: changes.map(c => ({ key: c.key, from: c.from, to: c.to })),
-                        reason: rollbackReason,
-                        mobile_delta: mobileChange,
-                        desktop_delta: desktopChange,
-                    });
-                    aiLog(`Session: ${sessionFailedBatches.length} failed batch(es) tracked — AI will avoid ${sessionFailedBatches.reduce((n, b) => n + b.settings.length, 0)} rolled-back settings`, 'info');
-
-                    // Update page toggles to rolled-back state
-                    try {
-                        const snapRes = await ajax('ccm_tools_get_perf_settings', {}, { timeout: 10000 });
-                        if (snapRes.data) aiUpdatePageToggles(snapRes.data);
-                    } catch (_) { /* best effort */ }
-
-                    // Update result_id for next analysis (use the new retest result)
-                    aiHubState.lastResultId = aiHubState.resultIds.mobile;
-
-                    if (iteration < maxIterations) {
-                        // Save new snapshot and try again with conservative approach
-                        await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
-                        aiUpdateStep('compare', 'done', `Rolled back — retrying (${iteration + 1}/${maxIterations})`);
-                        aiLog(`Retrying with conservative approach (iteration ${iteration + 1})…`, 'step');
-                        showNotification(`Attempting conservative approach (iteration ${iteration + 1})…`, 'info');
-                        // Clear fix summary and reset remaining steps for next iteration
-                        if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
-                        // Merge visual regression context into AI context for next iteration
-                        if (visualRegressionContext) {
-                            consoleErrorContext = (consoleErrorContext ? consoleErrorContext + '\n\n' : '') + visualRegressionContext;
-                        }
-                        aiUpdateStep('analyze', 'pending', '');
-                        aiUpdateStep('apply', 'pending', '');
-                        aiUpdateStep('flush-cache', 'pending', '');
-                        aiUpdateStep('retest-mobile', 'pending', '');
-                        aiUpdateStep('retest-desktop', 'pending', '');
-                        aiUpdateStep('console-check', 'pending', '');
-                        aiUpdateStep('visual-check', 'pending', '');
-                        aiUpdateStep('compare', 'pending', '');
-                        continue; // next iteration
-                    } else {
-                        aiUpdateStep('compare', 'done', 'Rolled back — max iterations');
-                        aiLog('Max iterations reached after rollback.', 'warn');
-                        break;
-                    }
-                }
-
-                // ── KEEP — scores improved or stable ──
-                aiLog(`Scores OK — Mobile: ${mobileChange >= 0 ? '+' : ''}${mobileChange}, Desktop: ${desktopChange >= 0 ? '+' : ''}${desktopChange} (net: ${netChange >= 0 ? '+' : ''}${netChange}). Keeping changes!`, 'success');
-                showNotification(`Changes kept (net ${netChange >= 0 ? '+' : ''}${netChange}).`, 'success');
-                wasRolledBack = false;
-
-                // Show before/after comparison
-                aiUpdateStep('compare', 'active', 'Comparing…');
-                aiRenderBeforeAfter(aiHubState.beforeScores, aiHubState.afterScores);
-                aiShowResultsForStrategy(mobileRetest, 'mobile');
-                aiShowResultsForStrategy(desktopRetest, 'desktop');
-
-                // Check if we should keep iterating
-                const bothAbove90 = retestMobilePerf >= 90 && retestDesktopPerf >= 90;
-                if (bothAbove90 || iteration >= maxIterations) {
-                    const resultMsg = `M:${retestMobilePerf} D:${retestDesktopPerf}`;
-                    aiUpdateStep('compare', 'done', resultMsg);
-                    if (bothAbove90) {
-                        aiLog(`Both scores above 90! Mobile: ${retestMobilePerf}, Desktop: ${retestDesktopPerf} 🎉`, 'success');
-                    } else {
-                        aiLog(`Max iterations reached. Mobile: ${retestMobilePerf}, Desktop: ${retestDesktopPerf}`, 'info');
-                    }
-                    break;
-                }
-
-                // Scores improved but below 90 — update snapshot and iterate for more gains
-                aiLog(`Improved but still below 90 (M:${retestMobilePerf}, D:${retestDesktopPerf}). Saving checkpoint and iterating…`, 'info');
-                showNotification('Improved — trying for more gains…', 'info');
-                aiUpdateStep('compare', 'done', `Net +${netChange}pts — iterating…`);
-
-                // Save snapshot of current (improved) state and update baseline
-                await ajax('ccm_tools_ai_snapshot_settings', {}, { timeout: 10000 });
-                snapshotMobilePerf = retestMobilePerf;
-                snapshotDesktopPerf = retestDesktopPerf;
-
-                // Clear fix summary for next iteration
-                if (fixSummary) { fixSummary.style.display = 'none'; fixSummary.innerHTML = ''; }
-
-                // Update steps UI for next iteration
-                aiUpdateStep('analyze', 'pending', '');
-                aiUpdateStep('apply', 'pending', '');
-                aiUpdateStep('retest-mobile', 'pending', '');
-                aiUpdateStep('retest-desktop', 'pending', '');
-                aiUpdateStep('console-check', 'pending', '');
-                aiUpdateStep('visual-check', 'pending', '');
-                aiUpdateStep('compare', 'pending', '');
-            }
-
-            // Final state if no apply happened
-            if (!hasApplied) {
-                aiUpdateStep('apply', 'skipped', 'Skipped');
-                aiUpdateStep('retest-mobile', 'skipped', 'Skipped');
-                aiUpdateStep('retest-desktop', 'skipped', 'Skipped');
-                aiUpdateStep('console-check', 'skipped', 'Skipped');
-                aiUpdateStep('visual-check', 'skipped', 'Skipped');
-                aiUpdateStep('compare', 'skipped', 'Skipped');
-            }
-
-            // ── Remaining Recommendations (when not at 90+) ──
-            const finalMobilePerf = aiHubState.afterScores?.mobile?.performance ?? aiHubState.beforeScores?.mobile?.performance ?? 0;
-            const finalDesktopPerf = aiHubState.afterScores?.desktop?.performance ?? aiHubState.beforeScores?.desktop?.performance ?? 0;
-            aiRenderRemainingRecommendations(
-                finalMobilePerf, finalDesktopPerf,
-                lastMobileOpportunities, lastDesktopOpportunities,
-                lastManualActions
-            );
-
-            // ── Final Screenshots (only if last iteration was rolled back — otherwise per-iteration capture is current) ──
-            if (hasApplied && wasRolledBack && (baselineScreenshots?.desktop?.url || baselineScreenshots?.desktop?.data_uri)) {
-                try {
-                    aiLog('Capturing final screenshots (post-rollback state)…', 'info');
-                    const afterParams = { url, phase: 'after' };
-                    if (screenshotRunId) afterParams.run_id = screenshotRunId;
-                    const afterSsRes = await ajax('ccm_tools_ai_hub_screenshot', afterParams, { timeout: 300000 });
-                    const afterScreenshots = afterSsRes.data || null;
-                    if (afterScreenshots?.desktop?.url || afterScreenshots?.desktop?.data_uri || afterScreenshots?.mobile?.url || afterScreenshots?.mobile?.data_uri) {
-                        aiLog('Final screenshots captured (rolled-back state)', 'success');
-                        aiShowAfterScreenshots(afterScreenshots);
-                    } else {
-                        aiLog('Final screenshot capture returned no images', 'warn');
-                    }
-                } catch (ssErr) {
-                    aiLog(`Final screenshot capture failed: ${ssErr.message}`, 'warn');
-                }
-            }
-
-            aiLog('One-Click Optimize complete!', 'success');
-            showNotification('One-Click Optimize complete!', 'success');
-
-            // Save optimization run summary
-            try {
-                await ajax('ccm_tools_ai_save_run', {
-                    run_data: JSON.stringify({
-                        url: url,
-                        before_mobile: aiHubState.beforeScores?.mobile?.performance ?? 0,
-                        before_desktop: aiHubState.beforeScores?.desktop?.performance ?? 0,
-                        after_mobile: aiHubState.afterScores?.mobile?.performance ?? aiHubState.beforeScores?.mobile?.performance ?? 0,
-                        after_desktop: aiHubState.afterScores?.desktop?.performance ?? aiHubState.beforeScores?.desktop?.performance ?? 0,
-                        changes_count: allChanges.length,
-                        changes: allChanges,
-                        iterations: iteration,
-                        rolled_back: wasRolledBack,
-                        outcome: !hasApplied ? 'no_changes' : wasRolledBack ? 'rolled_back' : 'improved',
-                    }),
-                }, { timeout: 10000 });
-            } catch (_) { /* best effort */ }
-
-            aiHubLoadHistory();
-        } catch (err) {
-            console.error('[CCM AI] One-click error:', err);
-            const errMsg = err.message || 'Optimization failed.';
-            aiLog(`Error: ${errMsg}`, 'error');
-            showNotification(errMsg, 'error');
-            // Best-effort rollback of any changes applied before the error. Always
-            // attempt this even if an earlier iteration already rolled back — a later
-            // iteration may have re-applied changes that are now left half-applied.
-            if (allChanges.length > 0) {
-                aiLog('Attempting rollback due to unexpected error...', 'warn');
-                try {
-                    await ajax('ccm_tools_ai_rollback_settings', {}, { timeout: 15000 });
-                    aiLog('Settings rolled back to snapshot.', 'info');
-                } catch (_) { /* ignore */ }
-            }
-            // Mark current active step as error with details, remaining as skipped
-            AI_STEPS.forEach(s => {
-                const el = $(`#ai-step-${s.id}`);
-                if (!el) return;
-                if (el.dataset.status === 'active') {
-                    aiUpdateStep(s.id, 'error', errMsg.length > 40 ? errMsg.slice(0, 40) + '…' : errMsg);
-                } else if (el.dataset.status === 'pending') {
-                    aiUpdateStep(s.id, 'skipped', '');
-                }
-            });
-        } finally {
-            if (btn) { btn.disabled = false; btn.textContent = '🚀 One-Click Optimize'; }
-        }
-    }
-
-    // ─── Remaining Recommendations Panel (when score < 90) ────────────
-
-    /**
-     * Render actionable remaining recommendations when scores are still below 90.
-     * Combines PSI opportunities with AI manual actions.
-     */
-    function aiRenderRemainingRecommendations(mobilePerf, desktopPerf, mobileOpps, desktopOpps, manualActions) {
-        const container = $('#ai-remaining-recommendations');
-        if (!container) return;
-
-        const below90 = mobilePerf < 90 || desktopPerf < 90;
-        if (!below90) {
-            container.style.display = 'none';
-            return;
-        }
-
-        const hasOpps = (mobileOpps && mobileOpps.length) || (desktopOpps && desktopOpps.length);
-        const hasManual = manualActions && manualActions.length;
-        if (!hasOpps && !hasManual) {
-            container.style.display = 'none';
-            return;
-        }
-
-        let html = `<div class="ccm-ai-remaining-panel">
-            <h3>🎯 Remaining Recommendations to Reach 90+</h3>
-            <p class="ccm-text-muted" style="margin:0.25rem 0 1rem;">These issues were identified by PageSpeed Insights. Items with CCM settings may be addressable in future iterations; others require theme/plugin/server changes.</p>`;
-
-        // Merge and deduplicate opportunities from both strategies
-        const allOpps = new Map();
-        const mergeOpps = (opps, strategy) => {
-            (opps || []).forEach(opp => {
-                const key = opp.title || opp.id || 'Unknown';
-                if (allOpps.has(key)) {
-                    const existing = allOpps.get(key);
-                    existing.strategies.push(strategy);
-                    if (opp.savings_ms && (!existing.savings_ms || opp.savings_ms > existing.savings_ms)) {
-                        existing.savings_ms = opp.savings_ms;
-                    }
-                    if (opp.savings_bytes && (!existing.savings_bytes || opp.savings_bytes > existing.savings_bytes)) {
-                        existing.savings_bytes = opp.savings_bytes;
-                    }
-                } else {
-                    allOpps.set(key, { ...opp, title: key, strategies: [strategy] });
-                }
-            });
-        };
-        mergeOpps(mobileOpps, 'Mobile');
-        mergeOpps(desktopOpps, 'Desktop');
-
-        // Show PageSpeed opportunities with CCM settings mapping
-        if (allOpps.size) {
-            html += `<h4 style="margin:0 0 0.5rem;">PageSpeed Opportunities</h4>`;
-            html += '<div class="ccm-ai-remaining-list">';
-
-            // Sort by savings
-            const sorted = [...allOpps.values()].sort((a, b) => {
-                const aMs = a.savings_ms || 0;
-                const bMs = b.savings_ms || 0;
-                if (aMs !== bMs) return bMs - aMs;
-                return (b.savings_bytes || 0) - (a.savings_bytes || 0);
-            });
-
-            sorted.forEach(opp => {
-                const savings = opp.savings_ms ? `${Number(opp.savings_ms).toLocaleString()} ms`
-                              : (opp.savings_bytes ? `${(opp.savings_bytes / 1024).toFixed(1)} KB` : '');
-                const strategyBadges = opp.strategies.map(s =>
-                    `<span class="ccm-badge ccm-badge-info">${s}</span>`
-                ).join(' ');
-                const guidance = aiGetOpportunityGuidance(opp.id || opp.title);
-
-                // Find CCM settings mapping
-                const oppId = (opp.id || '').toLowerCase();
-                let ccmMapping = null;
-                for (const [psiId, mapping] of Object.entries(PSI_OPPORTUNITY_TO_CCM_SETTINGS)) {
-                    if (oppId.includes(psiId) || psiId.includes(oppId)) {
-                        ccmMapping = mapping;
-                        break;
-                    }
-                }
-
-                let ccmHtml = '';
-                if (ccmMapping) {
-                    const parts = [];
-                    if (ccmMapping.settings.length) {
-                        parts.push(ccmMapping.settings.map(s => `<code>${s}</code>`).join(', '));
-                    }
-                    if (ccmMapping.htaccess) parts.push('<span class="ccm-badge ccm-badge-success">.htaccess</span>');
-                    if (ccmMapping.webp) parts.push('<span class="ccm-badge ccm-badge-success">WebP</span>');
-                    if (ccmMapping.redis) parts.push('<span class="ccm-badge ccm-badge-success">Redis</span>');
-                    if (ccmMapping.cf_settings) parts.push('<span class="ccm-badge ccm-badge-success">Cloudflare</span>');
-                    if (parts.length) {
-                        ccmHtml = `<div class="ccm-ai-remaining-ccm" style="margin-top:0.25rem;font-size:0.85em;opacity:0.8;">CCM Fix: ${parts.join(' ')}</div>`;
-                    }
-                }
-
-                html += `<div class="ccm-ai-remaining-item">
-                    <div class="ccm-ai-remaining-header">
-                        <strong>${opp.title}</strong>
-                        ${savings ? `<span class="ccm-badge ccm-badge-warning">${savings}</span>` : ''}
-                        ${strategyBadges}
-                    </div>
-                    ${guidance ? `<p class="ccm-ai-remaining-guidance">${guidance}</p>` : ''}
-                    ${ccmHtml}
-                </div>`;
-            });
-            html += '</div>';
-        }
-
-        // Show manual actions from AI
-        if (hasManual) {
-            html += `<h4 style="margin:1rem 0 0.5rem;">AI-Recommended Manual Actions</h4>`;
-            html += '<div class="ccm-ai-remaining-list">';
-            manualActions.forEach(action => {
-                const text = typeof action === 'string' ? action : (action.reason || action.description || JSON.stringify(action));
-                html += `<div class="ccm-ai-remaining-item ccm-ai-remaining-item-manual">
-                    <p>${text}</p>
-                </div>`;
-            });
-            html += '</div>';
-        }
-
-        html += '</div>';
-        container.innerHTML = html;
-        container.style.display = 'block';
-
-        aiLog(`Showing ${allOpps.size + (manualActions || []).length} remaining recommendations for reaching 90+.`, 'info');
-    }
-
-    /**
-     * Return actionable guidance for common PageSpeed opportunities.
-     */
-    function aiGetOpportunityGuidance(idOrTitle) {
-        const key = (idOrTitle || '').toLowerCase();
-        const guidance = {
-            'render-blocking-resources': 'Defer non-critical CSS/JS. Check theme for inline critical CSS support, or use the Critical CSS + Async CSS features in Performance Optimizer.',
-            'unused-css-rules': 'Remove unused CSS from your theme or page builder. Consider a CSS clean-up tool or loading CSS conditionally per page.',
-            'unused-javascript': 'Remove or defer unused JS. Check if plugins load scripts on pages where they aren\'t needed. Use asset clean-up plugins.',
-            'uses-responsive-images': 'Ensure images use srcset/sizes for responsive loading. Regenerate thumbnails if using an older theme.',
-            'offscreen-images': 'Enable lazy loading for below-the-fold images. WordPress native lazy loading should handle most cases.',
-            'unminified-css': 'Minify CSS files. This typically requires a server-level build step or a minification plugin.',
-            'unminified-javascript': 'Minify JS files. Use a build tool or minification plugin. Some hosts provide this automatically.',
-            'uses-text-compression': 'Enable Gzip/Brotli compression on your server. Check .htaccess or contact your hosting provider.',
-            'uses-long-cache-ttl': 'Set longer Cache-Control headers for static assets. The .htaccess Optimizer in CCM Tools can help with this.',
-            'server-response-time': 'Improve TTFB — consider server-side caching (Redis, page cache), upgrading hosting, or optimizing slow database queries.',
-            'total-byte-weight': 'Reduce total page weight — compress images, remove unused plugins/scripts, and audit third-party resources.',
-            'dom-size': 'Simplify your HTML structure. Page builders often create deeply nested DOM trees — consider simplifying layouts.',
-            'uses-optimized-images': 'Compress images further. Use WebP/AVIF formats via the WebP Converter in CCM Tools.',
-            'modern-image-formats': 'Convert images to WebP or AVIF. Use the WebP Converter tool in CCM Tools.',
-            'third-party-summary': 'Audit third-party scripts (analytics, ads, widgets). Consider delaying non-essential third-party scripts.',
-            'largest-contentful-paint-element': 'Optimize the LCP element — preload hero images, use fetchpriority="high", and ensure the LCP image isn\'t lazy-loaded.',
-            'layout-shift-elements': 'Add explicit width/height to images and embeds. Avoid inserting content above the fold after page load.',
-            'font-display': 'Use font-display: swap for all fonts. Enable this in Performance Optimizer settings.',
-            'efficient-animated-content': 'Replace animated GIFs with video (MP4/WebM). Videos are dramatically smaller and faster.',
-            'duplicated-javascript': 'Check if multiple plugins load the same library (e.g., multiple jQuery versions). Dequeue duplicates.',
-            'legacy-javascript': 'Some plugins serve ES5 bundles unnecessarily. Check for plugin updates or modern replacements.',
-            'mainthread-work-breakdown': 'Reduce main thread work — minimize JS execution, CSS parsing, and layout recalculations. Simplify page complexity.',
-            'bootup-time': 'Reduce JS execution time — delay non-critical scripts and remove unused JavaScript.',
-            'uses-rel-preconnect': 'Add preconnect hints for critical third-party origins. Enable Preconnect in Performance Optimizer.',
-            'redirects': 'Minimize redirects. Each redirect adds a round-trip. Check for unnecessary http→https or www→non-www redirects.',
-            'critical-request-chains': 'Break long request chains by inlining critical resources and preloading key assets.',
-        };
-
-        for (const [k, v] of Object.entries(guidance)) {
-            if (key.includes(k)) return v;
-        }
-        return '';
-    }
-
-    // ─── Helpers ────────────
-
-    // ─── AI Chat — Troubleshooting Assistant ────────────
-
-    const aiChatState = {
-        conversation: [],
-        isOpen: false,
-        isSending: false,
-        pendingImages: [], // Array of { dataUri, mediaType, base64 }
-    };
-
-    function initAiChat() {
-        const toggle = $('#ai-chat-toggle');
-        const close = $('#ai-chat-close');
-        const clear = $('#ai-chat-clear');
-        const send = $('#ai-chat-send');
-        const input = $('#ai-chat-input');
-
-        if (!toggle) return;
-
-        toggle.addEventListener('click', () => {
-            aiChatState.isOpen = !aiChatState.isOpen;
-            const panel = $('#ai-chat-panel');
-            if (panel) {
-                panel.style.display = aiChatState.isOpen ? 'flex' : 'none';
-                if (aiChatState.isOpen && input) {
-                    setTimeout(() => input.focus(), 100);
-                }
-            }
-            toggle.classList.toggle('active', aiChatState.isOpen);
-        });
-
-        if (close) close.addEventListener('click', () => {
-            aiChatState.isOpen = false;
-            const panel = $('#ai-chat-panel');
-            if (panel) panel.style.display = 'none';
-            const toggleBtn = $('#ai-chat-toggle');
-            if (toggleBtn) toggleBtn.classList.remove('active');
-        });
-
-        if (clear) clear.addEventListener('click', aiChatClear);
-
-        if (send) send.addEventListener('click', aiChatSend);
-
-        // Image attach handlers
-        const fileInput = $('#ai-chat-file-input');
-        const attachBtn = $('#ai-chat-attach');
-
-        if (attachBtn && fileInput) {
-            attachBtn.addEventListener('click', () => fileInput.click());
-            fileInput.addEventListener('change', aiChatHandleImages);
-        }
-
-        // Delegate click for individual image remove buttons in preview
-        const previewContainer = $('#ai-chat-image-preview');
-        if (previewContainer) {
-            previewContainer.addEventListener('click', (e) => {
-                const removeBtn = e.target.closest('.ccm-ai-chat-image-preview-remove');
-                if (removeBtn) {
-                    const idx = parseInt(removeBtn.dataset.idx, 10);
-                    aiChatRemoveImage(idx);
-                }
-            });
-        }
-
-        if (input) {
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    aiChatSend();
-                }
-            });
-            // Auto-resize textarea
-            input.addEventListener('input', () => {
-                input.style.height = 'auto';
-                input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-            });
-        }
-    }
-
-    function aiChatClear() {
-        aiChatState.conversation = [];
-        aiChatClearImages();
-        const messages = $('#ai-chat-messages');
-        if (messages) {
-            messages.innerHTML = `<div class="ccm-ai-chat-msg ccm-ai-chat-msg-assistant">
-                <div class="ccm-ai-chat-msg-content">Hi! I'm the AI Troubleshooter. If your site has issues after optimization (broken animations, missing elements, non-working features), describe the problem and I'll help identify which setting to adjust.</div>
-            </div>`;
-        }
-    }
-
-    function aiChatAppendMessage(role, content, imageDataUris = []) {
-        const messages = $('#ai-chat-messages');
-        if (!messages) return;
-
-        const msg = document.createElement('div');
-        msg.className = `ccm-ai-chat-msg ccm-ai-chat-msg-${role}`;
-
-        const contentEl = document.createElement('div');
-        contentEl.className = 'ccm-ai-chat-msg-content';
-
-        if (role === 'assistant') {
-            // Render markdown-like formatting for AI responses
-            contentEl.innerHTML = aiChatFormatMarkdown(content);
-        } else {
-            // User message — may include images
-            if (imageDataUris.length > 0) {
-                const imgWrap = document.createElement('div');
-                imgWrap.className = 'ccm-ai-chat-msg-images';
-                imageDataUris.forEach(uri => {
-                    const img = document.createElement('img');
-                    img.src = uri;
-                    img.alt = 'Screenshot';
-                    img.className = 'ccm-ai-chat-msg-image';
-                    img.addEventListener('click', () => window.open(uri, '_blank'));
-                    imgWrap.appendChild(img);
-                });
-                contentEl.appendChild(imgWrap);
-            }
-            if (content) {
-                const textSpan = document.createElement('span');
-                textSpan.textContent = content;
-                contentEl.appendChild(textSpan);
-            }
-        }
-
-        msg.appendChild(contentEl);
-        messages.appendChild(msg);
-        messages.scrollTop = messages.scrollHeight;
-
-        return msg;
-    }
-
-    function aiChatFormatMarkdown(text) {
-        // Simple markdown → HTML for chat responses
-        // Escape HTML first to prevent XSS from AI responses
-        let safe = escapeHtml(text);
-        let html = safe
-            // Code blocks
-            .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-            // Inline code
-            .replace(/`([^`]+)`/g, '<code>$1</code>')
-            // Bold
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            // Italic
-            .replace(/\*(.+?)\*/g, '<em>$1</em>')
-            // Headers
-            .replace(/^### (.+)$/gm, '<strong style="display:block;margin-top:0.5em;">$1</strong>')
-            .replace(/^## (.+)$/gm, '<strong style="display:block;font-size:1.05em;margin-top:0.5em;">$1</strong>')
-            // Lists
-            .replace(/^- (.+)$/gm, '<li>$1</li>')
-            .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
-
-        // Wrap consecutive <li> items in <ul>
-        html = html.replace(/(<li>[\s\S]*?<\/li>)/g, (match) => {
-            if (!match.startsWith('<ul>')) {
-                return '<ul>' + match + '</ul>';
-            }
-            return match;
-        });
-        // Clean up nested ul tags from consecutive items
-        html = html.replace(/<\/ul>\s*<ul>/g, '');
-
-        // Paragraphs — split on double newlines
-        html = html.split(/\n\n+/).map(p => {
-            p = p.trim();
-            if (!p) return '';
-            if (p.startsWith('<pre>') || p.startsWith('<ul>') || p.startsWith('<strong style=')) return p;
-            return `<p>${p.replace(/\n/g, '<br>')}</p>`;
-        }).join('');
-
-        return html;
-    }
-
-    /** Handle image file selection for chat (supports multiple files) */
-    function aiChatHandleImages(e) {
-        const files = Array.from(e.target.files);
-        if (!files.length) return;
-
-        const maxSize = 5 * 1024 * 1024; // 5MB per file
-        const maxImages = 5;
-        const remaining = maxImages - aiChatState.pendingImages.length;
-
-        if (remaining <= 0) {
-            showNotification('Maximum 5 images per message', 'warning');
-            e.target.value = '';
-            return;
-        }
-
-        const toProcess = files.slice(0, remaining);
-        let processed = 0;
-
-        toProcess.forEach(file => {
-            if (!file.type.startsWith('image/')) {
-                showNotification(`${file.name}: Not an image file`, 'error');
-                return;
-            }
-            if (file.size > maxSize) {
-                showNotification(`${file.name}: Must be under 5 MB`, 'error');
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const dataUri = ev.target.result;
-                const headerMatch = dataUri.match(/^data:(image\/[a-z+]+);base64,/);
-                if (!headerMatch) return;
-
-                aiChatState.pendingImages.push({ dataUri, mediaType: headerMatch[1] });
-                aiChatRenderImagePreviews();
-
-                processed++;
-            };
-            reader.readAsDataURL(file);
-        });
-
-        // Reset so the same files can be re-selected
-        e.target.value = '';
-    }
-
-    /** Render all pending image previews */
-    function aiChatRenderImagePreviews() {
-        const preview = $('#ai-chat-image-preview');
-        if (!preview) return;
-
-        if (aiChatState.pendingImages.length === 0) {
-            preview.style.display = 'none';
-            preview.innerHTML = '';
-            return;
-        }
-
-        preview.style.display = 'flex';
-        preview.innerHTML = aiChatState.pendingImages.map((img, idx) =>
-            `<div class="ccm-ai-chat-image-preview-item">
-                <img src="${img.dataUri}" alt="Preview">
-                <button class="ccm-ai-chat-image-preview-remove" type="button" data-idx="${idx}" title="Remove">&times;</button>
-            </div>`
-        ).join('');
-    }
-
-    /** Remove a single pending image by index */
-    function aiChatRemoveImage(idx) {
-        aiChatState.pendingImages.splice(idx, 1);
-        aiChatRenderImagePreviews();
-    }
-
-    /** Clear all pending images from chat */
-    function aiChatClearImages() {
-        aiChatState.pendingImages = [];
-        const preview = $('#ai-chat-image-preview');
-        if (preview) {
-            preview.style.display = 'none';
-            preview.innerHTML = '';
-        }
-    }
-
-    async function aiChatSend() {
-        if (aiChatState.isSending) return;
-
-        const input = $('#ai-chat-input');
-        const sendBtn = $('#ai-chat-send');
-        if (!input) return;
-
-        const message = input.value.trim();
-        const hasImages = aiChatState.pendingImages.length > 0;
-
-        // Need at least a message or images
-        if (!message && !hasImages) return;
-
-        aiChatState.isSending = true;
-        input.value = '';
-        input.style.height = 'auto';
-        if (sendBtn) sendBtn.disabled = true;
-
-        // Capture image data before clearing
-        const imageDataUris = hasImages ? aiChatState.pendingImages.map(i => i.dataUri) : [];
-        aiChatClearImages();
-
-        // Add user message (with optional image thumbnails)
-        aiChatAppendMessage('user', message, imageDataUris);
-
-        // Show typing indicator
-        const messages = $('#ai-chat-messages');
-        const typing = document.createElement('div');
-        typing.className = 'ccm-ai-chat-msg ccm-ai-chat-msg-assistant ccm-ai-chat-typing';
-        typing.innerHTML = '<div class="ccm-ai-chat-msg-content"><span class="ccm-ai-chat-dots"><span></span><span></span><span></span></span></div>';
-        if (messages) {
-            messages.appendChild(typing);
-            messages.scrollTop = messages.scrollHeight;
-        }
-
-        try {
-            const siteUrl = ($('#ai-ps-url') || {}).value || '';
-
-            const imgCount = imageDataUris.length;
-            const ajaxData = {
-                message: message || `(${imgCount} screenshot${imgCount > 1 ? 's' : ''} attached — please analyze)`,
-                conversation: JSON.stringify(aiChatState.conversation),
-                site_url: siteUrl,
-            };
-
-            // Include images as JSON array of data URIs
-            if (imgCount > 0) {
-                ajaxData.images = JSON.stringify(imageDataUris);
-            }
-
-            const res = await ajax('ccm_tools_ai_chat', ajaxData, { timeout: 90000 });
-
-            // Remove typing indicator
-            if (typing.parentElement) typing.remove();
-
-            const reply = res.data?.reply || 'Sorry, I could not generate a response.';
-
-            // Update conversation history (don't store full base64 — just note images were sent)
-            const imgNote = hasImages ? ` [${imgCount} screenshot${imgCount > 1 ? 's' : ''} attached]` : '';
-            aiChatState.conversation.push({ role: 'user', content: (message || '') + imgNote });
-            aiChatState.conversation.push({ role: 'assistant', content: reply });
-
-            // Keep conversation manageable (last 20 messages)
-            if (aiChatState.conversation.length > 20) {
-                aiChatState.conversation = aiChatState.conversation.slice(-20);
-            }
-
-            aiChatAppendMessage('assistant', reply);
-
-        } catch (err) {
-            if (typing.parentElement) typing.remove();
-            aiChatAppendMessage('assistant', `Sorry, there was an error: ${err.message}. Please try again.`);
-        } finally {
-            aiChatState.isSending = false;
-            if (sendBtn) sendBtn.disabled = false;
-            if (input) input.focus();
-        }
-    }
-
-    function aiSleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    async function aiHubLoadHistory() {
-        const container = $('#ai-history-table');
-        if (!container) return;
-
-        container.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div>';
-
-        try {
-            const res = await ajax('ccm_tools_ai_hub_get_results', {
-                limit: 10,
-            }, { timeout: 15000 });
-
-            const data = res.data || {};
-            const mobileResults = data.mobile || [];
-            const desktopResults = data.desktop || [];
-            const runs = data.runs || [];
-
-            let html = '';
-
-            // ── Optimization Runs ──
-            if (runs.length) {
-                html += '<h4 style="margin:0 0 0.75rem;">Optimization Runs</h4>';
-                html += '<div class="ccm-ai-history-runs">';
-                runs.forEach(run => {
-                    const date = run.date ? new Date(run.date).toLocaleString() : '—';
-                    const mobileChange = run.after_mobile - run.before_mobile;
-                    const desktopChange = run.after_desktop - run.before_desktop;
-                    const mobileChangeStr = mobileChange !== 0 ? `(${mobileChange > 0 ? '+' : ''}${mobileChange})` : '';
-                    const desktopChangeStr = desktopChange !== 0 ? `(${desktopChange > 0 ? '+' : ''}${desktopChange})` : '';
-                    const mobileChangeClass = mobileChange > 0 ? 'ccm-score-green' : (mobileChange < 0 ? 'ccm-score-red' : '');
-                    const desktopChangeClass = desktopChange > 0 ? 'ccm-score-green' : (desktopChange < 0 ? 'ccm-score-red' : '');
-
-                    let outcomeLabel = '';
-                    if (run.rolled_back) outcomeLabel = '<span class="ccm-badge ccm-badge-warning">Rolled Back</span>';
-                    else if (run.outcome === 'no_changes') outcomeLabel = '<span class="ccm-badge ccm-badge-info">No Changes</span>';
-                    else if (mobileChange > 0 || desktopChange > 0) outcomeLabel = '<span class="ccm-badge ccm-badge-success">Improved</span>';
-                    else outcomeLabel = '<span class="ccm-badge ccm-badge-info">Complete</span>';
-
-                    // Build changes summary
-                    let changesList = '';
-                    if (run.changes && run.changes.length) {
-                        const labels = run.changes.map(c => {
-                            const k = typeof c === 'object' && c.key ? c.key : String(c);
-                            return aiSettingLabel(k);
-                        });
-                        changesList = `<div class="ccm-ai-run-changes">${labels.map(l => `<span class="ccm-ai-run-change-tag">${l}</span>`).join('')}</div>`;
-                    }
-
-                    html += `<div class="ccm-ai-run-card">
-                        <div class="ccm-ai-run-header">
-                            <span class="ccm-ai-run-date">${date}</span>
-                            ${outcomeLabel}
-                            ${run.iterations > 1 ? `<span class="ccm-badge ccm-badge-info">${run.iterations} iterations</span>` : ''}
-                        </div>
-                        <div class="ccm-ai-run-scores">
-                            <div class="ccm-ai-run-strategy">
-                                <span class="ccm-ai-run-strategy-label">Mobile</span>
-                                <span class="${aiScoreColorClass(run.before_mobile)}">${run.before_mobile}</span>
-                                <span class="ccm-ai-run-arrow">→</span>
-                                <strong class="${aiScoreColorClass(run.after_mobile)}">${run.after_mobile}</strong>
-                                <span class="${mobileChangeClass}" style="font-size:0.8rem;">${mobileChangeStr}</span>
-                            </div>
-                            <div class="ccm-ai-run-strategy">
-                                <span class="ccm-ai-run-strategy-label">Desktop</span>
-                                <span class="${aiScoreColorClass(run.before_desktop)}">${run.before_desktop}</span>
-                                <span class="ccm-ai-run-arrow">→</span>
-                                <strong class="${aiScoreColorClass(run.after_desktop)}">${run.after_desktop}</strong>
-                                <span class="${desktopChangeClass}" style="font-size:0.8rem;">${desktopChangeStr}</span>
-                            </div>
-                        </div>
-                        ${run.changes_count ? `<div class="ccm-ai-run-meta">${run.changes_count} setting${run.changes_count !== 1 ? 's' : ''} changed</div>` : ''}
-                        ${changesList}
-                    </div>`;
-                });
-                html += '</div>';
-            }
-
-            // ── PageSpeed Test Results (paired mobile + desktop) ──
-            if (mobileResults.length || desktopResults.length) {
-                html += '<h4 style="margin:1.25rem 0 0.75rem;">PageSpeed Test Results</h4>';
-
-                // Pair mobile and desktop by matching timestamps (within 5 min)
-                const paired = aiPairResults(mobileResults, desktopResults);
-
-                html += '<div class="ccm-ai-history-results">';
-                paired.forEach(pair => {
-                    const date = pair.date ? new Date(pair.date).toLocaleString() : '—';
-                    const m = pair.mobile;
-                    const d = pair.desktop;
-
-                    html += `<div class="ccm-ai-result-card">
-                        <div class="ccm-ai-result-date">${date}</div>
-                        <div class="ccm-ai-result-scores">`;
-
-                    if (m) {
-                        html += `<div class="ccm-ai-result-strategy">
-                            <span class="ccm-ai-result-strategy-label">Mobile</span>
-                            <div class="ccm-ai-result-score-row">
-                                <span class="ccm-ai-result-score ${aiScoreColorClass(m.scores?.performance)}">${m.scores?.performance ?? '—'}</span>
-                                <span class="ccm-ai-result-metrics">A:${m.scores?.accessibility ?? '—'} BP:${m.scores?.best_practices ?? '—'} SEO:${m.scores?.seo ?? '—'}</span>
-                            </div>
-                            <span class="ccm-ai-result-lcp">${m.metrics?.lcp_ms ? `LCP ${Number(m.metrics.lcp_ms).toLocaleString()}ms` : ''}</span>
-                        </div>`;
-                    }
-
-                    if (d) {
-                        html += `<div class="ccm-ai-result-strategy">
-                            <span class="ccm-ai-result-strategy-label">Desktop</span>
-                            <div class="ccm-ai-result-score-row">
-                                <span class="ccm-ai-result-score ${aiScoreColorClass(d.scores?.performance)}">${d.scores?.performance ?? '—'}</span>
-                                <span class="ccm-ai-result-metrics">A:${d.scores?.accessibility ?? '—'} BP:${d.scores?.best_practices ?? '—'} SEO:${d.scores?.seo ?? '—'}</span>
-                            </div>
-                            <span class="ccm-ai-result-lcp">${d.metrics?.lcp_ms ? `LCP ${Number(d.metrics.lcp_ms).toLocaleString()}ms` : ''}</span>
-                        </div>`;
-                    }
-
-                    html += '</div></div>';
-                });
-                html += '</div>';
-            }
-
-            if (!html) {
-                html = '<p style="opacity:0.6;">No results yet. Run a test to get started.</p>';
-            }
-
-            container.innerHTML = html;
-        } catch (err) {
-            container.innerHTML = `<p class="ccm-error">${err.message || 'Failed to load history.'}</p>`;
-        }
-    }
-
-    /**
-     * Pair mobile and desktop results by timestamp proximity (within 5 minutes).
-     * Returns an array of { date, mobile, desktop } objects.
-     */
-    function aiPairResults(mobileResults, desktopResults) {
-        const paired = [];
-        const usedDesktop = new Set();
-        const THRESHOLD = 5 * 60 * 1000; // 5 minutes
-
-        mobileResults.forEach(m => {
-            const mTime = m.tested_at ? new Date(m.tested_at).getTime() : 0;
-            let bestMatch = null;
-            let bestDiff = Infinity;
-
-            desktopResults.forEach((d, idx) => {
-                if (usedDesktop.has(idx)) return;
-                const dTime = d.tested_at ? new Date(d.tested_at).getTime() : 0;
-                const diff = Math.abs(mTime - dTime);
-                if (diff < THRESHOLD && diff < bestDiff) {
-                    bestMatch = idx;
-                    bestDiff = diff;
-                }
-            });
-
-            const entry = { date: m.tested_at, mobile: m, desktop: null };
-            if (bestMatch !== null) {
-                entry.desktop = desktopResults[bestMatch];
-                usedDesktop.add(bestMatch);
-            }
-            paired.push(entry);
-        });
-
-        // Add unmatched desktop results
-        desktopResults.forEach((d, idx) => {
-            if (!usedDesktop.has(idx)) {
-                paired.push({ date: d.tested_at, mobile: null, desktop: d });
-            }
-        });
-
-        // Sort by date descending
-        paired.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-        return paired;
-    }
-
     /**
      * Download backup file
      */

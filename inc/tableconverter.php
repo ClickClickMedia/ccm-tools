@@ -246,6 +246,7 @@ function ccm_tools_convert_single_table($table_name) {
 function ccm_tools_convert_tables() {
     global $wpdb;
     $result = '';
+    $errors = array();
 
     // Check MySQL/MariaDB version and determine appropriate collation
     $mysql_version = $wpdb->get_var("SELECT VERSION()");
@@ -256,15 +257,15 @@ function ccm_tools_convert_tables() {
     if (empty($database_name)) {
         $database_name = defined('DB_NAME') ? DB_NAME : '';
     }
-    
+
     if (empty($database_name)) {
         return '<p class="ccm-error">Unable to determine database name</p>';
     }
 
     $tables_to_convert = $wpdb->get_results(
-        $wpdb->prepare("SELECT * FROM INFORMATION_SCHEMA.TABLES 
-        WHERE TABLE_SCHEMA = %s 
-        AND (ENGINE <> 'InnoDB' OR TABLE_COLLATION <> %s)", 
+        $wpdb->prepare("SELECT * FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = %s
+        AND (ENGINE <> 'InnoDB' OR TABLE_COLLATION <> %s)",
         $database_name, $collation),
         'ARRAY_A'
     );
@@ -278,35 +279,50 @@ function ccm_tools_convert_tables() {
     $result .= '<tr><th>Table</th><th>Engine</th><th>Collation</th><th>Status</th></tr></thead><tbody>';
 
     $tables_changed = 0;
+    $tables_failed = 0;
 
     foreach ($tables_to_convert as $table) {
         $table_name = $table['TABLE_NAME'];
         $original_engine = $table['ENGINE'];
         $original_collation = $table['TABLE_COLLATION'];
         $changes_made = false;
-        
+        $row_errors = array();
+
+        // SECURITY: Validate table name exists in database to prevent SQL injection
+        if (!ccm_tools_validate_table_name($table_name)) {
+            $msg = 'Invalid table name — skipped for safety';
+            $errors[] = "{$table_name}: {$msg}";
+            $result .= '<tr><td>' . esc_html($table_name) . '</td><td colspan="2">-</td><td><span style="color: red;">✗ Skipped (invalid name)</span></td></tr>';
+            $tables_failed++;
+            continue;
+        }
+
         // Convert to InnoDB if not already
         if ($original_engine !== 'InnoDB') {
             $result_query = $wpdb->query("ALTER TABLE `{$table_name}` ENGINE = InnoDB");
             if ($result_query === false) {
                 $error_msg = ccm_tools_log_db_error("Engine conversion for table {$table_name}");
-                $errors[] = 'Engine conversion failed' . ($error_msg ? ': ' . $error_msg : '');
+                $msg = 'Engine conversion failed' . ($error_msg ? ': ' . $error_msg : '');
+                $row_errors[] = $msg;
+                $errors[] = "{$table_name}: {$msg}";
             } else {
                 $changes_made = true;
             }
         }
-        
+
         // Convert to appropriate utf8mb4 collation if not already
         if ($original_collation !== $collation) {
             $result_query = $wpdb->query("ALTER TABLE `{$table_name}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$collation}");
             if ($result_query === false) {
                 $error_msg = ccm_tools_log_db_error("Collation conversion for table {$table_name}");
-                $errors[] = 'Collation conversion failed' . ($error_msg ? ': ' . $error_msg : '');
+                $msg = 'Collation conversion failed' . ($error_msg ? ': ' . $error_msg : '');
+                $row_errors[] = $msg;
+                $errors[] = "{$table_name}: {$msg}";
             } else {
                 $changes_made = true;
             }
         }
-        
+
         // Get updated table status using INFORMATION_SCHEMA (more reliable for MariaDB)
         $updated_status = $wpdb->get_row(
             $wpdb->prepare("SELECT ENGINE, TABLE_COLLATION FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s", $database_name, $table_name),
@@ -319,7 +335,7 @@ function ccm_tools_convert_tables() {
         // Safety check for updated status with proper fallbacks
         $new_engine = 'undefined';
         $new_collation = 'undefined';
-        
+
         if ($updated_status && is_array($updated_status)) {
             $new_engine = !empty($updated_status['ENGINE']) ? $updated_status['ENGINE'] : $original_engine;
             $new_collation = !empty($updated_status['TABLE_COLLATION']) ? $updated_status['TABLE_COLLATION'] : $original_collation;
@@ -330,7 +346,7 @@ function ccm_tools_convert_tables() {
                 'ARRAY_A'
             );
             ccm_tools_log_db_error("Fallback SHOW TABLE STATUS for table {$table_name}");
-            
+
             if ($show_status && is_array($show_status)) {
                 $new_engine = !empty($show_status['Engine']) ? $show_status['Engine'] : $original_engine;
                 $new_collation = !empty($show_status['Collation']) ? $show_status['Collation'] : $original_collation;
@@ -342,7 +358,7 @@ function ccm_tools_convert_tables() {
         }
 
         $result .= "<tr><td>" . esc_html($table_name) . "</td><td>";
-        
+
         // Show engine conversion with status indicators
         if ($new_engine === 'undefined' || empty($new_engine)) {
             $result .= $original_engine . ' <span class="ccm-icon ccm-error">→</span> <span style="color: red;">undefined</span>';
@@ -350,9 +366,9 @@ function ccm_tools_convert_tables() {
             $engine_status = ($original_engine === $new_engine) ? 'ccm-info' : 'ccm-success';
             $result .= $original_engine . ' <span class="ccm-icon ' . $engine_status . '">→</span> ' . $new_engine;
         }
-        
+
         $result .= '</td><td>';
-        
+
         // Show collation conversion with status indicators
         if ($new_collation === 'undefined' || empty($new_collation)) {
             $result .= $original_collation . ' <span class="ccm-icon ccm-error">→</span> <span style="color: red;">undefined</span>';
@@ -360,18 +376,27 @@ function ccm_tools_convert_tables() {
             $collation_status = ($original_collation === $new_collation) ? 'ccm-info' : 'ccm-success';
             $result .= $original_collation . ' <span class="ccm-icon ' . $collation_status . '">→</span> ' . $new_collation;
         }
-        
+
         $result .= '</td><td>';
-        
-        // Add status column
-        if ($new_engine === 'undefined' || $new_collation === 'undefined' || empty($new_engine) || empty($new_collation)) {
-            $result .= '<span style="color: red;">✗ Failed</span>';
+
+        // Truthful status: a table that still doesn't match what we asked for
+        // (engine still not InnoDB, or collation still not the target) is a
+        // failure even when the re-read succeeded — this is what a failed
+        // ALTER that left values unchanged used to render as "up to date" for.
+        $still_wrong_engine = ($new_engine !== 'InnoDB');
+        $still_wrong_collation = ($new_collation !== $collation);
+        $has_row_errors = !empty($row_errors);
+
+        if ($new_engine === 'undefined' || $new_collation === 'undefined' || empty($new_engine) || empty($new_collation) || $has_row_errors || $still_wrong_engine || $still_wrong_collation) {
+            $status_text = $has_row_errors ? implode('; ', $row_errors) : 'Not fully converted';
+            $result .= '<span style="color: red;" title="' . esc_attr($status_text) . '">✗ Failed</span>';
+            $tables_failed++;
         } else if ($changes_made) {
             $result .= '<span style="color: green;">✓ Converted</span>';
         } else {
             $result .= '<span style="color: blue;">✓ Up to date</span>';
         }
-        
+
         $result .= '</td></tr>';
 
         if ($changes_made) {
@@ -380,6 +405,22 @@ function ccm_tools_convert_tables() {
     }
 
     $result .= '</tbody></table>';
-    $result = '<p><span class="ccm-icon ccm-info">i</span>' . $tables_changed . ' Tables Changed</p>' . $result;
+
+    if (!empty($errors)) {
+        $error_list = '<div class="ccm-alert ccm-alert-error" style="margin-bottom: 1rem;"><strong>' . count($errors) . ' ' . __('error(s) occurred:', 'ccm-tools') . '</strong><ul>';
+        foreach ($errors as $error) {
+            $error_list .= '<li>' . esc_html($error) . '</li>';
+        }
+        $error_list .= '</ul></div>';
+        $result = $error_list . $result;
+    }
+
+    $summary = '<p><span class="ccm-icon ccm-info">i</span>' . $tables_changed . ' Tables Changed';
+    if ($tables_failed > 0) {
+        $summary .= ', <span style="color: red;">' . $tables_failed . ' Failed</span>';
+    }
+    $summary .= '</p>';
+
+    $result = $summary . $result;
     return $result;
 }

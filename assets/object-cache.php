@@ -8,7 +8,7 @@
  * wp_cache_remember(), HTML footnote, KEEPTTL on incr/decr.
  * 
  * @package CCM_Tools
- * @version 7.44.1
+ * @version 8.0.0
  *
  * This file should be placed in wp-content/object-cache.php
  */
@@ -394,15 +394,33 @@ class CCM_Redis_Object_Cache {
         $scheme       = defined('WP_REDIS_SCHEME') ? WP_REDIS_SCHEME : 'tcp';
         $socket       = defined('WP_REDIS_PATH') ? WP_REDIS_PATH : '';
 
-        // Circuit-breaker: if the server recently refused a connection, skip
-        // retrying on every request so we don't flood the error log.
+        // Circuit-breaker: if the server recently failed to connect (refused,
+        // auth, timeout, TLS — anything that stops us establishing a usable
+        // connection), skip retrying on every request so we don't flood the
+        // error log. During the window we stay silent per-request but keep a
+        // suppressed-request counter, and log ONE summary line when the
+        // window ends — a sustained outage should read as "outage", not as
+        // either total log silence or one line per request.
         $backoff_ttl  = defined('WP_REDIS_REFUSED_BACKOFF') ? (int) WP_REDIS_REFUSED_BACKOFF : 60;
         $backoff_file = $backoff_ttl > 0
             ? sys_get_temp_dir() . '/ccm_redis_refused_' . md5($host . ':' . $port) . '.tmp'
             : '';
 
-        if ($backoff_file && file_exists($backoff_file) && (time() - filemtime($backoff_file)) < $backoff_ttl) {
-            return false;
+        if ($backoff_file && file_exists($backoff_file)) {
+            $breaker = $this->read_breaker_state($backoff_file);
+            if ($breaker !== null && (time() - $breaker['started']) < $backoff_ttl) {
+                // Still inside the window: bump the counter, stay silent.
+                $this->write_breaker_state($backoff_file, $breaker['started'], $breaker['count'] + 1);
+                return false;
+            }
+            // Window expired (or the file was unreadable/corrupt): report how
+            // many requests were suppressed before falling through to retry.
+            if ($breaker !== null && $breaker['count'] > 0) {
+                $this->track_error(
+                    $breaker['count'] . ' further connection failures suppressed in the last ' . $backoff_ttl . 's'
+                );
+            }
+            @unlink($backoff_file);
         }
 
         $attempts = 0;
@@ -489,15 +507,56 @@ class CCM_Redis_Object_Cache {
                     $msg = $e->getMessage();
                     $this->track_error('Connection failed after ' . $attempts . ' attempts: ' . $msg);
 
-                    // Circuit-breaker: suppress future attempts for the backoff period
-                    if ($backoff_file && stripos($msg, 'refused') !== false) {
-                        @touch($backoff_file);
+                    // Circuit-breaker: any connection-establishment failure
+                    // (refused, auth, timeout, TLS) trips the breaker, not
+                    // just "refused" — those used to log on every single
+                    // request during a sustained outage, the opposite
+                    // problem to "refused" going silent.
+                    if ($backoff_file) {
+                        $this->write_breaker_state($backoff_file, time(), 0);
                     }
                 }
             }
         }
 
         return false;
+    }
+
+    /**
+     * Read circuit-breaker state from $file.
+     *
+     * Content is "<started>|<count>" — a plain file_put_contents() per
+     * suppressed request would otherwise keep resetting the file's mtime,
+     * which is what the window start used to be measured from, so the
+     * window would never actually expire while requests kept arriving. The
+     * start time is stored in the content instead, independent of mtime.
+     *
+     * @param string $file
+     * @return array{started:int,count:int}|null Null if missing/unreadable/corrupt.
+     */
+    private function read_breaker_state($file) {
+        $raw = @file_get_contents($file);
+        if ($raw === false || $raw === '') {
+            return null;
+        }
+        $parts = explode('|', $raw, 2);
+        if (count($parts) !== 2 || !ctype_digit($parts[0]) || !ctype_digit($parts[1])) {
+            return null;
+        }
+        return ['started' => (int) $parts[0], 'count' => (int) $parts[1]];
+    }
+
+    /**
+     * Write circuit-breaker state to $file. Best-effort — a failed write just
+     * means the next request re-attempts a connection instead of staying
+     * backed off, which is safe.
+     *
+     * @param string $file
+     * @param int    $started Window start (unix timestamp).
+     * @param int    $count   Suppressed-request counter for this window.
+     */
+    private function write_breaker_state($file, $started, $count) {
+        @file_put_contents($file, $started . '|' . $count);
     }
 
     /**

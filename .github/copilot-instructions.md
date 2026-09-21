@@ -1,8 +1,8 @@
 ﻿# CCM Tools — Copilot Instructions
 
-WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version: 7.45.0**
+WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version: 8.0.0**
 
-> **Related projects in this workspace:** `ccm-api-hub` (AI/PageSpeed proxy API) · `ccm-premium` (subscription management)
+> **No related services.** The plugin talks only to the Google PageSpeed Insights API (Site Health) and to GitHub (updates). The old `ccm-api-hub` proxy and `ccm-premium` subscription site were retired in v8.0.0.
 > **File structure:** [.file-structure.md](../.file-structure.md) *(local-only, git-ignored — update this file whenever files are added or deleted)*
 
 ## Features
@@ -19,8 +19,7 @@ WordPress utility plugin for site administrators. **PHP 7.4+ | WP 6.0+ | Version
 | WooCommerce Tools | Admin payment toggle, cart/session tools |
 | Redis Object Cache | Custom drop-in, TCP/TLS/Unix, pipeline bulk ops, WooCommerce TTL caching |
 | Cloudflare | CF detection, API token connection, cache purge, dev mode toggle, zone status dashboard |
-| AI Performance Hub *(Premium)* | PageSpeed AI loop, visual regression, console error check, AI chat, rollback |
-| Premium | Feature gating via `ccm_tools_is_premium()`; `define('CCM_TOOLS_PREMIUM', true)` for dev override |
+| Site Health | Google PageSpeed Insights scores, Core Web Vitals, CrUX field data, findings linked to the settings that address them. Reports only, never applies anything. |
 
 ## Stack
 
@@ -52,7 +51,7 @@ Format: `x.y.z` — patch (z) goes 0–999. **Increment after every change.**
 | New feature | y (minor) |
 | Breaking change | x (major) |
 
-**Update version in:** `ccm.php` (header `Version:` + `CCM_HELPER_VERSION` constant) · `js/main.js` · `css/style.css`
+**Update version in:** `ccm.php` (header `Version:` + `CCM_HELPER_VERSION` constant) · `js/main.js` · `css/style.css` · `assets/object-cache.php` (`@version`, only when the drop-in itself changes)
 
 ## After Every Change
 
@@ -61,8 +60,10 @@ Format: `x.y.z` — patch (z) goes 0–999. **Increment after every change.**
 git add -A; git commit -m "Description (vX.Y.Z)"; git push
 
 # 2. Build zips (from repo root)
-Compress-Archive -Path "ccm.php","index.php","css","inc","js","img","assets" -DestinationPath "archive\ccm-tools-X.Y.Z.zip" -Force
-Compress-Archive -Path "ccm.php","index.php","css","inc","js","img","assets" -DestinationPath "ccm-tools.zip" -Force
+# The zip MUST contain a top-level ccm-tools/ folder. A flat zip makes WordPress
+# install to ccm-tools-X.Y.Z/ alongside the real one, and the plugin deactivates
+# itself (see CHANGELOG v7.42.1). Use the build script:
+bash build-zip.sh X.Y.Z
 
 # 3. GitHub release (required for WordPress auto-updates)
 & "C:\Program Files\GitHub CLI\gh.exe" release create vX.Y.Z "archive\ccm-tools-X.Y.Z.zip" "ccm-tools.zip" --title "vX.Y.Z" --notes "## Changes in vX.Y.Z`n`n- Change 1"
@@ -84,7 +85,5 @@ All handlers in `inc/ajax-handlers.php`. Hook pattern: `add_action('wp_ajax_ccm_
 | Redis | `redis_enable`, `redis_disable`, `redis_flush`, `redis_test`, `redis_save_settings`, `redis_add_config`, `redis_get_stats`, `configure_redis` |
 | WebP | `save_webp_settings`, `get_webp_stats`, `get_unconverted_images`, `convert_single_image`, `test_webp_conversion` |
 | Performance | `save_perf_settings`, `get_perf_settings` |
-| AI Hub | `ai_hub_save_settings`, `ai_hub_test_connection`, `ai_hub_run_pagespeed`, `ai_hub_get_results`, `ai_hub_ai_analyze`, `ai_hub_ai_optimize`, `ai_hub_visual_compare`, `ai_hub_console_check`, `ai_hub_get_latest_scores` |
-| AI Session | `ai_apply_changes`, `ai_save_run`, `ai_preflight`, `ai_enable_tool`, `ai_chat`, `ai_record_known_bad`, `ai_get_known_bad`, `ai_clear_known_bad` |
+| Site Health | `sh_save_key`, `sh_run_test`, `sh_clear_history` (registered in `inc/site-health.php`, not in ajax-handlers.php) |
 | Cloudflare | `cf_connect`, `cf_disconnect`, `cf_get_status`, `cf_purge_all`, `cf_purge_urls`, `cf_dev_mode` |
-| Premium | `premium_refresh` |

@@ -4,15 +4,88 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Convert Tables
-add_action('wp_ajax_ccm_tools_convert_tables', 'ccm_tools_ajax_convert_tables');
-function ccm_tools_ajax_convert_tables(): void {
-    check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
+/**
+ * Atomically write content to a config file (used for wp-config.php).
+ *
+ * Takes a timestamped backup of the existing file (if any), writes the new
+ * content to a temp file in the SAME directory, verifies the full byte count
+ * was written, then renames the temp file into place. A plain
+ * file_put_contents() can leave the file truncated if the worker is killed
+ * mid-write or a second admin writes concurrently - for wp-config.php that
+ * is a sitewide white screen with no way into wp-admin to fix it.
+ *
+ * Note file_put_contents() returns the byte count on a partial write (not
+ * false), so a naive `=== false` check does not catch a full disk - this
+ * helper checks the byte count against strlen($content) instead.
+ *
+ * @param string $path    Absolute path to the file to write.
+ * @param string $content New full file content.
+ * @return bool True on success. On failure the original file is left
+ *              untouched and the temp file is cleaned up.
+ */
+function ccm_tools_write_wp_config($path, $content) {
+    // Timestamped backup of the current file, if it exists.
+    if (file_exists($path)) {
+        $backup_path = $path . '.ccm-backup-' . gmdate('YmdHis') . '-' . wp_generate_password(6, false, false);
+        @copy($path, $backup_path);
     }
-    $result = ccm_tools_convert_tables();
-    wp_send_json_success($result);
+
+    $dir = dirname($path);
+    $tmp_path = $dir . '/' . basename($path) . '.tmp-' . wp_generate_password(12, false, false);
+
+    $bytes_written = @file_put_contents($tmp_path, $content);
+    if ($bytes_written === false || $bytes_written !== strlen($content)) {
+        @unlink($tmp_path);
+        return false;
+    }
+
+    // Preserve the original file's permissions where possible.
+    if (file_exists($path)) {
+        $perms = @fileperms($path);
+        if ($perms !== false) {
+            @chmod($tmp_path, $perms & 0777);
+        }
+    }
+
+    if (!@rename($tmp_path, $path)) {
+        @unlink($tmp_path);
+        return false;
+    }
+
+    if (function_exists('opcache_invalidate')) {
+        opcache_invalidate($path, true);
+    }
+
+    return true;
+}
+
+/**
+ * Inspect a wp-config.php constant definition and report whether it is a
+ * literal true/false this plugin can safely toggle.
+ *
+ * A host using define('WP_DEBUG', getenv('WP_DEBUG')) or a ternary is a
+ * real, supported wp-config pattern. Matching only a bare true|false meant
+ * that pattern was invisible to this plugin, which then inserted a SECOND
+ * define() for the same constant - a hard "Constant already defined" PHP
+ * notice/fatal on every later request.
+ *
+ * @param string $constant       Constant name, e.g. WP_DEBUG.
+ * @param string $config_content Current wp-config.php contents.
+ * @return array{defined: bool, is_bool_literal: bool, is_true: bool}
+ */
+function ccm_tools_wp_config_constant_state($constant, $config_content) {
+    $state = array('defined' => false, 'is_bool_literal' => false, 'is_true' => false);
+
+    if (preg_match('/define\(\s*[\'"]' . preg_quote($constant, '/') . '[\'"]\s*,\s*([^)]*)\)/i', $config_content, $matches)) {
+        $state['defined'] = true;
+        $value = trim($matches[1]);
+        if (preg_match('/^(true|false)$/i', $value)) {
+            $state['is_bool_literal'] = true;
+            $state['is_true'] = (strtolower($value) === 'true');
+        }
+    }
+
+    return $state;
 }
 
 // Get tables to convert (AJAX)
@@ -44,17 +117,6 @@ function ccm_tools_ajax_convert_single_table(): void {
     }
     
     $result = ccm_tools_convert_single_table($table_name);
-    wp_send_json_success($result);
-}
-
-// Optimize Database
-add_action('wp_ajax_ccm_tools_optimize_database', 'ccm_tools_ajax_optimize_database');
-function ccm_tools_ajax_optimize_database(): void {
-    check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
-    }
-    $result = ccm_tools_optimize_database();
     wp_send_json_success($result);
 }
 
@@ -109,83 +171,10 @@ function ccm_tools_ajax_get_optimization_options(): void {
     
     $options = ccm_tools_get_optimization_options();
     $stats = ccm_tools_get_optimization_stats();
-    $is_premium = function_exists('ccm_tools_is_premium') && ccm_tools_is_premium();
 
-    // Remove premium-only options for non-premium users
-    if (!$is_premium) {
-        foreach ($options as $key => $opt) {
-            if (!empty($opt['premium'])) {
-                unset($options[$key]);
-            }
-        }
-    }
-    
     wp_send_json_success(array(
         'options' => $options,
-        'stats' => $stats,
-        'is_premium' => $is_premium
-    ));
-}
-
-// Run selected optimizations (AJAX)
-add_action('wp_ajax_ccm_tools_run_optimizations', 'ccm_tools_ajax_run_optimizations');
-function ccm_tools_ajax_run_optimizations(): void {
-    check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
-    }
-    
-    // Handle both selected and selected[] (array notation from FormData)
-    $selected = array();
-    if (isset($_POST['selected']) && is_array($_POST['selected'])) {
-        $selected = array_map('sanitize_text_field', $_POST['selected']);
-    } elseif (isset($_POST['selected'])) {
-        // Single value or comma-separated fallback
-        $selected = array_map('sanitize_text_field', explode(',', $_POST['selected']));
-    }
-    
-    if (empty($selected)) {
-        wp_send_json_error(__('No optimization options selected.', 'ccm-tools'));
-    }
-    
-    // Validate all selected options exist
-    $available = ccm_tools_get_optimization_options();
-    $is_premium = function_exists('ccm_tools_is_premium') && ccm_tools_is_premium();
-    foreach ($selected as $option) {
-        if (!isset($available[$option])) {
-            wp_send_json_error(sprintf(__('Invalid optimization option: %s', 'ccm-tools'), $option));
-        }
-        // Block premium options for non-premium users
-        if (!empty($available[$option]['premium']) && !$is_premium) {
-            wp_send_json_error(__('This optimization requires a premium subscription.', 'ccm-tools'));
-        }
-    }
-    
-    $results = ccm_tools_run_selected_optimizations($selected);
-    
-    // Calculate totals
-    $total_count = 0;
-    $success_count = 0;
-    $messages = array();
-    
-    foreach ($results as $key => $result) {
-        if (isset($result['count'])) {
-            $total_count += $result['count'];
-        }
-        if (!empty($result['success'])) {
-            $success_count++;
-        }
-        if (!empty($result['message'])) {
-            $messages[] = $result['message'];
-        }
-    }
-    
-    wp_send_json_success(array(
-        'results' => $results,
-        'total_count' => $total_count,
-        'success_count' => $success_count,
-        'total_tasks' => count($selected),
-        'summary' => implode("\n", $messages)
+        'stats' => $stats
     ));
 }
 
@@ -210,14 +199,6 @@ function ccm_tools_ajax_run_single_optimization(): void {
     $available = ccm_tools_get_optimization_options();
     if (!isset($available[$task])) {
         wp_send_json_error(sprintf(__('Invalid optimization task: %s', 'ccm-tools'), $task));
-    }
-    
-    // Block premium options for non-premium users
-    if (!empty($available[$task]['premium'])) {
-        $is_premium = function_exists('ccm_tools_is_premium') && ccm_tools_is_premium();
-        if (!$is_premium) {
-            wp_send_json_error(__('This optimization requires a premium subscription.', 'ccm-tools'));
-        }
     }
     
     // Run the single task
@@ -357,17 +338,6 @@ function ccm_tools_ajax_optimize_table_task(): void {
     ));
 }
 
-// Display .htaccess
-add_action('wp_ajax_ccm_tools_display_htaccess', 'ccm_tools_ajax_display_htaccess');
-function ccm_tools_ajax_display_htaccess(): void {
-    check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
-    }
-    $result = ccm_tools_display_htaccess();
-    wp_send_json_success($result);
-}
-
 /**
  * Helper function to parse htaccess options from POST
  */
@@ -488,10 +458,19 @@ function ccm_tools_ajax_update_debug_mode(): void {
     
     // Read the config file
     $config_content = file_get_contents($wp_config_path);
-    
+
+    // A wp-config using define('WP_DEBUG', getenv('WP_DEBUG')) or a ternary
+    // is a real, supported pattern on managed hosts. Refuse rather than
+    // insert a second define() for the same constant.
+    $wp_debug_state = ccm_tools_wp_config_constant_state('WP_DEBUG', $config_content);
+    if ($wp_debug_state['defined'] && !$wp_debug_state['is_bool_literal']) {
+        wp_send_json_error(__('WP_DEBUG is defined in wp-config.php using a non-boolean expression (e.g. getenv() or a ternary). This plugin cannot safely toggle it without risking a duplicate constant definition. Please edit wp-config.php manually.', 'ccm-tools'));
+        return;
+    }
+
     // Update WP_DEBUG value
     $debug_value = $enable ? 'true' : 'false';
-    
+
     // If disabling debug mode, also disable debug display AND debug log
     if (!$enable) {
         // Update or add WP_DEBUG_DISPLAY to false
@@ -528,8 +507,8 @@ function ccm_tools_ajax_update_debug_mode(): void {
     }
     
     // Update WP_DEBUG
-    if (preg_match('/define\(\s*[\'"]WP_DEBUG[\'"]\s*,\s*(?:true|false)\s*\)/i', $config_content)) {
-        // Replace existing WP_DEBUG line
+    if ($wp_debug_state['defined']) {
+        // Replace existing WP_DEBUG line (already confirmed a literal true/false above)
         $config_content = preg_replace(
             '/define\(\s*[\'"]WP_DEBUG[\'"]\s*,\s*(?:true|false)\s*\)/i',
             "define('WP_DEBUG', $debug_value)",
@@ -543,14 +522,9 @@ function ccm_tools_ajax_update_debug_mode(): void {
             $config_content
         );
     }
-    
-    // Write changes back to the file
-    if (file_put_contents($wp_config_path, $config_content)) {
-        // Clear any opcode cache
-        if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($wp_config_path, true);
-        }
-        
+
+    // Write changes back to the file - atomically, with a backup
+    if (ccm_tools_write_wp_config($wp_config_path, $config_content)) {
         // Re-read the file to ensure changes were applied
         $updated_config = file_get_contents($wp_config_path);
         $debug_log_enabled = false;
@@ -607,12 +581,21 @@ function ccm_tools_ajax_update_debug_display(): void {
     
     // Read the config file
     $config_content = file_get_contents($wp_config_path);
-    
+
+    // A wp-config using a non-literal value (getenv(), a ternary, etc.) for
+    // WP_DEBUG_DISPLAY is a real, supported pattern. Refuse rather than
+    // insert a second define() for the same constant.
+    $wp_debug_display_state = ccm_tools_wp_config_constant_state('WP_DEBUG_DISPLAY', $config_content);
+    if ($wp_debug_display_state['defined'] && !$wp_debug_display_state['is_bool_literal']) {
+        wp_send_json_error(__('WP_DEBUG_DISPLAY is defined in wp-config.php using a non-boolean expression. This plugin cannot safely toggle it without risking a duplicate constant definition. Please edit wp-config.php manually.', 'ccm-tools'));
+        return;
+    }
+
     // Update WP_DEBUG_DISPLAY value
     $debug_display_value = $enable ? 'true' : 'false';
-    
-    if (preg_match('/define\(\s*[\'"]WP_DEBUG_DISPLAY[\'"]\s*,\s*(?:true|false)\s*\)/i', $config_content)) {
-        // Replace existing WP_DEBUG_DISPLAY line
+
+    if ($wp_debug_display_state['defined']) {
+        // Replace existing WP_DEBUG_DISPLAY line (already confirmed a literal true/false above)
         $config_content = preg_replace(
             '/define\(\s*[\'"]WP_DEBUG_DISPLAY[\'"]\s*,\s*(?:true|false)\s*\)/i',
             "define('WP_DEBUG_DISPLAY', $debug_display_value)",
@@ -636,16 +619,11 @@ function ccm_tools_ajax_update_debug_display(): void {
         }
     }
     
-    // Write changes back to the file
-    if (file_put_contents($wp_config_path, $config_content)) {
-        // Clear any opcode cache
-        if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($wp_config_path, true);
-        }
-        
+    // Write changes back to the file - atomically, with a backup
+    if (ccm_tools_write_wp_config($wp_config_path, $config_content)) {
         wp_send_json_success(array(
-            'message' => $enable ? 
-                __('WP_DEBUG_DISPLAY enabled successfully. PHP errors will now be visible on the frontend.', 'ccm-tools') : 
+            'message' => $enable ?
+                __('WP_DEBUG_DISPLAY enabled successfully. PHP errors will now be visible on the frontend.', 'ccm-tools') :
                 __('WP_DEBUG_DISPLAY disabled successfully.', 'ccm-tools'),
             'status' => $enable ? 'Enabled' : 'Disabled',
             'debug_log_status' => defined('WP_DEBUG_LOG') && WP_DEBUG_LOG ? 'Enabled' : 'Disabled'
@@ -683,12 +661,21 @@ function ccm_tools_ajax_update_debug_log(): void {
     
     // Read the config file
     $config_content = file_get_contents($wp_config_path);
-    
+
+    // A wp-config using a non-literal value for WP_DEBUG_LOG (getenv(), a
+    // ternary, or a file path string per WP's own docs) is a real,
+    // supported pattern. Refuse rather than insert a second define().
+    $wp_debug_log_state = ccm_tools_wp_config_constant_state('WP_DEBUG_LOG', $config_content);
+    if ($wp_debug_log_state['defined'] && !$wp_debug_log_state['is_bool_literal']) {
+        wp_send_json_error(__('WP_DEBUG_LOG is defined in wp-config.php using a non-boolean expression (e.g. a custom log file path, getenv(), or a ternary). This plugin cannot safely toggle it without risking a duplicate constant definition. Please edit wp-config.php manually.', 'ccm-tools'));
+        return;
+    }
+
     // Update WP_DEBUG_LOG value
     $debug_log_value = $enable ? 'true' : 'false';
-    
-    if (preg_match('/define\(\s*[\'"]WP_DEBUG_LOG[\'"]\s*,\s*(?:true|false)\s*\)/i', $config_content)) {
-        // Replace existing WP_DEBUG_LOG line
+
+    if ($wp_debug_log_state['defined']) {
+        // Replace existing WP_DEBUG_LOG line (already confirmed a literal true/false above)
         $config_content = preg_replace(
             '/define\(\s*[\'"]WP_DEBUG_LOG[\'"]\s*,\s*(?:true|false)\s*\)/i',
             "define('WP_DEBUG_LOG', $debug_log_value)",
@@ -712,16 +699,11 @@ function ccm_tools_ajax_update_debug_log(): void {
         }
     }
     
-    // Write changes back to the file
-    if (file_put_contents($wp_config_path, $config_content)) {
-        // Clear any opcode cache
-        if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($wp_config_path, true);
-        }
-        
+    // Write changes back to the file - atomically, with a backup
+    if (ccm_tools_write_wp_config($wp_config_path, $config_content)) {
         wp_send_json_success(array(
-            'message' => $enable ? 
-                __('WP_DEBUG_LOG enabled successfully. Debug logs will be saved to wp-content/debug.log', 'ccm-tools') : 
+            'message' => $enable ?
+                __('WP_DEBUG_LOG enabled successfully. Debug logs will be saved to wp-content/debug.log', 'ccm-tools') :
                 __('WP_DEBUG_LOG disabled successfully.', 'ccm-tools'),
             'status' => $enable ? 'Enabled' : 'Disabled'
         ));
@@ -907,21 +889,16 @@ function ccm_tools_ajax_update_memory_limit(): void {
         return;
     }
     
-    // Create backup before writing
+    // Backup used for the verify-and-restore step below (in addition to the
+    // timestamped on-disk backup the atomic writer itself takes).
     $backup_content = $original_content;
-    
-    // Write changes back to the file
-    $bytes_written = file_put_contents($wp_config_path, $config_content);
-    if ($bytes_written !== false) {
-        // Clear any opcode cache
-        if (function_exists('opcache_invalidate')) {
-            opcache_invalidate($wp_config_path, true);
-        }
-        
+
+    // Write changes back to the file - atomically, with a backup
+    if (ccm_tools_write_wp_config($wp_config_path, $config_content)) {
         // Verify the change was written correctly
         $verification_content = file_get_contents($wp_config_path);
         $verification_successful = false;
-        
+
         if ($memory_limit === $default_limit) {
             // Verify removal - check neither active nor commented exists
             $still_active = preg_match($active_memory_limit_pattern, $verification_content);
@@ -931,18 +908,18 @@ function ccm_tools_ajax_update_memory_limit(): void {
             // Verify addition/update - must be active (uncommented) with correct value
             $verification_successful = preg_match('/^[\t ]*define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[\'"]\s*' . preg_quote($memory_limit, '/') . '\s*[\'"]\s*\)/im', $verification_content);
         }
-        
+
         if ($verification_successful) {
             wp_send_json_success(array(
-                'message' => $memory_limit === $default_limit ? 
+                'message' => $memory_limit === $default_limit ?
                     __('WordPress memory limit set to default. The setting has been removed from wp-config.php.', 'ccm-tools') :
                     sprintf(__('WordPress memory limit updated to %s successfully.', 'ccm-tools'), $memory_limit),
                 'limit' => $memory_limit,
                 'reload' => true
             ));
         } else {
-            // Restore backup
-            file_put_contents($wp_config_path, $backup_content);
+            // Restore backup - also written atomically
+            ccm_tools_write_wp_config($wp_config_path, $backup_content);
             wp_send_json_error(__('Configuration update failed verification. Changes have been reverted. Please check wp-config.php manually.', 'ccm-tools'));
         }
     } else {
@@ -959,15 +936,26 @@ function ccm_tools_ajax_configure_redis(): void {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
-    
-    $result = ccm_tools_add_redis_configuration();
-    
-    if (is_wp_error($result)) {
-        wp_send_json_error($result->get_error_message());
-    } else {
+
+    // ccm_tools_add_redis_configuration() lived in system-info.php, which has
+    // been removed - this legacy "Add to wp-config.php" button is repointed
+    // at the current redis-object-cache.php implementation, using the same
+    // settings -> config-array builder the one-step Save flow uses.
+    if (!function_exists('ccm_tools_redis_add_config') || !function_exists('ccm_tools_redis_build_config_array') || !function_exists('ccm_tools_redis_get_settings')) {
+        wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
+        return;
+    }
+
+    $settings = ccm_tools_redis_get_settings();
+    $config   = ccm_tools_redis_build_config_array($settings);
+    $result   = ccm_tools_redis_add_config($config);
+
+    if (!empty($result['success'])) {
         wp_send_json_success(array(
-            'message' => __('Redis configuration added successfully to wp-config.php.', 'ccm-tools'),
+            'message' => !empty($result['message']) ? $result['message'] : __('Redis configuration added successfully to wp-config.php.', 'ccm-tools'),
         ));
+    } else {
+        wp_send_json_error(!empty($result['message']) ? $result['message'] : __('Failed to add Redis configuration.', 'ccm-tools'));
     }
 }
 
@@ -1348,19 +1336,21 @@ function ccm_tools_ajax_measure_ttfb(): void {
 }
 
 // WooCommerce Tools - Toggle Admin Payment Methods
-add_action('wp_ajax_ccm_toggle_admin_payment', 'ccm_tools_ajax_toggle_admin_payment');
+add_action('wp_ajax_ccm_tools_toggle_admin_payment', 'ccm_tools_ajax_toggle_admin_payment');
 function ccm_tools_ajax_toggle_admin_payment(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
-    
+
     // Check if WooCommerce is active
     if (!ccm_tools_is_woocommerce_active()) {
         wp_send_json_error(array('message' => __('WooCommerce is not active.', 'ccm-tools')));
     }
-    
-    $enabled = isset($_POST['enabled']) && $_POST['enabled'] === 'true';
+
+    // js/main.js posts action ccm_tools_toggle_admin_payment with { enable: <bool> }
+    // via FormData, which stringifies the boolean to "true"/"false".
+    $enabled = isset($_POST['enable']) ? filter_var($_POST['enable'], FILTER_VALIDATE_BOOLEAN) : false;
     $new_value = $enabled ? 'yes' : 'no';
     
     update_option('ccm_woo_admin_payment_enabled', $new_value);
@@ -1500,7 +1490,7 @@ function ccm_tools_ajax_import_webp_settings(): void {
     // Boolean settings
     $boolean_keys = array(
         'enabled', 'convert_on_upload', 'serve_webp', 'convert_on_demand',
-        'convert_bg_images', 'keep_original'
+        'convert_bg_images', 'keep_originals'
     );
     
     foreach ($boolean_keys as $key) {
@@ -1775,50 +1765,51 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
     
     $deleted_files = 0;
     $reset_count = 0;
-    
-    // If delete_files is true, scan the uploads directory for ALL WebP files
-    // This catches WebP files created externally (not tracked in metadata)
+
+    // Read the recorded conversions BEFORE the metadata is cleared below -
+    // this is the only source of truth for which WebP files this plugin
+    // actually created.
+    $converted_rows = $wpdb->get_results(
+        "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_ccm_webp_converted'"
+    );
+
+    // Delete only the paths this plugin recorded creating - never by
+    // filename inference. Walking the uploads tree and unlinking any
+    // "same basename, .webp extension" file also deletes WebP images a
+    // designer hand-uploaded alongside the original (e.g. hero.png +
+    // hero.webp both uploaded deliberately), permanently and by accident.
     if ($delete_files) {
-        $upload_dir = wp_upload_dir();
-        $base_dir = $upload_dir['basedir'];
-        
-        // Use RecursiveDirectoryIterator to find all WebP files
-        try {
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($base_dir, RecursiveDirectoryIterator::SKIP_DOTS),
-                RecursiveIteratorIterator::SELF_FIRST
-            );
-            
-            foreach ($iterator as $file) {
-                if ($file->isFile() && strtolower($file->getExtension()) === 'webp') {
-                    $webp_path = $file->getPathname();
-                    
-                    // Check if there's a corresponding original image (jpg/png/gif)
-                    // Only delete WebP files that have an original - don't delete native WebP uploads
-                    $original_jpg = preg_replace('/\.webp$/i', '.jpg', $webp_path);
-                    $original_jpeg = preg_replace('/\.webp$/i', '.jpeg', $webp_path);
-                    $original_png = preg_replace('/\.webp$/i', '.png', $webp_path);
-                    $original_gif = preg_replace('/\.webp$/i', '.gif', $webp_path);
-                    
-                    if (file_exists($original_jpg) || file_exists($original_jpeg) || 
-                        file_exists($original_png) || file_exists($original_gif)) {
-                        if (@unlink($webp_path)) {
-                            $deleted_files++;
-                        }
+        foreach ($converted_rows as $row) {
+            $converted = maybe_unserialize($row->meta_value);
+            if (!is_array($converted)) {
+                continue;
+            }
+            foreach ($converted as $conversion) {
+                if (!empty($conversion['success']) && !empty($conversion['dest_path']) && file_exists($conversion['dest_path'])) {
+                    if (@unlink($conversion['dest_path'])) {
+                        $deleted_files++;
                     }
                 }
             }
-        } catch (Exception $e) {
-            // Fallback: just clear metadata if directory iteration fails
+        }
+
+        // The background conversion queue also records webp_path for items
+        // it has already converted - pick those up too.
+        $queue = get_transient('ccm_webp_conversion_queue');
+        if (is_array($queue)) {
+            foreach ($queue as $item) {
+                if (!empty($item['webp_path']) && file_exists($item['webp_path'])) {
+                    if (@unlink($item['webp_path'])) {
+                        $deleted_files++;
+                    }
+                }
+            }
         }
     }
-    
-    // Get all attachments with WebP conversion metadata and clear it
-    $attachments = $wpdb->get_col(
-        "SELECT DISTINCT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_ccm_webp_converted'"
-    );
-    
-    foreach ($attachments as $attachment_id) {
+
+    // Clear WebP conversion metadata
+    $attachment_ids = array_unique(wp_list_pluck($converted_rows, 'post_id'));
+    foreach ($attachment_ids as $attachment_id) {
         delete_post_meta($attachment_id, '_ccm_webp_converted');
         $reset_count++;
     }
@@ -2050,8 +2041,6 @@ function ccm_tools_ajax_save_perf_settings(): void {
         'cron_interval'           => absint($_POST['cron_interval'] ?? 60) ?: 60,
         'disable_author_archives' => !empty($_POST['disable_author_archives']),
         // INP / Interaction Optimizations (v7.30.0)
-        'passive_event_listeners' => !empty($_POST['passive_event_listeners']),
-        'warn_dom_size'           => !empty($_POST['warn_dom_size']),
     );
     
     // Save settings - update_option returns false if value unchanged, so we check if option exists
@@ -2163,25 +2152,31 @@ function ccm_tools_ajax_import_perf_settings(): void {
         'preload_css_bg_image', 'priority_hints_above_fold', 'delay_third_party',
         'disable_gutenberg_frontend', 'woo_scripts_shop_only', 'cache_control_meta', 'stale_while_revalidate',
         'disable_wp_cron', 'disable_author_archives',
-        'passive_event_listeners', 'warn_dom_size'
     );
     
     foreach ($boolean_keys as $key) {
         $sanitized_settings[$key] = isset($imported_settings[$key]) ? (bool) $imported_settings[$key] : $defaults[$key];
     }
     
-    // Array settings (comma-separated lists)
-    $array_keys = array('defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes', 'preload_key_urls');
+    // Array settings (comma-separated lists of script/style handles).
+    // sanitize_text_field is used here rather than sanitize_key - handles can
+    // legitimately contain dots and mixed case (e.g. 'jquery.validate'),
+    // and sanitize_key would lowercase and strip those characters, silently
+    // breaking every future match against the real handle.
+    $array_keys = array('defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes');
     foreach ($array_keys as $key) {
         if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
-            $sanitized_settings[$key] = array_map('sanitize_key', $imported_settings[$key]);
+            $sanitized_settings[$key] = array_map('sanitize_text_field', $imported_settings[$key]);
         } else {
             $sanitized_settings[$key] = $defaults[$key];
         }
     }
-    
-    // URL array settings
-    $url_array_keys = array('preconnect_urls', 'dns_prefetch_urls');
+
+    // URL array settings. preload_key_urls belongs here, not in the handle
+    // list above - sanitize_key would mangle a URL (lowercase it and strip
+    // everything but [a-z0-9_-]), turning "https://x.com/f.woff2" into
+    // "httpsxcomfwoff2" and breaking every preload link it generates.
+    $url_array_keys = array('preconnect_urls', 'dns_prefetch_urls', 'preload_key_urls');
     foreach ($url_array_keys as $key) {
         if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
             $sanitized_settings[$key] = array_map('esc_url_raw', $imported_settings[$key]);
@@ -2307,7 +2302,6 @@ function ccm_tools_ajax_detect_scripts(): void {
     // Fetch the homepage
     $response = wp_remote_get($site_url, array(
         'timeout' => 30,
-        'sslverify' => false,
         'user-agent' => 'CCM-Tools Script Detector',
     ));
     
@@ -2553,7 +2547,6 @@ function ccm_tools_ajax_detect_external_origins(): void {
     // Fetch the homepage
     $response = wp_remote_get($site_url, array(
         'timeout' => 30,
-        'sslverify' => false,
         'user-agent' => 'CCM-Tools External Origin Detector',
     ));
     
@@ -2754,22 +2747,6 @@ function ccm_tools_get_directory_stats($path, $max_time = 10) {
 }
 
 /**
- * Get directory size recursively (legacy - kept for compatibility)
- */
-function ccm_tools_get_directory_size($path) {
-    $stats = ccm_tools_get_directory_stats($path);
-    return $stats['size'];
-}
-
-/**
- * Count files in directory recursively (legacy - kept for compatibility)
- */
-function ccm_tools_count_files($path) {
-    $stats = ccm_tools_get_directory_stats($path);
-    return $stats['count'];
-}
-
-/**
  * Start uploads backup process
  */
 add_action('wp_ajax_ccm_tools_start_uploads_backup', 'ccm_tools_ajax_start_uploads_backup');
@@ -2806,45 +2783,75 @@ function ccm_tools_ajax_start_uploads_backup(): void {
     // Generate unique backup filename
     $backup_filename = 'uploads-backup-' . date('Y-m-d-His') . '-' . wp_generate_password(8, false) . '.zip';
     $backup_path = $backup_dir . '/' . $backup_filename;
-    
-    // Get all files to process
+    $file_list_path = $backup_dir . '/' . $backup_filename . '.filelist.json';
+
+    // Get all files to process. Time-capped so a very large uploads folder
+    // can't stall the request indefinitely - an incomplete walk still starts
+    // a backup covering whatever was found within the time budget.
     $files = array();
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($uploads_path, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST
-    );
-    
-    foreach ($iterator as $file) {
-        $path = $file->getPathname();
-        
-        // Skip backup directory itself
-        if (strpos($path, '/ccm-backups') !== false || strpos($path, '\\ccm-backups') !== false) {
-            continue;
+    $walk_start = time();
+    $max_walk_seconds = 20;
+    $walk_complete = true;
+
+    try {
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($uploads_path, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $file) {
+            if ((time() - $walk_start) > $max_walk_seconds) {
+                $walk_complete = false;
+                break;
+            }
+
+            $path = $file->getPathname();
+
+            // Skip backup directory itself
+            if (strpos($path, '/ccm-backups') !== false || strpos($path, '\\ccm-backups') !== false) {
+                continue;
+            }
+
+            if ($file->isFile()) {
+                $files[] = $path;
+            }
         }
-        
-        if ($file->isFile()) {
-            $files[] = $path;
-        }
+    } catch (Throwable $e) {
+        // Permission errors etc. - proceed with whatever was found so far
+        $walk_complete = false;
     }
-    
-    // Store backup state
+
+    // Persist the (potentially very large) file list to a file inside the
+    // backup directory rather than a wp_options row. A large media library
+    // can run to tens of thousands of paths - storing that in an option
+    // either exceeds max_allowed_packet on the first write or turns every
+    // 50-file batch update into a multi-megabyte DB write. The backup
+    // directory already has a deny-all .htaccess protecting it.
+    if (file_put_contents($file_list_path, wp_json_encode($files)) === false) {
+        wp_send_json_error(array('message' => __('Failed to write the backup file list.', 'ccm-tools')));
+    }
+
+    // Store backup state - counters and paths only, not the file list itself
     $backup_state = array(
         'status' => 'in_progress',
         'backup_path' => $backup_path,
         'backup_filename' => $backup_filename,
+        'file_list_path' => $file_list_path,
         'uploads_path' => $uploads_path,
-        'files' => $files,
         'total_files' => count($files),
         'processed_files' => 0,
         'current_batch' => 0,
         'started_at' => time(),
+        'walk_complete' => $walk_complete,
         'error' => null
     );
-    
+
     update_option('ccm_tools_backup_state', $backup_state, false);
-    
+
     wp_send_json_success(array(
-        'message' => __('Backup started', 'ccm-tools'),
+        'message' => $walk_complete
+            ? __('Backup started', 'ccm-tools')
+            : __('Backup started. The uploads folder is large, so the file list was capped by a time limit and may be incomplete.', 'ccm-tools'),
         'total_files' => count($files),
         'backup_filename' => $backup_filename
     ));
@@ -2861,28 +2868,46 @@ function ccm_tools_ajax_process_backup_batch(): void {
     }
     
     $state = get_option('ccm_tools_backup_state');
-    
+
     if (empty($state) || $state['status'] !== 'in_progress') {
         wp_send_json_error(array('message' => __('No backup in progress.', 'ccm-tools')));
     }
-    
+
+    if (empty($state['file_list_path']) || !file_exists($state['file_list_path'])) {
+        $state['status'] = 'error';
+        $state['error'] = __('Backup file list is missing.', 'ccm-tools');
+        update_option('ccm_tools_backup_state', $state, false);
+        wp_send_json_error(array('message' => $state['error']));
+    }
+
+    $files = json_decode((string) file_get_contents($state['file_list_path']), true);
+    if (!is_array($files)) {
+        $state['status'] = 'error';
+        $state['error'] = __('Backup file list is corrupt.', 'ccm-tools');
+        update_option('ccm_tools_backup_state', $state, false);
+        wp_send_json_error(array('message' => $state['error']));
+    }
+
     $batch_size = 50; // Process 50 files at a time
     $start_index = $state['processed_files'];
     $end_index = min($start_index + $batch_size, $state['total_files']);
-    
+
     try {
         $zip = new ZipArchive();
-        $mode = ($start_index === 0) ? ZipArchive::CREATE | ZipArchive::OVERWRITE : ZipArchive::CREATE;
-        $open_flag = ($start_index === 0) ? $mode : ZipArchive::RDWR;
-        
+        // ZipArchive::RDWR does not exist (only RDONLY does - verified on
+        // PHP 8.4 with ext/zip). CREATE re-opens an existing archive for
+        // appending without truncating it, so it is correct for every batch
+        // after the first too.
+        $open_flag = ($start_index === 0) ? (ZipArchive::CREATE | ZipArchive::OVERWRITE) : ZipArchive::CREATE;
+
         if ($zip->open($state['backup_path'], $open_flag) !== true) {
             throw new Exception(__('Failed to open zip file for writing.', 'ccm-tools'));
         }
-        
+
         for ($i = $start_index; $i < $end_index; $i++) {
-            $file_path = $state['files'][$i];
-            
-            if (file_exists($file_path)) {
+            $file_path = isset($files[$i]) ? $files[$i] : '';
+
+            if ($file_path !== '' && file_exists($file_path)) {
                 // Get relative path from uploads directory
                 $relative_path = str_replace($state['uploads_path'] . '/', '', $file_path);
                 $relative_path = str_replace($state['uploads_path'] . '\\', '', $relative_path);
@@ -2901,15 +2926,21 @@ function ccm_tools_ajax_process_backup_batch(): void {
         if ($state['processed_files'] >= $state['total_files']) {
             $state['status'] = 'complete';
             $state['completed_at'] = time();
-            
+
             // Get final file size
             if (file_exists($state['backup_path'])) {
                 $state['backup_size'] = filesize($state['backup_path']);
             }
+
+            // The manifest has done its job - remove it so it doesn't linger
+            // in the backup directory.
+            if (!empty($state['file_list_path']) && file_exists($state['file_list_path'])) {
+                @unlink($state['file_list_path']);
+            }
         }
-        
+
         update_option('ccm_tools_backup_state', $state, false);
-        
+
         wp_send_json_success(array(
             'status' => $state['status'],
             'processed_files' => $state['processed_files'],
@@ -2917,12 +2948,17 @@ function ccm_tools_ajax_process_backup_batch(): void {
             'percent' => round(($state['processed_files'] / $state['total_files']) * 100, 1),
             'backup_size' => isset($state['backup_size']) ? size_format($state['backup_size']) : null
         ));
-        
-    } catch (Exception $e) {
+
+    } catch (Throwable $e) {
+        // Widened from Exception: ZipArchive::RDWR used to throw a fatal
+        // Error (not an Exception) on batches after the first, which this
+        // catch could not see - admin-ajax then 500'd and the job stuck in
+        // "in_progress" forever. Catching Throwable means any future Error
+        // is reported through the normal error response instead.
         $state['status'] = 'error';
         $state['error'] = $e->getMessage();
         update_option('ccm_tools_backup_state', $state, false);
-        
+
         wp_send_json_error(array('message' => $e->getMessage()));
     }
 }
@@ -3024,12 +3060,17 @@ function ccm_tools_ajax_cancel_backup(): void {
     }
     
     $state = get_option('ccm_tools_backup_state');
-    
+
     // Delete partial backup file if exists
     if (!empty($state['backup_path']) && file_exists($state['backup_path'])) {
         unlink($state['backup_path']);
     }
-    
+
+    // Delete the file-list manifest if exists
+    if (!empty($state['file_list_path']) && file_exists($state['file_list_path'])) {
+        unlink($state['file_list_path']);
+    }
+
     delete_option('ccm_tools_backup_state');
     
     wp_send_json_success(array('message' => __('Backup cancelled.', 'ccm-tools')));
@@ -3043,10 +3084,13 @@ function ccm_tools_cleanup_old_backups($backup_dir, $max_age_hours = 24) {
         return;
     }
     
-    $files = glob($backup_dir . '/*.zip');
+    $files = array_merge(
+        glob($backup_dir . '/*.zip') ?: array(),
+        glob($backup_dir . '/*.filelist.json') ?: array()
+    );
     $max_age_seconds = $max_age_hours * 3600;
     $now = time();
-    
+
     foreach ($files as $file) {
         if (is_file($file) && ($now - filemtime($file)) > $max_age_seconds) {
             unlink($file);
@@ -3676,6 +3720,11 @@ function ccm_tools_ajax_cf_connect(): void {
         wp_send_json_error(array('message' => __('Invalid API Token format. Tokens should contain only alphanumeric characters, dashes, and underscores.', 'ccm-tools')));
     }
 
+    // Cloudflare zone IDs are a 32-character hex string - reject anything else before it reaches the API path
+    if (!empty($zone_id) && !preg_match('/^[a-f0-9]{32}$/i', $zone_id)) {
+        wp_send_json_error(array('message' => __('Invalid Zone ID format.', 'ccm-tools')));
+    }
+
     $result = ccm_tools_cf_verify_token($token, $zone_id);
     if (is_wp_error($result)) {
         wp_send_json_error(array('message' => $result->get_error_message()));
@@ -3943,9 +3992,6 @@ function ccm_tools_ajax_cf_analytics(): void {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
-    if (function_exists('ccm_tools_is_premium') && !ccm_tools_is_premium()) {
-        wp_send_json_error(array('message' => __('This feature requires CCM Tools Premium.', 'ccm-tools'), 'premium_required' => true));
-    }
 
     $analytics = ccm_tools_cf_get_analytics();
     if (is_wp_error($analytics)) {
@@ -3968,9 +4014,6 @@ function ccm_tools_ajax_cf_dns_records(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
-    }
-    if (function_exists('ccm_tools_is_premium') && !ccm_tools_is_premium()) {
-        wp_send_json_error(array('message' => __('This feature requires CCM Tools Premium.', 'ccm-tools'), 'premium_required' => true));
     }
 
     $records = ccm_tools_cf_get_dns_records();

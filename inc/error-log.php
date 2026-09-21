@@ -31,9 +31,14 @@ function ccm_tools_get_error_log_locations() {
         ABSPATH . 'wp-content/debug.log'
     );
     
-    // Try to get error log path from PHP configuration
+    // Try to get error log path from PHP configuration.
+    // Only trust it when it resolves inside THIS site's own directory tree.
+    // On a shared PHP pool, ini_get('error_log') can point at a server-wide
+    // file that other tenants also log to and that the PHP user can write
+    // to; whitelisting it unconditionally would let this site's admin read
+    // (and, via the "clear log" action, truncate) every other tenant's log.
     $php_error_log = ini_get('error_log');
-    if (!empty($php_error_log) && $php_error_log !== 'syslog') {
+    if (!empty($php_error_log) && $php_error_log !== 'syslog' && ccm_tools_path_is_within_site($php_error_log)) {
         array_unshift($possible_locations, $php_error_log);
     }
     
@@ -54,6 +59,41 @@ function ccm_tools_get_error_log_locations() {
     }
     
     return $locations;
+}
+
+/**
+ * Check whether a (possibly not-yet-existing) path resolves to somewhere
+ * inside this site's own directory tree (ABSPATH or its parent directory).
+ *
+ * Used to keep host-wide configuration (like PHP's ini "error_log" setting)
+ * from being whitelisted when it points outside the site, which on a shared
+ * pool can be a file other tenants also use.
+ *
+ * @param string $path Path to check.
+ * @return bool
+ */
+function ccm_tools_path_is_within_site($path) {
+    if (empty($path)) {
+        return false;
+    }
+
+    $real_path = realpath($path);
+    if (!$real_path) {
+        return false;
+    }
+
+    $allowed_roots = array_filter(array(
+        realpath(ABSPATH),
+        realpath(dirname(ABSPATH)),
+    ));
+
+    foreach ($allowed_roots as $root) {
+        if ($real_path === $root || strpos($real_path, rtrim($root, '/\\') . DIRECTORY_SEPARATOR) === 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 if (!defined('CCM_TOOLS_LOG_DOWNLOAD_TTL')) {
@@ -104,6 +144,7 @@ function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
     if (empty($log_file)) {
         return array(
             'content' => '',
+            'formatted_content' => ccm_tools_format_error_log(''),
             'error' => __('Invalid log file selection.', 'ccm-tools'),
             'file_size' => 0,
             'last_modified' => 0
@@ -113,6 +154,7 @@ function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
     if (!file_exists($log_file) || !is_readable($log_file)) {
         return array(
             'content' => '',
+            'formatted_content' => ccm_tools_format_error_log(''),
             'error' => __('Log file not found or not readable', 'ccm-tools'),
             'file_size' => 0,
             'last_modified' => 0
@@ -187,11 +229,17 @@ function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
             $content = implode("\n", $lines_array);
         }    }
     
-    // Convert UTC timestamps to Australia/Sydney timezone
+    // Convert UTC timestamps to the site's configured timezone (via wp_timezone())
     $content = ccm_tools_convert_error_log_timestamps($content);
-    
+
     return array(
         'content' => $content,
+        // Always build an escaped, highlighted rendering alongside the raw content.
+        // The raw log can contain attacker-controlled text (a plugin logging request
+        // data, a PHP warning quoting user input); the JS viewer renders
+        // formatted_content into innerHTML on every auto-refresh, so this must never
+        // be skipped or left to fall back to unescaped raw content.
+        'formatted_content' => ccm_tools_format_error_log($content),
         'file_size' => size_format($filesize, 2),
         'last_modified' => human_time_diff($last_modified) . ' ' . __('ago', 'ccm-tools'),
         'raw_last_modified' => $last_modified
@@ -440,96 +488,6 @@ function ccm_tools_ajax_download_error_log_file() {
 add_action('wp_ajax_ccm_tools_download_error_log_file', 'ccm_tools_ajax_download_error_log_file');
 
 /**
- * AJAX handler for formatting error log content
- */
-function ccm_tools_ajax_format_error_log() {
-    // Check permissions and nonce
-    if (!current_user_can('manage_options') || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
-        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
-    }
-    $content = isset($_POST['content']) ? sanitize_textarea_field(wp_unslash($_POST['content'])) : '';
-    
-    if (empty($content)) {
-        wp_send_json_error(array('message' => __('No content to format.', 'ccm-tools')));
-    }
-    
-    // Convert UTC timestamps to Australia/Sydney timezone before formatting
-    $content = ccm_tools_convert_error_log_timestamps($content);
-    
-    $formatted_content = ccm_tools_format_error_log($content);
-    
-    wp_send_json_success(array(
-        'formatted_content' => $formatted_content
-    ));
-}
-add_action('wp_ajax_ccm_tools_format_error_log_ajax', 'ccm_tools_ajax_format_error_log');
-
-/**
- * AJAX handler for filtering error log content to show only errors
- */
-function ccm_tools_ajax_filter_errors_only() {
-    // Check permissions and nonce
-    if (!current_user_can('manage_options') || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
-        wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
-    }
-    
-    $log_file_input = isset($_POST['log_file']) ? sanitize_text_field(wp_unslash($_POST['log_file'])) : '';
-    $lines = isset($_POST['lines']) ? intval($_POST['lines']) : 100;
-    
-    if ($log_file_input !== '') {
-        $log_file = ccm_tools_validate_log_file_path($log_file_input);
-        if (empty($log_file)) {
-            wp_send_json_error(array('message' => __('Invalid log file selection.', 'ccm-tools')));
-        }
-    } else {
-        $log_file = ccm_tools_get_default_log_file_path();
-    }
-
-    if (empty($log_file)) {
-        wp_send_json_error(array('message' => __('No error log file found.', 'ccm-tools')));
-    }
-    
-    // For filtering, we need to read the entire log file first
-    if (!file_exists($log_file) || !is_readable($log_file)) {
-        wp_send_json_error(array('message' => __('Log file not found or not readable.', 'ccm-tools')));
-    }
-    
-    // Guard against reading excessively large files
-    $filter_filesize = @filesize($log_file);
-    if ($filter_filesize > 5 * 1024 * 1024) {
-        wp_send_json_error(array('message' => __('Log file too large for error filtering. Please clear the log first.', 'ccm-tools')));
-    }
-    
-    // Read the entire log file content
-    $full_content = file_get_contents($log_file);
-    if ($full_content === false) {
-        wp_send_json_error(array('message' => __('Failed to read log file.', 'ccm-tools')));
-    }
-      // Convert UTC timestamps to Australia/Sydney timezone before filtering
-    $full_content = ccm_tools_convert_error_log_timestamps($full_content);
-    
-    // Apply the error filtering to the full content
-    $filtered_content = ccm_tools_filter_errors_only($full_content);
-    
-    // Now limit the filtered content to the requested number of lines from the end
-    if (!empty($filtered_content)) {
-        $lines_array = explode("\n", $filtered_content);
-        $total_lines = count($lines_array);
-        
-        if ($total_lines > $lines) {
-            $start = max(0, $total_lines - $lines);
-            $lines_array = array_slice($lines_array, $start);
-            $filtered_content = implode("\n", $lines_array);
-        }
-    }
-    
-    wp_send_json_success(array(
-        'filtered_content' => $filtered_content
-    ));
-}
-add_action('wp_ajax_ccm_tools_filter_errors_only', 'ccm_tools_ajax_filter_errors_only');
-
-/**
  * Filter error log content to show only errors and stack traces
  * 
  * @param string $content Raw log content
@@ -605,9 +563,10 @@ function ccm_tools_format_error_log($content) {
         return $content;
     }
     
-    // Escape HTML to prevent stored XSS from log content
+    // Escape HTML first to prevent stored XSS from log content, then layer the
+    // highlighting markup on top of the already-escaped text.
     $content = htmlspecialchars($content, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-    
+
     // Add HTML highlighting for fatal errors and stack traces
     $formatted = preg_replace(
         array(
@@ -634,13 +593,22 @@ function ccm_tools_format_error_log($content) {
         ),
         $content
     );
-    
+
+    // preg_replace() returns null on a regex engine failure (e.g. hitting the
+    // PCRE backtrack limit on a very large stack trace). Fall back to the
+    // already-escaped, unhighlighted content rather than blanking the viewer.
+    if ($formatted === null) {
+        return $content;
+    }
+
     return $formatted;
 }
 
 /**
- * Convert UTC timestamps in error log content to Australia/Sydney timezone
- * 
+ * Convert UTC timestamps in error log content to the site's configured
+ * timezone (via wp_timezone() / WordPress's Timezone setting), not a
+ * hardcoded zone.
+ *
  * @param string $content Raw log content
  * @return string Log content with converted timestamps
  */
@@ -688,14 +656,17 @@ function ccm_tools_render_error_log_page() {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
     }
 
-    // Start output buffering to prevent "headers already sent" issues
-    ob_start();
-
     $locations = ccm_tools_get_error_log_locations();
     $default_log = !empty($locations) ? $locations[0] : '';
-    $log_data = !empty($default_log) ? ccm_tools_read_error_log($default_log) : array('content' => '', 'error' => __('No error logs found.', 'ccm-tools'));    // Format the log content to highlight errors
-    if (isset($log_data['content'])) {
-        // Convert UTC timestamps to Australia/Sydney timezone before formatting
+    $log_data = !empty($default_log) ? ccm_tools_read_error_log($default_log) : array('content' => '', 'error' => __('No error logs found.', 'ccm-tools'));
+    // ccm_tools_read_error_log() already returns an escaped, highlighted
+    // formatted_content on every branch (including the empty-log message).
+    // Re-running that through ccm_tools_format_error_log() would
+    // htmlspecialchars() already-built HTML a second time, turning its tags
+    // into literal text, so only build formatted_content when it's missing
+    // (e.g. when no default log was found at all, above).
+    if (isset($log_data['content']) && !isset($log_data['formatted_content'])) {
+        // Convert UTC timestamps to the site's configured timezone (via wp_timezone()) before formatting
         $log_data['content'] = ccm_tools_convert_error_log_timestamps($log_data['content']);
         $log_data['formatted_content'] = ccm_tools_format_error_log($log_data['content']);
     }
@@ -770,6 +741,4 @@ function ccm_tools_render_error_log_page() {
         </div>
     </div>
     <?php
-    // End output buffering and output the content
-    echo ob_get_clean();
 }

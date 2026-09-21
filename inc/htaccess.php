@@ -29,11 +29,6 @@ function ccm_tools_get_htaccess_options(): array {
                     'description' => 'X-Content-Type-Options, Referrer-Policy, Permissions-Policy',
                     'default' => true,
                 ),
-                'hsts_basic' => array(
-                    'label' => 'HSTS (1 Year)',
-                    'description' => 'Strict-Transport-Security header for HTTPS enforcement',
-                    'default' => true,
-                ),
                 'https_redirect' => array(
                     'label' => 'HTTPS Redirect',
                     'description' => 'Redirect HTTP to HTTPS (with proxy support)',
@@ -67,6 +62,11 @@ function ccm_tools_get_htaccess_options(): array {
                 'x_xss_protection' => array(
                     'label' => 'X-XSS-Protection: 0',
                     'description' => 'Modern recommendation - disable legacy XSS filter (CSP is preferred)',
+                    'default' => false,
+                ),
+                'hsts_basic' => array(
+                    'label' => 'HSTS (1 Year)',
+                    'description' => 'Strict-Transport-Security header for HTTPS enforcement. This is a one-year commitment: browsers will refuse to load the site over plain HTTP for a full year after the header is first sent, even if this option is later disabled.',
                     'default' => false,
                 ),
                 'hsts_subdomains' => array(
@@ -134,7 +134,6 @@ function ccm_tools_htaccess_content($options = array()): string {
             'caching' => true,
             'compression' => true,
             'security_headers' => true,
-            'hsts_basic' => true,
             'https_redirect' => true,
             'file_protection' => true,
             'disable_indexes' => true,
@@ -142,6 +141,7 @@ function ccm_tools_htaccess_content($options = array()): string {
             // Moderate options
             'x_frame_options' => false,
             'x_xss_protection' => false,
+            'hsts_basic' => false, // One-year HSTS commitment — opt-in, not a safe default
             'hsts_subdomains' => false,
             'coop' => false,
             'corp' => false,
@@ -349,6 +349,10 @@ function ccm_tools_htaccess_content($options = array()): string {
         $base .= "Require all denied\n";
         $base .= "</FilesMatch>\n";
         $base .= "<FilesMatch \"\\.(log|sql|bak|backup|old|tmp|temp|swp|swo|~)$\">\n";
+        $base .= "Require all denied\n";
+        $base .= "</FilesMatch>\n";
+        $base .= "# .htaccess backups/temp files written by CCM Tools itself\n";
+        $base .= "<FilesMatch \"^\\.htaccess\\.ccm-backup-|^\\.ccm-htaccess-tmp-\">\n";
         $base .= "Require all denied\n";
         $base .= "</FilesMatch>\n";
         $base .= "<Files \"debug.log\">\n";
@@ -619,8 +623,124 @@ function ccm_tools_cleanup_htaccess_content(string $content): string {
 }
 
 /**
+ * Back up .htaccess to a timestamped copy before writing to it, and prune
+ * old backups so only the 5 most recent are kept.
+ *
+ * @param string $htaccess_file Absolute path to .htaccess
+ * @return void
+ */
+function ccm_tools_backup_htaccess(string $htaccess_file): void {
+    $current_content = @file_get_contents($htaccess_file);
+    if ($current_content === false) {
+        return; // Nothing readable to back up — don't block the write over it.
+    }
+
+    $dir = dirname($htaccess_file);
+    $backup_file = $dir . '/.htaccess.ccm-backup-' . gmdate('Ymd-His');
+    @file_put_contents($backup_file, $current_content, LOCK_EX);
+
+    // Prune to the 5 most recent backups (filenames sort lexically by
+    // timestamp, so a plain sort() gives oldest-first).
+    $backups = glob($dir . '/.htaccess.ccm-backup-*');
+    if (is_array($backups) && count($backups) > 5) {
+        sort($backups);
+        $to_remove = array_slice($backups, 0, count($backups) - 5);
+        foreach ($to_remove as $old_backup) {
+            @unlink($old_backup);
+        }
+    }
+}
+
+/**
+ * Safely persist new .htaccess content: refuse suspiciously destructive
+ * results, back up the current file, and write atomically (temp file +
+ * rename) so a crash or partial write can never leave .htaccess truncated.
+ *
+ * A single bad preg_replace() (e.g. a PCRE backtrack-limit failure on a
+ * large, plugin-accreted .htaccess) used to be able to turn the whole file
+ * into an empty string — an instant sitewide 500 (permalinks, other
+ * plugins' rules, and the wp-config protection all gone in one write).
+ * This is the last line of defence against that, independent of whichever
+ * caller produced $new_content.
+ *
+ * @param string $htaccess_file    Absolute path to .htaccess
+ * @param string $new_content      The content to write
+ * @param string $original_content The content previously on disk, for the
+ *                                  safety comparison ('' for a brand new file)
+ * @return array{success: bool, message: string}
+ */
+function ccm_tools_write_htaccess_safely(string $htaccess_file, string $new_content, string $original_content = ''): array {
+    $original_length = strlen($original_content);
+
+    if ($original_length > 0) {
+        if (trim($new_content) === '') {
+            return array(
+                'success' => false,
+                'message' => __('Refusing to write .htaccess: the generated content was empty. No changes were made.', 'ccm-tools')
+            );
+        }
+
+        // A well-formed add/update/remove of the CCM block should never
+        // shrink the file by much more than the block itself, even with
+        // every option enabled. If it does, treat it as a failed pattern
+        // match rather than an intended edit and refuse to write it.
+        $max_block_length = 8192;
+        if ($original_length > $max_block_length) {
+            $expected_minimum = $original_length - $max_block_length;
+            if (strlen($new_content) < $expected_minimum * 0.5) {
+                return array(
+                    'success' => false,
+                    'message' => __('Refusing to write .htaccess: the result is drastically shorter than the original file, which suggests a failed pattern match rather than an intended change. No changes were made.', 'ccm-tools')
+                );
+            }
+        }
+    }
+
+    // Back up the current file before we touch it.
+    if (file_exists($htaccess_file)) {
+        ccm_tools_backup_htaccess($htaccess_file);
+    }
+
+    // Atomic write: write to a temp file in the same directory, verify the
+    // byte count landed on disk matches what we intended, then rename()
+    // over the real file. rename() within the same filesystem is atomic,
+    // so a crash mid-write can never leave .htaccess half-written.
+    $dir = dirname($htaccess_file);
+    $tmp_file = $dir . '/.ccm-htaccess-tmp-' . uniqid('', true);
+
+    $written = file_put_contents($tmp_file, $new_content, LOCK_EX);
+    if ($written === false || $written !== strlen($new_content)) {
+        if (file_exists($tmp_file)) {
+            @unlink($tmp_file);
+        }
+        return array(
+            'success' => false,
+            'message' => __('Failed to write .htaccess: temp file write was incomplete. No changes were made to the live file.', 'ccm-tools')
+        );
+    }
+
+    // Preserve the original file's permissions on the replacement.
+    if (file_exists($htaccess_file)) {
+        $perms = @fileperms($htaccess_file);
+        if ($perms !== false) {
+            @chmod($tmp_file, $perms & 0777);
+        }
+    }
+
+    if (!@rename($tmp_file, $htaccess_file)) {
+        @unlink($tmp_file);
+        return array(
+            'success' => false,
+            'message' => __('Failed to write .htaccess: could not replace the live file.', 'ccm-tools')
+        );
+    }
+
+    return array('success' => true, 'message' => '');
+}
+
+/**
  * Update .htaccess file
- * 
+ *
  * @param string $action 'add', 'update', or 'remove'
  * @param array $options Selected options
  * @return array Result with success status and message
@@ -629,86 +749,80 @@ function ccm_tools_update_htaccess(string $action, $options = array()): array {
     // Check user capabilities
     if (!current_user_can('manage_options')) {
         return array(
-            'success' => false, 
+            'success' => false,
             'message' => __('You do not have permission to perform this action.', 'ccm-tools')
         );
     }
-    
+
     // Handle legacy boolean $hardening parameter
     if (is_bool($options)) {
         $options = array('x_frame_options' => $options, 'block_author_scan' => true);
     }
-    
+
     $htaccess_file = ABSPATH . '.htaccess';
-    
+
     if (!file_exists($htaccess_file)) {
         if ($action === 'add' || $action === 'update') {
             // Create new .htaccess file with optimizations
             $new_content = ccm_tools_htaccess_content($options);
             $new_content = ccm_tools_cleanup_htaccess_content($new_content);
-            $result = file_put_contents($htaccess_file, $new_content, LOCK_EX);
-            if ($result !== false) {
-                return array(
-                    'success' => true, 
-                    'message' => __('.htaccess file created with optimizations.', 'ccm-tools')
-                );
-            } else {
-                return array(
-                    'success' => false, 
-                    'message' => __('Failed to create .htaccess file.', 'ccm-tools')
-                );
+            $write_result = ccm_tools_write_htaccess_safely($htaccess_file, $new_content, '');
+            if (!$write_result['success']) {
+                return $write_result;
             }
+            return array(
+                'success' => true,
+                'message' => __('.htaccess file created with optimizations.', 'ccm-tools')
+            );
         } else {
             return array(
-                'success' => false, 
+                'success' => false,
                 'message' => __('.htaccess file does not exist.', 'ccm-tools')
             );
         }
     }
-    
+
     if (!is_writable($htaccess_file)) {
         return array(
-            'success' => false, 
+            'success' => false,
             'message' => __('.htaccess file is not writable.', 'ccm-tools')
         );
     }
-    
+
     $current_content = file_get_contents($htaccess_file);
     if ($current_content === false) {
         return array(
-            'success' => false, 
+            'success' => false,
             'message' => __('Failed to read .htaccess file.', 'ccm-tools')
         );
     }
-    
+
     $ccm_content = ccm_tools_htaccess_content($options);
-    
+
     if ($action === 'add') {
         // Check if optimizations are already applied
         if (strpos($current_content, '# BEGIN CCM Optimise') !== false) {
             return array(
-                'success' => false, 
+                'success' => false,
                 'message' => __('Optimizations are already applied. Use Update instead.', 'ccm-tools')
             );
         }
-        
+
         // Add optimizations to the beginning of the file
         $new_content = $ccm_content . "\n" . $current_content;
-        
+
         // Clean up excessive blank lines
         $new_content = ccm_tools_cleanup_htaccess_content($new_content);
-        
-        if (file_put_contents($htaccess_file, $new_content, LOCK_EX) !== false) {
-            return array(
-                'success' => true, 
-                'message' => __('Optimizations successfully added to .htaccess.', 'ccm-tools')
-            );
-        } else {
-            return array(
-                'success' => false, 
-                'message' => __('Failed to update .htaccess file.', 'ccm-tools')
-            );
+
+        $write_result = ccm_tools_write_htaccess_safely($htaccess_file, $new_content, $current_content);
+        if (!$write_result['success']) {
+            return $write_result;
         }
+
+        return array(
+            'success' => true,
+            'message' => __('Optimizations successfully added to .htaccess.', 'ccm-tools')
+        );
     } else if ($action === 'update') {
         // Check if optimizations exist
         if (strpos($current_content, '# BEGIN CCM Optimise') === false) {
@@ -718,53 +832,61 @@ function ccm_tools_update_htaccess(string $action, $options = array()): array {
             // Replace existing optimizations
             $pattern = '/# BEGIN CCM Optimise - DO NOT CHANGE!.*?# END CCM Optimise - DO NOT CHANGE!/s';
             $new_content = preg_replace($pattern, trim($ccm_content), $current_content);
+            if ($new_content === null) {
+                return array(
+                    'success' => false,
+                    'message' => __('Failed to update .htaccess: the pattern replacement failed (the file may be too large or contain unusual content). No changes were made.', 'ccm-tools')
+                );
+            }
         }
-        
+
         // Clean up excessive blank lines
         $new_content = ccm_tools_cleanup_htaccess_content($new_content);
-        
-        if (file_put_contents($htaccess_file, $new_content, LOCK_EX) !== false) {
-            return array(
-                'success' => true, 
-                'message' => __('Optimizations successfully updated.', 'ccm-tools')
-            );
-        } else {
-            return array(
-                'success' => false, 
-                'message' => __('Failed to update .htaccess file.', 'ccm-tools')
-            );
+
+        $write_result = ccm_tools_write_htaccess_safely($htaccess_file, $new_content, $current_content);
+        if (!$write_result['success']) {
+            return $write_result;
         }
+
+        return array(
+            'success' => true,
+            'message' => __('Optimizations successfully updated.', 'ccm-tools')
+        );
     } else if ($action === 'remove') {
         // Check if optimizations are applied
         if (strpos($current_content, '# BEGIN CCM Optimise') === false) {
             return array(
-                'success' => false, 
+                'success' => false,
                 'message' => __('No optimizations found to remove.', 'ccm-tools')
             );
         }
-        
+
         // Remove optimizations
         $pattern = '/# BEGIN CCM Optimise - DO NOT CHANGE!.*?# END CCM Optimise - DO NOT CHANGE!/s';
         $new_content = preg_replace($pattern, '', $current_content);
-        
-        // Clean up excessive blank lines after removal
-        $new_content = ccm_tools_cleanup_htaccess_content($new_content);
-        
-        if (file_put_contents($htaccess_file, $new_content, LOCK_EX) !== false) {
+        if ($new_content === null) {
             return array(
-                'success' => true, 
-                'message' => __('Optimizations successfully removed from .htaccess.', 'ccm-tools')
-            );
-        } else {
-            return array(
-                'success' => false, 
-                'message' => __('Failed to update .htaccess file.', 'ccm-tools')
+                'success' => false,
+                'message' => __('Failed to remove optimizations: the pattern replacement failed (the file may be too large or contain unusual content). No changes were made.', 'ccm-tools')
             );
         }
+
+        // Clean up excessive blank lines after removal
+        $new_content = ccm_tools_cleanup_htaccess_content($new_content);
+
+        $write_result = ccm_tools_write_htaccess_safely($htaccess_file, $new_content, $current_content);
+        if (!$write_result['success']) {
+            return $write_result;
+        }
+
+        return array(
+            'success' => true,
+            'message' => __('Optimizations successfully removed from .htaccess.', 'ccm-tools')
+        );
     }
-    
+
     return array(
-        'success' => false, 
+        'success' => false,
         'message' => __('Invalid action.', 'ccm-tools')
     );
 }

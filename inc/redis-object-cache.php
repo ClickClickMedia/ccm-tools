@@ -251,8 +251,28 @@ function ccm_tools_redis_get_settings() {
 }
 
 /**
+ * Generate a per-site Redis cache key salt.
+ *
+ * The stored default is empty, and the settings-page field only shows the
+ * hostname as a greyed-out placeholder — placeholders are never submitted,
+ * so WP_CACHE_KEY_SALT was typically never written. Combined with the
+ * default host/port/database, two WordPress installs sharing one Redis
+ * daemon then produce identical keys and silently read/write each other's
+ * options, sessions and WooCommerce cart data. Host-only would still
+ * collide for two installs sharing one hostname (e.g. subdirectory
+ * multisite on shared hosting), so this always adds a random suffix too.
+ *
+ * @return string A non-empty salt suitable for WP_CACHE_KEY_SALT.
+ */
+function ccm_tools_redis_generate_key_salt() {
+    $host = parse_url(site_url(), PHP_URL_HOST);
+    $host = $host ? sanitize_text_field($host) : 'wp';
+    return $host . '_' . wp_generate_password(8, false, false) . '_';
+}
+
+/**
  * Save Redis settings to database
- * 
+ *
  * @param array $settings Settings to save
  * @return bool Success
  */
@@ -347,7 +367,16 @@ function ccm_tools_redis_save_settings($settings) {
     
     // Merge with existing settings (new values override existing)
     $merged = array_merge($existing, $sanitized);
-    
+
+    // A shared Redis daemon with an empty (or never-explicitly-set) salt
+    // means two WordPress installs can silently read/write each other's
+    // options, sessions and WooCommerce cart data. Preserve any salt an
+    // admin already set; only generate + persist a new one when there still
+    // isn't one, so the field value round-trips on the next page load.
+    if (empty($merged['key_salt'])) {
+        $merged['key_salt'] = ccm_tools_redis_generate_key_salt();
+    }
+
     return update_option('ccm_tools_redis_settings', $merged);
 }
 
@@ -379,8 +408,9 @@ function ccm_tools_redis_dropin_status() {
         if (strpos($content, 'CCM Tools Redis Object Cache') !== false) {
             $status['is_ccm'] = true;
             
-            // Extract version
-            if (preg_match('/Version:\s*([0-9.]+)/i', $content, $matches)) {
+            // Extract version — the drop-in header uses "@version X.Y.Z" (no
+            // colon after "Version"), matching ccm_tools_redis_dropin_version_check().
+            if (preg_match('/@version\s+([0-9.]+)/i', $content, $matches)) {
                 $status['version'] = $matches[1];
             }
         } 
@@ -433,7 +463,25 @@ function ccm_tools_redis_install_dropin($force = false) {
         $result['message'] = __('Cannot connect to Redis server: ', 'ccm-tools') . $connection['error'];
         return $result;
     }
-    
+
+    // A shared Redis daemon needs a non-empty per-site key salt, or two
+    // installs on the same daemon can silently read/write each other's
+    // cache. Ensure one exists and is persisted before touching any files.
+    // ccm_tools_redis_save_settings() auto-generates one when empty, so this
+    // should always succeed — the second check is a hard refusal in case it
+    // somehow doesn't.
+    $salt_settings = ccm_tools_redis_get_settings();
+    if (empty($salt_settings['key_salt'])) {
+        ccm_tools_redis_save_settings(array_merge($salt_settings, array(
+            'key_salt' => ccm_tools_redis_generate_key_salt(),
+        )));
+        $salt_settings = ccm_tools_redis_get_settings();
+    }
+    if (empty($salt_settings['key_salt'])) {
+        $result['message'] = __('Could not establish a Redis cache key salt; refusing to enable Redis object caching.', 'ccm-tools');
+        return $result;
+    }
+
     $dropin_status = ccm_tools_redis_dropin_status();
     
     // Check if another plugin's drop-in exists
@@ -691,14 +739,61 @@ function ccm_tools_redis_prune_backups($dir, $glob_suffix, $keep = 5) {
 }
 
 /**
+ * Atomically replace the contents of $path with $content.
+ *
+ * A direct @file_put_contents($path, $content) is NOT safe for a file like
+ * wp-config.php that PHP parses on every request: a worker killed mid-write,
+ * a full disk, or an execution timeout can leave a truncated file, which is
+ * a hard parse error on the very next request with no way into wp-admin to
+ * recover. Note file_put_contents() returns the BYTE COUNT on a partial
+ * write, not false, so a naive `=== false` check does not catch a full disk
+ * — the byte count must be compared against strlen($content).
+ *
+ * We instead write to "<path>.tmp-<random>" in the same directory, verify
+ * every byte landed, then rename() into place. rename() on the same
+ * filesystem is atomic, so a concurrent reader always sees either the old
+ * file or the new one whole, never a half-written one. Mirrors the pattern
+ * ccm_tools_redis_refresh_dropin() already used for the drop-in file; this
+ * is the shared helper so wp-config writes get the same guarantee.
+ *
+ * @param string $path    Absolute path of the file to replace.
+ * @param string $content New file content.
+ * @return bool True on a verified, complete, atomic write.
+ */
+function ccm_tools_redis_atomic_write_file($path, $content) {
+    $tmp = $path . '.tmp-' . wp_generate_password(6, false, false);
+
+    $written = @file_put_contents($tmp, $content);
+    if ($written === false || $written !== strlen($content)) {
+        @unlink($tmp);
+        return false;
+    }
+
+    if (!@rename($tmp, $path)) {
+        @unlink($tmp);
+        return false;
+    }
+
+    if (function_exists('opcache_invalidate')) {
+        @opcache_invalidate($path, true);
+    }
+
+    return true;
+}
+
+/**
  * Directory used to store wp-config.php backups.
  *
  * wp-config.php backups embed the site's Redis credentials (and everything
  * else in wp-config.php) in plaintext, so they must never live under the web
  * root where a misconfigured server could serve them as a static download.
- * This stores them under wp-content/uploads instead, locked down with an
- * .htaccess deny-all plus an empty index.php (created on first use, mirroring
- * the convention already used elsewhere in this plugin).
+ * This stores them under wp-content/uploads instead. The primary protection
+ * is now encryption of the backup body itself (see
+ * ccm_tools_redis_encrypt_backup()) — the .htaccess deny-all and empty
+ * index.php below are defence in depth only, because nginx never reads
+ * .htaccess, so on an nginx-fronted site they do nothing at all and a full
+ * plaintext wp-config.php would otherwise sit at a predictable path
+ * protected only by an unguessable filename.
  *
  * @return string Absolute path to the private backup directory, with a trailing slash.
  */
@@ -727,6 +822,149 @@ function ccm_tools_redis_private_backup_dir() {
     }
 
     return $dir;
+}
+
+/**
+ * Derive the encryption and HMAC keys used for wp-config.php backups from
+ * the site's own AUTH_KEY/SECURE_AUTH_KEY. These are already secret,
+ * already unique per site, and already rotate with the site's salts, so
+ * there is no new key material to generate or store anywhere.
+ *
+ * @return array{enc:string,mac:string}|false Two 32-byte binary keys, or
+ *                                             false if no usable secret
+ *                                             material is defined.
+ */
+function ccm_tools_redis_backup_key() {
+    $secret = (defined('AUTH_KEY') ? AUTH_KEY : '') . (defined('SECURE_AUTH_KEY') ? SECURE_AUTH_KEY : '');
+    if ($secret === '' || strlen($secret) < 16) {
+        return false;
+    }
+    return array(
+        'enc' => hash_hmac('sha256', 'ccm-tools-redis-wpconfig-backup-enc', $secret, true),
+        'mac' => hash_hmac('sha256', 'ccm-tools-redis-wpconfig-backup-mac', $secret, true),
+    );
+}
+
+/**
+ * Encrypt a wp-config.php backup body: AES-256-CBC then HMAC-SHA256 over the
+ * ciphertext (encrypt-then-MAC), with the IV and MAC stored alongside the
+ * ciphertext so ccm_tools_redis_decrypt_backup() is self-contained.
+ *
+ * This is defence in depth against a *static file* leak (nginx not honouring
+ * .htaccess, a misconfigured backup tool, a misdirected symlink) — not
+ * against an attacker who already has PHP execution or DB access on the
+ * site, since the key is derived from that same site's own secrets.
+ *
+ * @param string $plaintext Raw wp-config.php content to protect.
+ * @return string|false Encrypted blob, or false if OpenSSL (or usable key
+ *                       material) is unavailable — callers must treat that
+ *                       as "refuse to write an unencrypted backup", never
+ *                       fall back to writing $plaintext as-is.
+ */
+function ccm_tools_redis_encrypt_backup($plaintext) {
+    if (!function_exists('openssl_encrypt') || !in_array('aes-256-cbc', array_map('strtolower', openssl_get_cipher_methods()), true)) {
+        return false;
+    }
+    $keys = ccm_tools_redis_backup_key();
+    if ($keys === false) {
+        return false;
+    }
+
+    $iv = random_bytes(16);
+    $ciphertext = openssl_encrypt($plaintext, 'aes-256-cbc', $keys['enc'], OPENSSL_RAW_DATA, $iv);
+    if ($ciphertext === false) {
+        return false;
+    }
+
+    $mac = hash_hmac('sha256', $iv . $ciphertext, $keys['mac'], true);
+
+    // Magic header so decrypt() can recognise our format (and so a legacy
+    // plaintext backup from before this change is never mistaken for one).
+    return 'CCMENCB1' . $iv . $mac . $ciphertext;
+}
+
+/**
+ * Decrypt a blob produced by ccm_tools_redis_encrypt_backup(), verifying the
+ * HMAC before attempting to decrypt (encrypt-then-MAC: verify first).
+ *
+ * No restore UI wires this up yet — wp-config.php backups here are written
+ * for a human with shell/SFTP access to recover from, and this is the
+ * supported way to get the plaintext back out instead of reading raw
+ * ciphertext off disk. A future "Restore backup" action should call this.
+ *
+ * @param string $blob Encrypted backup file content.
+ * @return string|false Decrypted wp-config.php content, or false if the
+ *                       blob is not one of ours, is truncated, or the HMAC
+ *                       does not verify (tampered, or wrong/rotated key).
+ */
+function ccm_tools_redis_decrypt_backup($blob) {
+    if (!function_exists('openssl_decrypt')) {
+        return false;
+    }
+    $magic = 'CCMENCB1';
+    if (strncmp((string) $blob, $magic, strlen($magic)) !== 0) {
+        return false;
+    }
+    $keys = ccm_tools_redis_backup_key();
+    if ($keys === false) {
+        return false;
+    }
+
+    $offset = strlen($magic);
+    $iv = substr($blob, $offset, 16);
+    $offset += 16;
+    $mac = substr($blob, $offset, 32);
+    $offset += 32;
+    $ciphertext = substr($blob, $offset);
+
+    if (strlen($iv) !== 16 || strlen($mac) !== 32 || $ciphertext === '') {
+        return false;
+    }
+
+    $expected_mac = hash_hmac('sha256', $iv . $ciphertext, $keys['mac'], true);
+    if (!hash_equals($expected_mac, $mac)) {
+        return false;
+    }
+
+    $plaintext = openssl_decrypt($ciphertext, 'aes-256-cbc', $keys['enc'], OPENSSL_RAW_DATA, $iv);
+    return $plaintext === false ? false : $plaintext;
+}
+
+/**
+ * Encrypt $plaintext and write it to $backup_path as a wp-config.php backup.
+ * Refuses to write anything if encryption isn't possible, rather than ever
+ * falling back to a plaintext credentials dump on disk.
+ *
+ * @param string $backup_path Absolute destination path.
+ * @param string $plaintext   Raw wp-config.php content to back up.
+ * @return bool True if an encrypted backup was written and verified.
+ */
+function ccm_tools_redis_write_encrypted_backup($backup_path, $plaintext) {
+    $encrypted = ccm_tools_redis_encrypt_backup($plaintext);
+    if ($encrypted === false) {
+        return false;
+    }
+    $written = @file_put_contents($backup_path, $encrypted);
+    return $written !== false && $written === strlen($encrypted);
+}
+
+/**
+ * Read and decrypt a wp-config.php backup written by
+ * ccm_tools_redis_write_encrypted_backup(). See ccm_tools_redis_decrypt_backup()
+ * for the format and failure cases.
+ *
+ * @param string $backup_path Absolute path to a backup file.
+ * @return string|false Decrypted wp-config.php content, or false.
+ */
+function ccm_tools_redis_read_backup($backup_path) {
+    if (!file_exists($backup_path)) {
+        return false;
+    }
+    $blob = file_get_contents($backup_path);
+    if ($blob === false) {
+        return false;
+    }
+    return ccm_tools_redis_decrypt_backup($blob);
 }
 
 /**
@@ -788,39 +1026,58 @@ function ccm_tools_redis_refresh_dropin($install_if_missing = false) {
         @copy($dest, WP_CONTENT_DIR . '/object-cache-backup-' . date('Y-m-d-His') . '.php');
     }
 
-    // Write atomically: copy to a temp file, then rename over the live drop-in.
-    // A plain copy() truncates-then-writes, so a concurrent request could read a
-    // half-written object-cache.php and fatal. rename() on the same filesystem
-    // is atomic, so readers always see either the old or the new file whole.
-    $tmp = $dest . '.tmp-' . wp_generate_password(6, false, false);
-    if (!@copy($source, $tmp)) {
-        @unlink($tmp);
-        $result['message'] = 'copy failed (check permissions)';
+    // Write atomically via the shared helper (tmp file in the same dir,
+    // byte-count verified, then rename() into place) — see
+    // ccm_tools_redis_atomic_write_file() for why a plain copy()/
+    // file_put_contents() isn't safe here: a concurrent request could read a
+    // half-written object-cache.php and fatal.
+    $source_content = @file_get_contents($source);
+    if ($source_content === false) {
+        $result['message'] = 'could not read bundled drop-in';
         return $result;
     }
-    if (!@rename($tmp, $dest)) {
-        @unlink($tmp);
-        $result['message'] = 'atomic replace failed (check permissions)';
+    if (!ccm_tools_redis_atomic_write_file($dest, $source_content)) {
+        $result['message'] = 'atomic replace failed (check permissions or disk space)';
         return $result;
-    }
-
-    if (function_exists('opcache_invalidate')) {
-        @opcache_invalidate($dest, true);
     }
 
     ccm_tools_redis_prune_backups(WP_CONTENT_DIR, 'object-cache-backup-*.php', 5);
 
     $result['changed'] = true;
     $result['message'] = 'drop-in refreshed';
+
+    // Keep wp-config.php in lockstep whenever the drop-in itself changes —
+    // this runs on plugin update, (re)activation, and the admin_init
+    // self-heal, any of which can happen well after the original Enable, so
+    // wp-config could otherwise drift from what a newer bundled version
+    // expects. Routed through the single shared builder (same as Enable /
+    // Save / "Add to wp-config") so the constant list can never diverge
+    // between paths. Only when Redis is actually flagged enabled, mirroring
+    // the "ours but not enabled" branch in ccm_tools_redis_maybe_autosync_dropin()
+    // — we shouldn't start writing new wp-config constants for a site that
+    // isn't opted in.
+    $sync_settings = function_exists('ccm_tools_redis_get_settings') ? ccm_tools_redis_get_settings() : array();
+    if (!empty($sync_settings['enabled'])
+        && function_exists('ccm_tools_redis_build_config_array')
+        && function_exists('ccm_tools_redis_add_config')
+    ) {
+        ccm_tools_redis_add_config(ccm_tools_redis_build_config_array($sync_settings));
+    }
+
     return $result;
 }
 
 /**
  * Remove the managed Redis configuration from wp-config.php.
  *
- * Strips the "CCM Tools Redis Configuration" block and any stray managed
- * defines (WP_REDIS_* and WP_CACHE_KEY_SALT), backing the file up first and
- * verifying the write. Used on disable / plugin deactivation.
+ * Strips the "CCM Tools Redis Configuration" block, any stray managed
+ * defines (WP_REDIS_* and WP_CACHE_KEY_SALT) left outside it, and the
+ * unterminated "/* Redis configuration *\/" header the old (now-removed)
+ * ccm_tools_add_redis_configuration() writer in system-info.php used to
+ * leave behind (it had no matching end marker, so the block-strip above
+ * never matched it). ccm_tools_redis_add_config() is now the only writer of
+ * Redis constants into wp-config.php. Backs the file up (encrypted) first
+ * and verifies the write. Used on disable / plugin deactivation.
  *
  * @return array { success: bool, message: string, backup_path?: string }
  */
@@ -856,7 +1113,9 @@ function ccm_tools_redis_remove_config() {
         "\n",
         $config_content
     );
-    // Strip any stray managed constants left elsewhere in the file.
+    // Strip any stray managed constants left elsewhere in the file — this
+    // also cleans up defines the old system-info.php writer left loose in
+    // the file (it shared the same WP_REDIS_* constant names).
     foreach (ccm_tools_redis_managed_constants() as $cname) {
         $config_content = preg_replace(
             '/^[ \t]*define\s*\(\s*[\'"]' . preg_quote($cname, '/') . '[\'"].*?\);\s*\n?/mi',
@@ -864,6 +1123,10 @@ function ccm_tools_redis_remove_config() {
             $config_content
         );
     }
+    // Remove the old writer's unterminated "/* Redis configuration */"
+    // header comment (no matching end marker, so it never matched the
+    // block-strip above and was left behind on every prior "Disable").
+    $config_content = preg_replace('/^[ \t]*\/\*\s*Redis\s+configuration\s*\*\/\s*\n?/mi', '', $config_content);
     $config_content = preg_replace('/\n{4,}/', "\n\n\n", $config_content);
 
     if ($config_content === $original) {
@@ -872,22 +1135,21 @@ function ccm_tools_redis_remove_config() {
         return $result;
     }
 
-    // Back up outside the web root — wp-config.php holds the Redis
-    // credentials (and everything else) in plaintext.
+    // Back up outside the web root, encrypted — wp-config.php holds the
+    // Redis credentials (and everything else) in plaintext, and .htaccess
+    // alone does not protect this directory on an nginx-fronted site. Refuse
+    // to proceed rather than fall back to an unencrypted backup.
     $backup_dir      = ccm_tools_redis_private_backup_dir();
     $backup_filename = 'wp-config-backup-' . wp_generate_password(8, false, false) . '-' . date('Y-m-d-His') . '.php';
     $backup_path     = $backup_dir . $backup_filename;
 
-    if (!@copy($real_config_path, $backup_path)) {
-        $result['message'] = __('Could not create backup of wp-config.php.', 'ccm-tools');
+    if (!ccm_tools_redis_write_encrypted_backup($backup_path, $original)) {
+        $result['message'] = __('Could not create an encrypted backup of wp-config.php.', 'ccm-tools');
         return $result;
     }
-    if (@file_put_contents($real_config_path, $config_content) === false) {
+    if (!ccm_tools_redis_atomic_write_file($real_config_path, $config_content)) {
         $result['message'] = __('Could not write to wp-config.php file.', 'ccm-tools');
         return $result;
-    }
-    if (function_exists('opcache_invalidate')) {
-        @opcache_invalidate($real_config_path, true);
     }
 
     ccm_tools_redis_prune_backups($backup_dir, 'wp-config-backup-*.php', 5);
@@ -944,6 +1206,21 @@ function ccm_tools_redis_maybe_autosync_dropin() {
     $status   = ccm_tools_redis_dropin_status();
 
     if (!empty($settings['enabled'])) {
+        // Sites enabled before the auto-salt fix shipped may still be
+        // running with an empty WP_CACHE_KEY_SALT and won't necessarily
+        // ever hit Enable or Save again. Heal them here too, since this
+        // path already runs for every already-enabled site. The drop-in
+        // only ever reads the wp-config.php constant (never the DB option),
+        // so persisting the salt alone isn't enough — push it into
+        // wp-config.php too, through the same shared builder as every other
+        // path, not just the DB option.
+        if (empty($settings['key_salt']) && function_exists('ccm_tools_redis_generate_key_salt')) {
+            $settings['key_salt'] = ccm_tools_redis_generate_key_salt();
+            ccm_tools_redis_save_settings($settings);
+            if (function_exists('ccm_tools_redis_build_config_array') && function_exists('ccm_tools_redis_add_config')) {
+                ccm_tools_redis_add_config(ccm_tools_redis_build_config_array($settings));
+            }
+        }
         // Enabled: ensure a current CCM drop-in is in place (install if missing).
         ccm_tools_redis_refresh_dropin(true);
     } elseif ($status['is_ccm']) {
@@ -1336,12 +1613,16 @@ function ccm_tools_redis_add_config($config = array()) {
         'WP_REDIS_DISABLE_COMMENT' => true,
     );
     
-    // Add site-specific salt
-    $site_url = parse_url(site_url(), PHP_URL_HOST);
-    if (!empty($site_url)) {
-        $defaults['WP_CACHE_KEY_SALT'] = $site_url . '_';
+    // Fallback salt if the caller's $config didn't already supply one (e.g.
+    // ccm_tools_redis_build_config_array() only adds WP_CACHE_KEY_SALT when
+    // the stored setting is non-empty). Host-only would still collide for
+    // two installs sharing one hostname (e.g. subdirectory multisite on
+    // shared hosting), so this always includes a random suffix too — same
+    // generator ccm_tools_redis_save_settings() uses to persist a salt.
+    if (function_exists('ccm_tools_redis_generate_key_salt')) {
+        $defaults['WP_CACHE_KEY_SALT'] = ccm_tools_redis_generate_key_salt();
     }
-    
+
     $config = array_merge($defaults, $config);
     
     // Build configuration lines
@@ -1397,27 +1678,26 @@ function ccm_tools_redis_add_config($config = array()) {
         return $result;
     }
 
-    // Create backup with secure filename, stored outside the web root — wp-
-    // config.php holds the Redis credentials (and everything else) in
-    // plaintext.
+    // Create backup with secure filename, stored outside the web root and
+    // encrypted — wp-config.php holds the Redis credentials (and everything
+    // else) in plaintext, and .htaccess alone does not protect this
+    // directory on an nginx-fronted site. Refuse to proceed rather than
+    // fall back to an unencrypted backup.
     $backup_dir      = ccm_tools_redis_private_backup_dir();
     $backup_filename = 'wp-config-backup-' . wp_generate_password(8, false, false) . '-' . date('Y-m-d-His') . '.php';
     $backup_path     = $backup_dir . $backup_filename;
 
-    if (!@copy($real_config_path, $backup_path)) {
-        $result['message'] = __('Could not create backup of wp-config.php.', 'ccm-tools');
+    if (!ccm_tools_redis_write_encrypted_backup($backup_path, $original_content)) {
+        $result['message'] = __('Could not create an encrypted backup of wp-config.php.', 'ccm-tools');
         return $result;
     }
 
-    // Write the new content
-    if (@file_put_contents($real_config_path, $config_content) === false) {
+    // Write the new content atomically (tmp file + rename, byte-count
+    // verified) so a worker kill, full disk, or timeout mid-write can never
+    // leave a truncated wp-config.php.
+    if (!ccm_tools_redis_atomic_write_file($real_config_path, $config_content)) {
         $result['message'] = __('Could not write to wp-config.php file.', 'ccm-tools');
         return $result;
-    }
-
-    // Clear opcode cache
-    if (function_exists('opcache_invalidate')) {
-        opcache_invalidate($real_config_path, true);
     }
 
     ccm_tools_redis_prune_backups($backup_dir, 'wp-config-backup-*.php', 5);
@@ -1561,8 +1841,8 @@ function ccm_tools_render_redis_page() {
                 </table>
                 
                 <?php
-                // Runtime Diagnostics — query the live $wp_object_cache instance (Premium)
-                if (ccm_tools_has_premium_feature('advanced_redis') && $connection['connected'] && $dropin_status['is_ccm'] && function_exists('wp_cache_get')):
+                // Runtime Diagnostics — query the live $wp_object_cache instance
+                if ($connection['connected'] && $dropin_status['is_ccm'] && function_exists('wp_cache_get')):
                     global $wp_object_cache;
                     $runtime = (is_object($wp_object_cache) && method_exists($wp_object_cache, 'info'))
                         ? $wp_object_cache->info()
@@ -1583,7 +1863,6 @@ function ccm_tools_render_redis_page() {
                                 <?php endif; ?>
                             </td>
                         </tr>
-                        <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
                         <tr>
                             <th><?php _e('Serializer', 'ccm-tools'); ?></th>
                             <td><code><?php echo esc_html($runtime['serializer'] ?? 'php'); ?></code></td>
@@ -1596,7 +1875,6 @@ function ccm_tools_render_redis_page() {
                             <th><?php _e('Async Flush (UNLINK)', 'ccm-tools'); ?></th>
                             <td><code><?php echo !empty($runtime['async_flush']) ? 'true' : 'false'; ?></code></td>
                         </tr>
-                        <?php endif; ?>
                         <tr>
                             <th><?php _e('Selective Flush', 'ccm-tools'); ?></th>
                             <td><code><?php echo !empty($runtime['selective_flush']) ? 'true' : 'false'; ?></code></td>
@@ -1782,7 +2060,6 @@ function ccm_tools_render_redis_page() {
                     </div>
                     
                     <?php if (class_exists('WooCommerce')): ?>
-                    <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
                     <div class="ccm-form-section ccm-form-section-woocommerce">
                         <h3><span class="dashicons dashicons-cart" style="margin-right: 8px;"></span><?php _e('WooCommerce Optimization', 'ccm-tools'); ?></h3>
                         <p class="ccm-note"><?php _e('WooCommerce detected! These settings optimize Redis caching for e-commerce performance.', 'ccm-tools'); ?></p>
@@ -1846,15 +2123,8 @@ function ccm_tools_render_redis_page() {
                             </ul>
                         </div>
                     </div>
-                    <?php else: ?>
-                    <div class="ccm-form-section ccm-form-section-woocommerce">
-                        <h3><span class="dashicons dashicons-cart" style="margin-right: 8px;"></span><?php _e('WooCommerce Optimization', 'ccm-tools'); ?> <span class="ccm-premium-badge ccm-premium-badge-pro" style="font-size: 0.75rem;">Premium</span></h3>
-                        <?php ccm_tools_render_premium_upsell('advanced_redis', true); ?>
-                    </div>
-                    <?php endif; // premium ?>
                     <?php endif; // WooCommerce ?>
-                    
-                    <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
+
                     <div class="ccm-form-section">
                         <h3><?php _e('Advanced Settings', 'ccm-tools'); ?></h3>
                         
@@ -1947,13 +2217,7 @@ function ccm_tools_render_redis_page() {
                             </div>
                         </div>
                     </div>
-                    <?php else: ?>
-                    <div class="ccm-form-section">
-                        <h3><?php _e('Advanced Settings', 'ccm-tools'); ?> <span class="ccm-premium-badge ccm-premium-badge-pro" style="font-size: 0.75rem;">Premium</span></h3>
-                        <?php ccm_tools_render_premium_upsell('advanced_redis', true); ?>
-                    </div>
-                    <?php endif; ?>
-                    
+
                     <div class="ccm-form-actions">
                         <button type="submit" class="ccm-button ccm-button-primary"><?php _e('Save Settings', 'ccm-tools'); ?></button>
                         <button type="button" id="add-to-wp-config" class="ccm-button"><?php _e('Add to wp-config.php', 'ccm-tools'); ?></button>
@@ -1990,23 +2254,10 @@ function ccm_tools_render_redis_page() {
                             'WP_REDIS_SELECTIVE_FLUSH' => array('value' => $settings['selective_flush'] ? 'true' : 'false', 'defined' => defined('WP_REDIS_SELECTIVE_FLUSH')),
                         );
 
-                        // Premium-only settings: only show if defined in wp-config.php or premium is active
-                        if (ccm_tools_has_premium_feature('advanced_redis')) {
-                            $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => defined('WP_REDIS_SERIALIZER'));
-                            $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => defined('WP_REDIS_COMPRESSION'));
-                            $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => defined('WP_REDIS_ASYNC_FLUSH'));
-                        } else {
-                            // Still show if explicitly defined in wp-config.php
-                            if (defined('WP_REDIS_SERIALIZER')) {
-                                $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => true);
-                            }
-                            if (defined('WP_REDIS_COMPRESSION')) {
-                                $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => true);
-                            }
-                            if (defined('WP_REDIS_ASYNC_FLUSH')) {
-                                $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => true);
-                            }
-                        }
+                        // Standard for everyone now.
+                        $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => defined('WP_REDIS_SERIALIZER'));
+                        $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => defined('WP_REDIS_COMPRESSION'));
+                        $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => defined('WP_REDIS_ASYNC_FLUSH'));
                         
                         foreach ($config_items as $constant => $item):
                             if (empty($item['value']) && !$item['defined']) continue;

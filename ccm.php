@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 7.45.0
+ * Version: 8.0.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '7.45.0');
+    define('CCM_HELPER_VERSION', '8.0.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -107,19 +107,32 @@ if ($ccm_is_duplicate) {
     if ($ccm_current_dir === 'ccm-tools') {
         // We are the canonical install — stay active and remove the duplicates.
         add_action('admin_init', 'ccm_tools_cleanup_duplicate_installs');
-    } elseif (is_dir(WP_PLUGIN_DIR . '/ccm-tools')) {
-        // We are a version-suffixed copy and the canonical exists. Make sure the
-        // canonical is active, stand down quietly (silent = NO teardown hooks),
-        // and stop loading. The canonical instance deletes our folder on its
-        // next admin load.
+    } elseif (file_exists(WP_PLUGIN_DIR . '/ccm-tools/ccm.php')) {
+        // We are a version-suffixed copy and the canonical exists (checking
+        // file_exists() on ccm.php itself, not just is_dir() on the folder —
+        // a leftover EMPTY ccm-tools/ directory from a failed upgrade used to
+        // satisfy is_dir() and fall into this branch with no working
+        // canonical to hand off to). Make sure the canonical is active, stand
+        // down quietly (silent = NO teardown hooks), and stop loading. The
+        // canonical instance deletes our folder on its next admin load.
         add_action('admin_init', function () {
             if (!function_exists('activate_plugin') || !function_exists('is_plugin_active')) {
                 require_once ABSPATH . 'wp-admin/includes/plugin.php';
             }
-            if (!is_plugin_active('ccm-tools/ccm.php')) {
-                @activate_plugin('ccm-tools/ccm.php');
+            $canonical_active = is_plugin_active('ccm-tools/ccm.php');
+            if (!$canonical_active) {
+                $activate_result = activate_plugin('ccm-tools/ccm.php');
+                $canonical_active = !is_wp_error($activate_result) && is_plugin_active('ccm-tools/ccm.php');
             }
-            deactivate_plugins(plugin_basename(__FILE__), true); // silent: no deactivation hooks
+            // Only self-deactivate once the canonical copy is confirmed
+            // active. Previously activate_plugin()'s WP_Error return was
+            // silenced with @ and ignored, so a broken canonical install
+            // (e.g. that empty leftover folder) plus a failed activation
+            // still deactivated this — the only working — copy, making the
+            // plugin disappear entirely.
+            if ($canonical_active) {
+                deactivate_plugins(plugin_basename(__FILE__), true); // silent: no deactivation hooks
+            }
         });
         return; // stop loading this duplicate copy
     } else {
@@ -240,6 +253,51 @@ if (!defined('CCM_HELPER_ROOT_URL')) {
 }
 
 /* ────────────────────────────────────────────────────────────────
+ *  One-time cleanup: dead data left behind by the Premium and AI
+ *  Performance Hub modules (inc/premium.php, inc/ai-hub.php), both
+ *  removed entirely — every formerly-premium feature is now standard.
+ *  Guarded by the 'ccm_tools_cleanup_version' option so it only does
+ *  its work once per site no matter how many times admin_init fires.
+ * ──────────────────────────────────────────────────────────────── */
+add_action('admin_init', 'ccm_tools_cleanup_removed_modules');
+
+function ccm_tools_cleanup_removed_modules() {
+    // Identifier for this cleanup pass — not tied to the plugin version, just
+    // bumped if a future cleanup pass needs to run again.
+    $cleanup_marker = 'premium-ai-hub-removal-1';
+
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    if (get_option('ccm_tools_cleanup_version') === $cleanup_marker) {
+        return;
+    }
+
+    // Options the removed AI Performance Hub / Premium modules used to own.
+    delete_option('ccm_tools_ai_hub_settings');
+    delete_option('ccm_tools_ai_optimization_runs');
+    delete_option('ccm_tools_perf_snapshot');
+    delete_option('ccm_tools_ai_known_bad');
+
+    // Transients the same modules used to own.
+    delete_transient('ccm_tools_premium_status');
+    delete_transient('ccm_tools_premium_details');
+    delete_transient('ccm_tools_premium_pricing');
+    delete_transient('ccm_tools_perf_snapshot');
+
+    // ccm_tools_perf_settings survives (it's not premium/AI-specific), but it
+    // had a 'warn_dom_size' key that belonged to the removed AI Hub — drop
+    // just that key and keep the rest of the option intact.
+    $perf_settings = get_option('ccm_tools_perf_settings');
+    if (is_array($perf_settings) && array_key_exists('warn_dom_size', $perf_settings)) {
+        unset($perf_settings['warn_dom_size']);
+        update_option('ccm_tools_perf_settings', $perf_settings);
+    }
+
+    update_option('ccm_tools_cleanup_version', $cleanup_marker);
+}
+
+/* ────────────────────────────────────────────────────────────────
  *  Redis drop-in lifecycle (activation / deactivation)
  *
  *  Registered against the MAIN plugin file so they fire on genuine
@@ -294,44 +352,24 @@ function ccmtools_load_textdomain() {
 }
 
 
-/**
- * Detect whether the current request is a WordPress REST API request.
- * Used to skip heavy plugin loading on REST endpoints — our plugin is
- * entirely admin-facing, so REST consumers (e.g. headless frontends)
- * gain no benefit from loading 12 include files on every API call.
- *
- * @return bool
- */
-function ccm_tools_is_rest_request(): bool {
-    if (defined('REST_REQUEST') && REST_REQUEST) {
-        return true;
-    }
-    if (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/') !== false) {
-        return true;
-    }
-    if (isset($_GET['rest_route'])) {
-        return true;
-    }
-    return false;
-}
-
 // Main plugin initialization - AFTER PLUGINS_LOADED HOOK
 add_action('plugins_loaded', 'ccm_initialize_plugin', 10);
 
 /**
  * Initialize the plugin after all plugins are loaded
  * This prevents early initialization issues
+ *
+ * NOTE: This used to skip loading entirely on REST API requests as a minor
+ * performance optimisation. That short-circuit was removed: it matched the
+ * REST prefix against the raw REQUEST_URI (including the query string), so a
+ * request like /checkout/?x=/wp-json/ was misdetected as a REST request and
+ * skipped ALL 12 includes — including inc/woocommerce-tools.php, which is
+ * what enforces the admin-only COD/BACS restriction. That let an unpaid order
+ * be placed on any request crafted to look like a REST hit, and the real
+ * WooCommerce Store API endpoints defeated it with no trick at all. Loading
+ * the includes unconditionally (they're cheap under OPcache) closes that gap.
  */
 function ccm_initialize_plugin() {
-    // Remove the problematic class check that's preventing initialization
-    // and use our improved duplicate detection instead
-    // Skip heavy loading on REST API requests.
-    // CCM Tools is admin-only — loading 12 include files adds unnecessary
-    // overhead to REST responses consumed by headless frontends.
-    if (ccm_tools_is_rest_request()) {
-        return;
-    }
-    
     define('CCM_TOOLS_INITIALIZING', true);
     
     // Load core files
@@ -346,9 +384,8 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/webp-converter.php'; // Add WebP image converter
     require_once CCM_HELPER_ROOT_DIR . 'inc/performance-optimizer.php';
     require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php'; // Add Redis Object Cache
-    require_once CCM_HELPER_ROOT_DIR . 'inc/premium.php'; // Premium subscription management
-    require_once CCM_HELPER_ROOT_DIR . 'inc/ai-hub.php'; // AI Performance Hub integration
     require_once CCM_HELPER_ROOT_DIR . 'inc/cloudflare.php'; // Cloudflare integration
+    require_once CCM_HELPER_ROOT_DIR . 'inc/site-health.php'; // PageSpeed Insights reporting
     
     // Initialize plugin settings
     global $ccm_tools;
@@ -391,11 +428,16 @@ function ccm_tools_render_header_nav($active_page = '') {
                 <?php if ($woocommerce_active): ?>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-woocommerce')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-woocommerce' ? 'active' : ''; ?>"><?php _e('WooCommerce', 'ccm-tools'); ?></a>
                 <?php endif; ?>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-site-health')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-site-health' ? 'active' : ''; ?>"><?php _e('Site Health', 'ccm-tools'); ?></a>
                 <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-error-log')); ?>" class="ccm-tab <?php echo $active_page === 'ccm-tools-error-log' ? 'active' : ''; ?>"><?php _e('Error Log', 'ccm-tools'); ?></a>
             </div>
         </nav>
         <div class="ccm-header-title">
-            <h1><?php echo esc_html(get_admin_page_title()); ?> <?php echo wp_kses_post(ccm_tools_render_premium_badge()); ?></h1>
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            <button type="button" class="ccm-theme-toggle" aria-label="<?php esc_attr_e('Switch between light and dark', 'ccm-tools'); ?>" title="<?php esc_attr_e('Switch between light and dark', 'ccm-tools'); ?>">
+                <svg class="ccm-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+                <svg class="ccm-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            </button>
         </div>
     </div>
     <?php
@@ -409,6 +451,7 @@ class CCMSettings {
         // Add admin hooks - admin_menu is called after init, so it's safe
         add_action('admin_menu', array($this, 'add_plugin_page'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
+        add_action('admin_head', array($this, 'print_theme_stamp'), 1);
         add_filter('plugin_action_links_' . plugin_basename(__FILE__), array($this, 'add_action_links'));
         
         // Add Front Page prioritization hooks
@@ -515,6 +558,16 @@ class CCMSettings {
             );
         }
 
+        // Add Site Health submenu (PageSpeed Insights)
+        add_submenu_page(
+            'ccm-tools',
+            'Site Health',
+            'Site Health',
+            'manage_options',
+            'ccm-tools-site-health',
+            'ccm_tools_render_site_health_page'
+        );
+
         // Add Error Log submenu
         add_submenu_page(
             'ccm-tools',
@@ -523,16 +576,6 @@ class CCMSettings {
             'manage_options',
             'ccm-tools-error-log',
             'ccm_tools_render_error_log_page'
-        );
-        
-        // Add Premium submenu
-        add_submenu_page(
-            'ccm-tools',
-            'Premium',
-            '⭐ Premium',
-            'manage_options',
-            'ccm-tools-premium',
-            'ccm_tools_render_premium_page'
         );
         
         // Add debug submenu if debug mode is enabled
@@ -548,14 +591,52 @@ class CCMSettings {
         }
     }
     
+    /**
+     * Stamp the chosen theme on <html> before anything paints.
+     *
+     * Has to be inline and in the head: a deferred script would let the page
+     * render in the wrong palette first and then snap, which is worse than
+     * either theme on its own. Falls back to the operating system preference
+     * when the viewer has never chosen, and survives blocked storage.
+     *
+     * @return void
+     */
+    public function print_theme_stamp(): void {
+        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+        if (!$screen || strpos((string) $screen->id, 'ccm-tools') === false) {
+            return;
+        }
+        ?>
+        <script>
+        (function () {
+            var t = null;
+            try { t = window.localStorage.getItem('ccm-tools-theme'); } catch (e) {}
+            if (t !== 'dark' && t !== 'light') {
+                t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+            }
+            document.documentElement.setAttribute('data-ccm-theme', t);
+        })();
+        </script>
+        <?php
+    }
+
     public function enqueue_admin_scripts($hook): void {
         // Only load on our plugin pages
         if (strpos($hook, 'ccm-tools') !== false) {
             // Modern pure CSS - no external dependencies
             wp_enqueue_style('ccm-tools-style', CCM_HELPER_ROOT_URL . 'css/style.css', array(), CCM_HELPER_VERSION);
             
+            // UI layer: theme toggle + the shared CCM spinner. Loaded before
+            // main.js so window.ccmSpinner exists for anything that wants it.
+            wp_enqueue_script('ccm-tools-ui', CCM_HELPER_ROOT_URL . 'js/ui.js', array(), CCM_HELPER_VERSION, true);
+
             // Modern vanilla JS - no jQuery required
-            wp_enqueue_script('ccm-tools-script', CCM_HELPER_ROOT_URL . 'js/main.js', array(), CCM_HELPER_VERSION, true);
+            wp_enqueue_script('ccm-tools-script', CCM_HELPER_ROOT_URL . 'js/main.js', array('ccm-tools-ui'), CCM_HELPER_VERSION, true);
+
+            // Site Health is a self-contained module; only load it on its own page.
+            if (strpos($hook, 'ccm-tools-site-health') !== false) {
+                wp_enqueue_script('ccm-tools-site-health', CCM_HELPER_ROOT_URL . 'js/site-health.js', array('ccm-tools-script'), CCM_HELPER_VERSION, true);
+            }
             wp_localize_script('ccm-tools-script', 'ccmToolsData', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('ccm-tools-nonce'),
@@ -678,21 +759,29 @@ class CCMSettings {
      */
     public function modify_posts_orderby_for_front_page($orderby, $query): string {
         global $wpdb;
-        
+
+        // Coerce to string up front: an earlier posts_orderby filter can hand
+        // us null, and this method's `: string` return type would otherwise
+        // fatal with a TypeError when that null is returned as-is below.
+        $orderby = (string) $orderby;
+
         // Only apply our custom ordering if it's marked for front page prioritization
         if (!$query->get('ccm_prioritize_front_page')) {
             return $orderby;
         }
-        
+
         $front_page_id = $query->get('ccm_front_page_id');
         if (!$front_page_id) {
             return $orderby;
         }
-        
-        // Create custom ORDER BY clause that puts front page first, then orders by date descending
-        $custom_orderby = "CASE WHEN {$wpdb->posts}.ID = " . intval($front_page_id) . " THEN 0 ELSE 1 END ASC, {$wpdb->posts}.post_date DESC";
-        
-        return $custom_orderby;
+
+        // Put the front page first, then fall back to WordPress's own
+        // ordering instead of discarding it. For hierarchical post types
+        // (e.g. Pages) WordPress passes "menu_order title" here — overwriting
+        // it outright silently turned the Pages list into date-DESC order.
+        $front_page_case = "CASE WHEN {$wpdb->posts}.ID = " . intval($front_page_id) . " THEN 0 ELSE 1 END ASC";
+
+        return $orderby !== '' ? $front_page_case . ', ' . $orderby : $front_page_case;
     }
     
     /**
@@ -777,16 +866,6 @@ class CCMSettings {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
         
-        // Invalidate opcache for wp-config.php to ensure fresh constants
-        if (function_exists('opcache_invalidate') && file_exists(ABSPATH . 'wp-config.php')) {
-            opcache_invalidate(ABSPATH . 'wp-config.php', true);
-        }
-        
-        // Clear the WordPress file cache if available
-        if (function_exists('wp_cache_flush')) {
-            wp_cache_flush();
-        }
-        
         // Initialize Redis variables before using them
         $redis_status = array('server_available' => false, 'version' => '');
         $redis_config = array('configured' => false, 'constants' => array());
@@ -813,15 +892,19 @@ class CCMSettings {
         $debug_log_enabled = defined('WP_DEBUG_LOG') && WP_DEBUG_LOG;
         $debug_display_enabled = defined('WP_DEBUG_DISPLAY') && WP_DEBUG_DISPLAY;
         
-        // Double-check against the file content
+        // Double-check against the file content. Anchored to a line start
+        // that is not itself indented under a comment marker, so a
+        // define('WP_DEBUG', ...) sitting inside a // or /* */ comment can no
+        // longer be picked up as the live value (previously the FIRST match
+        // anywhere in the file won, including commented-out ones).
         if (!empty($wp_config_content)) {
-            if (preg_match('/define\s*\(\s*[\'"]WP_DEBUG[\'"]\s*,\s*(true|false)\s*\)/i', $wp_config_content, $matches)) {
+            if (preg_match('/^[ \t]*define\s*\(\s*[\'"]WP_DEBUG[\'"]\s*,\s*(true|false)\s*\)/mi', $wp_config_content, $matches)) {
                 $debug_mode_enabled = strtolower($matches[1]) === 'true';
             }
-            if (preg_match('/define\s*\(\s*[\'"]WP_DEBUG_LOG[\'"]\s*,\s*(true|false)\s*\)/i', $wp_config_content, $matches)) {
+            if (preg_match('/^[ \t]*define\s*\(\s*[\'"]WP_DEBUG_LOG[\'"]\s*,\s*(true|false)\s*\)/mi', $wp_config_content, $matches)) {
                 $debug_log_enabled = strtolower($matches[1]) === 'true';
             }
-            if (preg_match('/define\s*\(\s*[\'"]WP_DEBUG_DISPLAY[\'"]\s*,\s*(true|false)\s*\)/i', $wp_config_content, $matches)) {
+            if (preg_match('/^[ \t]*define\s*\(\s*[\'"]WP_DEBUG_DISPLAY[\'"]\s*,\s*(true|false)\s*\)/mi', $wp_config_content, $matches)) {
                 $debug_display_enabled = strtolower($matches[1]) === 'true';
             }
         }
@@ -884,22 +967,77 @@ class CCMSettings {
             <?php ccm_tools_render_header_nav('ccm-tools'); ?>
             
             <div class="ccm-content">
+
                 <?php
-                // Show PageSpeed scores card if AI Hub is configured
-                $ai_settings = function_exists('ccm_tools_ai_hub_get_settings') ? ccm_tools_ai_hub_get_settings() : [];
-                if (!empty($ai_settings['api_key'])): ?>
-                <!-- PageSpeed Scores Card -->
-                <div class="ccm-card ccm-card-ps" id="dashboard-pagespeed-card">
-                    <div class="ccm-card-ps-header">
-                        <h2><?php _e('PageSpeed Scores', 'ccm-tools'); ?></h2>
-                        <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-perf')); ?>" class="ccm-button ccm-button-small"><?php _e('Performance →', 'ccm-tools'); ?></a>
+                // At-a-glance row. Everything here is already computed above or
+                // is a cheap read; nothing new is fetched to render it.
+                $perf_now = get_option('ccm_tools_perf_settings', array());
+                $perf_now = is_array($perf_now) ? $perf_now : array();
+                $perf_on = 0;
+                foreach ($perf_now as $perf_key => $perf_val) {
+                    if ($perf_key === 'enabled') { continue; }
+                    if ($perf_val === true) { $perf_on++; }
+                }
+                $perf_master = !empty($perf_now['enabled']);
+
+                // Read these here rather than borrowing the PHP card's variables:
+                // that card renders further down the page, so at this point they
+                // do not exist yet.
+                $tile_memory_limit = ini_get('memory_limit');
+                $tile_memory_bytes = ccm_tools_convert_php_size_to_bytes($tile_memory_limit);
+                $tile_memory_unlimited = ($tile_memory_bytes < 0);
+                $tile_memory_low = (!$tile_memory_unlimited && $tile_memory_bytes < 256 * 1024 * 1024);
+                ?>
+                <div class="ccm-stat-grid">
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value ccm-stat-tile__value--brand" id="ttfb-result">
+                            <span class="ccm-text-muted" style="font-size:0.95rem;font-weight:500;"><?php _e('Not measured', 'ccm-tools'); ?></span>
+                        </div>
+                        <div class="ccm-stat-tile__label"><?php _e('Time to first byte', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <button type="button" id="refresh-ttfb" class="ccm-button ccm-button-secondary ccm-button-small" title="<?php esc_attr_e('Runs several timed requests against this site', 'ccm-tools'); ?>"><?php _e('Measure', 'ccm-tools'); ?></button>
+                        </div>
                     </div>
-                    <div id="dashboard-pagespeed-scores" class="ccm-dashboard-ps-loading">
-                        <div class="ccm-spinner ccm-spinner-small"></div>
-                        <span class="ccm-text-muted"><?php _e('Loading latest scores…', 'ccm-tools'); ?></span>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo $tile_memory_unlimited ? esc_html__('Unlimited', 'ccm-tools') : esc_html($tile_memory_limit); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('PHP memory limit', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo $tile_memory_low ? 'ccm-dot-warn' : 'ccm-dot-ok'; ?>"></span>
+                            <?php echo $tile_memory_low
+                                ? esc_html__('Below the 256M floor', 'ccm-tools')
+                                : esc_html__('Above the 256M floor', 'ccm-tools'); ?>
+                        </div>
                     </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html($cache_status_text); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Object cache', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo $cache_status_class === 'ccm-success' ? 'ccm-dot-ok' : 'ccm-dot-warn'; ?>"></span>
+                            <?php
+                            echo !empty($redis_status['server_available'])
+                                ? esc_html(sprintf(__('Redis %s available', 'ccm-tools'), $redis_status['version']))
+                                : esc_html__('No Redis server detected', 'ccm-tools');
+                            ?>
+                        </div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value">
+                            <?php echo esc_html($perf_on); ?><small> <?php _e('on', 'ccm-tools'); ?></small>
+                        </div>
+                        <div class="ccm-stat-tile__label"><?php _e('Performance options', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo $perf_master ? 'ccm-dot-ok' : 'ccm-dot-warn'; ?>"></span>
+                            <?php echo $perf_master
+                                ? esc_html__('Optimiser active', 'ccm-tools')
+                                : esc_html__('Optimiser switched off', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+
                 </div>
-                <?php endif; ?>
 
                 <!-- Database Information Card -->
                 <div class="ccm-card">
@@ -990,9 +1128,14 @@ class CCMSettings {
                     $upload_size_threshold = 62 * 1024 * 1024; // 62MB
                     $input_vars_threshold = 10000;
                     
-                    // Determine status classes and suggestions
-                    $memory_class = $memory_limit_bytes < $memory_limit_threshold ? 'ccm-error' : 'ccm-success';
-                    $memory_suggestion = $memory_limit_bytes < $memory_limit_threshold ? __('Recommend: 512M or higher', 'ccm-tools') : '';
+                    // Determine status classes and suggestions.
+                    // -1 means "unlimited" for memory_limit — it's numeric, so
+                    // without this check it reads as less than the 256M
+                    // threshold and renders a red "Recommend: 512M or higher"
+                    // for the best possible setting.
+                    $memory_limit_unlimited = ($memory_limit_bytes < 0);
+                    $memory_class = ($memory_limit_unlimited || $memory_limit_bytes >= $memory_limit_threshold) ? 'ccm-success' : 'ccm-error';
+                    $memory_suggestion = ($memory_limit_unlimited || $memory_limit_bytes >= $memory_limit_threshold) ? '' : __('Recommend: 512M or higher', 'ccm-tools');
                     
                     $execution_class = $max_execution_time <= $execution_time_threshold ? 'ccm-error' : 'ccm-success';
                     $execution_suggestion = $max_execution_time <= $execution_time_threshold ? __('Recommend: 180 seconds or higher', 'ccm-tools') : '';
@@ -1212,28 +1355,7 @@ class CCMSettings {
                             <td><?php echo esc_html(CCM_HELPER_VERSION); ?></td>
                         </tr>
                         
-                        <!-- TTFB Measurement - New Row (Deferred load for faster page rendering) -->
-                        <tr>
-                            <th><?php _e('Time To First Byte (TTFB)', 'ccm-tools'); ?></th>
-                            <td>
-                                <div class="ccm-config-control" style="display: flex; align-items: center; justify-content: space-between;">
-                                    <div style="display: flex; align-items: center; flex: 1;">
-                                        <div id="ttfb-result" style="margin-right: 10px;" data-auto-load="true">
-                                            <div class="ccm-spinner ccm-spinner-small"></div>
-                                            <span class="ccm-text-muted"><?php _e('Measuring...', 'ccm-tools'); ?></span>
-                                        </div>
-                                        <span class="ccm-info-icon" 
-                                              title="<?php esc_attr_e('TTFB Measurement Info: Enhanced measurement uses multiple attempts with server warmup for accuracy. Baseline measurement shows realistic cached performance, Fresh measurement shows worst-case uncached performance. Results are averaged and outliers removed for consistency.', 'ccm-tools'); ?>">
-                                            ℹ
-                                        </span>
-                                    </div>
-                                    <button id="refresh-ttfb" class="ccm-button ccm-button-small" title="<?php esc_attr_e('Refresh TTFB measurement', 'ccm-tools'); ?>">
-                                        ↻ <?php _e('Refresh', 'ccm-tools'); ?>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        
+
                         <?php if ($redis_status['server_available']): ?>
                         <tr>
                             <th><?php _e('Redis Cache', 'ccm-tools'); ?></th>

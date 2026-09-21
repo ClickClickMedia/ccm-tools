@@ -1,5 +1,95 @@
 # CCM Tools — Changelog
 
+## v8.0.0 — Premium removed, AI optimiser removed, new UI
+
+Everything that used to be paid is now standard, the AI auto-optimiser is gone, and the whole admin interface has been rebuilt. This is a major version because the Premium page, the AI Performance Hub and their settings no longer exist.
+
+### Every feature is now available to every site
+
+The premium tier is retired. There is no subscription, no API key to the CCM hub, no upgrade prompt and no locked card. Everything the plugin can do, it does on every install:
+
+- **Redis Advanced Settings** — serializer, compression, async flush (UNLINK), ACL authentication, TLS connections, connection and read timeouts, and the drop-in runtime diagnostics.
+- **Redis WooCommerce optimisation** — product query caching, term count caching and the per-type TTLs.
+- **Cloudflare Security** — security level and Under Attack mode.
+- **Cloudflare SSL/TLS and Network** — encryption mode, HTTP/2, HTTP/3, 0-RTT, always use HTTPS, automatic HTTPS rewrites, email obfuscation, hotlink protection, opportunistic encryption, early hints, Brotli and pseudo-IPv4.
+- **Cloudflare Zone Analytics** and the read-only **DNS Records** viewer.
+- **The postmeta composite index** on the Database page, which is the single biggest database win on an ACF or WooCommerce site.
+
+A one-time cleanup runs on the first admin page load after updating and removes the orphaned subscription and AI options and transients. Nothing else in the database is touched.
+
+### The AI Performance Optimiser is gone
+
+Removed in full: hub PageSpeed testing, AI analysis, the one-click optimise loop, visual regression screenshots, the console check, the AI troubleshooter chat, settings snapshots and rollback, and the cross-site "known bad" learning store.
+
+It was removed because it did not work. It applied its own guesses to live production sites, its rollback only ever undid the most recent iteration, infrastructure changes it made to `.htaccess` and the Redis drop-in were never reverted at all, and the visual check meant to catch "fast but broken" could be skipped by a missing screenshot. On top of that its opportunity data had been silently empty for months: Lighthouse 13 removed the audit IDs it was keyed to.
+
+Nothing is applied automatically by this plugin any more. A human ticks every box.
+
+### New: Site Health
+
+The measurement half was worth keeping, so it has been rebuilt without the hub and without the auto-apply:
+
+- Talks **straight to the Google PageSpeed Insights API** with your own API key. No CCM middleman.
+- Mobile and desktop scores, Core Web Vitals, and real-visitor field data from the Chrome UX Report where Google has it.
+- Findings are **ranked by how much time each one costs**, and where CCM Tools has a setting that addresses one, there is a link to it. It never changes the setting for you.
+- Reads audits generically rather than by fixed ID, so a future Lighthouse release cannot silently empty the report the way it did to the old integration.
+- Score history, so you can see whether a change actually helped.
+- The key can live in the database or, better, as `CCM_TOOLS_PSI_KEY` in `wp-config.php`. Restrict it to the PageSpeed Insights API in the Google Cloud console.
+
+### Security
+
+Ten fixes, several of them reachable without logging in.
+
+- **Stored XSS in the error log viewer.** The AJAX path returned the raw log and the browser rendered it as HTML, so anything that wrote attacker-controlled text into `debug.log` executed in the admin's browser on the 30-second auto-refresh. A previous release recorded this as fixed; only the initial page render had been escaped, not the refresh. Now escaped on every path, and the client no longer has a raw fallback to fall back to.
+- **Any visitor could switch the plugin off for one request.** The REST detection matched `/wp-json/` anywhere in the request URI, query string included, and bailed out before loading any module. `/checkout/?x=/wp-json/` therefore disabled the admin-only Cash on Delivery and Bank Transfer restriction and allowed an unpaid order. The WooCommerce Store API bypassed it with no trick at all. The short-circuit has been removed entirely.
+- **Path traversal in the WebP converter, reachable anonymously.** Image paths were derived from URLs by string replacement with no containment check, and the frontend pass scans every image tag on the page, so a crafted `src` in any post or comment gave a file read and write outside the uploads directory. On shared hosting that crossed customer accounts. Every URL-to-path conversion now resolves with `realpath()` and is confined to the uploads tree, with an extension allowlist.
+- **`.htaccess` could be wiped to a single newline.** The regex that replaces the managed block was unguarded against a null return, which a PCRE backtrack-limit failure on a large `.htaccess` produces. That wrote an empty file: permalinks, other plugins' rules and the wp-config protection all gone, sitewide 500, no backup. Now guarded, backed up before every write, written atomically, and refused outright if the result would be empty or implausibly short.
+- **`Disable WP Cron` erased the cron array.** It returned an empty array to every reader of the cron option, not just the runner, so the next plugin to schedule an event wrote back only its own and wiped every other scheduled job on the site.
+- **wp-config.php writes are now atomic everywhere.** The debug toggles, the memory limit handler and both Redis writers used a plain write with no temp file. A worker killed mid-write or a full disk left a truncated wp-config.php, which is a white screen with no way into wp-admin to fix it. All of them now write to a temp file in the same directory, verify the byte count and rename into place, after taking a backup.
+- **wp-config backups are encrypted at rest.** They hold database credentials and auth salts, and the `.htaccess` that was protecting them does nothing on nginx. Now AES-256-CBC with an HMAC, keyed from the site's own salts.
+- **`?force-check=1` needed no permission.** Any logged-in user, including a subscriber or a customer, could hit it on any admin screen and force an unauthenticated GitHub API call, exhausting the 60-per-hour budget shared by every site behind the same IP. Now requires `update_plugins` and a nonce.
+- **A Cloudflare Zone ID is now checked against the site's own domain.** With an all-zones API token and a mistyped or stale Zone ID, one site's admin panel silently drove another customer's zone.
+- **The Cloudflare API token is encrypted at rest** and the update package is verified against a published SHA-256 when the release provides one.
+
+### Correctness
+
+- **The uploads backup failed on every batch after the first.** It used `ZipArchive::RDWR`, which is not a real constant, and threw an `Error` that the surrounding `catch` could not catch.
+- **Redis cache keys now always carry a salt.** The field only ever showed the hostname as placeholder text, which is never submitted, so the constant was usually never written. Two WordPress installs sharing one Redis produced identical keys and could read each other's options, sessions and cart data.
+- **Settings import no longer destroys preload URLs.** They were run through `sanitize_key`, which turns `https://site/font.woff2` into `httpsxsitefontwoff2`, and every page then emitted a broken preload tag. Script exclusion lists had the same problem and could never match again after a round trip.
+- **The WebP reset no longer deletes hand-uploaded WebP files.** It inferred targets from filenames, so a `hero.webp` uploaded alongside `hero.png` was destroyed. It now only deletes files this plugin recorded converting.
+- **`Preload CSS` cannot be enabled without critical CSS**, which was a guaranteed flash of unstyled content, and it no longer silently undoes small-stylesheet inlining.
+- **Inlining a small script no longer discards its inline companion**, so configuration blobs and translations attached to a script survive, and deferred scripts are left alone.
+- **Block theme guards** on the Gutenberg and block CSS toggles, which were dequeuing `global-styles` and rendering block themes unstyled.
+- **WooCommerce asset trimming** now checks for product blocks and shortcodes, so a homepage with a products block keeps its add-to-cart.
+- **Cache-Control** is emitted after the query, never alongside a `Set-Cookie`, and carries `Vary: Cookie`.
+- **The LCP image flag** is no longer claimed by the site logo, which left the real hero image lazy-loaded.
+- **Table conversion and database optimisation report truthfully.** Failed `ALTER` and `OPTIMIZE` statements were silently reported as successes.
+- **The WooCommerce payment gateway check** no longer runs third-party gateways against a null cart in wp-admin, and its "available but disabled" states are now reachable.
+- **`memory_limit = -1`** reads as unlimited instead of being flagged red.
+- The admin Pages list keeps its own ordering instead of being forced to date descending.
+- The plugin no longer flushes the entire object cache on every dashboard view, which on a shared Redis emptied the cache for every site on the box.
+- The updater loads the admin plugin API before using it, so a cron run started by ordinary traffic cannot fatal and take every other scheduled job down with it.
+- `HSTS` is no longer on by default. It is a one-year commitment and it now sits with the other options you choose deliberately.
+
+### Interface
+
+The admin interface has been rebuilt in the house design language, carried over from frikwork but vendored into the plugin's own stylesheet. Nothing is fetched from an external CDN, so a strict Content Security Policy or HSTS configuration on a client site cannot half-load it.
+
+- **Light and dark themes**, with a toggle in the header. It follows the operating system until you choose, remembers your choice per browser, and is stamped before the page paints so there is no flash of the wrong palette.
+- **Frosted glass cards** over a brand wash, gradient buttons, and a consistent set of badges, switches, tables and form controls.
+- **The CCM brand spinner** replaces every loading indicator in the plugin, vendored from the shared `ccm-spinner` component so it matches ServerWatch, WebWatch and the tools site.
+- The muted text colour is darker than the shared token, which measured 3.75:1 on a card and failed accessibility contrast.
+- The stylesheet lost 1,942 lines of dead premium and AI rules.
+
+### Housekeeping
+
+- Removed roughly 2,460 lines of PHP across the two deleted modules, plus their orphaned test and documentation.
+- Retired a second, weaker wp-config writer that hardcoded `127.0.0.1:6379`, never wrote its backup to disk and left an unterminated comment that the remover could not match.
+- Deleted a number of AJAX handlers and functions with no caller anywhere, including one that returned the database host, name and user.
+- De-duplicated the table name and collation validators, which existed twice byte for byte.
+- Both escapers now escape quotes. Three call sites put their output inside an HTML attribute, where a quote could break out.
+- Fixed a double-binding bug that started a second concurrent optimisation run on the second click of the run button.
+
 ## v7.45.0 — Security & AI safety hardening
 
 - **Security:** fixed an authenticated PHP-injection/RCE in the Redis object-cache config writer (Redis password/username are now var_export-safe and quote/control-char-rejected at input); moved secret-bearing wp-config backups out of the web root into uploads/ccm-private/ with a deny .htaccess.

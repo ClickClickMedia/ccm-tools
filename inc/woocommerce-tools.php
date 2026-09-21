@@ -173,19 +173,27 @@ function ccm_tools_get_woocommerce_info() {
 
 /**
  * Check if COD and BACS gateways are available
+ *
+ * Uses payment_gateways() (ALL registered gateways) rather than
+ * get_available_payment_gateways(), which only ever returns gateways that
+ * are already enabled - that made cod_enabled always equal cod_available,
+ * so the "available but disabled" UI state could never be reached. Calling
+ * get_available_payment_gateways() here also runs every gateway's
+ * is_available(), including third-party ones, against a null WC()->cart in
+ * wp-admin, which some gateways fatal on.
  */
 function ccm_tools_check_payment_gateways() {
     if (!ccm_tools_is_woocommerce_active()) {
         return false;
     }
-    
-    $available_gateways = WC()->payment_gateways->get_available_payment_gateways();
-    
+
+    $all_gateways = WC()->payment_gateways->payment_gateways();
+
     return array(
-        'cod_available' => isset($available_gateways['cod']),
-        'bacs_available' => isset($available_gateways['bacs']),
-        'cod_enabled' => isset($available_gateways['cod']) && $available_gateways['cod']->enabled === 'yes',
-        'bacs_enabled' => isset($available_gateways['bacs']) && $available_gateways['bacs']->enabled === 'yes',
+        'cod_available' => isset($all_gateways['cod']),
+        'bacs_available' => isset($all_gateways['bacs']),
+        'cod_enabled' => isset($all_gateways['cod']) && $all_gateways['cod']->enabled === 'yes',
+        'bacs_enabled' => isset($all_gateways['bacs']) && $all_gateways['bacs']->enabled === 'yes',
     );
 }
 

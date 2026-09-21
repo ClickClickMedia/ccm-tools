@@ -109,8 +109,6 @@ function ccm_tools_perf_get_settings() {
         'cron_interval'           => 60,
         'disable_author_archives' => false,
         // INP / Interaction Optimizations (v7.30.0)
-        'passive_event_listeners' => false,
-        'warn_dom_size'           => false,
     );
 
     $settings = get_option('ccm_tools_perf_settings', array());
@@ -149,6 +147,30 @@ function ccm_tools_perf_clear_settings_cache() {
 function ccm_tools_perf_is_enabled() {
     $settings = ccm_tools_perf_get_settings();
     return !empty($settings['enabled']);
+}
+
+/**
+ * Whether markup-transforming content filters (facades, lazy-load rewrites, dimension/
+ * srcset/lazy injection) should run for the current request.
+ *
+ * These transforms assume a full browser DOM and the companion JS this module prints in
+ * wp_footer. RSS/Atom readers never load that JS, so a feed gets facade markup with no way
+ * to ever load the real embed; REST responses (including block-editor ServerSideRender
+ * previews) shouldn't be mutated either.
+ *
+ * @return bool
+ */
+function ccm_tools_perf_should_transform_content() {
+    if (function_exists('is_feed') && is_feed()) {
+        return false;
+    }
+    if (function_exists('wp_is_json_request') && wp_is_json_request()) {
+        return false;
+    }
+    if (defined('REST_REQUEST') && REST_REQUEST) {
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -192,8 +214,10 @@ function ccm_tools_perf_init() {
         add_action('wp_footer', 'ccm_tools_perf_delay_js_script', 99);
     }
     
-    // Preload CSS
-    if (!empty($settings['preload_css'])) {
+    // Preload CSS — gated on critical CSS being configured. Without inlined critical
+    // CSS, switching every media="all" stylesheet (including the theme's main CSS) to
+    // print-then-swap is a guaranteed flash of unstyled content.
+    if (!empty($settings['preload_css']) && !empty($settings['critical_css']) && !empty($settings['critical_css_code'])) {
         add_filter('style_loader_tag', 'ccm_tools_perf_preload_css', 10, 4);
     }
     
@@ -413,9 +437,11 @@ function ccm_tools_perf_init() {
         add_action('wp_enqueue_scripts', 'ccm_tools_perf_woo_scripts_shop_only', 99);
     }
 
-    // Browser cache headers (v7.28.0)
+    // Browser cache headers (v7.28.0) — hooked on 'wp', not 'send_headers'. send_headers
+    // fires before the main query runs, so is_search()/WooCommerce conditional tags
+    // inside ccm_tools_perf_cache_headers() cannot work reliably there.
     if (!empty($settings['cache_control_meta']) || !empty($settings['stale_while_revalidate'])) {
-        add_action('send_headers', 'ccm_tools_perf_cache_headers');
+        add_action('wp', 'ccm_tools_perf_cache_headers');
     }
 
     // Disable author archive pages (v7.29.0)
@@ -423,16 +449,33 @@ function ccm_tools_perf_init() {
         add_action('template_redirect', 'ccm_tools_perf_disable_author_archives');
     }
 
-    // Passive event listeners (v7.30.0)
-    if (!empty($settings['passive_event_listeners'])) {
-        add_action('wp_head', 'ccm_tools_perf_passive_event_listeners', 1);
-    }
+    // Passive event listeners: removed in v8.0.0. It overrode
+    // EventTarget.prototype.addEventListener to force {passive:true}, which breaks
+    // preventDefault() in scroll-lock modals, mobile menus and wheel-zoom, and broke
+    // every jQuery .on() handler for those events because jQuery passes no options
+    // object. Chromium already defaults document-level touch and wheel listeners to
+    // passive, so there was little upside against that breakage.
 }
 add_action('init', 'ccm_tools_perf_init');
 
 /**
- * Early cron throttle — registers on plugins_loaded so it fires before wp_cron() at init priority 10.
- * Using pre_option_cron: returning array() makes wp_get_ready_crons() see no events, so wp_cron() exits early.
+ * Early cron throttle — registers on plugins_loaded so the filter is in place before
+ * wp_cron() runs at init priority 10.
+ *
+ * FIX (v8.0.0 security hardening): this used to filter `pre_option_cron` and return
+ * array() for the whole throttle window. That filter is read by EVERY consumer of the
+ * `cron` option, not just the runner — so the universal
+ * `if (!wp_next_scheduled('x')) wp_schedule_event(...)` pattern used on `init` by
+ * WooCommerce, Action Scheduler, and backup plugins saw "nothing scheduled", scheduled
+ * its own event, and `_set_cron_array()` wrote back an array containing ONLY that event,
+ * erasing every other job on the site. It also throttled genuine system-cron hits to
+ * wp-cron.php itself.
+ *
+ * Fixed by filtering `pre_get_ready_cron_jobs` (WP 5.1+) instead. That filter is only
+ * consumed by wp_get_ready_cron_jobs(), which is only called from wp_cron() (the
+ * runner). wp_next_scheduled() and everything else that reads the schedule calls
+ * _get_cron_array() directly and never sees this filter, so the stored cron array is
+ * never touched and no other plugin's scheduled events can be clobbered.
  */
 add_action('plugins_loaded', 'ccm_tools_perf_cron_early_init', 5);
 function ccm_tools_perf_cron_early_init() {
@@ -441,12 +484,12 @@ function ccm_tools_perf_cron_early_init() {
         return;
     }
     $interval = max(1, (int)($settings['cron_interval'] ?? 60)) * MINUTE_IN_SECONDS;
-    add_filter('pre_option_cron', function($pre) use ($interval) {
+    add_filter('pre_get_ready_cron_jobs', function($pre) use ($interval) {
         if (false !== get_transient('ccm_cron_throttle')) {
-            return array(); // Within throttle window — skip cron this request
+            return array(); // Within throttle window — tell the runner nothing is ready.
         }
         set_transient('ccm_cron_throttle', 1, $interval);
-        return $pre; // First request in window — allow cron to run
+        return $pre; // First request in window — $pre is still null, so wp_cron() reads the real, untouched cron array.
     });
 }
 
@@ -504,7 +547,14 @@ function ccm_tools_perf_defer_js($tag, $handle, $src) {
  * deferred or delayed — their inline sibling runs at parse time and would
  * reference symbols (wp, jQuery, …) that the parent hasn't defined yet.
  */
-function ccm_tools_perf_has_inline_companion($handle) {
+function ccm_tools_perf_has_inline_companion($handle, $type = 'script') {
+    if ('style' === $type) {
+        global $wp_styles;
+        if (!($wp_styles instanceof \WP_Styles)) return false;
+        if (empty($wp_styles->registered[$handle])) return false;
+        $extra = $wp_styles->registered[$handle]->extra ?? array();
+        return !empty($extra['after']);
+    }
     global $wp_scripts;
     if (!($wp_scripts instanceof \WP_Scripts)) return false;
     if (empty($wp_scripts->registered[$handle])) return false;
@@ -524,6 +574,15 @@ function ccm_tools_perf_has_inline_companion($handle) {
 function ccm_tools_perf_delay_js($tag, $handle, $src) {
     // Skip inline scripts
     if (empty($src)) {
+        return $tag;
+    }
+
+    // Delaying JS until interaction is the most aggressive optimisation here — bypass it
+    // for every logged-in user (not just administrators), since the frontend init() gate
+    // only exempts manage_options and shop managers/editors/logged-in customers still hit
+    // this filter and can lose admin-bar, account, and cart interactivity until they touch
+    // the page.
+    if (is_user_logged_in()) {
         return $tag;
     }
 
@@ -651,13 +710,29 @@ function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
     if (strpos($handle, 'admin') !== false) {
         return $tag;
     }
-    
+
+    // Re-check the critical-CSS gate here too, not just in ccm_tools_perf_init() — this
+    // filter can still fire in contexts that bypass that one-time gate (e.g. a later
+    // style enqueued after settings were read). Without inlined critical CSS this feature
+    // is a guaranteed flash of unstyled content, so require both to be set.
+    $settings = ccm_tools_perf_get_settings();
+    if (empty($settings['critical_css']) || empty($settings['critical_css_code'])) {
+        return $tag;
+    }
+
+    // If inline_small_styles (priority 5) already turned this into a <style> block, there
+    // is no href left to preload — leave it alone. Rebuilding a <link> here would silently
+    // undo the inlining.
+    if (stripos($tag, '<style') !== false) {
+        return $tag;
+    }
+
     // Skip if media is anything other than 'all' (the default)
     // Themes/plugins that already set media to 'print' or a media query are already optimized
     if (!empty($media) && $media !== 'all') {
         return $tag;
     }
-    
+
     // Skip if already has preload or is already non-blocking
     // Check both single and double quote variants (WordPress uses single quotes, our tags use double)
     if (strpos($tag, 'rel="preload"') !== false || strpos($tag, "rel='preload'") !== false ||
@@ -665,15 +740,14 @@ function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
         strpos($tag, 'onload=') !== false) {
         return $tag;
     }
-    
+
     // Skip if this is an inline style (no href)
     if (empty($href)) {
         return $tag;
     }
-    
-    $settings = ccm_tools_perf_get_settings();
+
     $excludes = isset($settings['preload_css_excludes']) ? (array) $settings['preload_css_excludes'] : array();
-    
+
     // Check if handle is excluded
     foreach ($excludes as $exclude) {
         $exclude = trim($exclude);
@@ -681,20 +755,20 @@ function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
             return $tag;
         }
     }
-    
-    // Use the print media trick:
-    // 1. Set media="print" so browser downloads but doesn't block render
-    // 2. onload switches media to "all" so styles apply once loaded
-    // 3. noscript fallback for users without JavaScript
-    $async_tag = sprintf(
-        '<link rel="stylesheet" id="%s-css" href="%s" media="print" onload="this.media=\'all\'">' . "\n" .
-        '<noscript><link rel="stylesheet" href="%s"></noscript>',
-        esc_attr($handle),
-        esc_url($href),
-        esc_url($href)
-    );
-    
-    return $async_tag . "\n";
+
+    // Keep the untouched original tag as the noscript fallback before mutating it.
+    $noscript = '<noscript>' . $tag . '</noscript>';
+
+    // Mutate the EXISTING tag in place rather than rebuilding it from scratch, so we keep
+    // integrity/crossorigin/data-* and any other attributes a theme or plugin added to it.
+    $mutated = preg_replace('/\smedia=(["\'])all\1/i', ' media=$1print$1 onload="this.media=\'all\'"', $tag, 1, $count);
+    if (0 === $count) {
+        // No media attribute present (WordPress omits it for the 'all' default) — add one
+        // right before the tag's closing bracket.
+        $mutated = preg_replace('/(\/?>)(\s*)$/', ' media="print" onload="this.media=\'all\'"$1$2', $tag, 1);
+    }
+
+    return $mutated . "\n" . $noscript . "\n";
 }
 
 /**
@@ -823,7 +897,10 @@ function ccm_tools_perf_youtube_facade($content) {
     if (empty($content)) {
         return $content;
     }
-    
+    if (!ccm_tools_perf_should_transform_content()) {
+        return $content;
+    }
+
     // Match YouTube iframes
     $pattern = '/<iframe[^>]*src=["\'](?:https?:)?\/\/(?:www\.)?(?:youtube\.com\/embed\/|youtube-nocookie\.com\/embed\/)([a-zA-Z0-9_-]+)[^"\']*["\'][^>]*><\/iframe>/i';
     
@@ -891,7 +968,10 @@ function ccm_tools_perf_video_lazy_load($content) {
     if (empty($content) || stripos($content, '<video') === false) {
         return $content;
     }
-    
+    if (!ccm_tools_perf_should_transform_content()) {
+        return $content;
+    }
+
     $count = 0;
     $content = preg_replace_callback(
         '/<video\b([^>]*)>(.*?)<\/video>/is',
@@ -1107,6 +1187,13 @@ function ccm_tools_perf_lcp_fetchpriority_thumbnail($html, $post_id, $thumbnail_
  * Add fetchpriority="high" to images rendered via wp_get_attachment_image()
  * This catches images in page builders and theme templates that bypass the_content
  *
+ * wp_get_attachment_image_attributes fires for the custom logo in the header on nearly
+ * every theme, and that call happens before the_content/post_thumbnail_html ever run — so
+ * without a guard the logo permanently claims the shared LCP flag and the real hero image
+ * gets loading="lazy" instead. This hook therefore never sets the shared
+ * $ccm_lcp_priority_added flag itself; only the_content and post_thumbnail_html claim it.
+ * A local static prevents this hook from tagging more than one image of its own per request.
+ *
  * @param array $attr Image attributes array
  * @param WP_Post $attachment Attachment post object
  * @param string|int[] $size Image size
@@ -1124,13 +1211,31 @@ function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) 
         return $attr;
     }
 
-    // Skip if already has fetchpriority
-    if (isset($attr['fetchpriority'])) {
-        $ccm_lcp_priority_added = true;
+    // Never claim the site logo — check both the class and, defensively, whether we're
+    // still building <head>/header markup (wp_body_open hasn't fired yet), since the logo
+    // and other header chrome render before it on virtually every theme.
+    if (!empty($attr['class']) && preg_match('/\bcustom-logo\b/', $attr['class'])) {
+        return $attr;
+    }
+    if (!did_action('wp_body_open')) {
         return $attr;
     }
 
-    // Add fetchpriority high to first image
+    // Skip if already has fetchpriority
+    if (isset($attr['fetchpriority'])) {
+        return $attr;
+    }
+
+    // This hook may run for many images across the page (builder widgets, ACF fields,
+    // etc.) — only tag the first one it sees after the guards above, without touching the
+    // shared flag that the_content/post_thumbnail_html use to decide whether the real LCP
+    // candidate still needs tagging.
+    static $local_claimed = false;
+    if ($local_claimed) {
+        return $attr;
+    }
+
+    // Add fetchpriority high to first qualifying image
     $attr['fetchpriority'] = 'high';
 
     // Remove lazy loading from LCP candidate
@@ -1138,7 +1243,7 @@ function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) 
         unset($attr['loading']);
     }
 
-    $ccm_lcp_priority_added = true;
+    $local_claimed = true;
     return $attr;
 }
 
@@ -1181,6 +1286,9 @@ function ccm_tools_perf_image_attributes( $attr, $attachment, $size ) {
  */
 function ccm_tools_perf_image_lazydecode_content( $content ) {
     if ( empty( $content ) || stripos( $content, '<img' ) === false ) {
+        return $content;
+    }
+    if ( ! ccm_tools_perf_should_transform_content() ) {
         return $content;
     }
 
@@ -1460,10 +1568,19 @@ function ccm_tools_perf_disable_jquery_migrate($scripts) {
  * Useful if not using the block editor on frontend
  */
 function ccm_tools_perf_disable_block_css() {
+    // A block theme's `global-styles` carries its entire theme.json presets and layout —
+    // dequeuing it on a block theme renders the site unstyled.
+    if (function_exists('wp_is_block_theme') && wp_is_block_theme()) {
+        return;
+    }
     wp_dequeue_style('wp-block-library');
     wp_dequeue_style('wp-block-library-theme');
     wp_dequeue_style('wc-blocks-style'); // WooCommerce Blocks
-    wp_dequeue_style('global-styles'); // Global styles
+    // Still skip global-styles on a classic theme page that actually uses blocks —
+    // it may be the only source of the block editor's colour/typography presets there.
+    if (!(function_exists('has_blocks') && has_blocks())) {
+        wp_dequeue_style('global-styles'); // Global styles
+    }
 }
 
 /**
@@ -1577,6 +1694,65 @@ function ccm_tools_perf_url_to_path( $url ) {
 }
 
 /**
+ * Helper: Whether a resolved filesystem path is safe to read and inline verbatim.
+ *
+ * Requires the path to end in one of the given extensions AND to resolve (via realpath,
+ * so ../ traversal can't escape it) inside either WP_CONTENT_DIR or ABSPATH/wp-includes.
+ * Without this, a plugin enqueuing e.g. plugins_url('dynamic-css.php') would get its PHP
+ * source echoed verbatim into every page.
+ *
+ * @param string $path          Absolute filesystem path (from ccm_tools_perf_url_to_path()).
+ * @param array  $allowed_exts  Lowercase extensions without the dot, e.g. array('js').
+ * @return bool
+ */
+function ccm_tools_perf_is_safe_inline_path( $path, $allowed_exts ) {
+    if ( empty( $path ) || ! is_file( $path ) ) {
+        return false;
+    }
+    $ext = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+    if ( ! in_array( $ext, $allowed_exts, true ) ) {
+        return false;
+    }
+    $real = realpath( $path );
+    if ( ! $real ) {
+        return false;
+    }
+    $roots = array();
+    $wp_content_real = realpath( WP_CONTENT_DIR );
+    if ( $wp_content_real ) {
+        $roots[] = $wp_content_real;
+    }
+    $wp_includes_real = realpath( ABSPATH . 'wp-includes' );
+    if ( $wp_includes_real ) {
+        $roots[] = $wp_includes_real;
+    }
+    foreach ( $roots as $root ) {
+        if ( $real === $root || strpos( $real . DIRECTORY_SEPARATOR, $root . DIRECTORY_SEPARATOR ) === 0 ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Replace only the "<script ... src=...></script>" substring inside a WordPress-built
+ * script_loader_tag $tag with a given replacement, leaving anything else in $tag
+ * (translations, before/after inline companions) untouched.
+ *
+ * @param string $tag         Full tag HTML from the script_loader_tag filter.
+ * @param string $replacement Markup to splice in place of the <script src=...> element.
+ * @return string|false Modified tag, or false if no matching <script src> was found.
+ */
+function ccm_tools_perf_splice_into_tag( $tag, $pattern, $replacement ) {
+    if ( ! preg_match( $pattern, $tag, $m, PREG_OFFSET_CAPTURE ) ) {
+        return false;
+    }
+    $match  = $m[0][0];
+    $offset = $m[0][1];
+    return substr_replace( $tag, $replacement, $offset, strlen( $match ) );
+}
+
+/**
  * Inline small local scripts below the configured KB threshold.
  * Eliminates individual HTTP round-trips for tiny assets.
  *
@@ -1589,6 +1765,16 @@ function ccm_tools_perf_inline_small_scripts( $tag, $handle, $src ) {
     if ( empty( $src ) || strpos( $src, 'wp-admin' ) !== false ) {
         return $tag;
     }
+
+    // Never discard translations, wp_add_inline_script() before/after companions, or
+    // convert a WP 6.3+ strategy=defer|async script into a synchronous parse-time one —
+    // WordPress builds $tag as translations + before-script + <script src> + after-script
+    // before this filter runs, and a companion may reference symbols the parent script
+    // hasn't defined yet if it stops being deferred.
+    if ( ccm_tools_perf_has_inline_companion( $handle ) || preg_match( '/\b(defer|async)\b/i', $tag ) ) {
+        return $tag;
+    }
+
     $settings  = ccm_tools_perf_get_settings();
     $threshold = max( 1, intval( $settings['inline_threshold_kb'] ) ) * 1024;
 
@@ -1601,7 +1787,7 @@ function ccm_tools_perf_inline_small_scripts( $tag, $handle, $src ) {
     }
 
     $path = ccm_tools_perf_url_to_path( $src );
-    if ( ! $path || ! is_file( $path ) ) {
+    if ( ! ccm_tools_perf_is_safe_inline_path( $path, array( 'js' ) ) ) {
         return $tag;
     }
     $size = @filesize( $path );
@@ -1612,9 +1798,20 @@ function ccm_tools_perf_inline_small_scripts( $tag, $handle, $src ) {
     if ( $content === false || $content === '' ) {
         return $tag;
     }
-    // Prevent </script> in JS file from prematurely closing the script block
-    $content = str_replace( '</script>', '<\/script>', $content );
-    return '<script id="' . esc_attr( $handle ) . '-inline">' . "\n" . $content . "\n" . '</script>' . "\n";
+    // Prevent </script> in JS file from prematurely closing the script block (case-insensitive)
+    $content = preg_replace( '#</(script)#i', '<\\/$1', $content );
+
+    $inline = '<script id="' . esc_attr( $handle ) . '-inline">' . "\n" . $content . "\n" . '</script>';
+
+    // Replace ONLY the <script ... src=...></script> element inside $tag, leaving any
+    // translations/before/after companions that WordPress already concatenated in intact.
+    $spliced = ccm_tools_perf_splice_into_tag( $tag, '/<script\b[^>]*\bsrc=[^>]*><\/script>/i', $inline );
+    if ( false === $spliced ) {
+        // Couldn't find the expected <script src> shape — safer to leave $tag untouched
+        // than to guess and risk dropping content.
+        return $tag;
+    }
+    return $spliced . "\n";
 }
 
 /**
@@ -1631,6 +1828,13 @@ function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
     if ( empty( $href ) || strpos( $href, 'wp-admin' ) !== false ) {
         return $tag;
     }
+
+    // Same reasoning as inline_small_scripts: don't discard a registered inline
+    // companion (wp_add_inline_style 'after') by rebuilding the tag out from under it.
+    if ( ccm_tools_perf_has_inline_companion( $handle, 'style' ) ) {
+        return $tag;
+    }
+
     $settings  = ccm_tools_perf_get_settings();
     $threshold = max( 1, intval( $settings['inline_threshold_kb'] ) ) * 1024;
 
@@ -1643,7 +1847,7 @@ function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
     }
 
     $path = ccm_tools_perf_url_to_path( $href );
-    if ( ! $path || ! is_file( $path ) ) {
+    if ( ! ccm_tools_perf_is_safe_inline_path( $path, array( 'css' ) ) ) {
         return $tag;
     }
     $size = @filesize( $path );
@@ -1654,10 +1858,43 @@ function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
     if ( $content === false || $content === '' ) {
         return $tag;
     }
-    // Escape closing style tags to prevent HTML breakout
-    $content = str_replace( '</style>', '<\/style>', $content );
+    // Escape closing style tags to prevent HTML breakout (case-insensitive)
+    $content = preg_replace( '#</(style)#i', '<\\/$1', $content );
     $media_attr = ( $media && $media !== 'all' ) ? ' media="' . esc_attr( $media ) . '"' : '';
-    return '<style id="' . esc_attr( $handle ) . '-inline"' . $media_attr . '>' . "\n" . $content . "\n" . '</style>' . "\n";
+    $inline = '<style id="' . esc_attr( $handle ) . '-inline"' . $media_attr . '>' . "\n" . $content . "\n" . '</style>';
+
+    // Mutate the existing tag rather than always fully discarding it: replace only the
+    // <link ... href=...> element so anything else WordPress put in $tag survives.
+    $spliced = ccm_tools_perf_splice_into_tag( $tag, '/<link\b[^>]*\bhref=[^>]*>/i', $inline );
+    return ( false !== $spliced ? $spliced : $inline ) . "\n";
+}
+
+/**
+ * Resolve a (possibly resized, e.g. -300x200) local upload URL to its attachment ID.
+ * Memoised per request — inject_image_dimensions and inject_srcset both call this once
+ * per <img> tag, and attachment_url_to_postid() is an uncached DB SELECT.
+ *
+ * attachment_url_to_postid() only matches the exact stored _wp_attached_file value, so it
+ * returns 0 for the common resized-URL case (image-300x200.jpg) unless we strip the size
+ * suffix first.
+ *
+ * @param string $src_clean Local URL with any query string already stripped.
+ * @return int Attachment ID, or 0 if not found.
+ */
+function ccm_tools_perf_resolve_attachment_id( $src_clean ) {
+    static $cache = array();
+    if ( array_key_exists( $src_clean, $cache ) ) {
+        return $cache[ $src_clean ];
+    }
+    $attachment_id = attachment_url_to_postid( $src_clean );
+    if ( ! $attachment_id ) {
+        $stripped = preg_replace( '/-\d+x\d+(?=\.[A-Za-z0-9]+$)/', '', $src_clean );
+        if ( $stripped !== $src_clean ) {
+            $attachment_id = attachment_url_to_postid( $stripped );
+        }
+    }
+    $cache[ $src_clean ] = (int) $attachment_id;
+    return $cache[ $src_clean ];
 }
 
 /**
@@ -1669,6 +1906,9 @@ function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
  */
 function ccm_tools_perf_inject_image_dimensions( $content ) {
     if ( empty( $content ) || ! is_string( $content ) ) {
+        return $content;
+    }
+    if ( ! ccm_tools_perf_should_transform_content() ) {
         return $content;
     }
     return preg_replace_callback( '/<img\s[^>]+>/i', function ( $matches ) {
@@ -1688,20 +1928,25 @@ function ccm_tools_perf_inject_image_dimensions( $content ) {
             return $tag;
         }
         $src_clean     = strtok( $src, '?' );
-        $attachment_id = attachment_url_to_postid( $src_clean );
+        $attachment_id = ccm_tools_perf_resolve_attachment_id( $src_clean );
         if ( ! $attachment_id ) {
             return $tag;
         }
         $meta = wp_get_attachment_metadata( $attachment_id );
-        if ( empty( $meta['width'] ) || empty( $meta['height'] ) ) {
+        if ( empty( $meta ) ) {
             return $tag;
         }
-        $width  = (int) $meta['width'];
-        $height = (int) $meta['height'];
-        // For resized images (e.g. image-300x200.jpg), use the cropped dimensions
-        if ( preg_match( '/-([0-9]+)x([0-9]+)\.[a-z]{2,5}$/i', $src_clean, $size_m ) ) {
-            $width  = (int) $size_m[1];
-            $height = (int) $size_m[2];
+        $width = $height = 0;
+        $dimensions = function_exists( 'wp_image_src_get_dimensions' )
+            ? wp_image_src_get_dimensions( $src_clean, $meta, $attachment_id )
+            : false;
+        if ( $dimensions ) {
+            list( $width, $height ) = $dimensions;
+        } elseif ( ! empty( $meta['width'] ) && ! empty( $meta['height'] ) ) {
+            $width  = (int) $meta['width'];
+            $height = (int) $meta['height'];
+        } else {
+            return $tag;
         }
         if ( ! $has_width ) {
             $tag = preg_replace( '/(<img\s)/i', '$1width="' . $width . '" ', $tag, 1 );
@@ -1725,6 +1970,9 @@ function ccm_tools_perf_inject_srcset( $content ) {
     if ( empty( $content ) || ! is_string( $content ) ) {
         return $content;
     }
+    if ( ! ccm_tools_perf_should_transform_content() ) {
+        return $content;
+    }
     return preg_replace_callback( '/<img\s[^>]+>/i', function ( $matches ) {
         $tag = $matches[0];
         // Skip if already has srcset
@@ -1741,7 +1989,7 @@ function ccm_tools_perf_inject_srcset( $content ) {
             return $tag;
         }
         $src_clean     = strtok( $src, '?' );
-        $attachment_id = attachment_url_to_postid( $src_clean );
+        $attachment_id = ccm_tools_perf_resolve_attachment_id( $src_clean );
         if ( ! $attachment_id ) {
             return $tag;
         }
@@ -1776,12 +2024,21 @@ function ccm_tools_perf_minify_html_start() {
  * @return string Minified HTML.
  */
 function ccm_tools_perf_minify_html_callback( $html ) {
+    // Only ever minify an actual HTML document. is_feed() alone doesn't catch core
+    // sitemaps, robots.txt, or plugin JSON that also render via template_redirect —
+    // require the buffer to actually start with a doctype/html tag.
+    $head = ltrim( substr( $html, 0, 200 ) );
+    if ( stripos( $head, '<!DOCTYPE' ) !== 0 && stripos( $head, '<html' ) !== 0 ) {
+        return $html;
+    }
+
     $preserve = array();
     $i        = 0;
     // Extract pre/textarea/script/style and replace with placeholders
     // Uses non-comment tokens so the comment-removal step won't strip them
+    // \b after the tag name so e.g. <preview-card> doesn't match as <pre>
     $html = preg_replace_callback(
-        '/<(pre|textarea|script|style)[^>]*>.*?<\/\1>/si',
+        '/<(pre|textarea|script|style)\b[^>]*>.*?<\/\1>/si',
         function ( $matches ) use ( &$preserve, &$i ) {
             $key          = '%%CCM_PRESERVE_' . $i . '%%';
             $preserve[$i] = $matches[0];
@@ -1850,7 +2107,9 @@ function ccm_tools_perf_disable_wp_embed() {
  * @return string        Local URL if downloaded successfully, otherwise original $src.
  */
 function ccm_tools_perf_self_host_google_fonts_src( $src, $handle ) {
-    if ( strpos( $src, 'fonts.googleapis.com' ) === false ) {
+    // Exact-host match rather than strpos() anywhere in the string — a URL like
+    // https://evil.example/?x=fonts.googleapis.com would otherwise pass.
+    if ( wp_parse_url( $src, PHP_URL_HOST ) !== 'fonts.googleapis.com' ) {
         return $src;
     }
     $local = ccm_tools_perf_fetch_local_google_font( $src );
@@ -1859,17 +2118,25 @@ function ccm_tools_perf_self_host_google_fonts_src( $src, $handle ) {
 
 /**
  * Download Google Fonts CSS + font files to uploads/ccm-fonts/ and return the local CSS URL.
- * Cached for 30 days. Returns false on any download failure.
+ * Cached for 30 days. Returns false on any download or write failure so the caller falls
+ * back to the original googleapis URL instead of linking a stylesheet that 404s.
  *
  * @param string $fonts_url Original Google Fonts API URL.
  * @return string|false     Local CSS URL or false.
  */
 function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
+    // style_loader_src (this filter) runs before style_loader_tag, so
+    // ccm_tools_perf_font_display_swap() never sees this googleapis URL to add
+    // display=swap itself — bake it into the URL we fetch instead.
+    $fonts_url = add_query_arg( 'display', 'swap', $fonts_url );
+
     $upload_dir     = wp_upload_dir();
     $fonts_dir      = $upload_dir['basedir'] . '/ccm-fonts';
     $fonts_url_base = $upload_dir['baseurl'] . '/ccm-fonts';
     if ( ! file_exists( $fonts_dir ) ) {
-        wp_mkdir_p( $fonts_dir );
+        if ( ! wp_mkdir_p( $fonts_dir ) ) {
+            return false;
+        }
         file_put_contents( $fonts_dir . '/.htaccess', 'Options -Indexes' );
         file_put_contents( $fonts_dir . '/index.php', '<?php // Silence is golden.' );
     }
@@ -1880,8 +2147,9 @@ function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
     if ( file_exists( $css_file ) && ( time() - filemtime( $css_file ) ) < 30 * DAY_IN_SECONDS ) {
         return $css_url;
     }
-    // Fetch Google Fonts CSS with a modern Chrome UA to receive WOFF2 format
-    $response = wp_remote_get( $fonts_url, array(
+    // Fetch Google Fonts CSS with a modern Chrome UA to receive WOFF2 format.
+    // wp_safe_remote_get() blocks requests that resolve to internal/private IPs.
+    $response = wp_safe_remote_get( $fonts_url, array(
         'timeout' => 10,
         'headers' => array(
             'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -1891,17 +2159,21 @@ function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
         return false;
     }
     $css_content = wp_remote_retrieve_body( $response );
+    $allowed_font_exts = array( 'woff2', 'woff', 'ttf', 'otf' );
     // Download individual font files from fonts.gstatic.com and rewrite to local URLs
     $css_content = preg_replace_callback(
         '/url\((["\']?)(\bhttps?:\/\/fonts\.gstatic\.com\/[^)"\' \t]+)\1\)/i',
-        function ( $matches ) use ( $fonts_dir, $fonts_url_base ) {
-            $font_url   = $matches[2];
-            $font_ext   = pathinfo( wp_parse_url( $font_url, PHP_URL_PATH ) ?? '', PATHINFO_EXTENSION );
+        function ( $matches ) use ( $fonts_dir, $fonts_url_base, $allowed_font_exts ) {
+            $font_url = $matches[2];
+            $font_ext = strtolower( pathinfo( wp_parse_url( $font_url, PHP_URL_PATH ) ?? '', PATHINFO_EXTENSION ) );
+            if ( ! in_array( $font_ext, $allowed_font_exts, true ) ) {
+                return $matches[0];
+            }
             $font_file  = md5( $font_url ) . '.' . $font_ext;
             $local_path = $fonts_dir . '/' . $font_file;
             $local_url  = $fonts_url_base . '/' . $font_file;
             if ( ! file_exists( $local_path ) ) {
-                $font_response = wp_remote_get( $font_url, array( 'timeout' => 15 ) );
+                $font_response = wp_safe_remote_get( $font_url, array( 'timeout' => 15 ) );
                 if ( ! is_wp_error( $font_response ) && 200 === (int) wp_remote_retrieve_response_code( $font_response ) ) {
                     $written = file_put_contents( $local_path, wp_remote_retrieve_body( $font_response ) );
                     if ( $written === false ) {
@@ -1915,7 +2187,9 @@ function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
         },
         $css_content
     );
-    file_put_contents( $css_file, $css_content );
+    if ( false === file_put_contents( $css_file, $css_content ) ) {
+        return false;
+    }
     return $css_url;
 }
 
@@ -2074,10 +2348,54 @@ function ccm_tools_perf_delay_third_party_process_buffer( $html ) {
  * Disable Gutenberg block editor stylesheets on the frontend (v7.28.0)
  */
 function ccm_tools_perf_disable_gutenberg_frontend() {
+    // Same block-theme guard as disable_block_css — global-styles is theme.json-driven.
+    if (function_exists('wp_is_block_theme') && wp_is_block_theme()) {
+        return;
+    }
     wp_dequeue_style('wp-block-library');
     wp_dequeue_style('wp-block-library-theme');
-    wp_dequeue_style('global-styles');
+    if (!(function_exists('has_blocks') && has_blocks())) {
+        wp_dequeue_style('global-styles');
+    }
     wp_dequeue_style('classic-theme-styles');
+}
+
+/**
+ * Whether the current request needs WooCommerce scripts/styles even though it isn't a
+ * core WooCommerce template — e.g. a WooCommerce block or the [products]/[add_to_cart]
+ * shortcode family embedded in a normal page, or an active cart/mini-cart widget.
+ *
+ * @return bool
+ */
+function ccm_tools_perf_page_needs_woo_scripts() {
+    $post = get_post();
+    if ($post instanceof WP_Post && is_string($post->post_content) && $post->post_content !== '') {
+        // Catches every block in the woocommerce/ namespace (cart, checkout, mini-cart,
+        // all-products, product grids, etc.) regardless of the exact block name.
+        if (strpos($post->post_content, '<!-- wp:woocommerce/') !== false) {
+            return true;
+        }
+        if (function_exists('has_shortcode')) {
+            $woo_shortcodes = array(
+                'products', 'product', 'product_page', 'add_to_cart', 'add_to_cart_url',
+                'woocommerce_cart', 'woocommerce_checkout', 'woocommerce_my_account',
+                'product_category', 'product_categories', 'sale_products',
+                'best_selling_products', 'featured_products', 'recent_products', 'related_products',
+            );
+            foreach ($woo_shortcodes as $shortcode) {
+                if (has_shortcode($post->post_content, $shortcode)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Cart / mini-cart widget active in any sidebar.
+    if (function_exists('is_active_widget') && is_active_widget(false, false, 'woocommerce_widget_cart', true)) {
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -2085,6 +2403,9 @@ function ccm_tools_perf_disable_gutenberg_frontend() {
  */
 function ccm_tools_perf_woo_scripts_shop_only() {
     if (is_woocommerce() || is_cart() || is_checkout() || is_account_page()) {
+        return;
+    }
+    if (ccm_tools_perf_page_needs_woo_scripts()) {
         return;
     }
     wp_dequeue_script('wc-cart-fragments');
@@ -2098,21 +2419,64 @@ function ccm_tools_perf_woo_scripts_shop_only() {
 }
 
 /**
- * Emit Cache-Control headers for logged-out WordPress HTML responses (v7.28.0)
+ * Emit Cache-Control headers for logged-out, cookie-free WordPress HTML responses (v7.28.0)
  */
 function ccm_tools_perf_cache_headers() {
     if (is_admin() || is_user_logged_in()) {
+        return;
+    }
+    // Search results are frequently near-unique per query string and are handled fine by
+    // normal browser caching; treating them as a shared "public" resource risks a proxy
+    // returning one visitor's results for another's query.
+    if (function_exists('is_search') && is_search()) {
         return;
     }
     $settings = ccm_tools_perf_get_settings();
     if (empty($settings['cache_control_meta']) && empty($settings['stale_while_revalidate'])) {
         return;
     }
+
+    // Bail if a Set-Cookie header is already queued for this response (guest cart/session,
+    // comment-author cookies, etc). Sending `public` alongside a Set-Cookie lets any proxy
+    // that honours the origin's Cache-Control serve one guest's personalised HTML to the next.
+    foreach (headers_list() as $sent_header) {
+        if (stripos($sent_header, 'Set-Cookie:') === 0) {
+            return;
+        }
+    }
+
+    // Bail if this request already carries a WooCommerce guest cart/session cookie — the
+    // response was built for that specific cart even if no new Set-Cookie is being sent.
+    foreach (array_keys($_COOKIE) as $cookie_name) {
+        if (strpos($cookie_name, 'woocommerce_') === 0 || strpos($cookie_name, 'wp_woocommerce_session_') === 0) {
+            return;
+        }
+    }
+
     $parts = array('public', 'max-age=3600');
     if (!empty($settings['stale_while_revalidate'])) {
         $parts[] = 'stale-while-revalidate=86400';
     }
     header('Cache-Control: ' . implode(', ', $parts));
+
+    // Vary on Cookie so any caching layer keys responses by cookie presence instead of
+    // treating every visitor's HTML as interchangeable. Merge with any Vary header a
+    // theme/plugin already queued rather than clobbering it.
+    $vary_values = array();
+    foreach (headers_list() as $sent_header) {
+        if (stripos($sent_header, 'Vary:') === 0) {
+            foreach (explode(',', substr($sent_header, strlen('Vary:'))) as $v) {
+                $v = trim($v);
+                if ($v !== '') {
+                    $vary_values[] = $v;
+                }
+            }
+        }
+    }
+    if (!in_array('Cookie', $vary_values, true)) {
+        $vary_values[] = 'Cookie';
+    }
+    header('Vary: ' . implode(', ', $vary_values));
 }
 
 /**
@@ -2124,33 +2488,6 @@ function ccm_tools_perf_disable_author_archives() {
         wp_redirect(home_url('/'), 301);
         exit;
     }
-}
-
-/**
- * Force passive event listeners for scroll/wheel/touch on the frontend.
- * Fixes PageSpeed "Does not use passive listeners to improve scrolling performance" audit.
- * ⚠ May conflict with parallax or scroll-hijack plugins — test after enabling.
- */
-function ccm_tools_perf_passive_event_listeners() {
-    ?>
-    <script>
-    (function(){
-        if (typeof EventTarget !== 'undefined' && EventTarget.prototype.addEventListener) {
-            var orig = EventTarget.prototype.addEventListener;
-            EventTarget.prototype.addEventListener = function(type, fn, opts) {
-                if (['scroll','wheel','touchstart','touchmove'].indexOf(type) !== -1) {
-                    if (typeof opts === 'object' && opts !== null) {
-                        opts.passive = (opts.passive !== false);
-                    } else {
-                        opts = {passive: true, capture: opts === true};
-                    }
-                }
-                return orig.call(this, type, fn, opts);
-            };
-        }
-    })();
-    </script>
-    <?php
 }
 
 /**
@@ -2171,12 +2508,6 @@ function ccm_tools_render_perf_page() {
         ?>
         
         <div class="ccm-content">
-            <?php
-            // AI Optimizer section (one-click AI flow) — renders at top of page
-            if (function_exists('ccm_tools_render_ai_section')) {
-                ccm_tools_render_ai_section();
-            }
-            ?>
 
             <!-- Master Enable Toggle -->
             <div class="ccm-card">
@@ -3182,34 +3513,6 @@ body { margin: 0; }
                     </div>
                     <label class="ccm-toggle">
                         <input type="checkbox" id="perf-disable-author-archives" <?php checked(!empty($settings['disable_author_archives'])); ?>>
-                        <span class="ccm-toggle-slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- INP / Interaction Optimizations (v7.30.0) -->
-            <div class="ccm-card">
-                <h2><?php _e('INP &amp; Interaction Optimizations', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted"><?php _e('Improve Interaction to Next Paint (INP) and scrolling performance scores.', 'ccm-tools'); ?></p>
-
-                <div class="ccm-setting-row">
-                    <div style="flex: 1;">
-                        <strong><?php _e('Passive Event Listeners', 'ccm-tools'); ?></strong>
-                        <p class="ccm-text-muted"><?php _e('Overrides <code>addEventListener</code> to force <code>{passive: true}</code> for <code>scroll</code>, <code>wheel</code>, <code>touchstart</code>, and <code>touchmove</code> events. Fixes the PageSpeed \'Does not use passive listeners to improve scrolling performance\' audit. <strong>⚠ Test carefully</strong> — may conflict with parallax scrolling, scroll-hijack animations, or sticky-nav plugins that call <code>e.preventDefault()</code> on these events.', 'ccm-tools'); ?></p>
-                    </div>
-                    <label class="ccm-toggle">
-                        <input type="checkbox" id="perf-passive-event-listeners" <?php checked(!empty($settings['passive_event_listeners'])); ?>>
-                        <span class="ccm-toggle-slider"></span>
-                    </label>
-                </div>
-
-                <div class="ccm-setting-row" style="margin-top: var(--ccm-space-md);">
-                    <div style="flex: 1;">
-                        <strong><?php _e('DOM Size Warning', 'ccm-tools'); ?></strong>
-                        <p class="ccm-text-muted"><?php _e('When enabled, the AI optimizer will flag excessive DOM size (over 1,500 nodes) in its analysis and additional notes. Oversized DOMs increase memory usage, slow style recalculations, and degrade INP. No frontend changes are made — this is an informational flag only.', 'ccm-tools'); ?></p>
-                    </div>
-                    <label class="ccm-toggle">
-                        <input type="checkbox" id="perf-warn-dom-size" <?php checked(!empty($settings['warn_dom_size'])); ?>>
                         <span class="ccm-toggle-slider"></span>
                     </label>
                 </div>
