@@ -641,20 +641,13 @@ class CCMSettings {
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('ccm-tools-nonce'),
                 'i18n' => array(
-                    'confirmConvert' => __('Are you sure you want to convert all tables? This operation cannot be undone.', 'ccm-tools'),
-                    'confirmOptimize' => __('Are you sure you want to optimize the database? This operation cannot be undone.', 'ccm-tools'),
-                    'confirmAddHtaccess' => __('Are you sure you want to add optimizations to .htaccess? This will modify your .htaccess file.', 'ccm-tools'),
-                    'confirmRemoveHtaccess' => __('Are you sure you want to remove optimizations from .htaccess? This will modify your .htaccess file.', 'ccm-tools'),
                     'confirmClearLog' => __('Are you sure you want to clear this log file? This operation cannot be undone.', 'ccm-tools'),
                     'downloadFailed' => __('Failed to download log file. Please try again.', 'ccm-tools'),
                     'confirmEnableDebug' => __('WARNING: Enabling WP_DEBUG will display PHP errors, notices, and warnings on your website. This should only be used on development or staging sites. Are you sure you want to enable debug mode?', 'ccm-tools'),
                     'confirmEnableDebugDisplay' => __('WARNING: Enabling WP_DEBUG_DISPLAY will show PHP errors directly on your website frontend. This is only recommended for development sites. Are you sure you want to enable debug display?', 'ccm-tools'),
-                    'debugModeRequired' => __('Note: WP Debug Mode must be enabled first', 'ccm-tools'),
-                    'warningFrontendErrors' => __('Warning: Errors will be displayed on the frontend', 'ccm-tools'),
                     // TTFB related messages
                     'measuring' => __('Measuring...', 'ccm-tools'),
                     'measurementFailed' => __('Measurement failed', 'ccm-tools'),
-                    'refresh' => __('Refresh', 'ccm-tools'),
                     // Redis related messages
                     'confirmRedisConfig' => __('This will add Redis configuration to your wp-config.php file. Continue?', 'ccm-tools'),
                     'installRedis' => __('Install Redis Cache Plugin', 'ccm-tools'),
@@ -669,7 +662,14 @@ class CCMSettings {
                     'showConfig' => __('Show Config', 'ccm-tools'),
                     'hideConfig' => __('Hide Config', 'ccm-tools'),
                     // WooCommerce related messages
-                    'wooToggleFailed' => __('Failed to toggle setting.', 'ccm-tools')
+                    'wooToggleFailed' => __('Failed to toggle setting.', 'ccm-tools'),
+                    // Button labels swapped in while an action is in flight.
+                    'saving' => __('Saving...', 'ccm-tools'),
+                    'saveSettings' => __('Save Settings', 'ccm-tools'),
+                    'testing' => __('Testing...', 'ccm-tools'),
+                    'testConversion' => __('Test Conversion', 'ccm-tools'),
+                    'stopping' => __('Stopping...', 'ccm-tools'),
+                    'stopConversion' => __('Stop Conversion', 'ccm-tools')
                 )
             ));
         }
