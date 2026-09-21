@@ -3489,7 +3489,7 @@ body { margin: 0; }
                         <strong><?php _e('Cron Check Interval', 'ccm-tools'); ?></strong>
                         <p class="ccm-text-muted"><?php _e('How frequently WP cron is allowed to run. Only applies when throttling is enabled above.', 'ccm-tools'); ?></p>
                     </div>
-                    <select id="perf-cron-interval" style="height:2.2rem;padding:0 0.5rem;border:1px solid var(--ccm-border);border-radius:var(--ccm-radius-sm);background:var(--ccm-bg);">
+                    <select id="perf-cron-interval">
                         <?php foreach ([5 => '5 minutes', 10 => '10 minutes', 30 => '30 minutes', 60 => '1 hour'] as $val => $label): ?>
                         <option value="<?php echo $val; ?>" <?php selected((int)($settings['cron_interval'] ?? 60), $val); ?>><?php echo esc_html($label); ?></option>
                         <?php endforeach; ?>

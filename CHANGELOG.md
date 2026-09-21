@@ -1,5 +1,22 @@
 # CCM Tools — Changelog
 
+## v8.0.3 — Cloudflare Zone Features layout
+
+- **The Polish dropdown rendered as a full-width control tiled with dozens of
+  chevrons.** The new shared form styling set `background` as a shorthand, which
+  resets `background-repeat` to its initial `repeat`. wp-admin then re-applied only
+  its own arrow image on top, with no repeat value of its own to restore, so the
+  arrow tiled across the whole control. Selects now carry their own arrow with an
+  explicit `no-repeat`, so neither the shorthand nor wp-admin can reproduce it.
+- **Selects no longer stretch to the full row width.** Several sit inline beside a
+  label or a "Requires Pro+" note, and a stretched one pushed its neighbour onto the
+  next line. They size to their content now, with a sensible minimum. A select that
+  explicitly opts into `.ccm-input` still fills its container.
+- **"Requires Pro+" no longer collides with the control beside it.** The note and its
+  toggle or select now share a baseline with a real gap and the note does not wrap.
+- Removed inline styling on the cron interval select that zeroed the right padding
+  the arrow sits in.
+
 ## v8.0.2 — Dashboard reported the object cache as unavailable
 
 - **The dashboard said "Not Available" while Redis was connected and serving.**

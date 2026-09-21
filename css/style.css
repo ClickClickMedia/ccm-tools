@@ -10,7 +10,7 @@
  * down this file already reads them, so redefining the values here re-themes
  * the whole plugin without touching two thousand lines of component CSS.
  *
- * Version: 8.0.2
+ * Version: 8.0.3
  */
 
 /* ===================================
@@ -3224,18 +3224,87 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
 .ccm-tools input[type="number"],
 .ccm-tools input[type="password"],
 .ccm-tools input[type="search"] {
-    width: 100%;
     max-width: 100%;
     padding: 0.45rem 0.65rem;
     border: 1px solid var(--ccm-border);
     border-radius: var(--ccm-radius);
-    background: var(--ccm-surface);
+    background-color: var(--ccm-surface);
     color: var(--ccm-text);
     font-family: inherit;
     font-size: var(--ccm-text-sm);
     line-height: 1.5;
     box-shadow: none;
     transition: border-color var(--ccm-transition), box-shadow var(--ccm-transition);
+}
+
+/* Text fields fill their container. A <select> must NOT: several of them sit
+   inline beside a label or a "Requires Pro+" note, and stretching one to the
+   full row width pushes its neighbour onto the next line. */
+.ccm-input,
+.ccm-tools textarea,
+.ccm-tools input[type="text"],
+.ccm-tools input[type="url"],
+.ccm-tools input[type="number"],
+.ccm-tools input[type="password"],
+.ccm-tools input[type="search"] {
+    width: 100%;
+}
+
+/* Selects carry their own arrow.
+   The background above is deliberately background-COLOR, not the `background`
+   shorthand. The shorthand resets background-repeat to its initial `repeat`,
+   and wp-admin then re-applies only its own arrow image on top, with no repeat
+   of its own to restore. The arrow therefore tiled across the whole control:
+   a select stretched to 950px showed dozens of chevrons in two rows. Setting
+   the image and `no-repeat` here means neither the shorthand nor wp-admin can
+   produce that again. */
+.ccm-tools select {
+    width: auto;
+    min-width: 11rem;
+    padding-right: 2rem;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%235f5e55' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.55rem center;
+    background-size: 1rem 1rem;
+}
+
+/* A select that explicitly opts into .ccm-input is a form field, not an
+   inline control, so it fills its container like the text inputs do. */
+.ccm-tools select.ccm-input { width: 100%; }
+
+html[data-ccm-theme="dark"] .ccm-tools select {
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a8a69c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-ccm-theme="light"]) .ccm-tools select {
+        background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a8a69c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+    }
+}
+
+.ccm-tools select:disabled,
+.ccm-tools input:disabled,
+.ccm-tools textarea:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* A control and the note beside it ("Requires Pro+") share a baseline and
+   never collide. The note also must not wrap mid-phrase onto the toggle. */
+.ccm-toggle,
+.ccm-tools select.ccm-cf-select {
+    vertical-align: middle;
+}
+
+.ccm-toggle + .ccm-text-muted,
+.ccm-tools select + .ccm-text-muted {
+    display: inline-block;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+    white-space: nowrap;
 }
 
 .ccm-input:focus,
