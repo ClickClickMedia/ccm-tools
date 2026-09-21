@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.0.1
+ * Version: 8.0.2
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.0.1');
+    define('CCM_HELPER_VERSION', '8.0.2');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -912,7 +912,6 @@ class CCMSettings {
         // Initialize Redis variables before using them
         $redis_status = array('server_available' => false, 'version' => '');
         $redis_config = array('configured' => false, 'constants' => array());
-        $redis_plugin = array('installed' => false, 'active' => false, 'object_cache_enabled' => false, 'version' => '');
         $server_status_class = 'ccm-error';
         $server_status_text = __('Not Available', 'ccm-tools');
         $config_status_class = 'ccm-warning';
@@ -920,7 +919,8 @@ class CCMSettings {
         $plugin_status_class = 'ccm-warning';
         $plugin_status_text = __('Not Installed', 'ccm-tools');
         $cache_status_class = 'ccm-warning';
-        $cache_status_text = __('Not Available', 'ccm-tools');
+        $cache_status_text = __('Not available', 'ccm-tools');
+        $cache_status_note = '';
         
         // Get debug status variables early - verify current state from system
         // Use direct file check to bypass any opcode caching
@@ -961,7 +961,6 @@ class CCMSettings {
         if (function_exists('ccm_tools_check_redis_status')) {
             $redis_status = ccm_tools_check_redis_status();
             $redis_config = ccm_tools_check_redis_configuration();
-            $redis_plugin = ccm_tools_check_redis_plugin();
             
             // Redis Server Status
             $server_status_class = $redis_status['server_available'] ? 'ccm-success' : 'ccm-error';
@@ -978,30 +977,42 @@ class CCMSettings {
                 $config_status_class = 'ccm-info';
             }
             
-            // Redis Plugin Status
-            $plugin_status_text = '';
-            $plugin_status_class = 'ccm-warning';
-            
-            if (!$redis_plugin['installed']) {
-                $plugin_status_text = __('Not Installed', 'ccm-tools');
-            } else if (!$redis_plugin['active']) {
-                $plugin_status_text = __('Inactive', 'ccm-tools');
-            } else {
-                $plugin_status_text = __('Active', 'ccm-tools');
-                $plugin_status_class = 'ccm-success';
-            }
-            
-            // Redis Object Cache Status (separate from plugin status)
-            $cache_status_text = '';
+            // Object cache status.
+            //
+            // Read this from the drop-in actually installed at
+            // wp-content/object-cache.php, NOT from whether the third-party
+            // "Redis Object Cache" plugin happens to be present. CCM Tools
+            // ships its own drop-in and replaces that plugin, so checking for
+            // it reported "Not Available" on every site where our own cache
+            // was connected and serving.
+            $dropin = function_exists('ccm_tools_redis_dropin_status')
+                ? ccm_tools_redis_dropin_status()
+                : array('exists' => false, 'is_ccm' => false, 'is_other' => false, 'other_plugin' => '', 'version' => '');
+
+            $cache_status_text  = __('Not available', 'ccm-tools');
             $cache_status_class = 'ccm-warning';
-            
-            if (!$redis_plugin['active']) {
-                $cache_status_text = __('Not Available', 'ccm-tools');
-            } else if (!$redis_plugin['object_cache_enabled']) {
-                $cache_status_text = __('Disabled', 'ccm-tools');
-            } else {
-                $cache_status_text = __('Enabled', 'ccm-tools');
+            $cache_status_note  = '';
+
+            if (!empty($dropin['is_ccm'])) {
+                $cache_status_text  = __('Enabled', 'ccm-tools');
                 $cache_status_class = 'ccm-success';
+                $cache_status_note  = !empty($dropin['version'])
+                    ? sprintf(__('CCM drop-in v%s', 'ccm-tools'), $dropin['version'])
+                    : __('CCM drop-in active', 'ccm-tools');
+            } elseif (!empty($dropin['is_other'])) {
+                $cache_status_text  = __('Other plugin', 'ccm-tools');
+                $cache_status_class = 'ccm-info';
+                $cache_status_note  = !empty($dropin['other_plugin'])
+                    ? sprintf(__('Managed by %s', 'ccm-tools'), $dropin['other_plugin'])
+                    : __('A drop-in from another plugin is installed', 'ccm-tools');
+            } elseif (!empty($dropin['exists'])) {
+                $cache_status_text  = __('Unrecognised', 'ccm-tools');
+                $cache_status_note  = __('An object-cache.php we did not write is installed', 'ccm-tools');
+            } elseif (!empty($redis_status['server_available'])) {
+                $cache_status_text  = __('Not enabled', 'ccm-tools');
+                $cache_status_note  = __('Redis is running but no drop-in is installed', 'ccm-tools');
+            } else {
+                $cache_status_note  = __('No Redis server detected', 'ccm-tools');
             }
         }
         
@@ -1059,11 +1070,7 @@ class CCMSettings {
                         <div class="ccm-stat-tile__label"><?php _e('Object cache', 'ccm-tools'); ?></div>
                         <div class="ccm-stat-tile__sub">
                             <span class="ccm-dot <?php echo $cache_status_class === 'ccm-success' ? 'ccm-dot-ok' : 'ccm-dot-warn'; ?>"></span>
-                            <?php
-                            echo !empty($redis_status['server_available'])
-                                ? esc_html(sprintf(__('Redis %s available', 'ccm-tools'), $redis_status['version']))
-                                : esc_html__('No Redis server detected', 'ccm-tools');
-                            ?>
+                            <?php echo esc_html($cache_status_note); ?>
                         </div>
                     </div>
 

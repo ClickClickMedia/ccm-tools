@@ -1,5 +1,21 @@
 # CCM Tools — Changelog
 
+## v8.0.2 — Dashboard reported the object cache as unavailable
+
+- **The dashboard said "Not Available" while Redis was connected and serving.**
+  Its object-cache tile asked whether the third-party *Redis Object Cache* plugin
+  by Till Krüss was installed and active. CCM Tools ships its own drop-in and exists
+  specifically so that plugin is not needed, so the answer was always no and the
+  dashboard contradicted the Redis page sitting one tab away.
+  The tile now reads the drop-in actually installed at `wp-content/object-cache.php`,
+  the same source the Redis page uses, and distinguishes five real states: our
+  drop-in running, another plugin's drop-in, an unrecognised one, Redis running with
+  no drop-in, and no Redis at all. Each says which it is rather than just "not
+  available".
+- Removed `ccm_tools_check_redis_plugin()`, which existed only for that check, and a
+  pair of status variables it fed that were computed on every dashboard load and
+  never displayed.
+
 ## v8.0.1 — Dashboard fatal
 
 - **Fixed a fatal on the CCM Tools dashboard.** `ccm_tools_convert_php_size_to_bytes()`
