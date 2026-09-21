@@ -1,5 +1,28 @@
 # CCM Tools — Changelog
 
+## v8.2.0 — Performance page rebuilt from a catalogue
+
+- **The page is now generated from data.** Every setting is described once in
+  `inc/performance-catalogue.php` (label, description, risk, sub-fields) and one
+  renderer draws them all. That replaced 1,104 lines of hand-written markup where
+  each group was styled slightly differently and each risky option was warned about
+  in its own words, or not at all. Adding a setting is now one array entry.
+- **Every option states its risk.** Safe, test after, or can break things, with the
+  specific failure named in the description rather than a vague warning.
+- **Search and filter.** Sixty-odd toggles is not a list you scroll. Filter by All,
+  On, Safe only or Risky, or type to find one.
+- **Sub-settings live with their toggle** and appear when it is switched on, instead
+  of sitting in a separate block further down the page.
+- **Turn on everything safe** in one click, and a running count per group and for the
+  page, updated live.
+- **The master switch is in the header** with a plain warning when it is off, because
+  a page full of enabled toggles that are doing nothing is misleading.
+- **Prerequisites are enforced in the interface.** Deferring stylesheets stays disabled
+  until critical CSS actually has content in it, and unlocks the moment it does.
+- Fixed: `[hidden]` is a user-agent rule, so any class rule setting `display` beats it.
+  Sub-field blocks were visible under switched-off toggles. Restated now, with a
+  blanket rule so a future component cannot reintroduce it.
+
 ## v8.1.0 — Site Health rebuilt, and a real component kit
 
 The v8.0.0 restyle swapped the palette and left every page's markup alone, so it

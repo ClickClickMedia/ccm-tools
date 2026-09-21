@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.1.0
+ * Version: 8.2.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.1.0');
+    define('CCM_HELPER_VERSION', '8.2.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -425,6 +425,7 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/update.php';  // Add GitHub update functionality
     require_once CCM_HELPER_ROOT_DIR . 'inc/woocommerce-tools.php'; // Add WooCommerce tools
     require_once CCM_HELPER_ROOT_DIR . 'inc/webp-converter.php'; // Add WebP image converter
+    require_once CCM_HELPER_ROOT_DIR . 'inc/performance-catalogue.php'; // setting definitions
     require_once CCM_HELPER_ROOT_DIR . 'inc/performance-optimizer.php';
     require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php'; // Add Redis Object Cache
     require_once CCM_HELPER_ROOT_DIR . 'inc/cloudflare.php'; // Cloudflare integration
@@ -679,6 +680,12 @@ class CCMSettings {
             // Site Health is a self-contained module; only load it on its own page.
             if (strpos($hook, 'ccm-tools-site-health') !== false) {
                 wp_enqueue_script('ccm-tools-site-health', CCM_HELPER_ROOT_URL . 'js/site-health.js', array('ccm-tools-script'), CCM_HELPER_VERSION, true);
+            }
+
+            // Performance page interactions (search, filters, field reveal).
+            // Saving still lives in main.js; this only touches the interface.
+            if (strpos($hook, 'ccm-tools-perf') !== false) {
+                wp_enqueue_script('ccm-tools-perf-ui', CCM_HELPER_ROOT_URL . 'js/perf-ui.js', array('ccm-tools-script'), CCM_HELPER_VERSION, true);
             }
             wp_localize_script('ccm-tools-script', 'ccmToolsData', array(
                 'ajax_url' => admin_url('admin-ajax.php'),

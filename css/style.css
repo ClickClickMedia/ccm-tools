@@ -10,7 +10,7 @@
  * down this file already reads them, so redefining the values here re-themes
  * the whole plugin without touching two thousand lines of component CSS.
  *
- * Version: 8.1.0
+ * Version: 8.2.0
  */
 
 /* ===================================
@@ -4144,4 +4144,136 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     clip: rect(0 0 0 0);
     white-space: nowrap;
     border: 0;
+}
+
+/* ── Option rows ───────────────────────────────────────────────
+   The Performance page is sixty-odd toggles. They are generated from one
+   catalogue through one renderer, so they are identical by construction
+   rather than by sixty copies of the same markup staying in step. */
+
+.ccm-optgroup { margin-bottom: var(--ccm-space-xl); scroll-margin-top: 150px; }
+
+.ccm-opts {
+    display: grid;
+    gap: 1px;
+    background: var(--ccm-border);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-lg);
+    overflow: hidden;
+}
+
+.ccm-opt { background: var(--ccm-surface); transition: background var(--ccm-transition-fast); }
+.ccm-opt:hover { background: var(--ccm-bg-secondary); }
+
+.ccm-opt__main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--ccm-space-md);
+    padding: 0.8rem var(--ccm-space-md);
+}
+
+.ccm-opt__text { min-width: 0; }
+
+.ccm-opt__label {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text);
+    margin-right: 0.4rem;
+}
+
+.ccm-opt__desc {
+    margin: 0.25rem 0 0;
+    font-size: var(--ccm-text-xs);
+    color: var(--ccm-text-muted);
+    max-width: 78ch;
+    line-height: 1.55;
+}
+
+/* An enabled row gets a brand edge, so scanning for what is on does not mean
+   reading every switch position down the column. */
+.ccm-opt.is-on { box-shadow: inset 3px 0 0 var(--ccm-brand-raw); }
+.ccm-opt.is-on .ccm-opt__label { color: var(--ccm-text); }
+
+.ccm-opt__fields {
+    padding: 0 var(--ccm-space-md) var(--ccm-space-md);
+    margin-left: 0;
+    display: grid;
+    gap: var(--ccm-space-md);
+    border-top: 1px dashed var(--ccm-border);
+    padding-top: var(--ccm-space-md);
+    background: var(--ccm-bg-secondary);
+}
+
+/* [hidden] is a user-agent rule, so any class rule with a display outranks it
+   and the element stays visible. Every block here that sets display must
+   therefore restate it. This is the same trap frikwork has. */
+.ccm-opt__fields[hidden] { display: none; }
+
+/* Blanket version of the same, so a future component that sets display cannot
+   quietly reintroduce the bug. */
+.ccm-tools [hidden] { display: none !important; }
+
+.ccm-optfield { display: grid; gap: 0.3rem; max-width: 46rem; }
+.ccm-optfield > label { font-size: var(--ccm-text-xs); font-weight: 600; color: var(--ccm-text-muted); }
+.ccm-optfield__hint { font-size: var(--ccm-text-xs); color: var(--ccm-text-muted); }
+.ccm-optfield__inline { display: inline-flex; align-items: center; gap: 0.5rem; }
+.ccm-optfield__inline .ccm-input { width: 7rem; }
+.ccm-optfield__suffix { font-size: var(--ccm-text-sm); color: var(--ccm-text-muted); }
+.ccm-mono { font-family: var(--ccm-font-mono); font-size: var(--ccm-text-xs); }
+
+/* ── Master switch ─────────────────────────────────────────────  */
+
+.ccm-masterswitch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0.4rem 0.35rem 0.8rem;
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius);
+    background: var(--ccm-surface);
+}
+
+.ccm-masterswitch__label { font-size: var(--ccm-text-sm); font-weight: 600; color: var(--ccm-text-muted); }
+.ccm-masterswitch.is-on { border-color: var(--ccm-brand-raw); background: var(--ccm-primary-light); }
+.ccm-masterswitch.is-on .ccm-masterswitch__label { color: var(--ccm-primary); }
+
+/* ── Alert ─────────────────────────────────────────────────────  */
+
+.ccm-alert {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    padding: 0.8rem var(--ccm-space-md);
+    border: 1px solid var(--ccm-border);
+    border-left: 3px solid var(--ccm-alert-accent, var(--ccm-info));
+    border-radius: var(--ccm-radius);
+    background: color-mix(in srgb, var(--ccm-alert-accent, var(--ccm-info)) 7%, var(--ccm-surface));
+    color: var(--ccm-text-2, var(--ccm-text));
+    font-size: var(--ccm-text-sm);
+    line-height: 1.55;
+}
+
+.ccm-alert .ccm-dot { margin-top: 0.4rem; }
+.ccm-alert--warn { --ccm-alert-accent: var(--ccm-warning); }
+.ccm-alert--bad  { --ccm-alert-accent: var(--ccm-error); }
+.ccm-alert--good { --ccm-alert-accent: var(--ccm-success); }
+
+/* ── Sticky toolbar ────────────────────────────────────────────
+   Search, filters and Save stay reachable on a page this long. Offset by the
+   WordPress admin bar plus the plugin's own sticky header. */
+
+.ccm-toolbar--sticky {
+    position: sticky;
+    top: 88px;
+    z-index: 20;
+    margin-bottom: var(--ccm-space-lg);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    background: color-mix(in srgb, var(--ccm-surface) 88%, transparent);
+    box-shadow: var(--ccm-shadow-sm);
+}
+
+@media screen and (max-width: 960px) {
+    .ccm-toolbar--sticky { position: static; }
 }

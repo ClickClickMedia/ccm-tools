@@ -120,7 +120,16 @@ foreach ($strings as $fn => $val) {
     }
 }
 
-$arrays = array('get_option', 'get_transient', 'get_site_transient', 'wp_parse_args', 'get_plugins', 'headers_list');
+$arrays = array('get_option', 'get_transient', 'get_site_transient', 'get_plugins', 'headers_list');
+
+// Must really merge. A stub that returns only the defaults makes every
+// settings-driven page render as though nothing was ever configured, which
+// quietly hides whatever you were trying to test.
+function wp_parse_args($args, $defaults = array()) {
+    if (is_object($args)) { $args = get_object_vars($args); }
+    if (!is_array($args)) { $args = array(); }
+    return array_merge((array) $defaults, $args);
+}
 foreach ($arrays as $fn) {
     if (!function_exists($fn)) {
         eval("function {$fn}(\$a = null, \$b = null) { return is_array(\$b) ? \$b : array(); }");
@@ -129,6 +138,9 @@ foreach ($arrays as $fn) {
 
 // Pass-through / identity helpers.
 function __($t, $d = null) { return $t; }
+function _n($s, $p, $n, $d = null) { return $n == 1 ? $s : $p; }
+function _x($t, $c, $d = null) { return $t; }
+function _nx($s, $p, $n, $c, $d = null) { return $n == 1 ? $s : $p; }
 function _e($t, $d = null) { echo $t; }
 function esc_html($t) { return (string) $t; }
 function esc_attr($t) { return (string) $t; }
@@ -146,9 +158,17 @@ function wp_unslash($t) { return $t; }
 function wp_kses_post($t) { return (string) $t; }
 function wp_strip_all_tags($t) { return strip_tags((string) $t); }
 function absint($n) { return abs((int) $n); }
-function checked($a, $b = true, $e = true) { return ''; }
-function disabled($a, $b = true, $e = true) { return ''; }
-function selected($a, $b = true, $e = true) { return ''; }
+// These must behave like the real thing. Stubs that return an empty string
+// make every checkbox render unchecked, so a preview of a fully configured
+// page looks identical to a blank one and you draw the wrong conclusion.
+function __checked_helper($a, $b, $e, $type) {
+    $out = ((string) $a === (string) $b || ($a && $b)) ? " $type='$type'" : '';
+    if ($e) { echo $out; }
+    return $out;
+}
+function checked($a, $b = true, $e = true) { return __checked_helper($a, $b, $e, 'checked'); }
+function disabled($a, $b = true, $e = true) { return __checked_helper($a, $b, $e, 'disabled'); }
+function selected($a, $b = true, $e = true) { return __checked_helper($a, $b, $e, 'selected'); }
 function wp_parse_url($u, $c = -1) { return parse_url($u, $c); }
 function wp_json_encode($d, $f = 0) { return json_encode($d, $f); }
 function wp_date($f, $t = null) { return date($f, $t ?: time()); }
@@ -195,6 +215,14 @@ function determine_locale() { return 'en_AU'; }
 function wp_normalize_path($p) { return str_replace('\\', '/', (string) $p); }
 
 function wp_nonce_url($u, $a = -1, $n = '_wpnonce') { return $u . '&' . $n . '=nonce'; }
+function add_query_arg() {
+    $a = func_get_args();
+    $url = is_array($a[0]) ? (isset($a[1]) ? $a[1] : '') : (isset($a[2]) ? $a[2] : '');
+    $args = is_array($a[0]) ? $a[0] : array($a[0] => $a[1]);
+    $q = http_build_query($args);
+    return $url . (strpos($url, '?') === false ? '?' : '&') . $q;
+}
+function remove_query_arg($k, $u = '') { return $u; }
 function wp_nonce_field($a = -1, $n = '_wpnonce', $r = true, $e = true) { return ''; }
 function get_num_queries() { return 0; }
 function timer_stop($d = 0, $p = 3) { return '0.1'; }
