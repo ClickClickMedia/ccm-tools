@@ -32,8 +32,14 @@ write anything:
    No exclamation marks. Australian spelling.
 8. **Both themes, always.** Only ever use `--ccm-*` tokens. A literal hex in a
    component is a bug.
-9. **`[hidden]` loses to any class that sets `display`.** If your component sets
-   `display`, restate `display: none` for `[hidden]`, or toggle `.ccm-hide`.
+9. **Hiding cuts both ways, so match how the code will reveal it.**
+   `[hidden]` loses to any class that sets `display`, so if your component sets
+   `display`, restate `display: none` for `[hidden]` or toggle `.ccm-hide`.
+   The reverse is the one that bites: `.ccm-hide` is `display: none !important`,
+   and `js/main.js` reveals things with an inline `style.display`, which cannot
+   beat it. Anything main.js shows must start hidden with an inline
+   `style="display: none;"`, not with the class. Grep main.js for the id before
+   you choose.
 10. **Do not touch the save logic in `js/main.js`.** Keep the element ids it
     reads. Page behaviour that is purely presentational goes in its own file.
 
