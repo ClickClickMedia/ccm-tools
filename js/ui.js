@@ -214,7 +214,7 @@
         function snapshot() {
             return controls.map(function (el) {
                 return (el.type === 'checkbox' || el.type === 'radio') ? (el.checked ? '1' : '0') : el.value;
-            }).join(' ');
+            });
         }
 
         var clean = snapshot();
@@ -226,8 +226,8 @@
         }
 
         function countChanges() {
-            var now = snapshot().split(' ');
-            var was = clean.split(' ');
+            var now = snapshot();
+            var was = clean;
             var n = 0;
             for (var i = 0; i < now.length; i++) { if (now[i] !== was[i]) { n++; } }
             return n;
