@@ -2695,6 +2695,9 @@ function ccm_tools_render_perf_page() {
                 <button type="button" id="perf-enable-safe" class="ccm-button ccm-button-secondary ccm-button-small">
                     <?php _e('Turn on everything safe', 'ccm-tools'); ?>
                 </button>
+                <button type="button" id="perf-disable-all" class="ccm-button ccm-button-secondary ccm-button-small">
+                    <?php _e('Turn everything off', 'ccm-tools'); ?>
+                </button>
                 <span id="perf-save-status" class="ccm-text-muted" style="font-size: var(--ccm-text-xs);"></span>
             </div>
 
@@ -2735,8 +2738,20 @@ function ccm_tools_render_perf_page() {
                 </div>
                 <div class="ccm-row">
                     <button type="button" id="export-perf-settings" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Export', 'ccm-tools'); ?></button>
-                    <button type="button" id="import-perf-settings" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Import', 'ccm-tools'); ?></button>
+                    <?php
+                    /*
+                     * Three ids, because js/main.js drives a three-step flow:
+                     * -btn opens the picker, the file input reports the chosen
+                     * name into -file-name, and only then is the real Import
+                     * button revealed. It reveals it with an inline
+                     * style.display, which cannot beat .ccm-hide's
+                     * `display: none !important`, so this one hides inline.
+                     */
+                    ?>
+                    <button type="button" id="import-perf-settings-btn" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Choose a file', 'ccm-tools'); ?></button>
                     <input type="file" id="import-perf-file" accept="application/json" class="ccm-hide" aria-label="<?php esc_attr_e('Choose a performance settings file to import', 'ccm-tools'); ?>">
+                    <span id="import-file-name" class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"></span>
+                    <button type="button" id="import-perf-settings" class="ccm-button ccm-button-primary ccm-button-small" style="display: none;"><?php _e('Import', 'ccm-tools'); ?></button>
                 </div>
             </div>
 
@@ -2755,10 +2770,30 @@ function ccm_tools_render_perf_page() {
                             <?php _e('Open the homepage as a visitor', 'ccm-tools'); ?>
                         </a>
                         <button type="button" id="detect-scripts-btn" class="ccm-button ccm-button-secondary ccm-button-small">
-                            <?php _e('List the scripts this site loads', 'ccm-tools'); ?>
+                            <?php _e('Find scripts to defer', 'ccm-tools'); ?>
+                        </button>
+                        <button type="button" id="detect-delay-scripts-btn" class="ccm-button ccm-button-secondary ccm-button-small">
+                            <?php _e('Find third-party scripts to delay', 'ccm-tools'); ?>
+                        </button>
+                        <button type="button" id="detect-external-origins" class="ccm-button ccm-button-secondary ccm-button-small">
+                            <?php _e('Find origins to preconnect', 'ccm-tools'); ?>
+                        </button>
+                        <button type="button" id="detect-dns-prefetch-origins" class="ccm-button ccm-button-secondary ccm-button-small">
+                            <?php _e('Find origins to DNS-prefetch', 'ccm-tools'); ?>
                         </button>
                     </div>
-                    <div id="detected-scripts-result" class="ccm-hide" style="margin-top: var(--ccm-space-md);"></div>
+                    <?php
+                    /*
+                     * js/main.js reveals each of these with an inline
+                     * style.display, which loses to .ccm-hide's !important, so
+                     * they start hidden inline instead. Scanning fills the
+                     * matching textarea in the Resource hints group above.
+                     */
+                    ?>
+                    <div id="detected-scripts-result" style="display: none; margin-top: var(--ccm-space-md);"></div>
+                    <div id="detected-delay-scripts-result" style="display: none; margin-top: var(--ccm-space-md);"></div>
+                    <div id="detected-origins-result" style="display: none; margin-top: var(--ccm-space-md);"></div>
+                    <div id="detected-dns-origins-result" style="display: none; margin-top: var(--ccm-space-md);"></div>
                 </div>
             </details>
 

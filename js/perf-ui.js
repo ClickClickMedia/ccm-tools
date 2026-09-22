@@ -152,6 +152,29 @@
         });
     }
 
+    // Bulk off is the counterpart to bulk safe-on. Without it the only way
+    // back from a page of enabled toggles is sixty individual clicks.
+    var offBtn = $('#perf-disable-all');
+    if (offBtn) {
+        offBtn.addEventListener('click', function () {
+            var changed = 0;
+            opts.forEach(function (opt) {
+                var input = $('input[data-perf-toggle]', opt);
+                if (input && input.checked && !input.disabled) {
+                    input.checked = false;
+                    input.dispatchEvent(new Event('change'));
+                    changed++;
+                }
+            });
+            var status = $('#perf-save-status');
+            if (status) {
+                status.textContent = changed
+                    ? changed + ' turned off. Remember to save.'
+                    : 'Nothing was on.';
+            }
+        });
+    }
+
     // ── Master switch ───────────────────────────────────────────
 
     var master = $('#perf-master-enable');

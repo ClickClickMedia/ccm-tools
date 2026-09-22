@@ -36,6 +36,21 @@ button rather than replacing it, so nothing about how settings are saved changed
 
 ### Fixes
 
+- **Importing performance settings did nothing.** The catalogue rewrite in
+  v8.2.0 left one Import button where `js/main.js` expects three elements: a
+  button that opens the file picker, a label for the chosen filename, and the
+  Import button itself, revealed only once a file is selected. Because the
+  first was missing, the file input's change handler was never attached.
+- **Four detection buttons were lost in that same rewrite.** Find scripts to
+  defer, find third-party scripts to delay, and find origins to preconnect or
+  DNS-prefetch all scan the site and fill the matching list for you. Their
+  target fields were still there; only the buttons had gone.
+- **Their result panels could not appear even when present.** They were hidden
+  with a class that sets `display: none !important`, and `js/main.js` reveals
+  them with an inline style, which cannot win against it.
+- **Bulk turn-off came back.** Turn on everything safe had no counterpart, so
+  the only way back from a page of enabled toggles was sixty clicks.
+
 - **The error log was unreadable in light theme.** A generic `pre` rule defined
   later in the stylesheet was overriding the viewer's own background, so
   terminal-coloured syntax landed on a near-white box. Same fault in the
