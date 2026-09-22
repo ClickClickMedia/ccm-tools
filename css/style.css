@@ -4483,3 +4483,48 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     .ccm-header-title h1 { display: none; }
     .ccm-header-title { margin-left: 0; flex: 0 0 auto; }
 }
+
+/* ── Reference grid and extension chips ────────────────────────  */
+
+/* .ccm-grid-2 was fitting four columns on a wide screen, which squeezed the
+   reference cards until every value wrapped. Two or three is the useful range. */
+.ccm-grid-2 { grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr)); }
+
+/* A PHP extension is a yes or no. It was rendering as a full card per
+   extension, so twelve of them filled a screen to say almost nothing. */
+.ccm-extensions-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: var(--ccm-space-sm);
+}
+
+.ccm-extension-item {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
+    border: 1px solid var(--ccm-border);
+    border-left-width: 1px;
+    border-radius: var(--ccm-radius);
+    background: var(--ccm-bg-secondary);
+    font-size: var(--ccm-text-xs);
+    color: var(--ccm-text-muted);
+    white-space: nowrap;
+}
+
+.ccm-extension-item strong { color: var(--ccm-text); font-weight: 600; font-size: var(--ccm-text-sm); }
+
+/* The description is the tooltip, not the label. */
+.ccm-extension-item .screen-reader-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.ccm-extension-item .ccm-icon { font-size: 0.8rem; line-height: 1; }
+
+.ccm-extension-item.ccm-success { border-color: color-mix(in srgb, var(--ccm-success) 45%, var(--ccm-border)); }
+.ccm-extension-item.ccm-success .ccm-icon { color: var(--ccm-success); }
+.ccm-extension-item.ccm-error {
+    border-color: color-mix(in srgb, var(--ccm-error) 55%, var(--ccm-border));
+    background: var(--ccm-error-bg);
+}
+.ccm-extension-item.ccm-error .ccm-icon,
+.ccm-extension-item.ccm-error strong { color: var(--ccm-error); }

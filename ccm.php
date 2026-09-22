@@ -1300,9 +1300,14 @@ class CCMSettings {
                         
                         foreach ($required_extensions as $ext => $desc) {
                             $loaded = extension_loaded($ext);
-                            echo '<div class="ccm-extension-item ' . ($loaded ? 'ccm-success' : 'ccm-error') . '">';
-                            echo '<span class="ccm-icon">' . ($loaded ? '✓' : '✗') . '</span>';
-                            echo '<strong>' . esc_html($ext) . '</strong>: ' . esc_html($desc);
+                            // The description is the tooltip, not the label: twelve
+                            // extensions each spelling out why they exist filled a
+                            // whole screen to say "all present".
+                            echo '<div class="ccm-extension-item ' . ($loaded ? 'ccm-success' : 'ccm-error') . '"'
+                                . ' title="' . esc_attr($desc) . '">';
+                            echo '<span class="ccm-icon" aria-hidden="true">' . ($loaded ? '✓' : '✗') . '</span>';
+                            echo '<strong>' . esc_html($ext) . '</strong>';
+                            echo '<span class="screen-reader-text">' . esc_html($desc) . '</span>';
                             echo '</div>';
                         }
                         ?>
