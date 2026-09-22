@@ -942,10 +942,13 @@ function ccm_tools_cf_auto_purge_all_action(): void {
 /**
  * Render the Cloudflare Tools admin page.
  *
- * Split into one render helper per card (see ccm_tools_cf_render_*_card()
- * below) so each stays small and independently readable. The former paid
- * tier's feature split has been removed entirely — every card here is now
- * standard for all sites (see the individual card functions).
+ * Hero + stat grid + grouped sections, per docs/UI-BRIEF.md, replacing the
+ * former flat stack of ten equally-weighted `.ccm-card` tables. Every
+ * container id that js/main.js queries (`#cf-connection-form`,
+ * `#cf-zone-status`, `#cf-analytics`, `#cf-security-settings`,
+ * `#cf-network-settings`, `#cf-dns-records`, and every button/input id it
+ * binds to) is preserved exactly — see the per-section render helpers below
+ * for the full accounting. main.js itself is untouched.
  */
 function ccm_tools_render_cloudflare_page(): void {
     $settings    = ccm_tools_cf_get_settings();
@@ -958,23 +961,21 @@ function ccm_tools_render_cloudflare_page(): void {
 
         <div class="ccm-content">
             <?php
-            ccm_tools_cf_render_status_card($settings, $connected, $cf_detected, $is_cf);
+            ccm_tools_cf_render_hero($connected, $is_cf);
 
             if ($connected) {
-                ccm_tools_cf_render_analytics_card();
+                ccm_tools_cf_render_dev_mode_alert();
+                ccm_tools_cf_render_analytics();
+                ccm_tools_cf_render_zone_panel();
+                ccm_tools_cf_render_cache_section();
+                ccm_tools_cf_render_security_section();
+                ccm_tools_cf_render_network_section();
+                ccm_tools_cf_render_dns_section($settings);
+            } else {
+                ccm_tools_cf_render_empty_state();
             }
 
-            ccm_tools_cf_render_connection_card($settings, $connected);
-
-            if ($connected) {
-                ccm_tools_cf_render_zone_features_card();
-                ccm_tools_cf_render_cache_card();
-                ccm_tools_cf_render_dev_mode_card();
-                ccm_tools_cf_render_auto_purge_card($settings);
-                ccm_tools_cf_render_security_card();
-                ccm_tools_cf_render_network_card();
-                ccm_tools_cf_render_dns_card();
-            }
+            ccm_tools_cf_render_connection_disclosure($settings, $connected);
             ?>
         </div>
     </div>
@@ -982,335 +983,456 @@ function ccm_tools_render_cloudflare_page(): void {
 }
 
 /**
- * Status Overview card: Cloudflare detection + API connection state.
+ * Hero: title, zone/detection context, and the primary action.
  *
- * @param array $settings
- * @param bool  $connected
- * @param array $cf_detected
- * @param bool  $is_cf
+ * The zone name and plan are only known once js/main.js has fetched
+ * `ccm_tools_cf_get_status` (they are not cached anywhere in $settings),
+ * so showing them here synchronously would mean either a second, blocking,
+ * render-time call to the Cloudflare API (a real behaviour change) or new
+ * JS wiring outside this file. Neither is in scope, so the meta line shows
+ * what IS known at render time — the site's own domain (the zone is this
+ * domain or a parent of it, exactly as ccm_tools_cf_verify_token() already
+ * assumes) and whether Cloudflare is actually in front of requests. The
+ * live zone name + plan continue to appear exactly where they always have,
+ * in the panel js/main.js fills in directly below (see
+ * ccm_tools_cf_render_zone_panel()).
+ *
+ * @param bool $connected
+ * @param bool $is_cf
  */
-function ccm_tools_cf_render_status_card(array $settings, bool $connected, array $cf_detected, bool $is_cf): void {
+function ccm_tools_cf_render_hero(bool $connected, bool $is_cf): void {
+    $domain = wp_parse_url(home_url(), PHP_URL_HOST);
     ?>
-    <div class="ccm-card">
-        <h2><?php _e('Cloudflare Status', 'ccm-tools'); ?></h2>
-        <table class="ccm-table">
-            <tr>
-                <th><?php _e('Cloudflare Detected', 'ccm-tools'); ?></th>
-                <td>
-                    <?php if ($is_cf): ?>
-                        <span class="ccm-success"><?php _e('Yes', 'ccm-tools'); ?></span>
-                        <?php if (!empty($cf_detected['ray_id'])): ?>
-                            <span class="ccm-text-muted" style="margin-left: var(--ccm-space-xs);">CF-Ray: <?php echo esc_html($cf_detected['ray_id']); ?></span>
-                        <?php endif; ?>
-                    <?php else: ?>
-                        <span class="ccm-warning"><?php _e('Not detected', 'ccm-tools'); ?></span>
-                    <?php endif; ?>
-                </td>
-            </tr>
-            <tr>
-                <th><?php _e('API Connection', 'ccm-tools'); ?></th>
-                <td>
-                    <?php if ($connected): ?>
-                        <span class="ccm-success"><?php _e('Connected', 'ccm-tools'); ?></span>
-                    <?php else: ?>
-                        <span class="ccm-warning"><?php _e('Not connected', 'ccm-tools'); ?></span>
-                    <?php endif; ?>
-                </td>
-            </tr>
+    <div class="ccm-hero">
+        <div class="ccm-hero__text">
+            <h1><?php _e('Cloudflare', 'ccm-tools'); ?></h1>
+            <div class="ccm-hero__meta">
+                <span><?php echo esc_html($domain); ?></span>
+                <span><?php echo $connected ? __('Connected', 'ccm-tools') : __('Not connected', 'ccm-tools'); ?></span>
+                <span><?php echo $is_cf
+                    ? __('Requests are arriving through Cloudflare', 'ccm-tools')
+                    : __('No Cloudflare traffic detected', 'ccm-tools'); ?></span>
+            </div>
+        </div>
+        <div class="ccm-hero__actions">
             <?php if ($connected): ?>
-            <tr>
-                <th><?php _e('Zone ID', 'ccm-tools'); ?></th>
-                <td><code><?php echo esc_html($settings['zone_id']); ?></code></td>
-            </tr>
+                <!-- Text kept as "Purge Everything" (not sentence case) because
+                     js/main.js hardcodes that exact string when it resets this
+                     button after a purge finishes; any other casing here would
+                     flash back to this one the first time it's used. -->
+                <button type="button" id="cf-purge-all" class="ccm-button ccm-button-primary">
+                    <?php _e('Purge Everything', 'ccm-tools'); ?>
+                </button>
+            <?php else: ?>
+                <a href="#cf-connection-disclose" class="ccm-button ccm-button-primary">
+                    <?php _e('Connect', 'ccm-tools'); ?>
+                </a>
             <?php endif; ?>
-        </table>
-    </div>
-    <?php
-}
-
-/**
- * Zone Analytics card. Caller only invokes this when $connected is true.
- */
-function ccm_tools_cf_render_analytics_card(): void {
-    ?>
-    <div class="ccm-card" id="cf-analytics-card">
-        <h2><?php _e('Zone Analytics (Last 24 Hours)', 'ccm-tools'); ?></h2>
-        <p class="ccm-text-muted"><?php _e('Traffic, caching efficiency, and threat overview.', 'ccm-tools'); ?></p>
-        <div id="cf-analytics">
-            <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading analytics...', 'ccm-tools'); ?></p></div>
         </div>
     </div>
     <?php
 }
 
 /**
- * Connection Settings card: API Token + Zone ID form, and the token setup guide.
+ * Development Mode alert. Caller only invokes this when $connected is true.
+ *
+ * #cf-dev-mode-status is the exact element js/main.js already writes to
+ * (via updateDevModeStatus(), called both on load and on toggle) — it sets
+ * that element's innerHTML to a message when Development Mode is on, or to
+ * an empty string when it's off. main.js never touches this element's
+ * classes, so a small inline observer (scoped to this page, not touching
+ * js/main.js) mirrors that content into visibility on the wrapping
+ * `.ccm-alert`. This is the same "inline script owned by the render file"
+ * pattern already used in inc/performance-optimizer.php and
+ * inc/webp-converter.php.
+ */
+function ccm_tools_cf_render_dev_mode_alert(): void {
+    ?>
+    <div class="ccm-alert ccm-alert--warn ccm-hide" id="cf-dev-mode-alert">
+        <span class="ccm-dot ccm-dot-warn" aria-hidden="true"></span>
+        <p id="cf-dev-mode-status" style="margin: 0;"></p>
+    </div>
+    <script>
+    (function () {
+        var box = document.getElementById('cf-dev-mode-alert');
+        var msg = document.getElementById('cf-dev-mode-status');
+        if (!box || !msg) { return; }
+        var sync = function () {
+            box.classList.toggle('ccm-hide', msg.textContent.trim() === '');
+        };
+        if (window.MutationObserver) {
+            new MutationObserver(sync).observe(msg, { childList: true, characterData: true, subtree: true });
+        }
+        sync();
+    })();
+    </script>
+    <?php
+}
+
+/**
+ * Zone Analytics. Caller only invokes this when $connected is true.
+ *
+ * js/main.js replaces #cf-analytics's entire innerHTML with its own
+ * `.ccm-cf-analytics-grid` of `.ccm-cf-stat-card` tiles (cache ratio, total
+ * requests, threats blocked, bandwidth, etc. — see loadCfAnalytics() in
+ * js/main.js). That grid already IS this page's stat-grid equivalent, with
+ * its own matching CSS, so it is kept as the container js/main.js expects
+ * rather than wrapped in an unrelated `.ccm-stat-grid` that would have no
+ * children to lay out (main.js's own wrapper div is the only child). It
+ * sits directly under the hero, where the brief wants the at-a-glance
+ * numbers.
+ */
+function ccm_tools_cf_render_analytics(): void {
+    ?>
+    <div id="cf-analytics">
+        <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading analytics...', 'ccm-tools'); ?></p></div>
+    </div>
+    <?php
+}
+
+/**
+ * Zone snapshot panel: the live Zone/Plan/Status/Features table js/main.js
+ * writes into #cf-zone-status, plus the "Apply Recommended" action.
+ * Caller only invokes this when $connected is true.
+ *
+ * #cf-zone-status is where js/main.js (loadCloudflareStatus()) writes a
+ * `<table class="ccm-table">` — per the brief, that container is kept
+ * as-is and wrapped in a `.ccm-panel` rather than fought. The
+ * `data-premium="1"` attribute that used to sit on this container is
+ * dead: nothing in js/main.js or any other JS file reads it (confirmed by
+ * grep), so it has been dropped rather than carried forward as clutter —
+ * the actual gate it once referred to (paid-tier feature editability) was
+ * already removed from the PHP side.
+ */
+function ccm_tools_cf_render_zone_panel(): void {
+    ?>
+    <div class="ccm-panel">
+        <div class="ccm-panel__head">
+            <span><?php _e('Zone', 'ccm-tools'); ?></span>
+            <button type="button" id="cf-apply-recommended" class="ccm-button ccm-button-secondary ccm-button-small">
+                <?php _e('Apply Recommended', 'ccm-tools'); ?>
+            </button>
+        </div>
+        <div class="ccm-panel__body ccm-panel__body--flush">
+            <div id="cf-zone-status">
+                <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading zone information...', 'ccm-tools'); ?></p></div>
+            </div>
+        </div>
+    </div>
+    <p class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin: var(--ccm-space-xs) 0 0;">
+        <?php _e('Applies Cloudflare\'s recommended base configuration for WordPress: security, caching and performance settings, set to sensible defaults in one go.', 'ccm-tools'); ?>
+    </p>
+    <?php
+}
+
+/**
+ * Cache section: purge URLs, auto-purge on save, development mode.
+ * Caller only invokes this when $connected is true.
+ *
+ * "Purge everything" itself is not repeated here as a second control — it
+ * is the hero's primary action (#cf-purge-all can only exist once in the
+ * document), so this section points to it instead of duplicating it.
+ */
+function ccm_tools_cf_render_cache_section(): void {
+    $settings = ccm_tools_cf_get_settings();
+    ?>
+    <div class="ccm-section">
+        <div>
+            <span class="ccm-section__eyebrow"><?php _e('Edge cache', 'ccm-tools'); ?></span>
+            <h2><?php _e('Cache', 'ccm-tools'); ?></h2>
+            <p><?php _e('Purge everything from the button at the top of this page. The options below cover specific URLs, purging automatically when content changes, and bypassing the cache entirely.', 'ccm-tools'); ?></p>
+        </div>
+    </div>
+
+    <div class="ccm-opts">
+        <div class="ccm-opt">
+            <div class="ccm-opt__main">
+                <div class="ccm-opt__text">
+                    <span class="ccm-opt__label"><?php _e('Purge URLs', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php _e('Clear specific pages from Cloudflare\'s cache without purging everything. One URL per line, up to 30 at a time.', 'ccm-tools'); ?></p>
+                </div>
+                <!-- Text kept as "Purge URLs" — js/main.js hardcodes this exact
+                     string when it resets the button after a purge finishes. -->
+                <button type="button" id="cf-purge-urls-btn" class="ccm-button ccm-button-secondary ccm-button-small">
+                    <?php _e('Purge URLs', 'ccm-tools'); ?>
+                </button>
+            </div>
+            <div class="ccm-opt__fields">
+                <div class="ccm-optfield">
+                    <label for="cf-purge-urls"><?php _e('URLs to purge', 'ccm-tools'); ?></label>
+                    <textarea id="cf-purge-urls" class="ccm-input" rows="4"
+                              placeholder="<?php echo esc_attr(home_url('/example-page/')); ?>"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="ccm-opt<?php echo !empty($settings['auto_purge']) ? ' is-on' : ''; ?>">
+            <div class="ccm-opt__main">
+                <div class="ccm-opt__text">
+                    <span class="ccm-opt__label"><?php _e('Auto-purge on save', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php _e('Automatically clears the affected page, its archives and the homepage from Cloudflare whenever a post, page, menu, widget or the theme is saved.', 'ccm-tools'); ?></p>
+                </div>
+                <label class="ccm-toggle">
+                    <input type="checkbox" id="cf-auto-purge-toggle" <?php checked(!empty($settings['auto_purge'])); ?>>
+                    <span class="ccm-toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="ccm-opt">
+            <div class="ccm-opt__main">
+                <div class="ccm-opt__text">
+                    <span class="ccm-opt__label"><?php _e('Development mode', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php _e('Bypasses the edge cache completely so changes show up immediately — every request hits your origin server for as long as it\'s on. Turns itself off after 3 hours if you forget.', 'ccm-tools'); ?></p>
+                </div>
+                <label class="ccm-toggle">
+                    <input type="checkbox" id="cf-dev-mode-toggle">
+                    <span class="ccm-toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * Security section: the live Security Settings panel js/main.js writes
+ * (Under Attack mode, security level, email obfuscation, etc.). Caller
+ * only invokes this when $connected is true.
+ *
+ * #cf-security-settings is where js/main.js (renderCfSecurityPanel()) writes
+ * a `<div class="ccm-cf-under-attack">` block plus a `<table>` — kept as-is
+ * and wrapped in a `.ccm-panel`. That panel's own copy already explains
+ * Under Attack mode ("Visitors see a challenge page for ~5 seconds while
+ * Cloudflare verifies the request") — that text is authored in js/main.js,
+ * not here, and already satisfies the brief's "say what Under Attack does"
+ * requirement, so it isn't duplicated in this section's intro.
+ *
+ * `data-confirm-settings="under_attack"` used to sit on this container as a
+ * marker for a confirm() step main.js was meant to read; grep confirms
+ * nothing reads it (js/main.js's own confirm() for Under Attack is wired
+ * directly to its #cf-under-attack-toggle, not to this attribute), so it
+ * has been dropped rather than carried forward as a dead marker.
+ */
+function ccm_tools_cf_render_security_section(): void {
+    ?>
+    <div class="ccm-section">
+        <div>
+            <span class="ccm-section__eyebrow"><?php _e('Zone', 'ccm-tools'); ?></span>
+            <h2><?php _e('Security', 'ccm-tools'); ?></h2>
+            <p><?php _e('Challenge and bot controls for this zone. Toggle switches require the API Token to have Zone Settings: Edit permission.', 'ccm-tools'); ?></p>
+        </div>
+    </div>
+    <div class="ccm-panel">
+        <div class="ccm-panel__body ccm-panel__body--flush">
+            <div id="cf-security-settings">
+                <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading security settings...', 'ccm-tools'); ?></p></div>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * SSL/TLS & network section: the live Network Settings panel js/main.js
+ * writes. Caller only invokes this when $connected is true.
+ *
+ * #cf-network-settings is where js/main.js (renderCfNetworkPanel()) writes
+ * a `<table>` — kept as-is, wrapped in a `.ccm-panel`. Its per-row 0-RTT
+ * description ("Improve performance for repeat visitors with zero round-trip
+ * time") is authored in js/main.js and does not mention the replay risk on
+ * non-idempotent requests the brief wants called out; that copy can't be
+ * changed here without editing js/main.js, so the caveat is added at the
+ * section level instead, below.
+ *
+ * `data-confirm-settings="ssl"` was another dead marker (see the note on
+ * ccm_tools_cf_render_security_section()) — same situation, dropped.
+ */
+function ccm_tools_cf_render_network_section(): void {
+    ?>
+    <div class="ccm-section">
+        <div>
+            <span class="ccm-section__eyebrow"><?php _e('Zone', 'ccm-tools'); ?></span>
+            <h2><?php _e('SSL/TLS and network', 'ccm-tools'); ?></h2>
+            <p><?php _e('Encryption and protocol settings for this zone. 0-RTT (below) lets returning visitors skip a round trip, but it carries a replay risk for non-idempotent requests such as form submissions or checkouts — leave it off unless the app is known to guard against replayed requests.', 'ccm-tools'); ?></p>
+        </div>
+    </div>
+    <div class="ccm-panel">
+        <div class="ccm-panel__body ccm-panel__body--flush">
+            <div id="cf-network-settings">
+                <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading network settings...', 'ccm-tools'); ?></p></div>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * DNS Records section (read-only, populated client-side). Caller only
+ * invokes this when $connected is true. Last in the page, per the brief.
+ *
+ * #cf-dns-records is where js/main.js (loadCfDnsRecords()) writes a
+ * `<div class="ccm-cf-dns-table-wrap"><table>…</table></div>` — kept as-is,
+ * wrapped in a `.ccm-panel`.
+ *
+ * @param array $settings  Unused directly; kept for parity with the other
+ *                          section helpers and in case a future caller needs it.
+ */
+function ccm_tools_cf_render_dns_section(array $settings): void {
+    ?>
+    <div class="ccm-section">
+        <div>
+            <span class="ccm-section__eyebrow"><?php _e('Read-only', 'ccm-tools'); ?></span>
+            <h2><?php _e('DNS records', 'ccm-tools'); ?></h2>
+            <p><?php _e('A read-only view of this zone\'s DNS records. Manage records in the Cloudflare dashboard.', 'ccm-tools'); ?></p>
+        </div>
+    </div>
+    <div class="ccm-panel">
+        <div class="ccm-panel__body ccm-panel__body--flush">
+            <div id="cf-dns-records">
+                <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p></div>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * Empty state shown instead of every connected-only section when there is
+ * no API connection yet.
+ */
+function ccm_tools_cf_render_empty_state(): void {
+    ?>
+    <div class="ccm-empty">
+        <span class="ccm-empty__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M6.5 19a4.5 4.5 0 01-.4-8.98 5.5 5.5 0 0110.6-2A4.5 4.5 0 0117.5 19h-11z"/></svg>
+        </span>
+        <h3><?php _e('Connect Cloudflare to unlock this page', 'ccm-tools'); ?></h3>
+        <p><?php _e('Cache purging, analytics, security and DNS all come from Cloudflare\'s API once this site is connected with a token scoped to Zone:Read, Zone Settings:Edit, Cache Purge, Analytics:Read and DNS:Read.', 'ccm-tools'); ?></p>
+        <a href="#cf-connection-disclose" class="ccm-button ccm-button-primary"><?php _e('Connect', 'ccm-tools'); ?></a>
+    </div>
+    <?php
+}
+
+/**
+ * Connection settings: API Token + Zone ID form, and the token setup
+ * guide. Always rendered (open by default while disconnected) — this is
+ * also where #cf-connection-form lives, and js/main.js only initialises
+ * any of its Cloudflare handlers at all when that element exists
+ * (`if ($('#cf-connection-form')) { initCloudflareHandlers(); }`), so it
+ * must never be left out of the page regardless of connection state.
  *
  * @param array $settings
  * @param bool  $connected
  */
-function ccm_tools_cf_render_connection_card(array $settings, bool $connected): void {
+function ccm_tools_cf_render_connection_disclosure(array $settings, bool $connected): void {
     ?>
-    <details class="ccm-card ccm-cf-connection-details"<?php echo !$connected ? ' open' : ''; ?>>
-        <summary class="ccm-cf-connection-summary"><h2 style="display:inline; cursor:pointer;"><?php _e('Connection Settings', 'ccm-tools'); ?></h2></summary>
-        <p class="ccm-text-muted"><?php _e('Connect using an API Token with Zone:Read, Zone Settings:Edit, and Cache Purge permissions.', 'ccm-tools'); ?></p>
-        <p class="ccm-text-muted" style="margin-top: var(--ccm-space-xs);"><strong><?php _e('Important:', 'ccm-tools'); ?></strong> <?php _e('You need an <strong>API Token</strong> (not a Global API Key). Global API Keys use a different authentication method and will not work here.', 'ccm-tools'); ?></p>
-
-        <div id="cf-connection-form" autocomplete="off">
-            <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
-                <label for="cf-api-token" style="display: block; margin-bottom: var(--ccm-space-xs);">
-                    <strong><?php _e('API Token', 'ccm-tools'); ?></strong>
-                </label>
-                <div style="display: flex; gap: var(--ccm-space-sm); align-items: center;">
-                    <input type="password" id="cf-api-token"
-                           name="cf_api_token"
-                           autocomplete="new-password"
-                           value="<?php echo esc_attr(!empty($settings['api_token']) ? str_repeat("\xe2\x80\xa2", 12) : ''); ?>"
-                           data-has-token="<?php echo !empty($settings['api_token']) ? '1' : '0'; ?>"
-                           placeholder="<?php esc_attr_e('Enter your Cloudflare API Token', 'ccm-tools'); ?>"
-                           style="flex: 1; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace;">
-                    <button type="button" id="cf-toggle-token" class="ccm-button ccm-button-secondary" style="padding: var(--ccm-space-sm) var(--ccm-space-md);" title="<?php esc_attr_e('Show/hide token', 'ccm-tools'); ?>">
-                        <span class="ccm-button-icon">👁</span>
-                    </button>
-                </div>
-            </div>
-
-            <div class="ccm-setting-row" style="padding: var(--ccm-space-md) 0;">
-                <label for="cf-zone-id" style="display: block; margin-bottom: var(--ccm-space-xs);">
-                    <strong><?php _e('Zone ID', 'ccm-tools'); ?></strong>
-                    <span class="ccm-text-muted" style="font-weight: normal;"> — <?php _e('leave blank to auto-detect from your domain', 'ccm-tools'); ?></span>
-                </label>
-                <input type="text" id="cf-zone-id"
-                       name="cf_zone_id"
-                       autocomplete="off"
-                       value="<?php echo esc_attr($settings['zone_id']); ?>"
-                       placeholder="<?php esc_attr_e('e.g. a1b2c3d4e5f6...', 'ccm-tools'); ?>"
-                       style="width: 100%; max-width: 500px; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace;">
-            </div>
-
-            <div style="display: flex; gap: var(--ccm-space-sm); align-items: center; padding-top: var(--ccm-space-sm);">
-                <button type="button" id="cf-connect-btn" class="ccm-button">
-                    <?php echo $connected ? __('Reconnect', 'ccm-tools') : __('Connect', 'ccm-tools'); ?>
-                </button>
+    <details class="ccm-disclose" id="cf-connection-disclose"<?php echo !$connected ? ' open' : ''; ?>>
+        <summary>
+            <?php _e('Connection settings', 'ccm-tools'); ?>
+            <span class="ccm-disclose__note">
                 <?php if ($connected): ?>
-                <button type="button" id="cf-disconnect-btn" class="ccm-button ccm-button-secondary" style="color: var(--ccm-danger);">
-                    <?php _e('Disconnect', 'ccm-tools'); ?>
-                </button>
+                    <span class="ccm-chip ccm-chip--good"><?php _e('Connected', 'ccm-tools'); ?></span>
+                <?php else: ?>
+                    <span class="ccm-chip ccm-chip--warn"><?php _e('Not connected', 'ccm-tools'); ?></span>
                 <?php endif; ?>
-                <span id="cf-connection-status"></span>
-            </div>
-        </div>
+            </span>
+        </summary>
+        <div class="ccm-disclose__body">
+            <p class="ccm-text-muted" style="margin: 0 0 var(--ccm-space-sm);">
+                <?php _e('Connect using an API Token with Zone:Read, Zone Settings:Edit, Cache Purge, Analytics:Read and DNS:Read permissions for this zone.', 'ccm-tools'); ?>
+            </p>
+            <p class="ccm-text-muted" style="margin: 0 0 var(--ccm-space-md);">
+                <strong><?php _e('Important:', 'ccm-tools'); ?></strong>
+                <?php _e('This needs an API Token, not a Global API Key. Global API Keys use a different authentication method and will not work here.', 'ccm-tools'); ?>
+            </p>
 
-        <!-- API Token Setup Guide -->
-        <details style="margin-top: var(--ccm-space-lg); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); padding: 0;">
-            <summary style="padding: var(--ccm-space-md); cursor: pointer; font-weight: 600; user-select: none;">
-                <?php _e('How to create a Cloudflare API Token', 'ccm-tools'); ?>
-            </summary>
-            <div style="padding: 0 var(--ccm-space-md) var(--ccm-space-md); line-height: 1.7;">
-                <ol style="margin: 0; padding-left: var(--ccm-space-lg);">
-                    <li><?php _e('Log in to the <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Cloudflare Dashboard → My Profile → API Tokens</a>.', 'ccm-tools'); ?></li>
-                    <li><?php _e('Click <strong>Create Token</strong>.', 'ccm-tools'); ?></li>
-                    <li><?php _e('Under <strong>Custom token</strong>, click <strong>Get started</strong>.', 'ccm-tools'); ?></li>
-                    <li>
-                        <?php _e('Give it a name (e.g. <em>CCM Tools</em>) and add these <strong>Permissions</strong>:', 'ccm-tools'); ?>
-                        <table class="ccm-table" style="margin: var(--ccm-space-sm) 0; font-size: 0.9em;">
-                            <thead>
-                                <tr><th><?php _e('Resource', 'ccm-tools'); ?></th><th><?php _e('Permission', 'ccm-tools'); ?></th><th><?php _e('Access', 'ccm-tools'); ?></th></tr>
-                            </thead>
-                            <tbody>
-                                <tr><td>Zone</td><td>Zone</td><td>Read</td></tr>
-                                <tr><td>Zone</td><td>Zone Settings</td><td>Edit</td></tr>
-                                <tr><td>Zone</td><td>Cache Purge</td><td>Purge</td></tr>
-                                <tr><td>Zone</td><td>Analytics</td><td>Read</td></tr>
-                                <tr><td>Zone</td><td>DNS</td><td>Read</td></tr>
-                            </tbody>
-                        </table>
-                        <p class="ccm-text-muted" style="margin: var(--ccm-space-xs) 0;"><?php _e('Click <strong>+ Add more</strong> to add each permission row.', 'ccm-tools'); ?></p>
-                    </li>
-                    <li><?php _e('Under <strong>Zone Resources</strong>, select <strong>Include → Specific zone</strong> and choose your domain, or use <strong>All zones</strong>.', 'ccm-tools'); ?></li>
-                    <li><?php _e('Click <strong>Continue to summary</strong>, then <strong>Create Token</strong>.', 'ccm-tools'); ?></li>
-                    <li><?php _e('Copy the token and paste it into the <strong>API Token</strong> field above. The token is only shown once — save it somewhere safe.', 'ccm-tools'); ?></li>
-                </ol>
-                <p style="margin: var(--ccm-space-md) 0 0; padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-bg-alt, #f0f6fc); border-radius: var(--ccm-radius); font-size: 0.9em;">
-                    <strong><?php _e('Finding your Zone ID:', 'ccm-tools'); ?></strong>
-                    <?php _e('Go to your domain in the Cloudflare dashboard. The Zone ID is shown in the right sidebar under <strong>API</strong>. You can leave it blank above and CCM Tools will auto-detect it.', 'ccm-tools'); ?>
-                </p>
-            </div>
-        </details>
-    </details>
-    <?php
-}
+            <div id="cf-connection-form" autocomplete="off">
+                <div class="ccm-grid-2">
+                    <div class="ccm-form-field">
+                        <label for="cf-api-token"><?php _e('API Token', 'ccm-tools'); ?></label>
+                        <div class="ccm-row">
+                            <input type="password" id="cf-api-token"
+                                   name="cf_api_token"
+                                   class="ccm-input"
+                                   autocomplete="new-password"
+                                   value="<?php echo esc_attr(!empty($settings['api_token']) ? str_repeat("\xe2\x80\xa2", 12) : ''); ?>"
+                                   data-has-token="<?php echo !empty($settings['api_token']) ? '1' : '0'; ?>"
+                                   placeholder="<?php esc_attr_e('Enter your Cloudflare API Token', 'ccm-tools'); ?>"
+                                   style="flex: 1;">
+                            <button type="button" id="cf-toggle-token" class="ccm-button ccm-button-secondary ccm-button-small" title="<?php esc_attr_e('Show/hide token', 'ccm-tools'); ?>">
+                                <span aria-hidden="true">👁</span>
+                            </button>
+                        </div>
+                    </div>
 
-/**
- * Zone Features card: the live feature grid (populated client-side) plus
- * "Apply Recommended" action. #cf-zone-status carries a status flag the
- * existing JS reads to decide whether WebP/Polish/Mirage/APO are editable
- * and whether the security panel + Under Attack toggle get bound — that
- * flag is now hardcoded on so every site gets the full (non-read-only)
- * controls. The attribute itself is left in place; the JS that reads it is
- * owned/maintained elsewhere.
- */
-function ccm_tools_cf_render_zone_features_card(): void {
-    ?>
-    <div class="ccm-card" id="cf-status-card">
-        <h2><?php _e('Zone Features', 'ccm-tools'); ?></h2>
-        <p class="ccm-text-muted"><?php _e('View and manage your Cloudflare zone settings. Toggle switches require your API Token to have <strong>Zone Settings: Edit</strong> permission.', 'ccm-tools'); ?></p>
-        <div id="cf-zone-status" data-premium="1">
-            <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading zone information...', 'ccm-tools'); ?></p></div>
-        </div>
-
-        <!-- Apply Recommended Settings -->
-        <div style="margin-top: var(--ccm-space-md); padding-top: var(--ccm-space-md); border-top: 1px solid var(--ccm-border);">
-            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md);">
-                <div style="flex: 1;">
-                    <strong><?php _e('Apply Recommended WordPress Settings', 'ccm-tools'); ?></strong>
-                    <p class="ccm-text-muted"><?php _e('Apply Cloudflare\'s recommended base configuration for WordPress sites. Sets security, caching, and performance to optimal values.', 'ccm-tools'); ?></p>
+                    <div class="ccm-form-field">
+                        <label for="cf-zone-id">
+                            <?php _e('Zone ID', 'ccm-tools'); ?>
+                            <span class="ccm-text-muted" style="font-weight: normal;"> — <?php _e('leave blank to auto-detect from your domain', 'ccm-tools'); ?></span>
+                        </label>
+                        <input type="text" id="cf-zone-id"
+                               name="cf_zone_id"
+                               class="ccm-input ccm-mono"
+                               autocomplete="off"
+                               value="<?php echo esc_attr($settings['zone_id']); ?>"
+                               placeholder="<?php esc_attr_e('e.g. a1b2c3d4e5f6...', 'ccm-tools'); ?>">
+                    </div>
                 </div>
-                <button type="button" id="cf-apply-recommended" class="ccm-button">
-                    <?php _e('Apply Recommended', 'ccm-tools'); ?>
-                </button>
+
+                <div class="ccm-row" style="margin-top: var(--ccm-space-md);">
+                    <!-- Reconnect/Connect text kept exactly as before: js/main.js
+                         hardcodes "Connect" when it resets this button after an
+                         attempt, regardless of connection state — a pre-existing
+                         quirk this rebuild leaves untouched. -->
+                    <button type="button" id="cf-connect-btn" class="ccm-button ccm-button-primary">
+                        <?php echo $connected ? __('Reconnect', 'ccm-tools') : __('Connect', 'ccm-tools'); ?>
+                    </button>
+                    <?php if ($connected): ?>
+                    <button type="button" id="cf-disconnect-btn" class="ccm-button ccm-button-secondary">
+                        <?php _e('Disconnect', 'ccm-tools'); ?>
+                    </button>
+                    <?php endif; ?>
+                    <span id="cf-connection-status"></span>
+                </div>
             </div>
-        </div>
-    </div>
-    <?php
-}
 
-/**
- * Cache Management card: purge everything / purge specific URLs.
- */
-function ccm_tools_cf_render_cache_card(): void {
-    ?>
-    <div class="ccm-card">
-        <h2><?php _e('Cache Management', 'ccm-tools'); ?></h2>
-
-        <div class="ccm-setting-row" style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md); padding: var(--ccm-space-md) 0; border-bottom: 1px solid var(--ccm-border);">
-            <div style="flex: 1;">
-                <strong><?php _e('Purge All Cache', 'ccm-tools'); ?></strong>
-                <p class="ccm-text-muted"><?php _e('Clears all cached files from Cloudflare\'s edge servers. Your origin server will be hit for all requests until the cache is rebuilt.', 'ccm-tools'); ?></p>
-            </div>
-            <button type="button" id="cf-purge-all" class="ccm-button">
-                <?php _e('Purge Everything', 'ccm-tools'); ?>
-            </button>
+            <details class="ccm-disclose" style="margin-top: var(--ccm-space-md);">
+                <summary><?php _e('How to create a Cloudflare API Token', 'ccm-tools'); ?></summary>
+                <div class="ccm-disclose__body">
+                    <ol style="margin: 0; padding-left: var(--ccm-space-lg); line-height: 1.8;">
+                        <li><?php _e('Log in to the <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Cloudflare Dashboard → My Profile → API Tokens</a>.', 'ccm-tools'); ?></li>
+                        <li><?php _e('Click <strong>Create Token</strong>.', 'ccm-tools'); ?></li>
+                        <li><?php _e('Under <strong>Custom token</strong>, click <strong>Get started</strong>.', 'ccm-tools'); ?></li>
+                        <li>
+                            <?php _e('Give it a name (e.g. <em>CCM Tools</em>) and add these Permissions:', 'ccm-tools'); ?>
+                            <div class="ccm-table-wrap">
+                                <table class="ccm-table" style="margin: var(--ccm-space-sm) 0;">
+                                    <thead>
+                                        <tr><th><?php _e('Resource', 'ccm-tools'); ?></th><th><?php _e('Permission', 'ccm-tools'); ?></th><th><?php _e('Access', 'ccm-tools'); ?></th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td>Zone</td><td>Zone</td><td>Read</td></tr>
+                                        <tr><td>Zone</td><td>Zone Settings</td><td>Edit</td></tr>
+                                        <tr><td>Zone</td><td>Cache Purge</td><td>Purge</td></tr>
+                                        <tr><td>Zone</td><td>Analytics</td><td>Read</td></tr>
+                                        <tr><td>Zone</td><td>DNS</td><td>Read</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: var(--ccm-space-xs) 0;"><?php _e('Click "+ Add more" to add each permission row.', 'ccm-tools'); ?></p>
+                        </li>
+                        <li><?php _e('Under <strong>Zone Resources</strong>, select <strong>Include → Specific zone</strong> and choose the domain, or use <strong>All zones</strong>.', 'ccm-tools'); ?></li>
+                        <li><?php _e('Click <strong>Continue to summary</strong>, then <strong>Create Token</strong>.', 'ccm-tools'); ?></li>
+                        <li><?php _e('Copy the token and paste it into the API Token field above. The token is only shown once — save it somewhere safe.', 'ccm-tools'); ?></li>
+                    </ol>
+                    <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin-top: var(--ccm-space-md);">
+                        <strong><?php _e('Finding the Zone ID:', 'ccm-tools'); ?></strong>
+                        <?php _e('Open the domain in the Cloudflare dashboard — the Zone ID is in the right sidebar under API. Leave it blank above and CCM Tools will auto-detect it.', 'ccm-tools'); ?>
+                    </p>
+                </div>
+            </details>
         </div>
-
-        <div class="ccm-setting-row" style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md); padding: var(--ccm-space-md) 0;">
-            <div style="flex: 1;">
-                <strong><?php _e('Purge URLs', 'ccm-tools'); ?></strong>
-                <p class="ccm-text-muted"><?php _e('Purge specific URLs from Cloudflare\'s cache. Enter one URL per line (max 30).', 'ccm-tools'); ?></p>
-                <textarea id="cf-purge-urls" rows="4"
-                          placeholder="<?php echo esc_attr(home_url('/example-page/')); ?>"
-                          style="width: 100%; max-width: 600px; padding: var(--ccm-space-sm); border: 1px solid var(--ccm-border); border-radius: var(--ccm-radius); font-family: monospace; margin-top: var(--ccm-space-sm);"></textarea>
-            </div>
-            <button type="button" id="cf-purge-urls-btn" class="ccm-button ccm-button-secondary" style="align-self: flex-start; margin-top: var(--ccm-space-md);">
-                <?php _e('Purge URLs', 'ccm-tools'); ?>
-            </button>
-        </div>
-    </div>
-    <?php
-}
-
-/**
- * Development Mode card.
- */
-function ccm_tools_cf_render_dev_mode_card(): void {
-    ?>
-    <div class="ccm-card">
-        <h2><?php _e('Development Mode', 'ccm-tools'); ?></h2>
-        <div class="ccm-setting-row" style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md); padding: var(--ccm-space-md) 0;">
-            <div style="flex: 1;">
-                <strong><?php _e('Development Mode', 'ccm-tools'); ?></strong>
-                <p class="ccm-text-muted"><?php _e('Temporarily bypass Cloudflare\'s cache, allowing you to see changes immediately. Automatically turns off after 3 hours.', 'ccm-tools'); ?></p>
-                <p id="cf-dev-mode-status" class="ccm-text-muted"></p>
-            </div>
-            <label class="ccm-toggle">
-                <input type="checkbox" id="cf-dev-mode-toggle">
-                <span class="ccm-toggle-slider"></span>
-            </label>
-        </div>
-    </div>
-    <?php
-}
-
-/**
- * Automatic Cache Purge card.
- *
- * @param array $settings
- */
-function ccm_tools_cf_render_auto_purge_card(array $settings): void {
-    ?>
-    <div class="ccm-card">
-        <h2><?php _e('Automatic Cache Purge', 'ccm-tools'); ?></h2>
-        <div class="ccm-setting-row" style="display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ccm-space-md); padding: var(--ccm-space-md) 0;">
-            <div style="flex: 1;">
-                <strong><?php _e('Auto-Purge on Content Changes', 'ccm-tools'); ?></strong>
-                <p class="ccm-text-muted"><?php _e('Automatically purge relevant Cloudflare cache when posts, pages, menus, widgets, or the theme are updated. Purges the changed URL plus related archives and the homepage.', 'ccm-tools'); ?></p>
-            </div>
-            <label class="ccm-toggle">
-                <input type="checkbox" id="cf-auto-purge-toggle" <?php checked(!empty($settings['auto_purge'])); ?>>
-                <span class="ccm-toggle-slider"></span>
-            </label>
-        </div>
-    </div>
-    <?php
-}
-
-/**
- * Security card: Under Attack mode + security-level controls (populated
- * client-side). Formerly gated behind the paid tier; now standard for everyone.
- *
- * data-confirm-settings marks which client-rendered controls inside this
- * card carry the greatest blast radius (the Under Attack toggle challenges
- * every visitor on the site) so a confirmation prompt should be required
- * before applying them. The container is the only surface available here —
- * the actual control markup and its confirm() wiring live in js/main.js,
- * which is out of scope for this change; this is just the marker for that
- * JS to pick up.
- */
-function ccm_tools_cf_render_security_card(): void {
-    ?>
-    <div class="ccm-card" id="cf-security-card">
-        <h2><?php _e('Security', 'ccm-tools'); ?></h2>
-        <p class="ccm-text-muted"><?php _e('Manage Cloudflare security features for your zone.', 'ccm-tools'); ?></p>
-        <div id="cf-security-settings" data-confirm-settings="under_attack">
-            <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading security settings...', 'ccm-tools'); ?></p></div>
-        </div>
-    </div>
-    <?php
-}
-
-/**
- * SSL/TLS & Network card (populated client-side). Formerly gated behind
- * the paid tier; now standard for everyone.
- *
- * data-confirm-settings="ssl" flags the SSL/TLS encryption mode control as
- * needing a confirmation prompt before it writes (see note on
- * ccm_tools_cf_render_security_card() above — same marker pattern, same
- * caveat that the control itself is built in js/main.js).
- */
-function ccm_tools_cf_render_network_card(): void {
-    ?>
-    <div class="ccm-card" id="cf-network-card">
-        <h2><?php _e('SSL/TLS & Network', 'ccm-tools'); ?></h2>
-        <p class="ccm-text-muted"><?php _e('Encryption and network protocol settings.', 'ccm-tools'); ?></p>
-        <div id="cf-network-settings" data-confirm-settings="ssl">
-            <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading network settings...', 'ccm-tools'); ?></p></div>
-        </div>
-    </div>
-    <?php
-}
-
-/**
- * DNS Records card (read-only, populated client-side). Formerly gated
- * behind the paid tier; now standard for everyone.
- */
-function ccm_tools_cf_render_dns_card(): void {
-    ?>
-    <div class="ccm-card" id="cf-dns-card">
-        <h2><?php _e('DNS Records', 'ccm-tools'); ?></h2>
-        <p class="ccm-text-muted"><?php _e('Read-only view of your zone\'s DNS records. Manage records in the Cloudflare dashboard.', 'ccm-tools'); ?></p>
-        <div id="cf-dns-records">
-            <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p></div>
-        </div>
-    </div>
+    </details>
     <?php
 }
