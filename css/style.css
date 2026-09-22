@@ -4277,3 +4277,164 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 @media screen and (max-width: 960px) {
     .ccm-toolbar--sticky { position: static; }
 }
+
+/* ── Save bar ──────────────────────────────────────────────────
+   Docked to the bottom of the viewport on any settings page. The old pattern
+   put Save at the bottom of a very long page, so on the Performance screen you
+   changed one toggle near the top and then scrolled past sixty rows to commit
+   it, or forgot and lost the change. This is always reachable and says plainly
+   whether there is anything to save. */
+
+.ccm-savebar {
+    position: fixed;
+    left: 50%;
+    bottom: var(--ccm-space-lg);
+    transform: translateX(-50%) translateY(0);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: var(--ccm-space-md);
+    padding: 0.6rem 0.7rem 0.6rem var(--ccm-space-md);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-pill, 9999px);
+    background: color-mix(in srgb, var(--ccm-surface) 92%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--ccm-shadow-lg);
+    max-width: calc(100vw - 2 * var(--ccm-space-lg));
+    transition: transform var(--ccm-transition) var(--ccm-ease-settle),
+                border-color var(--ccm-transition),
+                box-shadow var(--ccm-transition);
+}
+
+/* Left of the WordPress admin menu, which is 160px wide when open. */
+@media screen and (min-width: 961px) {
+    .ccm-savebar { left: calc(50% + 80px); }
+}
+
+.ccm-savebar__msg {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ccm-savebar__dot {
+    display: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--ccm-warning);
+    flex: 0 0 auto;
+    margin-right: 0.15rem;
+}
+
+/* Dirty: the bar lifts, gains a brand edge and offers to discard. */
+.ccm-savebar.is-dirty {
+    border-color: var(--ccm-brand-raw);
+    box-shadow: 0 0 0 1px var(--ccm-brand-raw), var(--ccm-shadow-lg);
+}
+.ccm-savebar.is-dirty .ccm-savebar__msg { color: var(--ccm-text); }
+.ccm-savebar.is-dirty .ccm-savebar__dot { display: block; }
+.ccm-savebar:not(.is-dirty) [data-savebar-discard] { display: none; }
+.ccm-savebar:not(.is-dirty) [data-savebar-save] { opacity: 0.6; }
+
+.ccm-savebar.is-saving [data-savebar-save],
+.ccm-savebar.is-saving [data-savebar-discard] { pointer-events: none; opacity: 0.6; }
+
+.ccm-savebar.is-saved { border-color: var(--ccm-success); }
+.ccm-savebar.is-saved .ccm-savebar__msg { color: var(--ccm-success); }
+
+@media (max-width: 600px) {
+    .ccm-savebar {
+        left: var(--ccm-space-sm);
+        right: var(--ccm-space-sm);
+        transform: none;
+        max-width: none;
+        border-radius: var(--ccm-radius-lg);
+    }
+    @media screen and (min-width: 961px) { .ccm-savebar { left: var(--ccm-space-sm); } }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ccm-savebar { transition: none; }
+}
+
+/* Room so the bar never sits on top of the last thing on the page. */
+.ccm-tools.has-savebar .ccm-content { padding-bottom: 6rem; }
+
+/* ── Database optimisation options ─────────────────────────────
+   Rendered by js/main.js, so the markup is fixed. These map its existing
+   class names onto the same visual language as .ccm-opt rows elsewhere,
+   rather than changing the JavaScript and risking the run logic. */
+
+.ccm-optimization-options { display: grid; gap: var(--ccm-space-lg); }
+
+.ccm-opt-group {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-lg);
+    overflow: hidden;
+    background: var(--ccm-surface);
+}
+
+.ccm-opt-group-header {
+    padding: 0.6rem var(--ccm-space-md);
+    background: var(--ccm-bg-secondary);
+    border-bottom: 1px solid var(--ccm-border);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    color: var(--ccm-text-muted);
+}
+
+/* The risk of a group reads off its header, not off a whole coloured panel. */
+.ccm-opt-group.safe .ccm-opt-group-header        { color: var(--ccm-success); }
+.ccm-opt-group.moderate .ccm-opt-group-header,
+.ccm-opt-group.caution .ccm-opt-group-header     { color: var(--ccm-warning); }
+.ccm-opt-group.high .ccm-opt-group-header,
+.ccm-opt-group.dangerous .ccm-opt-group-header   { color: var(--ccm-error); }
+
+.ccm-opt-group-items { display: grid; gap: 1px; background: var(--ccm-border); }
+
+.ccm-opt-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.7rem var(--ccm-space-md);
+    background: var(--ccm-surface);
+    transition: background var(--ccm-transition-fast);
+}
+
+.ccm-opt-item:hover { background: var(--ccm-bg-secondary); }
+.ccm-opt-item > input[type="checkbox"] { margin-top: 0.15rem; flex: 0 0 auto; }
+.ccm-opt-item-content { flex: 1 1 auto; min-width: 0; display: grid; gap: 0.15rem; }
+
+.ccm-opt-item-label {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text);
+    cursor: pointer;
+}
+
+.ccm-opt-item-desc { font-size: var(--ccm-text-xs); color: var(--ccm-text-muted); line-height: 1.5; }
+
+/* The row count is the whole point: it says whether a task is worth running. */
+.ccm-opt-item-stat {
+    flex: 0 0 auto;
+    align-self: center;
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--ccm-radius-sm);
+    background: var(--ccm-bg-secondary);
+    color: var(--ccm-text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ccm-opt-item-stat.ccm-success { background: var(--ccm-success-bg); color: var(--ccm-success); }
+.ccm-opt-item-stat.ccm-warning { background: var(--ccm-warning-bg); color: var(--ccm-warning); }
+.ccm-opt-item-stat.ccm-error   { background: var(--ccm-error-bg);   color: var(--ccm-error); }

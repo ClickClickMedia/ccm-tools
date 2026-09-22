@@ -178,10 +178,137 @@
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
+    // ── Save bar ────────────────────────────────────────────────
+    //
+    // A page opts in by rendering one element:
+    //
+    //   <div class="ccm-savebar" data-ccm-savebar data-savebar-target="#save-perf-settings">
+    //
+    // This watches every form control on the page, tracks whether anything
+    // differs from what was loaded, and proxies its Save button to the page's
+    // real one. It deliberately does NOT know how to save: that logic stays
+    // wherever it already lives, so the two can never disagree about what a
+    // setting is.
+
+    function initSaveBar() {
+        var bar = document.querySelector('[data-ccm-savebar]');
+        if (!bar) { return; }
+
+        var targetSel = bar.getAttribute('data-savebar-target');
+        var target = targetSel ? document.querySelector(targetSel) : null;
+        if (!target) { return; }
+
+        var wrap = document.querySelector('.ccm-tools');
+        if (wrap) { wrap.classList.add('has-savebar'); }
+
+        var msg = bar.querySelector('.ccm-savebar__msg');
+        var saveBtn = bar.querySelector('[data-savebar-save]');
+        var discardBtn = bar.querySelector('[data-savebar-discard]');
+
+        var controls = Array.prototype.slice.call(
+            document.querySelectorAll('.ccm-content input, .ccm-content select, .ccm-content textarea')
+        ).filter(function (el) {
+            return el.type !== 'search' && !el.closest('[data-ccm-savebar]') && !el.hasAttribute('data-savebar-ignore');
+        });
+
+        function snapshot() {
+            return controls.map(function (el) {
+                return (el.type === 'checkbox' || el.type === 'radio') ? (el.checked ? '1' : '0') : el.value;
+            }).join(' ');
+        }
+
+        var clean = snapshot();
+        var dirty = false;
+
+        function label(n) {
+            if (n === 0) { return 'No unsaved changes'; }
+            return n === 1 ? '1 unsaved change' : n + ' unsaved changes';
+        }
+
+        function countChanges() {
+            var now = snapshot().split(' ');
+            var was = clean.split(' ');
+            var n = 0;
+            for (var i = 0; i < now.length; i++) { if (now[i] !== was[i]) { n++; } }
+            return n;
+        }
+
+        function refresh() {
+            var n = countChanges();
+            dirty = n > 0;
+            bar.classList.toggle('is-dirty', dirty);
+            bar.classList.remove('is-saved');
+            if (msg) { msg.textContent = label(n); }
+        }
+
+        controls.forEach(function (el) {
+            el.addEventListener('change', refresh);
+            if (el.tagName === 'TEXTAREA' || el.type === 'text' || el.type === 'url' ||
+                el.type === 'number' || el.type === 'password') {
+                el.addEventListener('input', refresh);
+            }
+        });
+
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                if (!dirty) { return; }
+                bar.classList.add('is-saving');
+                if (msg) { msg.textContent = 'Saving…'; }
+                target.click();
+
+                // The page's own handler disables its button while it works.
+                // Watching that is how this stays out of the saving logic.
+                var settled = false;
+                var done = function () {
+                    if (settled) { return; }
+                    settled = true;
+                    bar.classList.remove('is-saving');
+                    clean = snapshot();
+                    refresh();
+                    bar.classList.add('is-saved');
+                    if (msg) { msg.textContent = 'Saved'; }
+                    window.setTimeout(function () {
+                        bar.classList.remove('is-saved');
+                        refresh();
+                    }, 2500);
+                };
+
+                if (window.MutationObserver) {
+                    var seenDisabled = target.disabled;
+                    var obs = new MutationObserver(function () {
+                        if (target.disabled) { seenDisabled = true; return; }
+                        if (seenDisabled) { obs.disconnect(); done(); }
+                    });
+                    obs.observe(target, { attributes: true, attributeFilter: ['disabled'] });
+                    window.setTimeout(function () { obs.disconnect(); done(); }, 20000);
+                } else {
+                    window.setTimeout(done, 1500);
+                }
+            });
+        }
+
+        if (discardBtn) {
+            discardBtn.addEventListener('click', function () {
+                if (!window.confirm('Discard your unsaved changes and reload?')) { return; }
+                window.location.reload();
+            });
+        }
+
+        // Leaving with unsaved changes is almost always a mistake.
+        window.addEventListener('beforeunload', function (e) {
+            if (!dirty) { return; }
+            e.preventDefault();
+            e.returnValue = '';
+        });
+
+        refresh();
+    }
+
     // ── Boot ────────────────────────────────────────────────────
 
     function init() {
         initThemeToggle();
+        initSaveBar();
         upgradeAll(document);
         watchForSpinners();
     }

@@ -1029,6 +1029,17 @@ class CCMSettings {
             
             <div class="ccm-content">
 
+                <div class="ccm-hero">
+                    <div class="ccm-hero__text">
+                        <h1><?php _e('System Information', 'ccm-tools'); ?></h1>
+                        <div class="ccm-hero__meta">
+                            <span><?php echo esc_html(wp_parse_url(home_url(), PHP_URL_HOST)); ?></span>
+                            <span><?php printf(esc_html__('WordPress %s', 'ccm-tools'), esc_html(get_bloginfo('version'))); ?></span>
+                            <span><?php printf(esc_html__('PHP %s', 'ccm-tools'), esc_html(phpversion())); ?></span>
+                        </div>
+                    </div>
+                </div>
+
                 <?php
                 // At-a-glance row. Everything here is already computed above or
                 // is a cheap read; nothing new is fetched to render it.
@@ -1096,6 +1107,15 @@ class CCMSettings {
 
                 </div>
 
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php _e('Environment', 'ccm-tools'); ?></span>
+                        <h2><?php _e('What this site is running on', 'ccm-tools'); ?></h2>
+                        <p><?php _e('Read live from the running interpreter and the database, not from wp-config.', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+
+                <div class="ccm-grid-2">
                 <!-- Database Information Card -->
                 <div class="ccm-card">
                     <h2><?php _e('Database Information', 'ccm-tools'); ?></h2>
@@ -1354,6 +1374,16 @@ class CCMSettings {
                     </table>
                 </div>
                 
+                </div><!-- /.ccm-grid-2 -->
+
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php _e('Controls', 'ccm-tools'); ?></span>
+                        <h2><?php _e('WordPress and debugging', 'ccm-tools'); ?></h2>
+                        <p><?php _e('These write to wp-config.php. A backup is taken before every change.', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+
                 <!-- WordPress Environment Card -->
                 <div class="ccm-card">
                     <h2><?php _e('WordPress Environment', 'ccm-tools'); ?></h2>
@@ -1508,30 +1538,77 @@ class CCMSettings {
         if (!current_user_can('manage_options')) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
+
+        $db = function_exists('ccm_tools_get_database_size') ? ccm_tools_get_database_size() : array();
         ?>
         <div class="wrap ccm-tools">
             <?php ccm_tools_render_header_nav('ccm-tools-database'); ?>
-            
+
             <div class="ccm-content">
-                <div class="ccm-card">
-                    <h2><?php _e('Database Optimization', 'ccm-tools'); ?></h2>
-                    <p><?php _e('Select the optimization tasks you want to run. Safe options are checked by default.', 'ccm-tools'); ?></p>
-                    
-                    <div id="optimization-options" class="ccm-optimization-options">
-                        <div class="ccm-loading">
-                            <div class="ccm-spinner"></div>
-                            <span><?php _e('Loading optimization options...', 'ccm-tools'); ?></span>
+
+                <div class="ccm-hero">
+                    <div class="ccm-hero__text">
+                        <h1><?php _e('Database', 'ccm-tools'); ?></h1>
+                        <div class="ccm-hero__meta">
+                            <?php if (!empty($db['size'])) : ?>
+                                <span><?php echo esc_html($db['size']); ?></span>
+                            <?php endif; ?>
+                            <?php if (!empty($db['tables'])) : ?>
+                                <span><?php printf(
+                                    esc_html(_n('%d table', '%d tables', (int) $db['tables'], 'ccm-tools')),
+                                    (int) $db['tables']
+                                ); ?></span>
+                            <?php endif; ?>
+                            <?php if (!empty($db['overhead'])) : ?>
+                                <span><?php printf(
+                                    /* translators: %s: reclaimable size */
+                                    esc_html__('%s reclaimable', 'ccm-tools'), esc_html($db['overhead'])
+                                ); ?></span>
+                            <?php endif; ?>
                         </div>
                     </div>
-                    
-                    <div class="ccm-buttons" style="margin-top: 1rem;">
-                        <button id="run-optimizations" class="ccm-button ccm-button-primary" disabled><?php _e('Run Selected Optimizations', 'ccm-tools'); ?></button>
-                        <button id="select-all-safe" class="ccm-button ccm-button-secondary"><?php _e('Select Safe Options', 'ccm-tools'); ?></button>
-                        <button id="deselect-all" class="ccm-button ccm-button-secondary"><?php _e('Deselect All', 'ccm-tools'); ?></button>
+                    <div class="ccm-hero__actions">
+                        <button id="run-optimizations" class="ccm-button ccm-button-primary" disabled>
+                            <?php _e('Run selected', 'ccm-tools'); ?>
+                        </button>
                     </div>
-                    
-                    <div id="optimization-results" class="ccm-result-box" style="display: none;"></div>
                 </div>
+
+                <div class="ccm-alert" style="margin-bottom: var(--ccm-space-lg);">
+                    <span class="ccm-dot ccm-dot-ok"></span>
+                    <div><strong><?php _e('Take a backup first.', 'ccm-tools'); ?></strong>
+                    <?php _e('Most of these are routine housekeeping, but anything marked as permanent deletes rows that cannot be recovered from here.', 'ccm-tools'); ?></div>
+                </div>
+
+                <div class="ccm-toolbar" style="margin-bottom: var(--ccm-space-lg);">
+                    <span class="ccm-text-muted" style="font-size: var(--ccm-text-sm); font-weight: 600;">
+                        <?php _e('Quick select', 'ccm-tools'); ?>
+                    </span>
+                    <button id="select-all-safe" class="ccm-button ccm-button-secondary ccm-button-small">
+                        <?php _e('Everything safe', 'ccm-tools'); ?>
+                    </button>
+                    <button id="deselect-all" class="ccm-button ccm-button-secondary ccm-button-small">
+                        <?php _e('Nothing', 'ccm-tools'); ?>
+                    </button>
+                </div>
+
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php _e('Housekeeping', 'ccm-tools'); ?></span>
+                        <h2><?php _e('Optimisation tasks', 'ccm-tools'); ?></h2>
+                        <p><?php _e('Safe tasks are ticked for you. Each one shows how many rows it would actually touch, so you can see whether it is worth running.', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+
+                <div id="optimization-options" class="ccm-optimization-options">
+                    <div class="ccm-empty">
+                        <div class="ccm-spinner ccm-spinner-block"></div>
+                        <p><?php _e('Counting what can be cleaned up…', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+
+                <div id="optimization-results" class="ccm-result-box" style="display: none;"></div>
+
             </div>
         </div>
         <?php
@@ -1548,17 +1625,16 @@ class CCMSettings {
         <div class="wrap ccm-tools">
             <?php ccm_tools_render_header_nav('ccm-tools-htaccess'); ?>
             <div class="ccm-content">
-                <div class="ccm-card">
-                    <h2><?php _e('.htaccess Optimization', 'ccm-tools'); ?></h2>
-                    <p><?php _e('Manage .htaccess optimizations for better performance.', 'ccm-tools'); ?></p>
-                    <div id="infoBox" class="ccm-info-box"></div>
-                    <div id="resultBox" class="ccm-result-box">
-                        <?php 
-                        // Directly load the .htaccess content
-                        echo ccm_tools_display_htaccess(); 
-                        ?>
-                    </div>
-                </div>
+                <?php
+                /*
+                 * ccm_tools_display_htaccess() returns the whole page body now,
+                 * built from the component kit, rather than a blob to drop in a
+                 * card. The two boxes below are kept because js/main.js writes
+                 * its status messages into them by id.
+                 */
+                ?>
+                <div id="infoBox" class="ccm-info-box"></div>
+                <div id="resultBox"><?php echo ccm_tools_display_htaccess(); ?></div>
             </div>
         </div>
         <?php
@@ -1574,137 +1650,172 @@ class CCMSettings {
         if (!current_user_can('manage_options')) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
-        
-        // Check if WooCommerce is active
-        $woocommerce_active = ccm_tools_is_woocommerce_active();
-        $woocommerce_info = $woocommerce_active ? ccm_tools_get_woocommerce_info() : false;
+
+        $woocommerce_active    = ccm_tools_is_woocommerce_active();
+        $woocommerce_info      = $woocommerce_active ? ccm_tools_get_woocommerce_info() : false;
         $payment_gateways_info = $woocommerce_active ? ccm_tools_check_payment_gateways() : false;
         $admin_payment_enabled = get_option('ccm_woo_admin_payment_enabled', 'no') === 'yes';
-        
         ?>
         <div class="wrap ccm-tools">
             <?php ccm_tools_render_header_nav('ccm-tools-woocommerce'); ?>
-            
+
             <div class="ccm-content">
-                <?php if (!$woocommerce_active): ?>
-                    <!-- WooCommerce Not Active Warning -->
-                    <div class="ccm-card">
-                        <h2><?php _e('WooCommerce Not Active', 'ccm-tools'); ?></h2>
-                        <p class="ccm-error">
-                            <span class="ccm-icon">⚠</span>
-                            <?php _e('WooCommerce plugin is not active. Please install and activate WooCommerce to use these tools.', 'ccm-tools'); ?>
-                        </p>
-                        <div class="ccm-buttons">
-                            <a href="<?php echo esc_url(admin_url('plugin-install.php?s=woocommerce&tab=search&type=term')); ?>" class="ccm-button">
-                                <?php _e('Install WooCommerce', 'ccm-tools'); ?>
-                            </a>
+
+            <?php if (!$woocommerce_active) : ?>
+
+                <div class="ccm-hero">
+                    <div class="ccm-hero__text">
+                        <h1><?php _e('WooCommerce', 'ccm-tools'); ?></h1>
+                        <div class="ccm-hero__meta"><span><?php _e('not active on this site', 'ccm-tools'); ?></span></div>
+                    </div>
+                </div>
+
+                <div class="ccm-empty">
+                    <span class="ccm-empty__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/><path d="M1 1h4l2.7 12.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/></svg>
+                    </span>
+                    <h3><?php _e('Nothing to configure yet', 'ccm-tools'); ?></h3>
+                    <p><?php _e('These tools only do anything on a site running WooCommerce. Install and activate it first.', 'ccm-tools'); ?></p>
+                    <a href="<?php echo esc_url(admin_url('plugin-install.php?s=woocommerce&tab=search&type=term')); ?>" class="ccm-button ccm-button-primary">
+                        <?php _e('Install WooCommerce', 'ccm-tools'); ?>
+                    </a>
+                </div>
+
+            <?php else : ?>
+
+                <div class="ccm-hero">
+                    <div class="ccm-hero__text">
+                        <h1><?php _e('WooCommerce', 'ccm-tools'); ?></h1>
+                        <div class="ccm-hero__meta">
+                            <?php if (!empty($woocommerce_info['version'])) : ?>
+                                <span><?php echo esc_html('v' . $woocommerce_info['version']); ?></span>
+                            <?php endif; ?>
+                            <?php if (!empty($woocommerce_info['currency'])) : ?>
+                                <span><?php echo esc_html($woocommerce_info['currency']); ?></span>
+                            <?php endif; ?>
+                            <?php if ($admin_payment_enabled) : ?>
+                                <span><?php _e('admin-only payments on', 'ccm-tools'); ?></span>
+                            <?php endif; ?>
                         </div>
                     </div>
-                <?php else: ?>
-                    <!-- WooCommerce Information Card -->
-                    <div class="ccm-card">
-                        <h2><?php _e('WooCommerce Information', 'ccm-tools'); ?></h2>
-                        <table class="ccm-table">
-                            <tr>
-                                <th><?php _e('WooCommerce Version', 'ccm-tools'); ?></th>
-                                <td><?php echo esc_html($woocommerce_info['version']); ?></td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Total Orders', 'ccm-tools'); ?></th>
-                                <td><?php echo esc_html(number_format($woocommerce_info['orders_count'])); ?></td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Total Products', 'ccm-tools'); ?></th>
-                                <td><?php echo esc_html(number_format($woocommerce_info['products_count'])); ?></td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Total Customers', 'ccm-tools'); ?></th>
-                                <td><?php echo esc_html(number_format($woocommerce_info['customers_count'])); ?></td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Store Currency', 'ccm-tools'); ?></th>
-                                <td><?php echo esc_html($woocommerce_info['currency'] . ' (' . $woocommerce_info['currency_symbol'] . ')'); ?></td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Base Country', 'ccm-tools'); ?></th>
-                                <td><?php echo esc_html($woocommerce_info['base_country']); ?></td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Available Payment Gateways', 'ccm-tools'); ?></th>
-                                <td><?php echo esc_html(implode(', ', $woocommerce_info['payment_gateways'])); ?></td>
-                            </tr>
-                        </table>
-                    </div>
-                    
-                    <!-- Admin-Only Payment Methods Tool -->
-                    <div class="ccm-card">
-                        <h2><?php _e('Admin-Only Payment Methods', 'ccm-tools'); ?></h2>
-                        <p><?php _e('This feature restricts Cash on Delivery (COD) and Bank Transfer (BACS) payment methods to administrators only. This is useful for testing checkout processes without exposing these payment methods to regular customers.', 'ccm-tools'); ?></p>
-                        
-                        <!-- Payment Gateway Status -->
-                        <div class="ccm-gateway-status" style="margin: 15px 0;">
-                            <h4><?php _e('Payment Gateway Status:', 'ccm-tools'); ?></h4>
-                            <div style="margin: 10px 0;">
-                                <strong><?php _e('Cash on Delivery (COD):', 'ccm-tools'); ?></strong>
-                                <?php if ($payment_gateways_info['cod_available']): ?>
-                                    <span class="<?php echo $payment_gateways_info['cod_enabled'] ? 'ccm-success' : 'ccm-warning'; ?>">
-                                        <?php echo $payment_gateways_info['cod_enabled'] ? __('Available & Enabled', 'ccm-tools') : __('Available but Disabled', 'ccm-tools'); ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span class="ccm-error"><?php _e('Not Available', 'ccm-tools'); ?></span>
-                                <?php endif; ?>
-                            </div>
-                            <div style="margin: 10px 0;">
-                                <strong><?php _e('Bank Transfer (BACS):', 'ccm-tools'); ?></strong>
-                                <?php if ($payment_gateways_info['bacs_available']): ?>
-                                    <span class="<?php echo $payment_gateways_info['bacs_enabled'] ? 'ccm-success' : 'ccm-warning'; ?>">
-                                        <?php echo $payment_gateways_info['bacs_enabled'] ? __('Available & Enabled', 'ccm-tools') : __('Available but Disabled', 'ccm-tools'); ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span class="ccm-error"><?php _e('Not Available', 'ccm-tools'); ?></span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        
-                        <?php if (!$payment_gateways_info['cod_available'] && !$payment_gateways_info['bacs_available']): ?>
-                            <div class="ccm-warning" style="margin: 15px 0; padding: 10px;">
-                                <span class="ccm-icon">⚠</span>
-                                <?php _e('Neither Cash on Delivery nor Bank Transfer payment methods are available. Please enable them in WooCommerce Settings > Payments to use this feature.', 'ccm-tools'); ?>
-                            </div>
-                        <?php elseif (!$payment_gateways_info['cod_enabled'] && !$payment_gateways_info['bacs_enabled']): ?>
-                            <div class="ccm-info" style="margin: 15px 0; padding: 10px;">
-                                <span class="ccm-icon">ℹ</span>
-                                <?php _e('Both payment methods are available but currently disabled in WooCommerce. Enable them in WooCommerce Settings > Payments before using this feature.', 'ccm-tools'); ?>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <!-- Admin Payment Toggle -->
-                        <div class="ccm-config-control" style="margin: 20px 0;">
-                            <div>
-                                <strong><?php _e('Admin-Only Payment Methods:', 'ccm-tools'); ?></strong>
-                                <span class="<?php echo $admin_payment_enabled ? 'ccm-success' : 'ccm-warning'; ?>">
-                                    <?php echo $admin_payment_enabled ? __('Enabled', 'ccm-tools') : __('Disabled', 'ccm-tools'); ?>
-                                </span>
-                            </div>
-                            <button id="toggle-admin-payment" 
-                                    class="ccm-button" 
-                                    data-enabled="<?php echo $admin_payment_enabled ? 'true' : 'false'; ?>"
-                                    <?php echo (!$payment_gateways_info['cod_available'] && !$payment_gateways_info['bacs_available']) ? 'disabled' : ''; ?>>
-                                <?php echo $admin_payment_enabled ? __('Disable', 'ccm-tools') : __('Enable', 'ccm-tools'); ?>
-                            </button>
-                        </div>
-                        
-                        <?php if ($admin_payment_enabled): ?>
-                            <div class="ccm-info" style="margin: 15px 0; padding: 10px;">
-                                <span class="ccm-icon">ℹ</span>
-                                <strong><?php _e('Feature Active:', 'ccm-tools'); ?></strong>
-                                <?php _e('Cash on Delivery and Bank Transfer payment methods are now restricted to administrators only. Regular customers will not see these payment options during checkout.', 'ccm-tools'); ?>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <div id="woocommerce-result" class="ccm-result-box"></div>
+                </div>
+
+                <?php if ($admin_payment_enabled) : ?>
+                    <div class="ccm-alert ccm-alert--warn" style="margin-bottom: var(--ccm-space-lg);">
+                        <span class="ccm-dot ccm-dot-warn"></span>
+                        <div><strong><?php _e('Customers cannot see Cash on Delivery or Bank Transfer.', 'ccm-tools'); ?></strong>
+                        <?php _e('That is deliberate while you are testing. Remember to switch it off before handover.', 'ccm-tools'); ?></div>
                     </div>
                 <?php endif; ?>
+
+                <div class="ccm-stat-grid">
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n((int) ($woocommerce_info['orders'] ?? 0))); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Orders', 'ccm-tools'); ?></div>
+                    </div>
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n((int) ($woocommerce_info['products'] ?? 0))); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Products', 'ccm-tools'); ?></div>
+                    </div>
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n((int) ($woocommerce_info['customers'] ?? 0))); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Customers', 'ccm-tools'); ?></div>
+                    </div>
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html(count((array) ($woocommerce_info['gateways'] ?? array()))); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Payment gateways', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo $admin_payment_enabled ? 'ccm-dot-warn' : 'ccm-dot-ok'; ?>"></span>
+                            <?php echo $admin_payment_enabled
+                                ? esc_html__('2 restricted to admins', 'ccm-tools')
+                                : esc_html__('all visible to customers', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php _e('Testing', 'ccm-tools'); ?></span>
+                        <h2><?php _e('Admin-only payment methods', 'ccm-tools'); ?></h2>
+                        <p><?php _e('Hides Cash on Delivery and Bank Transfer from everyone except administrators, so you can place a real test order without leaving an unpaid route open to customers.', 'ccm-tools'); ?></p>
+                    </div>
+                </div>
+
+                <div class="ccm-opts">
+                    <div class="ccm-opt<?php echo $admin_payment_enabled ? ' is-on' : ''; ?>">
+                        <div class="ccm-opt__main">
+                            <div class="ccm-opt__text">
+                                <span class="ccm-opt__label"><?php _e('Restrict to administrators', 'ccm-tools'); ?></span>
+                                <?php if ($admin_payment_enabled) : ?>
+                                    <span class="ccm-chip ccm-chip--warn"><?php _e('Active', 'ccm-tools'); ?></span>
+                                <?php endif; ?>
+                                <p class="ccm-opt__desc"><?php _e('Applies at the classic checkout and in the block cart. Stripe and PayPal are unaffected.', 'ccm-tools'); ?></p>
+                            </div>
+                            <button type="button" id="toggle-admin-payment"
+                                    class="ccm-button <?php echo $admin_payment_enabled ? 'ccm-button-danger' : 'ccm-button-primary'; ?> ccm-button-small">
+                                <?php echo $admin_payment_enabled
+                                    ? esc_html__('Turn off', 'ccm-tools')
+                                    : esc_html__('Turn on', 'ccm-tools'); ?>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <?php if (is_array($payment_gateways_info)) : ?>
+                    <div class="ccm-panel" style="margin-top: var(--ccm-space-md);">
+                        <div class="ccm-panel__head"><span><?php _e('Gateway status', 'ccm-tools'); ?></span></div>
+                        <div class="ccm-kv">
+                            <div>
+                                <span class="ccm-kv__k"><?php _e('Cash on Delivery', 'ccm-tools'); ?></span>
+                                <span class="ccm-kv__v">
+                                    <?php if (empty($payment_gateways_info['cod_available'])) : ?>
+                                        <span class="ccm-chip"><?php _e('Not installed', 'ccm-tools'); ?></span>
+                                    <?php elseif (empty($payment_gateways_info['cod_enabled'])) : ?>
+                                        <span class="ccm-chip ccm-chip--warn"><?php _e('Installed but disabled in WooCommerce', 'ccm-tools'); ?></span>
+                                    <?php else : ?>
+                                        <span class="ccm-chip ccm-chip--good"><?php _e('Enabled', 'ccm-tools'); ?></span>
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                            <div>
+                                <span class="ccm-kv__k"><?php _e('Bank Transfer', 'ccm-tools'); ?></span>
+                                <span class="ccm-kv__v">
+                                    <?php if (empty($payment_gateways_info['bacs_available'])) : ?>
+                                        <span class="ccm-chip"><?php _e('Not installed', 'ccm-tools'); ?></span>
+                                    <?php elseif (empty($payment_gateways_info['bacs_enabled'])) : ?>
+                                        <span class="ccm-chip ccm-chip--warn"><?php _e('Installed but disabled in WooCommerce', 'ccm-tools'); ?></span>
+                                    <?php else : ?>
+                                        <span class="ccm-chip ccm-chip--good"><?php _e('Enabled', 'ccm-tools'); ?></span>
+                                    <?php endif; ?>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <details class="ccm-disclose" style="margin-top: var(--ccm-space-xl);">
+                    <summary><?php _e('Store details', 'ccm-tools'); ?></summary>
+                    <div class="ccm-disclose__body ccm-panel__body--flush">
+                        <div class="ccm-kv">
+                            <div><span class="ccm-kv__k"><?php _e('WooCommerce version', 'ccm-tools'); ?></span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($woocommerce_info['version'] ?? '-'); ?></span></div>
+                            <div><span class="ccm-kv__k"><?php _e('Currency', 'ccm-tools'); ?></span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($woocommerce_info['currency'] ?? '-'); ?></span></div>
+                            <div><span class="ccm-kv__k"><?php _e('Base country', 'ccm-tools'); ?></span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($woocommerce_info['country'] ?? '-'); ?></span></div>
+                            <div><span class="ccm-kv__k"><?php _e('Available gateways', 'ccm-tools'); ?></span>
+                                 <span class="ccm-kv__v"><?php
+                                    $gws = (array) ($woocommerce_info['gateways'] ?? array());
+                                    echo $gws ? esc_html(implode(', ', $gws)) : esc_html__('none', 'ccm-tools');
+                                 ?></span></div>
+                        </div>
+                    </div>
+                </details>
+
+                <div id="woocommerce-result" class="ccm-result-box" style="display:none;"></div>
+
+            <?php endif; ?>
+
             </div>
         </div>
         <?php

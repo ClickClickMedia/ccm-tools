@@ -2763,6 +2763,25 @@ function ccm_tools_render_perf_page() {
             </details>
 
         </div>
+
+        <?php
+        /*
+         * Floating save bar. The page is long enough that a Save button pinned
+         * to the top or the bottom means scrolling past sixty rows to commit a
+         * single toggle, or forgetting entirely. js/ui.js watches the controls,
+         * counts what changed, and proxies this button to the real one above.
+         */
+        ?>
+        <div class="ccm-savebar" data-ccm-savebar data-savebar-target="#save-perf-settings">
+            <span class="ccm-savebar__dot" aria-hidden="true"></span>
+            <span class="ccm-savebar__msg"><?php _e('No unsaved changes', 'ccm-tools'); ?></span>
+            <button type="button" class="ccm-button ccm-button-secondary ccm-button-small" data-savebar-discard>
+                <?php _e('Discard', 'ccm-tools'); ?>
+            </button>
+            <button type="button" class="ccm-button ccm-button-primary" data-savebar-save>
+                <?php _e('Save settings', 'ccm-tools'); ?>
+            </button>
+        </div>
     </div>
     <?php
 }
