@@ -4438,3 +4438,48 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-opt-item-stat.ccm-success { background: var(--ccm-success-bg); color: var(--ccm-success); }
 .ccm-opt-item-stat.ccm-warning { background: var(--ccm-warning-bg); color: var(--ccm-warning); }
 .ccm-opt-item-stat.ccm-error   { background: var(--ccm-error-bg);   color: var(--ccm-error); }
+
+/* ── Narrow screens ────────────────────────────────────────────
+   The tab bar has ten items. Letting it wrap puts each on its own line and
+   the whole first screen of a phone is navigation. Scroll it sideways
+   instead, which is what every app does with a long tab strip. */
+
+@media screen and (max-width: 782px) {
+    .ccm-header {
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: var(--ccm-space-sm);
+        padding-left: var(--ccm-space-sm);
+        padding-right: var(--ccm-space-sm);
+    }
+
+    .ccm-header-logo { flex: 0 0 auto; }
+    .ccm-header-logo img { height: 24px; }
+
+    .ccm-header-menu {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .ccm-header-menu::-webkit-scrollbar { display: none; }
+
+    /* An older rule further up sets flex-direction: column and width: 100% on
+       .ccm-tabs, which is what was stacking them. Both are restated here. */
+    .ccm-tabs {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        width: auto;
+    }
+    .ccm-tab {
+        flex: 0 0 auto;
+        text-align: left;
+        padding: var(--ccm-space-xs) var(--ccm-space-sm);
+    }
+
+    /* The page title repeats the active tab on a phone, so it goes. */
+    .ccm-header-title h1 { display: none; }
+    .ccm-header-title { margin-left: 0; flex: 0 0 auto; }
+}
