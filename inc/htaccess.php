@@ -12,101 +12,104 @@ if (!defined('ABSPATH')) {
 function ccm_tools_get_htaccess_options(): array {
     return array(
         'safe' => array(
-            'label' => '✓ Safe Options (Recommended)',
+            'label' => 'Safe options',
+            'blurb' => 'No visible effect on the site. Fine to turn all of these on without testing afterwards.',
             'options' => array(
                 'caching' => array(
-                    'label' => 'Browser Caching',
-                    'description' => 'Set optimal cache durations for images, CSS, JS, and fonts',
+                    'label' => 'Browser caching',
+                    'description' => 'Sets a long cache lifetime for images, CSS, JS and fonts, so a returning visitor re-downloads less.',
                     'default' => true,
                 ),
                 'compression' => array(
-                    'label' => 'Brotli + Gzip Compression',
-                    'description' => 'Compress text, CSS, JS, JSON, XML, SVG, fonts, and WebAssembly',
+                    'label' => 'Brotli + gzip compression',
+                    'description' => 'Compresses HTML, CSS, JS, JSON, XML, SVG, fonts and WebAssembly with Brotli, falling back to gzip. Smaller responses, no visible change.',
                     'default' => true,
                 ),
                 'security_headers' => array(
-                    'label' => 'Basic Security Headers',
-                    'description' => 'X-Content-Type-Options, Referrer-Policy, Permissions-Policy',
+                    'label' => 'Basic security headers',
+                    'description' => 'Adds X-Content-Type-Options, Referrer-Policy and a conservative Permissions-Policy. Standard hardening; nothing for a visitor to see.',
                     'default' => true,
                 ),
                 'https_redirect' => array(
-                    'label' => 'HTTPS Redirect',
-                    'description' => 'Redirect HTTP to HTTPS (with proxy support)',
+                    'label' => 'HTTPS redirect',
+                    'description' => '301-redirects plain HTTP requests to HTTPS, including behind a proxy. Only enable once the site has a working SSL certificate, or every request will redirect loop.',
                     'default' => true,
                 ),
                 'file_protection' => array(
-                    'label' => 'Sensitive File Protection',
-                    'description' => 'Block access to wp-config.php, .env, logs, backups, etc.',
+                    'label' => 'Sensitive file protection',
+                    'description' => 'Blocks direct access to wp-config.php, .env, readme/licence files, and common log, backup and lockfile extensions.',
                     'default' => true,
                 ),
                 'disable_indexes' => array(
-                    'label' => 'Disable Directory Browsing',
-                    'description' => 'Prevent directory listing with Options -Indexes',
+                    'label' => 'Disable directory browsing',
+                    'description' => 'Stops a folder with no index file from listing its contents to anyone who browses to it directly.',
                     'default' => true,
                 ),
                 'etag_removal' => array(
                     'label' => 'Remove ETags',
-                    'description' => 'Disable ETags to reduce server overhead and improve caching',
+                    'description' => 'Removes the ETag response header. Mainly useful behind a CDN or more than one web server, where ETags otherwise mismatch between servers and defeat caching.',
                     'default' => true,
                 ),
             ),
         ),
         'moderate' => array(
-            'label' => '⚡ Moderate Options (Select as Needed)',
+            'label' => 'Moderate options',
+            'blurb' => 'Mostly safe, but a few change how the site talks to browsers and other origins. Read each one before enabling it.',
             'options' => array(
                 'x_frame_options' => array(
                     'label' => 'X-Frame-Options: SAMEORIGIN',
-                    'description' => 'Prevent clickjacking by blocking iframe embedding from other sites',
+                    'description' => 'Stops other sites from embedding this one in an iframe, to prevent clickjacking. Breaks any legitimate embed of this site elsewhere, such as a partner page framing content from here.',
                     'default' => false,
                 ),
                 'x_xss_protection' => array(
                     'label' => 'X-XSS-Protection: 0',
-                    'description' => 'Modern recommendation - disable legacy XSS filter (CSP is preferred)',
+                    'description' => 'Explicitly turns off the old browser XSS auditor, which is current best practice now that a Content-Security-Policy is the preferred defence. No effect in a browser that already removed the feature.',
                     'default' => false,
                 ),
                 'hsts_basic' => array(
-                    'label' => 'HSTS (1 Year)',
-                    'description' => 'Strict-Transport-Security header for HTTPS enforcement. This is a one-year commitment: browsers will refuse to load the site over plain HTTP for a full year after the header is first sent, even if this option is later disabled.',
+                    'label' => 'HSTS (1 year)',
+                    'description' => 'Sends Strict-Transport-Security so browsers refuse to load this site over plain HTTP. This is a one-year commitment: once a browser has seen the header, it will not fall back to HTTP for a full year, even if this option is switched off again before then. Only enable once HTTPS is solid across the whole site.',
                     'default' => false,
                 ),
                 'hsts_subdomains' => array(
                     'label' => 'HSTS with includeSubDomains',
-                    'description' => 'Extend HSTS to all subdomains (ensure all subdomains support HTTPS)',
+                    'description' => 'Extends the HSTS header above to every subdomain. Only takes effect when HSTS above is also on, and it applies the same one-year lock-in to each subdomain — enable only once all of them actually serve HTTPS.',
                     'default' => false,
                 ),
                 'coop' => array(
                     'label' => 'Cross-Origin-Opener-Policy',
-                    'description' => 'Isolate browsing context (same-origin). May affect popups/OAuth flows.',
+                    'description' => 'Isolates this site\'s browsing context with same-origin. Breaks OAuth logins and payment redirects that rely on window.opener talking back to a different origin.',
                     'default' => false,
                 ),
                 'corp' => array(
                     'label' => 'Cross-Origin-Resource-Policy',
-                    'description' => 'Restrict resource loading to same-origin. May break external embeds.',
+                    'description' => 'Restricts this site\'s images, fonts and scripts to same-origin requests. Breaks any embed on another domain that pulls files straight from this one.',
                     'default' => false,
                 ),
                 'block_author_scan' => array(
-                    'label' => 'Block Author Enumeration',
-                    'description' => 'Block ?author=N queries to prevent username discovery',
+                    'label' => 'Block author enumeration',
+                    'description' => 'Redirects ?author=N requests to the homepage, so a scanner cannot walk numeric IDs to discover usernames. Comparatively low risk, which is why this one defaults on.',
                     'default' => true, // This one is relatively safe
                 ),
             ),
         ),
         'high' => array(
-            'label' => '⚠️ High Risk Options (May Break Functionality)',
+            'label' => 'High-risk options',
+            'blurb' => 'Blocks a specific, real piece of WordPress functionality. Only turn one on once you are sure nothing on this site depends on it.',
             'options' => array(
                 'block_xmlrpc' => array(
                     'label' => 'Block XML-RPC',
-                    'description' => 'Blocks xmlrpc.php. Will break: Jetpack, WordPress mobile app, pingbacks, some plugins.',
+                    'description' => 'Blocks xmlrpc.php outright. This breaks the WordPress mobile app and Jetpack, both of which depend on it, along with pingbacks and any older remote-publishing tool that talks to WordPress this way.',
                     'default' => false,
                 ),
                 'block_rest_api' => array(
-                    'label' => 'Block REST API for Non-Logged Users',
-                    'description' => 'Restricts REST API access. Will break: some Gutenberg features, headless WP, certain plugins.',
+                    'label' => 'Block REST API for logged-out users',
+                    'description' => 'Blocks REST API requests (/wp-json/ and ?rest_route=) for anyone not logged in. This breaks the block editor, Contact Form 7, and most modern plugins and themes, which all call the REST API from the browser to function at all.',
                     'default' => false,
                 ),
                 'block_rss_feeds' => array(
-                    'label' => 'Block RSS Feeds',
-                    'description' => 'Returns 410 Gone for all /feed/ URLs. Do NOT enable on blogs or sites using RSS subscribers/syndication.',
+                    'label' => 'Block RSS feeds',
+                    'description' => 'Returns 410 Gone for every /feed/ URL. Breaks RSS/Atom readers, any service polling the feed (Zapier, IFTTT, email digests) and podcast subscriptions if this site publishes one. Do not enable on a site with subscribers.',
                     'default' => false,
                 ),
             ),
@@ -425,8 +428,88 @@ function ccm_tools_detect_htaccess_options(string $content): array {
 }
 
 /**
- * Display current .htaccess content
- * 
+ * Whether a single .htaccess option should render as checked, given the
+ * current file state. Safe and moderate options fall back to their
+ * catalogue 'default' when the CCM block does not exist yet; high-risk
+ * options never do — they are only ever checked because they are already
+ * applied. This mirrors the pre-rebuild behaviour exactly.
+ *
+ * @param string $risk_key          'safe' | 'moderate' | 'high'
+ * @param string $key               Option key.
+ * @param array  $opt               Option definition (needs 'default').
+ * @param bool   $has_optimizations Whether the CCM block currently exists.
+ * @param array  $current_options   Options detected in the live file.
+ * @return bool
+ */
+function ccm_tools_htaccess_option_checked(string $risk_key, string $key, array $opt, bool $has_optimizations, array $current_options): bool {
+    $is_applied = $has_optimizations && !empty($current_options[$key]);
+
+    if ($risk_key === 'high') {
+        return $is_applied;
+    }
+
+    if ($is_applied) {
+        return true;
+    }
+
+    return !$has_optimizations && !empty($opt['default']);
+}
+
+/**
+ * Render one .htaccess option as a `.ccm-opt` row, matching the pattern the
+ * Performance page uses. The checkbox id and name are the contract
+ * js/main.js reads by: id="ht-<key>" and name="htaccess_options[]".
+ *
+ * @param string $risk_key 'safe' | 'moderate' | 'high'
+ * @param string $key      Option key.
+ * @param array  $opt      Option definition ('label', 'description').
+ * @param bool   $checked  Whether the checkbox should render checked.
+ * @return void
+ */
+function ccm_tools_htaccess_render_option(string $risk_key, string $key, array $opt, bool $checked): void {
+    $id = 'ht-' . $key;
+    ?>
+    <div class="ccm-opt<?php echo $checked ? ' is-on' : ''; ?>"
+         data-risk="<?php echo esc_attr($risk_key); ?>"
+         data-state="<?php echo $checked ? 'on' : 'off'; ?>">
+        <div class="ccm-opt__main">
+            <div class="ccm-opt__text">
+                <span class="ccm-opt__label"><?php echo esc_html($opt['label']); ?></span>
+                <?php if ($risk_key === 'safe') : ?>
+                    <span class="ccm-chip ccm-chip--good"><?php _e('Safe', 'ccm-tools'); ?></span>
+                <?php elseif ($risk_key === 'high') : ?>
+                    <span class="ccm-chip ccm-chip--bad"><?php _e('Can break things', 'ccm-tools'); ?></span>
+                <?php endif; ?>
+                <?php if ($key === 'hsts_basic') : ?>
+                    <span class="ccm-chip ccm-chip--bad"><?php _e('One-year commitment', 'ccm-tools'); ?></span>
+                <?php endif; ?>
+                <p class="ccm-opt__desc"><?php echo esc_html($opt['description']); ?></p>
+                <?php if ($key === 'hsts_basic') : ?>
+                    <div class="ccm-alert ccm-alert--warn" style="margin-top: var(--ccm-space-sm);">
+                        <span class="ccm-dot ccm-dot-warn"></span>
+                        <div>
+                            <?php _e('A browser remembers this for a full year from the moment it first sees the header. Switching this checkbox back off later does not undo that promise for anyone who already visited during the year — their browser keeps refusing plain HTTP regardless.', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <label class="ccm-toggle">
+                <input type="checkbox" id="<?php echo esc_attr($id); ?>" name="htaccess_options[]"
+                       value="<?php echo esc_attr($key); ?>" <?php checked($checked); ?>>
+                <span class="ccm-toggle-slider"></span>
+            </label>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * Build the whole .htaccess Tools page body — everything that goes inside
+ * `.ccm-content`. ccm.php prints this straight into the standard page shell
+ * and, on every add/update/remove AJAX round trip, re-renders it wholesale
+ * into #resultBox, so the hero, stats and option states always reflect
+ * what is actually on disk after the write.
+ *
  * @return string HTML output
  */
 function ccm_tools_display_htaccess(): string {
@@ -436,162 +519,233 @@ function ccm_tools_display_htaccess(): string {
     }
 
     $htaccess_file = ABSPATH . '.htaccess';
-    
-    if (!file_exists($htaccess_file)) {
-        return '<p class="ccm-warning"><span class="ccm-icon">⚠</span>' . __('.htaccess file not found.', 'ccm-tools') . '</p>';
+    $file_exists   = file_exists($htaccess_file);
+    $readable      = $file_exists && is_readable($htaccess_file);
+    $read_failed   = false;
+    $current_content = '';
+
+    if ($readable) {
+        $raw = file_get_contents($htaccess_file);
+        if ($raw === false) {
+            $read_failed = true;
+        } else {
+            $current_content = $raw;
+        }
     }
-    
-    if (!is_readable($htaccess_file)) {
-        return '<p class="ccm-error"><span class="ccm-icon">✗</span>' . __('.htaccess file exists but is not readable.', 'ccm-tools') . '</p>';
-    }
-    
-    $current_content = file_get_contents($htaccess_file);
-    if ($current_content === false) {
-        return '<p class="ccm-error"><span class="ccm-icon">✗</span>' . __('Failed to read .htaccess file.', 'ccm-tools') . '</p>';
-    }
-    
-    $has_optimizations = strpos($current_content, '# BEGIN CCM Optimise') !== false;
-    $current_options = ccm_tools_detect_htaccess_options($current_content);
+
+    $has_optimizations = $current_content !== '' && strpos($current_content, '# BEGIN CCM Optimise') !== false;
+    $current_options   = ccm_tools_detect_htaccess_options($current_content);
     $available_options = ccm_tools_get_htaccess_options();
 
-    $output = '<h3>' . __('Current .htaccess Status', 'ccm-tools') . '</h3>';
-    
-    if ($has_optimizations) {
-        $output .= '<p class="ccm-success"><span class="ccm-icon">✓</span>' . __('CCM Optimizations are currently applied.', 'ccm-tools') . '</p>';
-    } else {
-        $output .= '<p class="ccm-info"><span class="ccm-icon">ℹ</span>' . __('CCM Optimizations are not currently applied.', 'ccm-tools') . '</p>';
-    }
-    
-    // Options container
-    $output .= '<div id="htaccess-options" class="ccm-optimization-options">';
-    
-    // Safe options (selectable, checked by default)
-    $output .= '<div class="ccm-opt-group safe">';
-    $output .= '<div class="ccm-opt-group-header">' . esc_html($available_options['safe']['label']) . '</div>';
-    $output .= '<div class="ccm-opt-group-items">';
-    foreach ($available_options['safe']['options'] as $key => $opt) {
-        $is_applied = $has_optimizations && !empty($current_options[$key]);
-        $checked = $is_applied ? 'checked' : (!$has_optimizations && !empty($opt['default']) ? 'checked' : '');
-        
-        // Determine status
-        if ($has_optimizations) {
-            if ($is_applied) {
-                $status_class = 'ccm-status-applied';
-                $status_icon = '✓';
-                $status_text = __('Applied', 'ccm-tools');
-            } else {
-                $status_class = 'ccm-status-not-applied';
-                $status_icon = '○';
-                $status_text = __('Not applied', 'ccm-tools');
+    // Tally directives across all three groups.
+    $total_options = 0;
+    $applied_count = 0;
+    foreach ($available_options as $group) {
+        foreach ($group['options'] as $key => $opt) {
+            $total_options++;
+            if ($has_optimizations && !empty($current_options[$key])) {
+                $applied_count++;
             }
-        } else {
-            $status_class = 'ccm-status-pending';
-            $status_icon = '○';
-            $status_text = $checked ? __('Will be applied', 'ccm-tools') : __('Optional', 'ccm-tools');
         }
-        
-        $output .= '<div class="ccm-opt-item ' . $status_class . '" data-applied="' . ($is_applied ? '1' : '0') . '" data-has-optimizations="' . ($has_optimizations ? '1' : '0') . '">';
-        $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
-        $output .= '<div class="ccm-opt-item-content">';
-        $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
-        $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
-        $output .= '</div>';
-        $output .= '<span class="ccm-opt-item-status ' . $status_class . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
-        $output .= '</div>';
     }
-    $output .= '</div></div>';
-    
-    // Moderate options (selectable)
-    $output .= '<div class="ccm-opt-group moderate">';
-    $output .= '<div class="ccm-opt-group-header">' . esc_html($available_options['moderate']['label']) . '</div>';
-    $output .= '<div class="ccm-opt-group-items">';
-    foreach ($available_options['moderate']['options'] as $key => $opt) {
-        $is_applied = $has_optimizations && !empty($current_options[$key]);
-        $checked = $is_applied ? 'checked' : (!$has_optimizations && !empty($opt['default']) ? 'checked' : '');
-        
-        // Determine status
-        if ($has_optimizations) {
-            if ($is_applied) {
-                $status_class = 'ccm-status-applied';
-                $status_icon = '✓';
-                $status_text = __('Applied', 'ccm-tools');
-            } else {
-                $status_class = 'ccm-status-not-applied';
-                $status_icon = '○';
-                $status_text = __('Not applied', 'ccm-tools');
-            }
-        } else {
-            $status_class = 'ccm-status-pending';
-            $status_icon = '○';
-            $status_text = $checked ? __('Will be applied', 'ccm-tools') : __('Optional', 'ccm-tools');
-        }
-        
-        $output .= '<div class="ccm-opt-item ' . $status_class . '" data-applied="' . ($is_applied ? '1' : '0') . '" data-has-optimizations="' . ($has_optimizations ? '1' : '0') . '">';
-        $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
-        $output .= '<div class="ccm-opt-item-content">';
-        $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
-        $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
-        $output .= '</div>';
-        $output .= '<span class="ccm-opt-item-status ' . $status_class . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
-        $output .= '</div>';
-    }
-    $output .= '</div></div>';
-    
-    // High risk options (selectable with warning)
-    $output .= '<div class="ccm-opt-group high">';
-    $output .= '<div class="ccm-opt-group-header">' . esc_html($available_options['high']['label']) . '</div>';
-    $output .= '<div class="ccm-opt-group-items">';
-    foreach ($available_options['high']['options'] as $key => $opt) {
-        $is_applied = $has_optimizations && !empty($current_options[$key]);
-        $checked = $is_applied ? 'checked' : '';
-        
-        // Determine status
-        if ($has_optimizations) {
-            if ($is_applied) {
-                $status_class = 'ccm-status-applied';
-                $status_icon = '✓';
-                $status_text = __('Applied', 'ccm-tools');
-            } else {
-                $status_class = 'ccm-status-not-applied';
-                $status_icon = '○';
-                $status_text = __('Not applied', 'ccm-tools');
-            }
-        } else {
-            $status_class = 'ccm-status-pending';
-            $status_icon = '○';
-            $status_text = __('Optional', 'ccm-tools');
-        }
-        
-        $output .= '<div class="ccm-opt-item ' . $status_class . '" data-applied="' . ($is_applied ? '1' : '0') . '" data-has-optimizations="' . ($has_optimizations ? '1' : '0') . '">';
-        $output .= '<input type="checkbox" id="ht-' . esc_attr($key) . '" name="htaccess_options[]" value="' . esc_attr($key) . '" ' . $checked . '>';
-        $output .= '<div class="ccm-opt-item-content">';
-        $output .= '<label class="ccm-opt-item-label" for="ht-' . esc_attr($key) . '">' . esc_html($opt['label']) . '</label>';
-        $output .= '<span class="ccm-opt-item-desc">' . esc_html($opt['description']) . '</span>';
-        $output .= '</div>';
-        $output .= '<span class="ccm-opt-item-status ' . $status_class . '">' . $status_icon . ' <small>' . esc_html($status_text) . '</small></span>';
-        $output .= '</div>';
-    }
-    $output .= '</div></div>';
-    
-    $output .= '</div>'; // End options container
-    
-    // Buttons
-    $output .= '<div class="ccm-button-group" style="margin-top: 1rem;">';
-    if ($has_optimizations) {
-        $output .= '<button id="htupdate" class="ccm-button ccm-button-primary">' . __('Update Optimizations', 'ccm-tools') . '</button> ';
-        $output .= '<button id="htremove" class="ccm-button">' . __('Remove Optimizations', 'ccm-tools') . '</button>';
-    } else {
-        $output .= '<button id="htadd" class="ccm-button ccm-button-primary">' . __('Add Optimizations', 'ccm-tools') . '</button>';
-    }
-    $output .= '</div>';
-    
-    // Result box
-    $output .= '<div id="htaccess-result" class="ccm-result-box" style="display:none; margin-top: 1rem;"></div>';
-    
-    $output .= '<h3 style="margin-top: 2rem;">' . __('Current .htaccess Content', 'ccm-tools') . '</h3>';
-    $output .= '<div class="ccm-htaccess-viewer"><pre>' . esc_html($current_content) . '</pre></div>';
 
-    return $output;
+    $writable = $file_exists ? is_writable($htaccess_file) : is_writable(dirname($htaccess_file));
+
+    $server_software = isset($_SERVER['SERVER_SOFTWARE']) ? (string) $_SERVER['SERVER_SOFTWARE'] : '';
+    $is_apache_compatible = (stripos($server_software, 'apache') !== false) || (stripos($server_software, 'litespeed') !== false);
+    $server_label = $server_software !== '' ? $server_software : __('not reported by PHP', 'ccm-tools');
+
+    // Most recent backup, if any. Filenames are gmdate('Ymd-His'), so a
+    // plain sort() gives oldest-first and the last element is the newest.
+    $last_backup_label = __('None yet', 'ccm-tools');
+    $backup_files = glob(dirname($htaccess_file) . '/.htaccess.ccm-backup-*');
+    if (is_array($backup_files) && $backup_files) {
+        sort($backup_files);
+        $newest = end($backup_files);
+        if ($newest !== false && preg_match('/\.ccm-backup-(\d{8}-\d{6})$/', (string) $newest, $m)) {
+            $backup_time = DateTime::createFromFormat('Ymd-His', $m[1], new DateTimeZone('UTC'));
+            if ($backup_time !== false) {
+                $last_backup_label = $backup_time->format('j M Y, H:i') . ' UTC';
+            }
+        }
+    }
+
+    // Mark the CCM block in the raw preview by wrapping the already-escaped
+    // marker text — never insert unescaped file content into the page.
+    $escaped_content = esc_html($current_content);
+    $marked_content = $escaped_content;
+    if ($has_optimizations) {
+        $begin_marker = esc_html('# BEGIN CCM Optimise - DO NOT CHANGE!');
+        $end_marker = esc_html('# END CCM Optimise - DO NOT CHANGE!');
+        $start_pos = strpos($escaped_content, $begin_marker);
+        $end_pos = strpos($escaped_content, $end_marker);
+        if ($start_pos !== false && $end_pos !== false) {
+            $end_pos += strlen($end_marker);
+            $block = substr($escaped_content, $start_pos, $end_pos - $start_pos);
+            $marked_content = substr($escaped_content, 0, $start_pos) . '<mark>' . $block . '</mark>' . substr($escaped_content, $end_pos);
+        }
+    }
+
+    ob_start();
+    ?>
+    <div class="ccm-hero">
+        <div class="ccm-hero__text">
+            <h1><?php _e('.htaccess', 'ccm-tools'); ?></h1>
+            <div class="ccm-hero__meta">
+                <span><?php echo $has_optimizations
+                    ? esc_html__('CCM block applied', 'ccm-tools')
+                    : esc_html__('CCM block not applied', 'ccm-tools'); ?></span>
+                <span><?php echo esc_html(sprintf(
+                    /* translators: 1: directives currently live, 2: directives available */
+                    __('%1$d of %2$d directives live', 'ccm-tools'), $applied_count, $total_options
+                )); ?></span>
+                <span><?php echo esc_html($server_label); ?></span>
+            </div>
+        </div>
+        <div class="ccm-hero__actions">
+            <?php if ($has_optimizations) : ?>
+                <button type="button" id="htremove" class="ccm-button ccm-button-danger ccm-button-small">
+                    <?php _e('Remove CCM block', 'ccm-tools'); ?>
+                </button>
+                <button type="button" id="htupdate" class="ccm-button ccm-button-primary">
+                    <?php _e('Update .htaccess', 'ccm-tools'); ?>
+                </button>
+            <?php else : ?>
+                <button type="button" id="htadd" class="ccm-button ccm-button-primary">
+                    <?php _e('Apply to .htaccess', 'ccm-tools'); ?>
+                </button>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <?php if (!$is_apache_compatible) : ?>
+        <div class="ccm-alert ccm-alert--warn" style="margin-bottom: var(--ccm-space-lg);">
+            <span class="ccm-dot ccm-dot-warn"></span>
+            <div>
+                <strong><?php echo esc_html(sprintf(
+                    /* translators: %s: the server software string PHP reports */
+                    __('This server reports "%s", not Apache or LiteSpeed.', 'ccm-tools'), $server_label
+                )); ?></strong>
+                <?php _e('Every directive on this page is Apache .htaccess syntax. On nginx, or anything else that does not read .htaccess, none of it takes effect no matter what is ticked below. "CCM block applied" above only means the marker comments were found in the file this page wrote — it has no way to tell whether the web server is actually reading them.', 'ccm-tools'); ?>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <div class="ccm-stat-grid">
+        <div class="ccm-stat-tile">
+            <div class="ccm-stat-tile__value ccm-stat-tile__value--brand"><?php echo esc_html((string) $applied_count); ?></div>
+            <div class="ccm-stat-tile__label"><?php _e('Directives applied', 'ccm-tools'); ?></div>
+            <div class="ccm-stat-tile__sub"><?php _e('Detected in the live file now', 'ccm-tools'); ?></div>
+        </div>
+        <div class="ccm-stat-tile">
+            <div class="ccm-stat-tile__value"><?php echo esc_html((string) $total_options); ?></div>
+            <div class="ccm-stat-tile__label"><?php _e('Options available', 'ccm-tools'); ?></div>
+            <div class="ccm-stat-tile__sub"><?php _e('Across the three risk groups below', 'ccm-tools'); ?></div>
+        </div>
+        <div class="ccm-stat-tile">
+            <div class="ccm-stat-tile__value"><?php echo esc_html($last_backup_label); ?></div>
+            <div class="ccm-stat-tile__label"><?php _e('Last backup', 'ccm-tools'); ?></div>
+            <div class="ccm-stat-tile__sub"><?php _e('Taken automatically before every write, 5 kept', 'ccm-tools'); ?></div>
+        </div>
+        <div class="ccm-stat-tile">
+            <div class="ccm-stat-tile__value"><?php echo $writable ? esc_html__('Yes', 'ccm-tools') : esc_html__('No', 'ccm-tools'); ?></div>
+            <div class="ccm-stat-tile__label"><?php _e('File writable', 'ccm-tools'); ?></div>
+            <div class="ccm-stat-tile__sub">
+                <?php echo $file_exists
+                    ? esc_html__('By the web server user', 'ccm-tools')
+                    : esc_html__('No .htaccess yet — this checks the folder', 'ccm-tools'); ?>
+            </div>
+        </div>
+    </div>
+
+    <?php
+    $preview_options = array();
+    ?>
+    <div id="htaccess-options">
+        <?php foreach ($available_options as $risk_key => $group) :
+            $items = $group['options'];
+            $group_on = 0;
+            foreach ($items as $key => $opt) {
+                if (ccm_tools_htaccess_option_checked($risk_key, $key, $opt, $has_optimizations, $current_options)) {
+                    $group_on++;
+                }
+            }
+            ?>
+            <section class="ccm-optgroup" data-group="<?php echo esc_attr($risk_key); ?>">
+                <div class="ccm-section">
+                    <div>
+                        <span class="ccm-section__eyebrow"><?php echo esc_html(sprintf(
+                            /* translators: 1: enabled, 2: total */
+                            __('%1$d of %2$d on', 'ccm-tools'), $group_on, count($items)
+                        )); ?></span>
+                        <h2><?php echo esc_html($group['label']); ?></h2>
+                        <p><?php echo esc_html($group['blurb']); ?></p>
+                    </div>
+                </div>
+                <div class="ccm-opts">
+                    <?php foreach ($items as $key => $opt) :
+                        $checked = ccm_tools_htaccess_option_checked($risk_key, $key, $opt, $has_optimizations, $current_options);
+                        $preview_options[$key] = $checked;
+                        ccm_tools_htaccess_render_option($risk_key, $key, $opt, $checked);
+                    endforeach; ?>
+                </div>
+            </section>
+        <?php endforeach; ?>
+    </div>
+
+    <?php
+    $preview_content = ccm_tools_cleanup_htaccess_content(ccm_tools_htaccess_content($preview_options));
+    ?>
+    <details class="ccm-disclose">
+        <summary><?php _e('Preview the directives that will be written', 'ccm-tools'); ?></summary>
+        <div class="ccm-disclose__body">
+            <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-sm);">
+                <?php _e('Exactly what the button above will write inside the CCM block, based on the options ticked above right now. Nothing outside the BEGIN/END markers is ever touched.', 'ccm-tools'); ?>
+            </p>
+            <pre class="ccm-mono"><?php echo esc_html($preview_content); ?></pre>
+        </div>
+    </details>
+
+    <details class="ccm-disclose">
+        <summary>
+            <?php _e('What is in .htaccess right now', 'ccm-tools'); ?>
+            <?php if ($has_optimizations) : ?>
+                <span class="ccm-disclose__note"><?php _e('CCM block marked below', 'ccm-tools'); ?></span>
+            <?php endif; ?>
+        </summary>
+        <div class="ccm-disclose__body">
+            <?php if (!$file_exists) : ?>
+                <div class="ccm-empty">
+                    <p><?php _e('No .htaccess file exists yet at the site root. Clicking Apply above will create one.', 'ccm-tools'); ?></p>
+                </div>
+            <?php elseif (!$readable) : ?>
+                <div class="ccm-alert ccm-alert--bad">
+                    <span class="ccm-dot ccm-dot-bad"></span>
+                    <div><?php _e('The file exists but PHP cannot read it. Fix the file permissions before using the buttons above — writing blind, without being able to read the current content first, is not attempted.', 'ccm-tools'); ?></div>
+                </div>
+            <?php elseif ($read_failed) : ?>
+                <div class="ccm-alert ccm-alert--bad">
+                    <span class="ccm-dot ccm-dot-bad"></span>
+                    <div><?php _e('Reading the file failed unexpectedly. Reload the page and try again before using the buttons above.', 'ccm-tools'); ?></div>
+                </div>
+            <?php else : ?>
+                <pre class="ccm-mono"><?php echo $marked_content; ?></pre>
+            <?php endif; ?>
+        </div>
+    </details>
+
+    <div class="ccm-savebar" data-ccm-savebar data-savebar-target="<?php echo $has_optimizations ? '#htupdate' : '#htadd'; ?>">
+        <span class="ccm-savebar__dot" aria-hidden="true"></span>
+        <span class="ccm-savebar__msg"><?php _e('No unsaved changes', 'ccm-tools'); ?></span>
+        <button type="button" class="ccm-button ccm-button-secondary ccm-button-small" data-savebar-discard>
+            <?php _e('Discard', 'ccm-tools'); ?>
+        </button>
+        <button type="button" class="ccm-button ccm-button-primary" data-savebar-save>
+            <?php _e('Save settings', 'ccm-tools'); ?>
+        </button>
+    </div>
+    <?php
+    return (string) ob_get_clean();
 }
 
 /**

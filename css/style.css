@@ -30,6 +30,10 @@
        green does not in light, hence the deeper green here. --ccm-brand-raw is
        the untouched mark colour, for tints and the spinner. */
     --ccm-primary: #5c8a1e;
+    /* --ccm-primary is the brand green tuned for fills and large type. On a
+    light surface it only reaches 3.7:1, which fails the 4.5:1 that small
+    uppercase labels need, so small brand-coloured TEXT uses this instead. */
+    --ccm-primary-on-surface: #48690f;
     --ccm-primary-hover: #4a7018;
     --ccm-primary-light: rgba(148, 200, 62, 0.12);
     --ccm-brand-raw: #94c83e;
@@ -39,11 +43,11 @@
     --ccm-teal-deep: #2580a7;
 
     /* Status */
-    --ccm-success: #5c8a1e;
+    --ccm-success: #456814;
     --ccm-success-bg: rgba(92, 138, 30, 0.10);
-    --ccm-warning: #b45309;
+    --ccm-warning: #8f4307;
     --ccm-warning-bg: rgba(180, 83, 9, 0.10);
-    --ccm-error: #dc2626;
+    --ccm-error: #b91c1c;
     --ccm-error-bg: rgba(220, 38, 38, 0.10);
     --ccm-info: #2563eb;
     --ccm-info-bg: rgba(37, 99, 235, 0.10);
@@ -75,7 +79,7 @@
     /* Text. --ccm-text-muted is deliberately darker than frikwork's own muted
        token, which measures 3.75:1 on a card and fails AA. */
     --ccm-text: #17160f;
-    --ccm-text-muted: #5f5e55;
+    --ccm-text-muted: #55544a;
     --ccm-text-light: #86847a;
     --ccm-text-inverse: #ffffff;
 
@@ -142,6 +146,7 @@
         color-scheme: dark;
 
         --ccm-primary: #94c83e;
+        --ccm-primary-on-surface: #a8d857;
         --ccm-primary-hover: #a5d94f;
         --ccm-primary-light: rgba(148, 200, 62, 0.14);
         --ccm-secondary: #cfcfcf;
@@ -152,7 +157,7 @@
         --ccm-success-bg: rgba(148, 200, 62, 0.14);
         --ccm-warning: #f59e0b;
         --ccm-warning-bg: rgba(245, 158, 11, 0.14);
-        --ccm-error: #ef4444;
+        --ccm-error: #f87171;
         --ccm-error-bg: rgba(239, 68, 68, 0.14);
         --ccm-info: #3b82f6;
         --ccm-info-bg: rgba(59, 130, 246, 0.14);
@@ -197,6 +202,7 @@ html[data-ccm-theme="dark"] {
     color-scheme: dark;
 
     --ccm-primary: #94c83e;
+    --ccm-primary-on-surface: #a8d857;
     --ccm-primary-hover: #a5d94f;
     --ccm-primary-light: rgba(148, 200, 62, 0.14);
     --ccm-secondary: #cfcfcf;
@@ -207,7 +213,7 @@ html[data-ccm-theme="dark"] {
     --ccm-success-bg: rgba(148, 200, 62, 0.14);
     --ccm-warning: #f59e0b;
     --ccm-warning-bg: rgba(245, 158, 11, 0.14);
-    --ccm-error: #ef4444;
+    --ccm-error: #f87171;
     --ccm-error-bg: rgba(239, 68, 68, 0.14);
     --ccm-info: #3b82f6;
     --ccm-info-bg: rgba(59, 130, 246, 0.14);
@@ -1245,7 +1251,12 @@ html[data-ccm-theme="light"] {
     overflow-y: auto;
 }
 
-.ccm-error-log-viewer pre {
+/* Qualified with .ccm-tools so this beats the generic `.ccm-tools pre`
+   rule defined later in this file. Without it that rule repaints the
+   background and text, which in light theme puts terminal-coloured
+   syntax spans on a near-white box and the log becomes unreadable.
+   The dark surface here is deliberate and the same in both themes. */
+.ccm-tools .ccm-error-log-viewer pre {
     margin: 0;
     padding: var(--ccm-space-lg);
     color: #e2e8f0;
@@ -1258,9 +1269,17 @@ html[data-ccm-theme="light"] {
     border: none;
 }
 
+/* The log filter rewraps each line in a span so it can be hidden one line at
+   a time. That rewrap consumes the newlines, so without an explicit block the
+   whole log collapses onto a single run-on line the moment anyone types. */
+.ccm-tools .ccm-error-log-viewer pre .ccm-log-line {
+    display: block;
+    min-height: 1.6em;
+}
+
 /* Error highlighting */
-.ccm-error-log-viewer pre.highlight-enabled .error-fatal,
-.ccm-error-log-viewer pre.highlight-enabled .error-parse {
+.ccm-tools .ccm-error-log-viewer pre.highlight-enabled .error-fatal,
+.ccm-tools .ccm-error-log-viewer pre.highlight-enabled .error-parse {
     color: #f87171;
     font-weight: 600;
     display: block;
@@ -1270,20 +1289,20 @@ html[data-ccm-theme="light"] {
     border-radius: var(--ccm-radius-sm);
 }
 
-.ccm-error-log-viewer pre.highlight-enabled .error-warning {
+.ccm-tools .ccm-error-log-viewer pre.highlight-enabled .error-warning {
     color: #fbbf24;
     font-weight: 600;
 }
 
-.ccm-error-log-viewer pre.highlight-enabled .error-notice {
+.ccm-tools .ccm-error-log-viewer pre.highlight-enabled .error-notice {
     color: #38bdf8;
 }
 
-.ccm-error-log-viewer pre.highlight-enabled .error-deprecated {
+.ccm-tools .ccm-error-log-viewer pre.highlight-enabled .error-deprecated {
     color: #94a3b8;
 }
 
-.ccm-error-log-viewer pre.highlight-enabled .error-stack {
+.ccm-tools .ccm-error-log-viewer pre.highlight-enabled .error-stack {
     display: block;
     background: rgba(255, 255, 255, 0.05);
     padding: var(--ccm-space-sm);
@@ -1324,7 +1343,12 @@ html[data-ccm-theme="light"] {
     overflow-y: auto;
 }
 
-.ccm-htaccess-viewer pre {
+/* Qualified with .ccm-tools so this beats the generic `.ccm-tools pre`
+   rule defined later in this file. Without it that rule repaints the
+   background and text, which in light theme puts terminal-coloured
+   syntax spans on a near-white box and the log becomes unreadable.
+   The dark surface here is deliberate and the same in both themes. */
+.ccm-tools .ccm-htaccess-viewer pre {
     margin: 0;
     padding: var(--ccm-space-lg);
     color: #e2e8f0;
@@ -1338,22 +1362,22 @@ html[data-ccm-theme="light"] {
 }
 
 /* Syntax highlighting for htaccess */
-.ccm-htaccess-viewer pre .htaccess-comment {
+.ccm-tools .ccm-htaccess-viewer pre .htaccess-comment {
     color: #6b7280;
     font-style: italic;
 }
 
-.ccm-htaccess-viewer pre .htaccess-directive {
+.ccm-tools .ccm-htaccess-viewer pre .htaccess-directive {
     color: #38bdf8;
     font-weight: 600;
 }
 
-.ccm-htaccess-viewer pre .htaccess-section {
+.ccm-tools .ccm-htaccess-viewer pre .htaccess-section {
     color: #a78bfa;
     font-weight: 600;
 }
 
-.ccm-htaccess-viewer pre .htaccess-value {
+.ccm-tools .ccm-htaccess-viewer pre .htaccess-value {
     color: #4ade80;
 }
 
@@ -1511,6 +1535,10 @@ tr.ccm-front-page-row {
     display: flex;
     align-items: center;
     justify-content: center;
+    /* The countdown span sits between two words. Flex discards the
+       whitespace-only text nodes around it, so without a gap the line
+       reads "Auto-refreshes in30seconds". */
+    gap: 0.35ch;
     margin: 0;
     font-size: var(--ccm-text-sm);
     font-weight: 500;
@@ -2822,6 +2850,28 @@ tr.ccm-front-page-row {
     display: block;
 }
 
+/* The wordmark is drawn light, for a dark bar. The light theme's header is
+   pale, so it vanishes there. Give it back a dark ground rather than running
+   a filter over the artwork, which would also shift the brand green. The
+   default below is the light case; both dark selectors switch it back off. */
+.ccm-header-logo {
+    background: #1d232b;
+    padding: 0.3rem 0.6rem;
+    border-radius: var(--ccm-radius-md);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-ccm-theme="light"]) .ccm-header-logo {
+        background: none;
+        padding: 0;
+    }
+}
+
+:root[data-ccm-theme="dark"] .ccm-header-logo {
+    background: none;
+    padding: 0;
+}
+
 .ccm-header-title { margin-left: auto; }
 
 .ccm-header-title h1 {
@@ -2862,7 +2912,7 @@ tr.ccm-front-page-row {
 }
 
 .ccm-tab.active {
-    color: var(--ccm-primary);
+    color: var(--ccm-primary-on-surface);
     background: var(--ccm-primary-light);
     box-shadow: none;
 }
@@ -3608,7 +3658,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     text-transform: uppercase;
     letter-spacing: 0.1em;
     font-weight: 700;
-    color: var(--ccm-primary);
+    color: var(--ccm-primary-on-surface);
     display: block;
     margin-bottom: 0.2rem;
 }
@@ -3922,7 +3972,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 }
 
 .ccm-seg label:hover { color: var(--ccm-text); }
-.ccm-seg input:checked + label { background: var(--ccm-primary-light); color: var(--ccm-primary); }
+.ccm-seg input:checked + label { background: var(--ccm-primary-light); color: var(--ccm-primary-on-surface); }
 .ccm-seg input:focus-visible + label { outline: 2px solid var(--ccm-brand-raw); outline-offset: 2px; }
 
 /* ── Sparkline ─────────────────────────────────────────────────
@@ -4128,8 +4178,8 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-stack   { display: grid; gap: var(--ccm-space-lg); }
 .ccm-stack--sm { gap: var(--ccm-space-md); }
 .ccm-row     { display: flex; gap: var(--ccm-space-sm); align-items: center; flex-wrap: wrap; }
-.ccm-grid-2  { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--ccm-space-md); align-items: start; }
-.ccm-grid-3  { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--ccm-space-md); align-items: start; }
+.ccm-grid-2  { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: var(--ccm-space-md); align-items: start; }
+.ccm-grid-3  { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: var(--ccm-space-md); align-items: start; }
 .ccm-hide    { display: none !important; }
 
 /* Screen-reader-only text, e.g. the point count behind a sparkline. */
@@ -4236,7 +4286,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 .ccm-masterswitch__label { font-size: var(--ccm-text-sm); font-weight: 600; color: var(--ccm-text-muted); }
 .ccm-masterswitch.is-on { border-color: var(--ccm-brand-raw); background: var(--ccm-primary-light); }
-.ccm-masterswitch.is-on .ccm-masterswitch__label { color: var(--ccm-primary); }
+.ccm-masterswitch.is-on .ccm-masterswitch__label { color: var(--ccm-primary-on-surface); }
 
 /* ── Alert ─────────────────────────────────────────────────────  */
 
@@ -4445,6 +4495,14 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
    instead, which is what every app does with a long tab strip. */
 
 @media screen and (max-width: 782px) {
+    /* A few genuinely tabular readouts are wider than a phone. Let them
+       scroll inside their own card rather than widening the document, so
+       the rest of the page still reads normally. */
+    .ccm-tools .ccm-card,
+    .ccm-tools .ccm-panel {
+        overflow-x: auto;
+    }
+
     .ccm-header {
         flex-wrap: nowrap;
         align-items: center;
@@ -4457,12 +4515,24 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     .ccm-header-logo img { height: 24px; }
 
     .ccm-header-menu {
+        /* The 1024px block above turns .ccm-header into a COLUMN, so the
+           horizontal size is the cross axis: flex and min-width do nothing to
+           it and the strip sizes to its ten tabs, widening the whole document.
+           align-self and max-width are what actually constrain it, and they
+           are correct whichever direction wins. */
         flex: 1 1 auto;
+        align-self: stretch;
         min-width: 0;
+        max-width: 100%;
         overflow-x: auto;
         overflow-y: hidden;
         scrollbar-width: none;
         -webkit-overflow-scrolling: touch;
+    }
+
+    .ccm-header-logo,
+    .ccm-header-title {
+        max-width: 100%;
     }
     .ccm-header-menu::-webkit-scrollbar { display: none; }
 
@@ -4488,7 +4558,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 /* .ccm-grid-2 was fitting four columns on a wide screen, which squeezed the
    reference cards until every value wrapped. Two or three is the useful range. */
-.ccm-grid-2 { grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr)); }
+.ccm-grid-2 { grid-template-columns: repeat(auto-fit, minmax(min(30rem, 100%), 1fr)); }
 
 /* A PHP extension is a yes or no. It was rendering as a full card per
    extension, so twelve of them filled a screen to say almost nothing. */

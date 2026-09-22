@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.2.0
+ * Version: 8.3.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.2.0');
+    define('CCM_HELPER_VERSION', '8.3.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -1506,7 +1506,7 @@ class CCMSettings {
                                 <div class="ccm-config-control">
                                     <span><?php echo esc_html(WP_MEMORY_LIMIT); ?></span>
                                     <div class="ccm-config-select">
-                                        <select id="memory-limit">
+                                        <select id="memory-limit" aria-label="<?php esc_attr_e('PHP memory limit', 'ccm-tools'); ?>">
                                             <option value="40M" <?php selected(WP_MEMORY_LIMIT, '40M'); ?>><?php _e('Default (40M)', 'ccm-tools'); ?></option>
                                             <option value="64M" <?php selected(WP_MEMORY_LIMIT, '64M'); ?>><?php _e('64M', 'ccm-tools'); ?></option>
                                             <option value="128M" <?php selected(WP_MEMORY_LIMIT, '128M'); ?>><?php _e('128M', 'ccm-tools'); ?></option>

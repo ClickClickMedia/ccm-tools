@@ -120,6 +120,23 @@ foreach ($strings as $fn => $val) {
     }
 }
 
+// A few WordPress core options are scalars, and the blanket array stub below
+// hands an array to whatever echoes them. That reads as "Array to string
+// conversion" in the output and buries any warning that actually matters.
+if (!function_exists('get_option')) {
+function get_option($key = null, $default = false) {
+    $scalars = array(
+        'show_on_front' => 'page', 'page_on_front' => '0', 'page_for_posts' => '0',
+        'blogname' => 'Example Client', 'home' => 'https://example.test',
+        'siteurl' => 'https://example.test', 'admin_email' => 'admin@example.test',
+        'timezone_string' => 'Australia/Sydney', 'date_format' => 'j F Y',
+        'time_format' => 'g:i a', 'gmt_offset' => 10,
+    );
+    if (isset($scalars[$key])) { return $scalars[$key]; }
+    return is_array($default) ? $default : array();
+}
+}
+
 $arrays = array('get_option', 'get_transient', 'get_site_transient', 'get_plugins', 'headers_list');
 
 // Must really merge. A stub that returns only the defaults makes every
@@ -162,7 +179,11 @@ function absint($n) { return abs((int) $n); }
 // make every checkbox render unchecked, so a preview of a fully configured
 // page looks identical to a blank one and you draw the wrong conclusion.
 function __checked_helper($a, $b, $e, $type) {
-    $out = ((string) $a === (string) $b || ($a && $b)) ? " $type='$type'" : '';
+    // WordPress compares as strings and nothing else. An extra truthy-pair
+    // clause looks harmless and is not: it makes EVERY option in a select
+    // match, so the browser keeps the last one and the page previews the
+    // wrong stored value on every dropdown.
+    $out = ((string) $a === (string) $b) ? " $type='$type'" : '';
     if ($e) { echo $out; }
     return $out;
 }
@@ -207,7 +228,12 @@ function class_exists_wc() { return false; }
 function trailingslashit($s) { return rtrim((string) $s, '/\\') . '/'; }
 function untrailingslashit($s) { return rtrim((string) $s, '/\\'); }
 function wp_mkdir_p($d) { return true; }
-function size_format($b, $d = 0) { return $b . ' B'; }
+function size_format($b, $d = 0) {
+    $u = array('B', 'KB', 'MB', 'GB', 'TB');
+    $b = (float) $b; $i = 0;
+    while ($b >= 1024 && $i < count($u) - 1) { $b /= 1024; $i++; }
+    return round($b, $i ? $d : 0) . ' ' . $u[$i];
+}
 function number_format_i18n($n, $d = 0) { return number_format($n, $d); }
 function human_time_diff($f, $t = 0) { return '1 min'; }
 function get_locale() { return 'en_AU'; }

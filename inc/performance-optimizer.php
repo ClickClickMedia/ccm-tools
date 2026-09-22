@@ -2736,7 +2736,7 @@ function ccm_tools_render_perf_page() {
                 <div class="ccm-row">
                     <button type="button" id="export-perf-settings" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Export', 'ccm-tools'); ?></button>
                     <button type="button" id="import-perf-settings" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Import', 'ccm-tools'); ?></button>
-                    <input type="file" id="import-perf-file" accept="application/json" class="ccm-hide">
+                    <input type="file" id="import-perf-file" accept="application/json" class="ccm-hide" aria-label="<?php esc_attr_e('Choose a performance settings file to import', 'ccm-tools'); ?>">
                 </div>
             </div>
 

@@ -1,5 +1,76 @@
 # CCM Tools — Changelog
 
+## v8.3.0 — The rest of the pages, and a save bar that follows you
+
+The v8.2.0 restyle changed the palette but left most pages' markup alone, so
+they still read as the old plugin. This release rebuilds the remaining five on
+the same component kit the Performance and Site Health pages use.
+
+### Save settings is always reachable
+
+Every settings page now carries a floating bar that stays in view no matter how
+far you have scrolled. It counts what you have actually changed, offers Discard,
+and warns before you leave with unsaved work. It drives the page's real Save
+button rather than replacing it, so nothing about how settings are saved changed.
+
+### Pages rebuilt
+
+- **Redis** leads with hit rate, memory, key count and round-trip time, then
+  status as a key/value panel instead of a table. Settings are grouped by
+  Connection, Cache behaviour, WooCommerce and Advanced, each with a live count
+  of how many values wp-config.php has locked. Compression now names the actual
+  production incident it caused instead of listing options neutrally. Drop-in
+  install instructions moved to a disclosure, shown only when they apply.
+- **WebP** opens with conversion coverage and the size saved, and separates bulk
+  conversion from settings from the library detail. Import, export and the
+  uploads backup moved to disclosures at the bottom.
+- **Error Log** now tells you what is actually wrong before showing you the log.
+  Identical messages in the visible window are grouped and ranked by frequency,
+  and when one plugin accounts for most of the fatals it says so by name. Added
+  a text filter over the visible lines. Clear Log moved away from Refresh and
+  Download, into a disclosure, as the destructive action it is.
+- **Cloudflare** is ordered Cache, Security, SSL/TLS and network, then DNS, with
+  development mode warned about where you can see it. Connection settings moved
+  to a disclosure, since a token is set once.
+- **.htaccess** rebuilt on the same kit.
+
+### Fixes
+
+- **The error log was unreadable in light theme.** A generic `pre` rule defined
+  later in the stylesheet was overriding the viewer's own background, so
+  terminal-coloured syntax landed on a near-white box. Same fault in the
+  .htaccess viewer.
+- **Every page scrolled sideways on a phone.** The ten-item tab strip sized
+  itself to its content and widened the whole document by about 100px. Wide
+  reference tables now scroll inside their own card, and the two-column grids
+  collapse to one column instead of holding a 480px floor.
+- **ImageMagick reported itself twice**, as "ImageMagick ImageMagick 7.1.1-29
+  Q16-HDRI x86_64 https://imagemagick.org", because its version string already
+  contains the name. Trimmed to the version number.
+- **Contrast.** Both themes now meet WCAG AA across all ten pages. Small brand
+  green text has its own token, because the fill green only reaches 3.7:1 on a
+  light surface; the warning, error, success and muted text colours were
+  adjusted to clear 4.5:1.
+- **The logo vanished in light theme.** It is drawn light for a dark bar, so it
+  now sits on a dark ground there rather than being run through a filter.
+- **The auto-refresh countdown read "Auto-refreshes in30seconds"** because a
+  flex container discards the whitespace between its items.
+- **The error log's file picker printed the whole absolute path**, which on a
+  real host pushes the rest of the toolbar off the row. Shows the path from the
+  WordPress root, with the full path on hover.
+- **WebP quality and convert-on-demand described the wrong defaults.**
+- Five form controls had no accessible name.
+
+### Testing
+
+`tests/render_test.php` now stubs `checked()`, `selected()` and `disabled()` the
+way WordPress actually implements them: a plain string comparison. The previous
+stub also matched any two truthy values, which made every option in a select
+match, so the browser kept the last one and every dropdown previewed the wrong
+stored value. `get_option()` returns real scalars for core options and
+`size_format()` formats properly, so a preview shows what a real site shows.
+
+
 ## v8.2.0 — Performance page rebuilt from a catalogue
 
 - **The page is now generated from data.** Every setting is described once in
