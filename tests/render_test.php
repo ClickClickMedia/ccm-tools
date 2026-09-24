@@ -190,6 +190,35 @@ function __checked_helper($a, $b, $e, $type) {
 function checked($a, $b = true, $e = true) { return __checked_helper($a, $b, $e, 'checked'); }
 function disabled($a, $b = true, $e = true) { return __checked_helper($a, $b, $e, 'disabled'); }
 function selected($a, $b = true, $e = true) { return __checked_helper($a, $b, $e, 'selected'); }
+function sanitize_textarea_field($t) { return is_scalar($t) ? trim(strip_tags((string) $t)) : ''; }
+function maybe_unserialize($v) { return is_string($v) && @unserialize($v) !== false ? unserialize($v) : $v; }
+function wp_convert_hr_to_bytes($v) { return ccm_tools_convert_php_size_to_bytes((string) $v); }
+function get_current_user_id() { return 1; }
+function wp_verify_nonce($n = '', $a = -1) { return 1; }
+function check_admin_referer($a = -1, $q = '_wpnonce') { return 1; }
+function wp_list_pluck($list, $field) {
+    $out = array();
+    foreach ((array) $list as $k => $row) {
+        $out[$k] = is_array($row) ? ($row[$field] ?? null) : ($row->$field ?? null);
+    }
+    return $out;
+}
+function wp_using_ext_object_cache($using = null) { return false; }
+function wp_cache_get($k, $g = '', $f = false, &$found = null) { $found = false; return false; }
+function wp_cache_set($k, $d, $g = '', $e = 0) { return true; }
+function wp_cache_delete($k, $g = '') { return true; }
+function wp_cache_add_non_persistent_groups($g) { return null; }
+function wp_defer_term_counting($d = null) { return false; }
+function wp_is_post_revision($p) { return false; }
+function wp_is_post_autosave($p) { return false; }
+function get_post_meta($id, $k = '', $single = false) { return $single ? '' : array(); }
+function get_post($p = null, $o = OBJECT) { return null; }
+function wp_dequeue_script($h) { return null; }
+function wp_dequeue_style($h) { return null; }
+function wp_deregister_script($h) { return null; }
+function wp_deregister_style($h) { return null; }
+function wp_add_inline_script($h, $d, $p = 'after') { return true; }
+
 function wp_parse_url($u, $c = -1) { return parse_url($u, $c); }
 function wp_json_encode($d, $f = 0) { return json_encode($d, $f); }
 function wp_date($f, $t = null) { return date($f, $t ?: time()); }

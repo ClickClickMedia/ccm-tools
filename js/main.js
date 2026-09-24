@@ -2632,7 +2632,6 @@
                 cron_interval: parseInt($('#perf-cron-interval')?.value) || 60,
                 disable_author_archives: $('#perf-disable-author-archives')?.checked ? '1' : '',
                 // INP / Interaction Optimizations (v7.30.0)
-                warn_dom_size: $('#perf-warn-dom-size')?.checked ? '1' : '',
             };
             
             const response = await ajax('ccm_tools_save_perf_settings', data);

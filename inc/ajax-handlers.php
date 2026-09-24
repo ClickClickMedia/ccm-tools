@@ -1377,16 +1377,33 @@ function ccm_tools_ajax_save_webp_settings(): void {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
-    $settings = array(
+    /*
+     * Merge onto what is already stored rather than rebuilding the array from
+     * the eight fields this screen owns. exclude_sizes is not on this screen —
+     * it arrives through a settings import and is read when converting, at
+     * inc/webp-converter.php — so rebuilding from scratch silently erased it
+     * the next time anyone pressed Save, and the excluded sizes started being
+     * converted again with no sign anything had changed.
+     */
+    $defaults = function_exists('ccm_tools_webp_get_default_settings')
+        ? ccm_tools_webp_get_default_settings()
+        : array();
+    $existing = array_merge($defaults, (array) get_option('ccm_tools_webp_settings', array()));
+
+    $settings = array_merge($existing, array(
         'enabled' => isset($_POST['enabled']) && $_POST['enabled'] === '1',
-        'quality' => isset($_POST['quality']) ? max(1, min(100, intval($_POST['quality']))) : 82,
+        'quality' => isset($_POST['quality'])
+            ? max(1, min(100, intval($_POST['quality'])))
+            : (isset($defaults['quality']) ? $defaults['quality'] : 85),
         'convert_on_upload' => isset($_POST['convert_on_upload']) && $_POST['convert_on_upload'] === '1',
         'serve_webp' => isset($_POST['serve_webp']) && $_POST['serve_webp'] === '1',
         'convert_on_demand' => isset($_POST['convert_on_demand']) && $_POST['convert_on_demand'] === '1',
         'convert_bg_images' => isset($_POST['convert_bg_images']) && $_POST['convert_bg_images'] === '1',
         'keep_originals' => isset($_POST['keep_originals']) && $_POST['keep_originals'] === '1',
-        'preferred_extension' => isset($_POST['preferred_extension']) ? sanitize_text_field($_POST['preferred_extension']) : 'auto'
-    );
+        'preferred_extension' => in_array(($_POST['preferred_extension'] ?? 'auto'), array('auto', 'gd', 'imagick'), true)
+            ? $_POST['preferred_extension']
+            : 'auto',
+    ));
     
     // update_option returns false if value unchanged, so we check if save succeeded OR value is same
     $saved = update_option('ccm_tools_webp_settings', $settings);
