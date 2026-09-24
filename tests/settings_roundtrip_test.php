@@ -188,9 +188,24 @@ if (function_exists('ccm_tools_perf_catalogue') && function_exists('ccm_tools_aj
                         $post[$f['key']] = (string) $opts[0];
                         $expect[$f['key']] = (string) $opts[0];
                     }
-                } elseif ($type === 'list' || $type === 'textarea') {
-                    $post[$f['key']] = "example.test";
-                    $expect[$f['key']] = 'example.test';
+                } elseif ($type === 'textarea') {
+                    // Free text, not a list: newlines are content and must survive.
+                    $post[$f['key']] = "body{margin:0}
+.header{height:88px}";
+                    $expect[$f['key']] = 'body{margin:0}';
+                } elseif ($type === 'list') {
+                    /*
+                     * A list field is rendered into a textarea joined by
+                     * newlines, so that is what comes back on save. Post it
+                     * the same way: a sanitiser that only splits on commas
+                     * fuses the whole box into one useless token, which is
+                     * exactly how the shipped jQuery excludes were being
+                     * destroyed on the first Save.
+                     */
+                    $post[$f['key']] = "jquery.validate
+elementor-frontend
+WPForms";
+                    $expect[$f['key']] = array('jquery.validate', 'elementor-frontend', 'WPForms');
                 } else {
                     $post[$f['key']] = 'example.test';
                     $expect[$f['key']] = 'example.test';
@@ -218,6 +233,15 @@ if (function_exists('ccm_tools_perf_catalogue') && function_exists('ccm_tools_aj
             $misses[$key] = 'posted 7, stored ' . var_export($got, true);
         } elseif (is_string($want) && $want !== '' && empty($got)) {
             $misses[$key] = 'posted a value, stored empty';
+        } elseif (is_string($want) && strpos((string) $got, $want) === false) {
+            $misses[$key] = 'posted a value starting ' . var_export($want, true)
+                . ', stored ' . var_export($got, true);
+        } elseif (is_array($want)) {
+            $got_list = array_values((array) $got);
+            if ($got_list !== $want) {
+                $misses[$key] = 'posted ' . count($want) . ' entries, stored '
+                    . var_export($got_list, true);
+            }
         }
     }
     ccm_test_report('performance', $misses, count($expect));

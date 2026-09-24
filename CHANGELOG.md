@@ -1,5 +1,81 @@
 # CCM Tools — Changelog
 
+## v8.5.0 — Review findings, and three tests that would have caught them
+
+A full security and correctness review, five reviewers over the whole codebase,
+plus a settings audit. The authorisation layer came back clean: all 66 AJAX
+actions check a nonce and a capability, there are no logged-out endpoints, and
+no SQL injection is reachable from a request. What it did find was a set of
+faults that take a site down or lose an administrator's work without ever
+reporting an error.
+
+### Critical: a Redis password could take the whole site down
+
+Saving Redis settings inserted the generated block into wp-config.php with
+`preg_replace`, using that block as the replacement string. A replacement
+string is parsed for backreferences, so a `$1` inside a password was replaced
+with capture group one, which is the "That's all, stop editing!" comment. That
+comment contains an apostrophe, so the resulting `define()` was a hard parse
+error and wp-config.php took the front end and wp-admin down together,
+recoverable only over SFTP. The password validator rejects quotes, backslashes
+and control characters, but `$` is an ordinary character in a generated
+password. The insert is done by offset now and parses nothing.
+
+### Blank pages for every visitor
+
+Two output filters ran regular expressions over the whole page and assigned
+the result straight back. PCRE returns null when it hits its backtrack limit,
+and both used a lazy pattern that backtracks once per character, so a page over
+about a megabyte containing an unclosed `<style>`, `<script>`, `<pre>` or
+`<textarea>` produced null and the visitor got an empty page. Administrators
+never saw it, because both filters are skipped for them. Every pass now falls
+back to the untouched input.
+
+### The exclude lists were destroyed on the first save
+
+The defer, delay and preload exclusion lists are rendered into a textarea one
+per line, but the save handler split on commas only and then ran `sanitize_key`
+over the result. The shipped default of jquery, jquery-core and jquery-migrate
+came back as the single handle `jqueryjquery-corejquery-migrate` the first time
+anyone pressed Save, and a hand-added `jquery.validate` became
+`jqueryvalidate`. The matcher is a case-sensitive substring test, so both fail
+silently and the script you excluded gets deferred anyway.
+
+### The save bar said "Saved" when the save failed
+
+It inferred completion from the page's own button going disabled and back, and
+every save routine re-enables its button in a `finally`, so a request that
+failed looked exactly like one that succeeded. It now waits for the routine to
+report the actual result, and says "Not saved" while leaving the changes marked
+unsaved.
+
+### Dark mode
+
+The options inside a native dropdown are drawn by the operating system in a
+separate popup and do not inherit the control's colour, so on a dark theme they
+were dark on dark and only the highlighted row could be read. Both themes now
+state the colour explicitly. An option is also no longer disabled while it is
+the stored value, because a disabled option that is selected renders the whole
+control blank on Windows.
+
+### Also
+
+- Saving WebP settings erased `exclude_sizes`, which is set by import and read
+  when converting. The handler merges onto the stored settings now.
+- The preferred image library was stored with no whitelist.
+
+### Three new tests
+
+- `tests/wp_config_write_test.php` drives the real writer against a wp-config
+  fixture with eleven awkward passwords and runs `php -l` over what it produced.
+  The existing test passed throughout, because it tested the function named in
+  an old report rather than the operation that report was about.
+- `tests/settings_roundtrip_test.php` posts every control each page offers
+  through the real handlers and reads the option back. 110 settings pass.
+- `tests/handler_auth_test.php` fails if any AJAX handler is missing a nonce or
+  a capability check, or is registered for logged-out visitors.
+
+
 ## v8.4.2 — Six vitals on one line
 
 There are always exactly six lab metrics on Site Health, but the grid was

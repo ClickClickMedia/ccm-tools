@@ -249,6 +249,25 @@
      * @param {Object} options - Request options
      * @returns {Promise}
      */
+    /**
+     * Tell the floating save bar whether a save actually succeeded.
+     *
+     * The bar used to infer this from the button going disabled and back, but
+     * every routine here re-enables its button in a finally block, so a failed
+     * request looked exactly like a successful one and the bar reported
+     * "Saved" over settings that were never stored.
+     *
+     * @param {HTMLElement|null} button The save button the bar is proxying.
+     * @param {boolean} ok Whether the request succeeded.
+     */
+    function reportSaveResult(button, ok) {
+        if (!button || typeof CustomEvent !== 'function') { return; }
+        button.dispatchEvent(new CustomEvent('ccm:save', {
+            detail: { ok: !!ok },
+            bubbles: false
+        }));
+    }
+
     async function ajax(action, data = {}, options = {}) {
         const url = typeof ajaxurl !== 'undefined' ? ajaxurl : ccmToolsData.ajax_url;
         
@@ -1961,9 +1980,11 @@
             
             const response = await ajax('ccm_tools_save_webp_settings', formData);
             showNotification(response.data?.message || 'Settings saved successfully', 'success');
+            reportSaveResult(saveBtn, true);
             
         } catch (error) {
             showNotification('Error: ' + error.message, 'error');
+            reportSaveResult(saveBtn, false);
         } finally {
             if (saveBtn) {
                 saveBtn.disabled = false;
@@ -2637,6 +2658,7 @@
             const response = await ajax('ccm_tools_save_perf_settings', data);
             
             showNotification('Performance settings saved successfully!', 'success');
+            reportSaveResult(saveBtn, true);
             
             if (statusEl) {
                 statusEl.innerHTML = '<span class="ccm-success">✓ Saved</span>';
@@ -2644,6 +2666,7 @@
             
         } catch (error) {
             showNotification('Failed to save settings: ' + error.message, 'error');
+            reportSaveResult(saveBtn, false);
             
             if (statusEl) {
                 statusEl.innerHTML = '<span class="ccm-error">✗ Error</span>';
@@ -4127,6 +4150,7 @@
                     
                     const response = await ajax('ccm_tools_redis_save_settings', data);
                     showNotification(response.data.message, 'success');
+                    reportSaveResult(submitBtn, true);
 
                     // Live-update the Active Configuration table from the AJAX response
                     if (response.data.active_config) {
@@ -4134,6 +4158,7 @@
                     }
                 } catch (error) {
                     showNotification(error.message, 'error');
+                    reportSaveResult(submitBtn, false);
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;

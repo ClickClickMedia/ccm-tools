@@ -256,34 +256,61 @@
                 if (msg) { msg.textContent = 'Saving…'; }
                 target.click();
 
-                // The page's own handler disables its button while it works.
-                // Watching that is how this stays out of the saving logic.
+                /*
+                 * Only say "Saved" when the save actually succeeded.
+                 *
+                 * This used to infer completion from the page's own button
+                 * going disabled and back, but every save routine re-enables
+                 * its button in a finally block, so a request that 500'd or
+                 * hit an expired nonce re-enabled it too and the bar cheerfully
+                 * reported "No unsaved changes" over settings that were never
+                 * stored. js/main.js now dispatches ccm:save on the button it
+                 * was given, carrying whether the request succeeded.
+                 */
                 var settled = false;
-                var done = function () {
+                var done = function (ok) {
                     if (settled) { return; }
                     settled = true;
                     bar.classList.remove('is-saving');
-                    clean = snapshot();
-                    refresh();
-                    bar.classList.add('is-saved');
-                    if (msg) { msg.textContent = 'Saved'; }
-                    window.setTimeout(function () {
-                        bar.classList.remove('is-saved');
+
+                    if (ok) {
+                        clean = snapshot();
                         refresh();
-                    }, 2500);
+                        bar.classList.add('is-saved');
+                        if (msg) { msg.textContent = 'Saved'; }
+                        window.setTimeout(function () {
+                            bar.classList.remove('is-saved');
+                            refresh();
+                        }, 2500);
+                        return;
+                    }
+
+                    // Leave the changes marked dirty; they are still unsaved.
+                    bar.classList.add('is-failed');
+                    if (msg) { msg.textContent = 'Not saved'; }
+                    window.setTimeout(function () {
+                        bar.classList.remove('is-failed');
+                        refresh();
+                    }, 5000);
                 };
 
-                if (window.MutationObserver) {
-                    var seenDisabled = target.disabled;
-                    var obs = new MutationObserver(function () {
-                        if (target.disabled) { seenDisabled = true; return; }
-                        if (seenDisabled) { obs.disconnect(); done(); }
-                    });
-                    obs.observe(target, { attributes: true, attributeFilter: ['disabled'] });
-                    window.setTimeout(function () { obs.disconnect(); done(); }, 20000);
-                } else {
-                    window.setTimeout(done, 1500);
-                }
+                var onResult = function (e) {
+                    target.removeEventListener('ccm:save', onResult);
+                    done(!!(e && e.detail && e.detail.ok));
+                };
+                target.addEventListener('ccm:save', onResult);
+
+                /*
+                 * A page that has not been wired to dispatch the event yet, or
+                 * a request that never returns, must not leave the bar saying
+                 * "Saving…" forever. Time out as a failure rather than as a
+                 * success, because an unreported save is the thing that costs
+                 * someone their work.
+                 */
+                window.setTimeout(function () {
+                    target.removeEventListener('ccm:save', onResult);
+                    done(false);
+                }, 20000);
             });
         }
 

@@ -1652,15 +1652,32 @@ function ccm_tools_redis_add_config($config = array()) {
         '/(if\s*\(\s*!\s*defined\s*\(\s*[\'"]ABSPATH[\'"]\s*\))/i',
     );
     
+    /*
+     * Insert at an offset, never through preg_replace.
+     *
+     * $config_text carries the Redis password, and a preg_replace replacement
+     * string is parsed for backreferences: $1, ${1} and  are all substituted.
+     * The password validator rejects quotes, backslashes and control characters
+     * but not `$`, which is an ordinary character in a generated password. So a
+     * password like Xk$1vQ9z had capture group 1 spliced into the middle of it.
+     * Group 1 is the "That's all, stop editing!" comment, which contains an
+     * apostrophe, so the define() became a hard parse error and wp-config.php
+     * took the whole site down, front end and wp-admin both, recoverable only
+     * over SFTP. Every other safety net here passed, because the file was
+     * written completely and atomically. It was simply wrong.
+     *
+     * preg_match with PREG_OFFSET_CAPTURE plus substr_replace does no
+     * replacement parsing at all, so no character in a credential can ever
+     * be meaningful to the insert again.
+     */
     $inserted = false;
     foreach ($patterns as $pattern) {
-        if (preg_match($pattern, $config_content)) {
-            $new_content = preg_replace($pattern, $config_text . "\n$1", $config_content, 1, $count);
-            if ($count > 0) {
-                $config_content = $new_content;
-                $inserted = true;
-                break;
-            }
+        if (preg_match($pattern, $config_content, $match, PREG_OFFSET_CAPTURE)
+            && isset($match[1][1]) && $match[1][1] >= 0) {
+            $config_content = substr_replace($config_content, $config_text . "
+", $match[1][1], 0);
+            $inserted = true;
+            break;
         }
     }
     
@@ -2300,10 +2317,20 @@ function ccm_tools_render_redis_page() {
                             <div class="ccm-grid-2">
                                 <div class="ccm-optfield">
                                     <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
+                                    <?php
+                                    /*
+                                     * An option is never disabled while it is
+                                     * the stored value. A disabled option that
+                                     * is also the selected one renders the
+                                     * control blank on Windows Chrome, so the
+                                     * field shows nothing at all and there is
+                                     * no way to see what the site is set to.
+                                     */
+                                    ?>
                                     <select id="redis-serializer" name="serializer" class="ccm-input">
                                         <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP', 'ccm-tools'); ?><?php echo extension_loaded('igbinary') ? ' (' . __('fallback', 'ccm-tools') . ')' : ' (' . __('default', 'ccm-tools') . ')'; ?></option>
-                                        <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary')); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('default — faster, smaller', 'ccm-tools') . ')'; ?></option>
-                                        <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack')); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
+                                        <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary') && $settings['serializer'] !== 'igbinary'); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('default — faster, smaller', 'ccm-tools') . ')'; ?></option>
+                                        <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack') && $settings['serializer'] !== 'msgpack'); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
                                     </select>
                                     <span class="ccm-optfield__hint"><?php _e('Changing this flushes the cache once, automatically, so nothing tries to decode a value with the wrong serializer.', 'ccm-tools'); ?></span>
                                 </div>
@@ -2311,9 +2338,9 @@ function ccm_tools_render_redis_page() {
                                     <label for="redis-compression"><?php _e('Compression', 'ccm-tools'); ?></label>
                                     <select id="redis-compression" name="compression" class="ccm-input">
                                         <option value="none" <?php selected($settings['compression'], 'none'); ?>><?php _e('None (default)', 'ccm-tools'); ?></option>
-                                        <option value="lzf" <?php selected($settings['compression'], 'lzf'); ?> <?php disabled(!$has_lzf); ?>><?php _e('LZF', 'ccm-tools'); ?><?php echo !$has_lzf ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('fast', 'ccm-tools') . ')'; ?></option>
-                                        <option value="lz4" <?php selected($settings['compression'], 'lz4'); ?> <?php disabled(!$has_lz4); ?>><?php _e('LZ4', 'ccm-tools'); ?><?php echo !$has_lz4 ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('very fast — see warning', 'ccm-tools') . ')'; ?></option>
-                                        <option value="zstd" <?php selected($settings['compression'], 'zstd'); ?> <?php disabled(!$has_zstd); ?>><?php _e('Zstandard', 'ccm-tools'); ?><?php echo !$has_zstd ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('best ratio', 'ccm-tools') . ')'; ?></option>
+                                        <option value="lzf" <?php selected($settings['compression'], 'lzf'); ?> <?php disabled(!$has_lzf && $settings['compression'] !== 'lzf'); ?>><?php _e('LZF', 'ccm-tools'); ?><?php echo !$has_lzf ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('fast', 'ccm-tools') . ')'; ?></option>
+                                        <option value="lz4" <?php selected($settings['compression'], 'lz4'); ?> <?php disabled(!$has_lz4 && $settings['compression'] !== 'lz4'); ?>><?php _e('LZ4', 'ccm-tools'); ?><?php echo !$has_lz4 ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('very fast — see warning', 'ccm-tools') . ')'; ?></option>
+                                        <option value="zstd" <?php selected($settings['compression'], 'zstd'); ?> <?php disabled(!$has_zstd && $settings['compression'] !== 'zstd'); ?>><?php _e('Zstandard', 'ccm-tools'); ?><?php echo !$has_zstd ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('best ratio', 'ccm-tools') . ')'; ?></option>
                                     </select>
                                     <span class="ccm-optfield__hint"><?php _e('LZ4 with the igbinary serializer has caused production sites to hit "Allowed memory size exhausted" fatals when a compressed value failed to round-trip. Leave this on None with igbinary unless LZ4 or Zstandard has been tested on staging first.', 'ccm-tools'); ?></span>
                                 </div>

@@ -3180,6 +3180,23 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
    inline control, so it fills its container like the text inputs do. */
 .ccm-tools select.ccm-input { width: 100%; }
 
+/* The options inside the native dropdown need their own colours.
+   The <select> itself is styled, but its <option> children are drawn by the
+   operating system in a separate popup window and do not inherit the control's
+   colour. Left alone they take the platform default, which on a dark theme is
+   dark text on the dark popup the browser paints from color-scheme — unreadable
+   except for whichever row happens to be highlighted. Both are stated here so
+   neither theme can leave an option invisible. */
+.ccm-tools select option,
+.ccm-tools select optgroup {
+    background-color: var(--ccm-surface);
+    color: var(--ccm-text);
+}
+
+.ccm-tools select option:disabled {
+    color: var(--ccm-text-muted);
+}
+
 html[data-ccm-theme="dark"] .ccm-tools select {
     background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a8a69c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
 }

@@ -868,16 +868,18 @@ function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
     }
 
     // <img> tags — rewrite src + srcset.
-    $html = preg_replace_callback('/<img\b[^>]*>/i', function($matches) {
+    $out = preg_replace_callback('/<img\b[^>]*>/i', function($matches) {
         return ccm_tools_webp_rewrite_media_tag($matches[0]);
     }, $html);
+    if (null !== $out) { $html = $out; }
 
     // <source> tags — rewrite src + srcset. This is what fixes hand-coded
     // <picture> elements: the browser picks a matching <source>, not the <img>,
     // so the <source> URLs are the ones that actually need to be WebP.
-    $html = preg_replace_callback('/<source\b[^>]*>/i', function($matches) {
+    $out = preg_replace_callback('/<source\b[^>]*>/i', function($matches) {
         return ccm_tools_webp_rewrite_media_tag($matches[0]);
     }, $html);
+    if (null !== $out) { $html = $out; }
 
     return $html;
 }
@@ -905,8 +907,17 @@ function ccm_tools_webp_convert_bg_images_in_html($html) {
     // (/wp-content/uploads/...). Captures: 1=opening quote (if any), 2=URL
     $url_pattern = '/url\s*\(\s*(["\']?)([^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
 
+    /*
+     * Every preg_* in this output path falls back to its untouched input.
+     * PCRE returns null once it hits pcre.backtrack_limit, and the <style>
+     * pattern below backtracks once per character, so a page over about a
+     * megabyte containing the substring "<style" exhausts it. Passing that
+     * null on hands the output buffer nothing and every visitor gets a blank
+     * page — which an administrator never sees, because this whole filter is
+     * skipped for them.
+     */
     $rewrite_css_urls = function($css) use ($url_pattern) {
-        return preg_replace_callback($url_pattern, function($matches) {
+        $out = preg_replace_callback($url_pattern, function($matches) {
             $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
             $original_url = $matches[2];
 
@@ -923,17 +934,21 @@ function ccm_tools_webp_convert_bg_images_in_html($html) {
 
             return $matches[0];
         }, $css);
+
+        return (null === $out) ? $css : $out;
     };
 
     // <style>...</style> blocks
-    $html = preg_replace_callback('/<style\b[^>]*>([\s\S]*?)<\/style>/i', function($matches) use ($rewrite_css_urls) {
+    $out = preg_replace_callback('/<style\b[^>]*>([\s\S]*?)<\/style>/i', function($matches) use ($rewrite_css_urls) {
         return str_replace($matches[1], $rewrite_css_urls($matches[1]), $matches[0]);
     }, $html);
+    if (null !== $out) { $html = $out; }
 
     // style="..." attributes on any tag
-    $html = preg_replace_callback('/(\sstyle=)(["\'])([^"\']*)\2/i', function($matches) use ($rewrite_css_urls) {
+    $out = preg_replace_callback('/(\sstyle=)(["\'])([^"\']*)\2/i', function($matches) use ($rewrite_css_urls) {
         return $matches[1] . $matches[2] . $rewrite_css_urls($matches[3]) . $matches[2];
     }, $html);
+    if (null !== $out) { $html = $out; }
 
     return $html;
 }

@@ -2246,12 +2246,29 @@ function ccm_tools_perf_sanitize_list($input) {
         return array();
     }
     
-    $items = explode(',', $input);
+    /*
+     * Split on newlines as well as commas, and do not use sanitize_key().
+     *
+     * The renderer writes these lists into a textarea joined by newlines, so
+     * a comma-only split saw the whole box as one item. sanitize_key() then
+     * stripped the newlines and fused it: the shipped default of jquery,
+     * jquery-core and jquery-migrate became the single handle
+     * "jqueryjquery-corejquery-migrate" the first time anyone pressed Save,
+     * and it can never match a real handle again. sanitize_key() also
+     * lowercases and drops dots, so a hand-added "jquery.validate" became
+     * "jqueryvalidate" and stopped excluding anything. The matcher is a
+     * case-sensitive substring test, so both are silent failures.
+     *
+     * The import path already does it this way and says why in its own
+     * comment; this is the same rule.
+     */
+    $items = preg_split('/[
+,]+/', (string) $input);
     $sanitized = array();
-    
-    foreach ($items as $item) {
-        $item = sanitize_key(trim($item));
-        if (!empty($item)) {
+
+    foreach ((array) $items as $item) {
+        $item = sanitize_text_field(trim($item));
+        if ($item !== '') {
             $sanitized[] = $item;
         }
     }

@@ -2032,6 +2032,18 @@ function ccm_tools_perf_minify_html_callback( $html ) {
         return $html;
     }
 
+    /*
+     * Every preg_* below must be null-checked and the original returned on
+     * failure. PCRE returns null when it hits pcre.backtrack_limit, and the
+     * first pattern here uses a lazy .*? that backtracks once per character:
+     * an unclosed <pre|textarea|script|style> on a page over about a megabyte
+     * exhausts it. Assigning that null back to $html and returning it hands
+     * the output buffer nothing, so every logged-out visitor gets a blank
+     * page. Administrators never see it, because ccm_tools_perf_init() skips
+     * all of this for them.
+     */
+    $original = $html;
+
     $preserve = array();
     $i        = 0;
     // Extract pre/textarea/script/style and replace with placeholders
@@ -2047,13 +2059,20 @@ function ccm_tools_perf_minify_html_callback( $html ) {
         },
         $html
     );
+    if ( null === $html ) { return $original; }
+
     // Remove HTML comments (keep IE conditionals <!--[if)
     $html = preg_replace( '/<!--(?!\[if\s)(?!<!)[^\[>].*?-->/si', '', $html );
+    if ( null === $html ) { return $original; }
+
     // Collapse runs of whitespace between tags to a single space
     // Preserves the space that inline elements need (a, span, button, img, etc.)
     $html = preg_replace( '/>\s+</', '> <', $html );
+    if ( null === $html ) { return $original; }
+
     // Strip leading/trailing whitespace per line
     $html = preg_replace( '/^\s+|\s+$/m', '', $html );
+    if ( null === $html ) { return $original; }
     // Restore preserved blocks
     foreach ( $preserve as $idx => $content ) {
         $html = str_replace( '%%CCM_PRESERVE_' . $idx . '%%', $content, $html );
