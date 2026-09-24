@@ -2502,9 +2502,12 @@ tr.ccm-front-page-row {
     background: var(--ccm-bg, #fff);
     transition: border-color 0.3s ease, background-color 0.3s ease;
 }
+/* --ccm-danger is not a token this stylesheet defines, so this was falling
+   back to a hardcoded red, over a hardcoded pink that stayed pink in dark
+   theme. Both come from the palette now. */
 .ccm-cf-under-attack-active {
-    border-color: var(--ccm-danger, #ef4444);
-    background: #fef2f2;
+    border-color: var(--ccm-error);
+    background: color-mix(in srgb, var(--ccm-error) 10%, transparent);
 }
 
 /* ===================================
@@ -3617,14 +3620,30 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
    Web Vitals. The bands are drawn to scale and a marker sits where the
    measured value actually falls, which a number on its own cannot show. */
 
+/* There are always exactly six lab metrics, so the column count is set rather
+   than fitted. auto-fit was choosing five and stranding Server Response Time
+   alone on a second row. Every step below divides six evenly, so no width ever
+   leaves a tile on its own. */
 .ccm-metrics {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: var(--ccm-space-md);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--ccm-space-sm);
+}
+
+@media screen and (min-width: 700px) {
+    .ccm-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media screen and (min-width: 1400px) {
+    .ccm-metrics {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: var(--ccm-space-sm);
+    }
 }
 
 .ccm-metric {
-    padding: var(--ccm-space-md);
+    min-width: 0;
+    padding: 0.75rem 0.8rem;
     border-radius: var(--ccm-radius-lg);
     background: var(--ccm-surface);
     border: 1px solid var(--ccm-border);
@@ -3634,7 +3653,11 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: var(--ccm-space-sm);
+    /* "Largest Contentful Paint" does not fit beside its abbreviation in a
+       sixth of the row, so the pair is allowed to wrap instead of overflowing. */
+    flex-wrap: wrap;
+    gap: 0.15rem var(--ccm-space-sm);
+    min-height: 2.6em;
 }
 
 .ccm-metric__name {
@@ -3714,17 +3737,25 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 .ccm-finding {
     display: grid;
-    grid-template-columns: 4px 1fr auto;
+    grid-template-columns: 8px 1fr auto;
     gap: 0 var(--ccm-space-md);
     align-items: center;
-    padding: 0;
+    padding: 0 var(--ccm-space-md);
     background: var(--ccm-surface);
     transition: background var(--ccm-transition-fast);
 }
 
 .ccm-finding:hover { background: var(--ccm-bg-secondary); }
 
-.ccm-finding__stripe { align-self: stretch; background: var(--ccm-finding-colour, var(--ccm-text-light)); }
+/* A dot, not a full-height rail. Severity still reads at a glance and the
+   list stops looking like a stack of coloured-edge cards. */
+.ccm-finding__stripe {
+    align-self: center;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ccm-finding-colour, var(--ccm-text-light));
+}
 .ccm-finding--high   { --ccm-finding-colour: var(--ccm-error); }
 .ccm-finding--medium { --ccm-finding-colour: var(--ccm-warning); }
 .ccm-finding--low    { --ccm-finding-colour: var(--ccm-info); }
@@ -4132,7 +4163,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 .ccm-optgroup__title {
     margin: 0;
-    font-size: var(--ccm-text-md);
+    font-size: var(--ccm-text-base);
     font-weight: 650;
     color: var(--ccm-text);
     letter-spacing: -0.01em;

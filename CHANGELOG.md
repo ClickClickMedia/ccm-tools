@@ -1,5 +1,25 @@
 # CCM Tools — Changelog
 
+## v8.4.2 — Six vitals on one line
+
+There are always exactly six lab metrics on Site Health, but the grid was
+fitting as many as would go and stranding Server Response Time alone on a
+second row. The column count is set now, and every step down the widths
+divides six evenly, so no screen size leaves a tile on its own.
+
+- **Metric values are formatted here rather than taken from Lighthouse.** Its
+  own displayValue is not consistent between audits: most are a bare figure
+  like "1.7 s", but server-response-time returns the sentence "Root document
+  took 0 ms", which read as a caption and wrapped onto a second line.
+- **Findings use a dot instead of a full-height coloured rail**, the same as
+  everything else in the plugin.
+- **The Cloudflare Under Attack callout** was painted with a hardcoded red over
+  a hardcoded pink, so it stayed pink in dark theme. It reads from the palette
+  now. It was also referencing a custom property this stylesheet never defines.
+- The settings group heading was sized with `--ccm-text-md`, which does not
+  exist either, and had been landing on its fallback.
+
+
 ## v8.4.1 — Every finished database task says so
 
 On the Database page, a task with nothing left to run said "Already done,

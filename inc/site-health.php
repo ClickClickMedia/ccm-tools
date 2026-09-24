@@ -235,6 +235,38 @@ function ccm_tools_sh_run(string $url, string $strategy) {
  * @param string $strategy Strategy used.
  * @return array
  */
+/**
+ * Format a lab metric for display.
+ *
+ * Lighthouse's own displayValue is not consistent between audits: most are a
+ * bare figure like "1.7 s", but server-response-time returns the sentence
+ * "Root document took 0 ms". Printing that as the tile's headline value reads
+ * as a caption rather than a measurement, and it wraps onto a second line,
+ * which makes that one tile taller than the five beside it.
+ *
+ * @param string     $id       Lighthouse audit id.
+ * @param float|null $numeric  numericValue, in ms except for CLS.
+ * @param string     $fallback displayValue, used only when there is no number.
+ * @return string
+ */
+function ccm_tools_sh_format_metric(string $id, $numeric, string $fallback): string {
+    if ($numeric === null) {
+        return $fallback !== '' ? $fallback : '-';
+    }
+
+    // Cumulative Layout Shift is a ratio, not a duration.
+    if ($id === 'cumulative-layout-shift') {
+        return rtrim(rtrim(number_format_i18n($numeric, 3), '0'), '.') ?: '0';
+    }
+
+    // Under a second reads better in milliseconds; above it, in seconds.
+    if ($numeric < 1000) {
+        return number_format_i18n(round($numeric)) . ' ms';
+    }
+
+    return number_format_i18n($numeric / 1000, 1) . ' s';
+}
+
 function ccm_tools_sh_extract(array $body, string $url, string $strategy): array {
     $lh = isset($body['lighthouseResult']) && is_array($body['lighthouseResult'])
         ? $body['lighthouseResult']
@@ -287,7 +319,11 @@ function ccm_tools_sh_extract(array $body, string $url, string $strategy): array
         $out['metrics'][$id] = array(
             'label'   => $label,
             'abbr'    => $abbr,
-            'display' => isset($audits[$id]['displayValue']) ? (string) $audits[$id]['displayValue'] : '',
+            'display' => ccm_tools_sh_format_metric(
+                $id,
+                $numeric,
+                isset($audits[$id]['displayValue']) ? (string) $audits[$id]['displayValue'] : ''
+            ),
             'numeric' => $numeric,
             'good'    => $good,
             'poor'    => $poor,
