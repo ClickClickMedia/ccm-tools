@@ -1,5 +1,64 @@
 # CCM Tools — Changelog
 
+## v8.4.0 — One component, no accent rails
+
+The v8.3.0 pages were consistent in palette but not in construction, so they
+read as variations on each other. Every settings list in the plugin is now the
+same container, and the coloured bar down the left of each row is gone.
+
+### The accent rail is gone everywhere
+
+A tinted stripe down the left edge of every card is the most recognisable
+generated-interface tic there is, and the switch on the right already says what
+is on. An enabled row lifts its own surface instead. The same treatment was
+applied to notices, toasts, the extension chips and the Database page's rows.
+
+### One card per group
+
+A settings group is now a single contained card, with its name, one line of
+context and its live count in the header. Previously a floating heading sat
+above a borderless list, which is why no two pages quite matched. The .htaccess,
+Performance, WebP, Redis, WooCommerce, System Info and Database pages all use it.
+
+### Cloudflare was a different product
+
+Most of that page is drawn by JavaScript, which was still emitting tables with
+the controls jammed against the right edge, so it never picked up the restyle.
+It now emits the same rows and tiles as everything else. The Pro-plan lock is a
+chip beside the setting's name rather than loose text crowding the control, and
+the seven analytics tiles became six, because seven left one stranded on a row
+of its own.
+
+### Two columns where it helps
+
+Reference material that is read rather than set now pairs up: the Redis status
+and drop-in panels, its two install commands, WebP's library list beside the
+test panel, and System Info's four detail panels as two rows of two. Settings
+lists stay full width, because two long lists side by side is harder to scan,
+not easier.
+
+### Fixes
+
+- **The WooCommerce payment restriction could not be turned off.** The button
+  reads a `data-enabled` attribute that was never written, so it always read as
+  off and always sent "turn on". Cash on Delivery and Bank Transfer stayed
+  hidden from real customers after testing was finished. One attribute.
+- **The .htaccess rows lost their live status** in the v8.3.0 rebuild, because
+  the script was still looking for the old row class. Each row says again
+  whether saving would add the directive, remove it, or leave it alone.
+- **A failed error-log load was unreadable in light theme.** The viewer is a
+  fixed dark surface in both themes, but the error text took the light theme's
+  dark red.
+- The Database page's risk groups were headed with emoji. They are named now.
+
+### Housekeeping
+
+Removed 243 lines of stylesheet for the row component the Database page no
+longer uses. The preview build gained a markup-nesting gate, because a stray
+closing tag is repaired silently by the browser, is invisible to `php -l`, and
+had already broken one container this release.
+
+
 ## v8.3.0 — The rest of the pages, and a save bar that follows you
 
 The v8.2.0 restyle changed the palette but left most pages' markup alone, so

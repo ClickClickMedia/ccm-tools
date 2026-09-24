@@ -466,12 +466,14 @@ function ccm_tools_htaccess_option_checked(string $risk_key, string $key, array 
  * @param bool   $checked  Whether the checkbox should render checked.
  * @return void
  */
-function ccm_tools_htaccess_render_option(string $risk_key, string $key, array $opt, bool $checked): void {
+function ccm_tools_htaccess_render_option(string $risk_key, string $key, array $opt, bool $checked, bool $applied = false, bool $has_block = false): void {
     $id = 'ht-' . $key;
     ?>
     <div class="ccm-opt<?php echo $checked ? ' is-on' : ''; ?>"
          data-risk="<?php echo esc_attr($risk_key); ?>"
-         data-state="<?php echo $checked ? 'on' : 'off'; ?>">
+         data-state="<?php echo $checked ? 'on' : 'off'; ?>"
+         data-applied="<?php echo $applied ? '1' : '0'; ?>"
+         data-has-block="<?php echo $has_block ? '1' : '0'; ?>">
         <div class="ccm-opt__main">
             <div class="ccm-opt__text">
                 <span class="ccm-opt__label"><?php echo esc_html($opt['label']); ?></span>
@@ -483,6 +485,19 @@ function ccm_tools_htaccess_render_option(string $risk_key, string $key, array $
                 <?php if ($key === 'hsts_basic') : ?>
                     <span class="ccm-chip ccm-chip--bad"><?php _e('One-year commitment', 'ccm-tools'); ?></span>
                 <?php endif; ?>
+                <span class="ccm-chip" data-opt-status><?php
+                    if (!$has_block) {
+                        echo $checked ? esc_html__('Will be applied', 'ccm-tools') : esc_html__('Not applied', 'ccm-tools');
+                    } elseif ($applied && $checked) {
+                        echo esc_html__('Applied', 'ccm-tools');
+                    } elseif ($applied) {
+                        echo esc_html__('Will be removed', 'ccm-tools');
+                    } elseif ($checked) {
+                        echo esc_html__('Will be applied', 'ccm-tools');
+                    } else {
+                        echo esc_html__('Not applied', 'ccm-tools');
+                    }
+                ?></span>
                 <p class="ccm-opt__desc"><?php echo esc_html($opt['description']); ?></p>
                 <?php if ($key === 'hsts_basic') : ?>
                     <div class="ccm-alert ccm-alert--warn" style="margin-top: var(--ccm-space-sm);">
@@ -672,21 +687,21 @@ function ccm_tools_display_htaccess(): string {
             }
             ?>
             <section class="ccm-optgroup" data-group="<?php echo esc_attr($risk_key); ?>">
-                <div class="ccm-section">
+                <header class="ccm-optgroup__head">
                     <div>
-                        <span class="ccm-section__eyebrow"><?php echo esc_html(sprintf(
-                            /* translators: 1: enabled, 2: total */
-                            __('%1$d of %2$d on', 'ccm-tools'), $group_on, count($items)
-                        )); ?></span>
-                        <h2><?php echo esc_html($group['label']); ?></h2>
-                        <p><?php echo esc_html($group['blurb']); ?></p>
+                        <h2 class="ccm-optgroup__title"><?php echo esc_html($group['label']); ?></h2>
+                        <p class="ccm-optgroup__note"><?php echo esc_html($group['blurb']); ?></p>
                     </div>
-                </div>
-                <div class="ccm-opts">
+                    <span class="ccm-optgroup__count" data-group-count><?php echo esc_html(sprintf(
+                        /* translators: 1: enabled, 2: total */
+                        __('%1$d of %2$d on', 'ccm-tools'), $group_on, count($items)
+                    )); ?></span>
+                </header>
+                <div class="ccm-optgroup__body">
                     <?php foreach ($items as $key => $opt) :
                         $checked = ccm_tools_htaccess_option_checked($risk_key, $key, $opt, $has_optimizations, $current_options);
                         $preview_options[$key] = $checked;
-                        ccm_tools_htaccess_render_option($risk_key, $key, $opt, $checked);
+                        ccm_tools_htaccess_render_option($risk_key, $key, $opt, $checked, (bool) ($has_optimizations && !empty($current_options[$key])), $has_optimizations);
                     endforeach; ?>
                 </div>
             </section>

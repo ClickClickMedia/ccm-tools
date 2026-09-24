@@ -369,10 +369,16 @@
             currentOptimizationOptions = options;
 
             // Group options by risk level
+            // No emoji markers. The risk is the group's name and the note
+            // under it says what that means, which is the same shape every
+            // other settings page uses.
             const groups = {
-                safe: { label: '✓ Safe Operations', items: [] },
-                moderate: { label: '⚡ Moderate Risk', items: [] },
-                high: { label: '⚠️ High Risk - Use With Caution', items: [] }
+                safe: { label: 'Safe', items: [],
+                        note: 'Routine housekeeping. Nothing here deletes anything you would miss.' },
+                moderate: { label: 'Worth checking first', items: [],
+                        note: 'Fine on most sites, but read what each one removes before you run it.' },
+                high: { label: 'Permanent', items: [],
+                        note: 'These delete rows for good. Take a backup before running any of them.' }
             };
 
             // Populate groups
@@ -389,28 +395,38 @@
             for (const [riskLevel, group] of Object.entries(groups)) {
                 if (group.items.length === 0) continue;
 
-                html += `<div class="ccm-opt-group ${riskLevel}">`;
-                html += `<div class="ccm-opt-group-header">${group.label}</div>`;
-                html += '<div class="ccm-opt-group-items">';
+                // The same card component the PHP settings pages render, so
+                // this page and the rest of the plugin read as one product.
+                const picked = group.items.filter(function (i) { return i.default; }).length;
+                html += `<section class="ccm-optgroup" data-group="${riskLevel}">`;
+                html += '<header class="ccm-optgroup__head"><div>';
+                html += `<h2 class="ccm-optgroup__title">${escapeHtml(group.label)}</h2>`;
+                html += `<p class="ccm-optgroup__note">${escapeHtml(group.note)}</p>`;
+                html += '</div>';
+                html += `<span class="ccm-optgroup__count" data-group-count>${picked} of ${group.items.length} selected</span>`;
+                html += '</header>';
+                html += '<div class="ccm-optgroup__body">';
 
                 for (const item of group.items) {
                     const stat = getStatForOption(item.key, stats);
                     const statClass = stat > 0 ? (riskLevel === 'high' ? 'warning' : 'has-items') : '';
-                    const checked = item.default ? 'checked' : '';
+                    const checked = item.default ? ' checked' : '';
 
                     html += `
-                        <div class="ccm-opt-item">
-                            <input type="checkbox" id="opt-${item.key}" name="optimization[]" value="${item.key}" ${checked}>
-                            <div class="ccm-opt-item-content">
-                                <label class="ccm-opt-item-label" for="opt-${item.key}">${escapeHtml(item.label)}</label>
-                                <span class="ccm-opt-item-desc">${escapeHtml(item.description)}</span>
+                        <div class="ccm-opt${item.default ? ' is-on' : ''}">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <label class="ccm-opt__label" for="opt-${item.key}">${escapeHtml(item.label)}</label>
+                                    ${stat !== null ? `<span class="ccm-chip ${statClass}" data-opt-stat>${stat}</span>` : ''}
+                                    <p class="ccm-opt__desc">${escapeHtml(item.description)}</p>
+                                </div>
+                                <input type="checkbox" id="opt-${item.key}" name="optimization[]" value="${item.key}"${checked}>
                             </div>
-                            ${stat !== null ? `<span class="ccm-opt-item-stat ${statClass}">${stat}</span>` : ''}
                         </div>
                     `;
                 }
 
-                html += '</div></div>';
+                html += '</div></section>';
             }
 
             optionsContainer.innerHTML = html;
@@ -444,16 +460,17 @@
                 if (!cb) continue;
                 cb.checked = false;
                 cb.disabled = true;
-                const descEl = cb.closest('.ccm-opt-item')?.querySelector('.ccm-opt-item-desc');
+                const row = cb.closest('.ccm-opt');
+                const descEl = row ? row.querySelector('.ccm-opt__desc') : null;
                 if (descEl) {
-                    descEl.innerHTML = '<span style="color:var(--ccm-success)">✓ Already applied</span>';
+                    descEl.textContent = 'Already done, nothing to run.';
                 }
-                const statEl = cb.closest('.ccm-opt-item')?.querySelector('.ccm-opt-item-stat');
+                const statEl = row ? row.querySelector('[data-opt-stat]') : null;
                 if (statEl) {
-                    statEl.textContent = '✓';
-                    statEl.className = 'ccm-opt-item-stat';
-                    statEl.style.color = 'var(--ccm-success)';
+                    statEl.textContent = 'Done';
+                    statEl.className = 'ccm-chip ccm-chip--good';
                 }
+                if (row) { row.classList.remove('is-on'); }
             }
 
             // Enable run button
@@ -569,7 +586,7 @@
         // Check for high-risk options and confirm
         const highRiskSelected = selected.filter(opt => {
             const checkbox = optionsContainer.querySelector(`#opt-${opt.key}`);
-            return checkbox && checkbox.closest('.ccm-opt-group.high');
+            return checkbox && checkbox.closest('.ccm-optgroup[data-group="high"]');
         });
         
         if (highRiskSelected.length > 0) {
@@ -934,62 +951,40 @@
      * @param {HTMLInputElement} checkbox - The checkbox element
      */
     function updateHtaccessOptionStatus(checkbox) {
-        const optItem = checkbox.closest('.ccm-opt-item');
-        if (!optItem) return;
-        
-        const statusEl = optItem.querySelector('.ccm-opt-item-status');
+        // Says what saving would actually do to this directive, which is not
+        // the same as whether the switch is on: a directive already in the
+        // file and now switched off is going to be REMOVED on save.
+        const row = checkbox.closest('.ccm-opt');
+        if (!row) return;
+
+        const statusEl = row.querySelector('[data-opt-status]');
         if (!statusEl) return;
-        
-        const isApplied = optItem.dataset.applied === '1';
-        const hasOptimizations = optItem.dataset.hasOptimizations === '1';
-        const isChecked = checkbox.checked;
-        
-        let statusClass, statusIcon, statusText;
-        
-        if (hasOptimizations) {
-            // Optimizations exist in .htaccess
-            if (isApplied && isChecked) {
-                // Currently applied and staying applied
-                statusClass = 'ccm-status-applied';
-                statusIcon = '✓';
-                statusText = 'Applied';
-            } else if (isApplied && !isChecked) {
-                // Currently applied but will be removed
-                statusClass = 'ccm-status-will-remove';
-                statusIcon = '−';
-                statusText = 'Will be removed';
-            } else if (!isApplied && isChecked) {
-                // Not applied but will be added
-                statusClass = 'ccm-status-pending';
-                statusIcon = '+';
-                statusText = 'Will be applied';
-            } else {
-                // Not applied and staying not applied
-                statusClass = 'ccm-status-not-applied';
-                statusIcon = '○';
-                statusText = 'Not applied';
-            }
+
+        const applied = row.dataset.applied === '1';
+        const hasBlock = row.dataset.hasBlock === '1';
+        const on = checkbox.checked;
+
+        let text, cls;
+        if (!hasBlock) {
+            text = on ? 'Will be applied' : 'Not applied';
+            cls = on ? 'ccm-chip ccm-chip--info' : 'ccm-chip';
+        } else if (applied && on) {
+            text = 'Applied';
+            cls = 'ccm-chip ccm-chip--good';
+        } else if (applied) {
+            text = 'Will be removed';
+            cls = 'ccm-chip ccm-chip--warn';
+        } else if (on) {
+            text = 'Will be applied';
+            cls = 'ccm-chip ccm-chip--info';
         } else {
-            // No optimizations yet (fresh install)
-            if (isChecked) {
-                statusClass = 'ccm-status-pending';
-                statusIcon = '○';
-                statusText = 'Will be applied';
-            } else {
-                statusClass = 'ccm-status-not-applied';
-                statusIcon = '○';
-                statusText = 'Will not be applied';
-            }
+            text = 'Not applied';
+            cls = 'ccm-chip';
         }
-        
-        // Update classes
-        optItem.classList.remove('ccm-status-applied', 'ccm-status-not-applied', 'ccm-status-pending', 'ccm-status-will-remove');
-        optItem.classList.add(statusClass);
-        statusEl.classList.remove('ccm-status-applied', 'ccm-status-not-applied', 'ccm-status-pending', 'ccm-status-will-remove');
-        statusEl.classList.add(statusClass);
-        
-        // Update content
-        statusEl.innerHTML = statusIcon + ' <small>' + statusText + '</small>';
+
+        statusEl.textContent = text;
+        statusEl.className = cls;
+        row.classList.toggle('is-on', on);
     }
     
     /**
@@ -2465,21 +2460,25 @@
                 const patternList = Array.from(patterns).join(', ');
                 
                 html += `
-                    <div style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm); background: var(--ccm-warning-bg, #fef3c7); border-radius: var(--ccm-radius); border-left: 3px solid var(--ccm-warning);">
-                        <strong>Recommended Excludes:</strong>
+                    <div class="ccm-alert ccm-alert--warn" style="margin-top: var(--ccm-space-md);">
+                        <span class="ccm-dot ccm-dot-warn"></span>
+                        <div>
+                        <strong>Worth excluding these:</strong>
                         <p style="margin: var(--ccm-space-xs) 0;">
                             <code>${escapeHtml(patternList)}</code>
                         </p>
                         <button type="button" class="apply-recommended-excludes-btn ccm-button ccm-button-small ccm-button-primary" 
                                 data-excludes="${escapeHtml(patternList)}">
-                            Apply Recommended
+                            Apply these
                         </button>
+                        </div>
                     </div>
                 `;
             } else {
                 html += `
-                    <div style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm); background: var(--ccm-success-bg, #d1fae5); border-radius: var(--ccm-radius); border-left: 3px solid var(--ccm-success);">
-                        <strong>✓ All critical scripts are already excluded!</strong>
+                    <div class="ccm-alert ccm-alert--good" style="margin-top: var(--ccm-space-md);">
+                        <span class="ccm-dot ccm-dot-ok"></span>
+                        <div><strong>Every critical script is already excluded.</strong></div>
                     </div>
                 `;
             }
@@ -3324,89 +3323,75 @@
             const features = res.data.features || {};
             const isFreePlan = !zone.plan_id || zone.plan_id === 'free';
 
-            let html = '<table class="ccm-table">';
-            html += cfStatusRow('Zone', escHtml(zone.name || '—'));
-            html += cfStatusRow('Zone ID', '<code style="font-size: 0.85em;">' + escHtml(zone.id) + '</code>');
-            html += cfStatusRow('Status', zone.status === 'active'
-                ? '<span class="ccm-success">✓ Active</span>'
-                : '<span class="ccm-error">' + escHtml(zone.status) + '</span>');
-            html += cfStatusRow('Plan', escHtml(zone.plan));
+            // Identity first, as plain key/value. Everything that can be
+            // changed is a switch row underneath, in the same component the
+            // settings pages use. This panel used to be a bare table with the
+            // controls jammed against the right edge, which is why the page
+            // read as a different product to the rest of the plugin.
+            let html = '<div class="ccm-kv">';
+            html += cfKvRow('Zone', escHtml(zone.name || '\u2014'));
+            html += cfKvRow('Zone ID', '<code class="ccm-mono">' + escHtml(zone.id) + '</code>');
+            html += cfKvRow('Status', zone.status === 'active'
+                ? '<span class="ccm-chip ccm-chip--good">Active</span>'
+                : '<span class="ccm-chip ccm-chip--bad">' + escHtml(zone.status) + '</span>');
+            html += cfKvRow('Plan', escHtml(zone.plan));
 
-            html += '<tr><td colspan="2" style="padding-top: var(--ccm-space-md);"><strong>Features</strong></td></tr>';
+            const devMode = features.development_mode;
+            if (devMode !== undefined) {
+                html += cfKvRow('Development mode', devMode === 'on'
+                    ? '<span class="ccm-chip ccm-chip--warn">Active, turns itself off in 3 hours</span>'
+                    : '<span class="ccm-text-muted">Off</span>');
+                if (devToggle) {
+                    devToggle.checked = devMode === 'on';
+                    updateDevModeStatus(devMode === 'on');
+                }
+            }
+            html += '</div>';
 
-            // --- Toggleable on/off settings ---
+            html += '<div class="ccm-optgroup__body">';
+
             const toggleSettings = [
-                { key: 'bot_fight_mode', label: 'Bot Fight Mode', desc: 'Challenge requests matching patterns of known bots and automated traffic' },
-                { key: 'browser_check', label: 'Browser Integrity Check', desc: 'Evaluate HTTP headers for threats and block known bad bots' },
-                { key: 'rocket_loader', label: 'Rocket Loader', desc: 'Prioritise loading of your page content over scripts' },
-                { key: 'always_online', label: 'Always Online', desc: 'Show a cached version of your site if your server goes offline' },
+                { key: 'bot_fight_mode', label: 'Bot Fight Mode', desc: 'Challenges requests that match the patterns of known bots and automated traffic.' },
+                { key: 'browser_check', label: 'Browser Integrity Check', desc: 'Evaluates HTTP headers for threats and blocks known bad bots.' },
+                { key: 'rocket_loader', label: 'Rocket Loader', desc: 'Defers scripts so page content paints first. Can break a theme that expects its scripts to run in order.' },
+                { key: 'always_online', label: 'Always Online', desc: 'Serves a cached copy of the site from Cloudflare if the origin server goes offline.' },
             ];
             for (const item of toggleSettings) {
                 const val = features[item.key];
                 if (val === undefined) continue;
-                const checked = val === 'on' ? ' checked' : '';
-                html += '<tr><th>' + escHtml(item.label) + '<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">' + escHtml(item.desc) + '</span></th>';
-                html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="' + item.key + '"' + checked + '>';
-                html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+                html += cfOptRow(item.label, item.desc, cfToggle(item.key, val === 'on', false), val === 'on');
             }
 
-            // --- WebP (editable; Cloudflare only exposes this on Pro+ plans) ---
+            // Cloudflare only lets a paid plan change these three. On Free the
+            // control is disabled and the reason sits as a chip beside the
+            // name, rather than as loose text crowding the control itself.
+            const proNote = isFreePlan ? 'Needs a paid plan' : '';
+
             if (features.webp !== undefined) {
-                if (isFreePlan) {
-                    html += '<tr><th>WebP Conversion<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Serve WebP images to supported browsers (Pro+ plan)</span></th>';
-                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" disabled' + (features.webp === 'on' ? ' checked' : '') + '>';
-                    html += '<span class="ccm-toggle-slider"></span></label> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
-                } else {
-                    const wChecked = features.webp === 'on' ? ' checked' : '';
-                    html += '<tr><th>WebP Conversion<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Serve WebP images to supported browsers (Pro+ plan)</span></th>';
-                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="webp"' + wChecked + '>';
-                    html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-                }
+                html += cfOptRow('WebP conversion',
+                    'Converts images to WebP at the edge for browsers that support it.',
+                    cfToggle('webp', features.webp === 'on', isFreePlan),
+                    features.webp === 'on', proNote);
             }
 
-            // --- Polish (editable; Cloudflare only exposes this on Pro+ plans) ---
             if (features.polish !== undefined) {
-                if (isFreePlan) {
-                    html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
-                    html += '<td style="text-align: right;"><select disabled class="ccm-cf-select">';
-                    const polishOptionsFree = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
-                    for (const [pval, plabel] of polishOptionsFree) {
-                        const sel = features.polish === pval ? ' selected' : '';
-                        html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
-                    }
-                    html += '</select> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
-                } else {
-                    html += '<tr><th>Polish (Image Optimization)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Strip metadata and compress images at Cloudflare\'s edge (Pro+ plan)</span></th>';
-                    html += '<td style="text-align: right;"><select data-cf-setting="polish" class="ccm-cf-select">';
-                    const polishOptions = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
-                    for (const [pval, plabel] of polishOptions) {
-                        const sel = features.polish === pval ? ' selected' : '';
-                        html += '<option value="' + pval + '"' + sel + '>' + plabel + '</option>';
-                    }
-                    html += '</select></td></tr>';
-                }
+                const polishOptions = [['off', 'Off'], ['lossless', 'Lossless'], ['lossy', 'Lossy']];
+                html += cfOptRow('Polish',
+                    'Strips metadata and recompresses images at Cloudflare\'s edge.',
+                    cfSelect('polish', polishOptions, features.polish, isFreePlan),
+                    features.polish && features.polish !== 'off', proNote);
             }
 
-            // --- Mirage (editable; Cloudflare only exposes this on Pro+ plans) ---
             if (features.mirage !== undefined) {
-                if (isFreePlan) {
-                    html += '<tr><th>Mirage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Lazy load images and optimize for mobile visitors (Pro+ plan)</span></th>';
-                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" disabled' + (features.mirage === 'on' ? ' checked' : '') + '>';
-                    html += '<span class="ccm-toggle-slider"></span></label> <span class="ccm-text-muted" style="font-size: 0.8em;">Requires Pro+</span></td></tr>';
-                } else {
-                    const mChecked = features.mirage === 'on' ? ' checked' : '';
-                    html += '<tr><th>Mirage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Lazy load images and optimize for mobile visitors (Pro+ plan)</span></th>';
-                    html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="mirage"' + mChecked + '>';
-                    html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-                }
+                html += cfOptRow('Mirage',
+                    'Lazy loads images and serves smaller ones to mobile visitors.',
+                    cfToggle('mirage', features.mirage === 'on', isFreePlan),
+                    features.mirage === 'on', proNote);
             }
 
-            // --- Browser Cache TTL (dropdown) ---
             if (features.browser_cache_ttl !== undefined) {
-                html += '<tr><th>Browser Cache TTL<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">How long browsers should cache resources</span></th>';
-                html += '<td style="text-align: right;"><select data-cf-setting="browser_cache_ttl" class="ccm-cf-select">';
                 const ttlOptions = [
-                    [0, 'Respect Existing Headers'],
+                    [0, 'Respect existing headers'],
                     [1800, '30 minutes'], [3600, '1 hour'], [7200, '2 hours'],
                     [14400, '4 hours'], [28800, '8 hours'], [43200, '12 hours'],
                     [86400, '1 day'], [172800, '2 days'], [259200, '3 days'],
@@ -3414,43 +3399,29 @@
                     [1382400, '16 days'], [2592000, '1 month'], [5184000, '2 months'],
                     [15552000, '6 months'], [31536000, '1 year'],
                 ];
-                const curTtl = features.browser_cache_ttl;
-                for (const [tval, tlabel] of ttlOptions) {
-                    const sel = curTtl === tval ? ' selected' : '';
-                    html += '<option value="' + tval + '"' + sel + '>' + tlabel + '</option>';
-                }
-                html += '</select></td></tr>';
+                html += cfOptRow('Browser cache lifetime',
+                    'How long a visitor\'s own browser keeps a file before asking for it again.',
+                    cfSelect('browser_cache_ttl', ttlOptions, features.browser_cache_ttl, false),
+                    false);
             }
 
-            // --- APO ---
             if (features.apo !== undefined) {
-                const apoEnabled = features.apo && features.apo.enabled;
-                const apoChecked = apoEnabled ? ' checked' : '';
-                html += '<tr><th>Automatic Platform Optimization (APO)<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Cloudflare\'s WordPress-specific full-page caching at the edge</span></th>';
-                html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="automatic_platform_optimization"' + apoChecked + '>';
-                html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+                const apoEnabled = !!(features.apo && features.apo.enabled);
+                html += cfOptRow('Automatic Platform Optimization',
+                    'Cloudflare\'s WordPress-aware full-page cache, served from the edge.',
+                    cfToggle('automatic_platform_optimization', apoEnabled, false), apoEnabled);
             }
 
-            // Development mode (read-only here — separate toggle below)
-            const devMode = features.development_mode;
-            if (devMode !== undefined) {
-                html += cfStatusRow('Development Mode', devMode === 'on'
-                    ? '<span style="color: var(--ccm-warning);">⚡ Active (auto-disables in 3h)</span>'
-                    : '<span class="ccm-text-muted">Off</span>');
+            html += '</div>';
 
-                if (devToggle) {
-                    devToggle.checked = devMode === 'on';
-                    updateDevModeStatus(devMode === 'on');
-                }
-            }
-
-            html += '</table>';
-
-            // Overlap warnings
-            if (features.polish !== 'off' && features.polish !== undefined || features.webp === 'on') {
-                html += '<div class="ccm-notice" style="margin-top: var(--ccm-space-md); padding: var(--ccm-space-sm) var(--ccm-space-md); background: var(--ccm-warning-bg, #fff8e1); border-left: 3px solid var(--ccm-warning); border-radius: var(--ccm-radius);">';
-                html += '<span class="ccm-icon">⚠</span> ';
-                html += '<strong>Note:</strong> Cloudflare is handling image optimization (Polish/WebP). The CCM Tools WebP converter may not be needed for this site.';
+            // Both Cloudflare and this plugin can convert images. Running both
+            // wastes work and makes it harder to tell which one caused a
+            // problem, so say so where the setting is.
+            if ((features.polish !== undefined && features.polish !== 'off') || features.webp === 'on') {
+                html += '<div class="ccm-alert ccm-alert--warn" style="margin: var(--ccm-space-md);">';
+                html += '<span class="ccm-dot ccm-dot-warn"></span>';
+                html += '<div><strong>Cloudflare is already optimising images.</strong> ';
+                html += 'The WebP converter in this plugin does the same job. Use one or the other, not both.</div>';
                 html += '</div>';
             }
 
@@ -3542,8 +3513,49 @@
 
     }
 
-    function cfStatusRow(label, value) {
-        return '<tr><th>' + escHtml(label) + '</th><td>' + value + '</td></tr>';
+    /*
+     * The Cloudflare panels used to build their own tables, which is why this
+     * page looked like a different product to every other settings page. These
+     * four emit exactly the markup the PHP pages emit, so the components, the
+     * spacing and both themes come along for free.
+     */
+
+    function cfKvRow(label, valueHtml) {
+        return '<div><span class="ccm-kv__k">' + escHtml(label) + '</span>'
+            + '<span class="ccm-kv__v">' + valueHtml + '</span></div>';
+    }
+
+    function cfOptRow(label, desc, controlHtml, isOn, chipText) {
+        let out = '<div class="ccm-opt' + (isOn ? ' is-on' : '') + '">';
+        out += '<div class="ccm-opt__main"><div class="ccm-opt__text">';
+        out += '<span class="ccm-opt__label">' + escHtml(label) + '</span>';
+        if (chipText) {
+            out += ' <span class="ccm-chip">' + escHtml(chipText) + '</span>';
+        }
+        if (desc) {
+            out += '<p class="ccm-opt__desc">' + escHtml(desc) + '</p>';
+        }
+        out += '</div>' + controlHtml + '</div></div>';
+        return out;
+    }
+
+    function cfToggle(key, checked, isDisabled) {
+        return '<label class="ccm-toggle"><input type="checkbox"'
+            + (isDisabled ? ' disabled' : ' data-cf-setting="' + escHtml(key) + '"')
+            + (checked ? ' checked' : '') + '>'
+            + '<span class="ccm-toggle-slider"></span></label>';
+    }
+
+    function cfSelect(key, options, current, isDisabled) {
+        let out = '<select class="ccm-input ccm-cf-select"'
+            + (isDisabled ? ' disabled' : ' data-cf-setting="' + escHtml(key) + '"') + '>';
+        for (const opt of options) {
+            const val = opt[0];
+            const label = opt[1];
+            out += '<option value="' + escHtml(String(val)) + '"'
+                + (current === val ? ' selected' : '') + '>' + escHtml(label) + '</option>';
+        }
+        return out + '</select>';
     }
 
     function updateDevModeStatus(enabled) {
@@ -3573,62 +3585,40 @@
             html += '<span class="ccm-toggle-slider"></span></label></div>';
         }
 
-        html += '<table class="ccm-table">';
+        html += '<div class="ccm-optgroup__body">';
 
-        // Security Level (dropdown)
         if (features.security_level !== undefined) {
             const levels = [
-                ['essentially_off', 'Essentially Off'],
+                ['essentially_off', 'Essentially off'],
                 ['low', 'Low'],
                 ['medium', 'Medium'],
                 ['high', 'High'],
-                ['under_attack', 'I\'m Under Attack!'],
+                ['under_attack', 'I\'m Under Attack'],
             ];
-            html += '<tr><th>Security Level<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Controls Cloudflare\'s challenge page sensitivity</span></th>';
-            html += '<td style="text-align: right;"><select data-cf-setting="security_level" class="ccm-cf-select">';
-            for (const [val, label] of levels) {
-                const sel = features.security_level === val ? ' selected' : '';
-                html += '<option value="' + val + '"' + sel + '>' + label + '</option>';
-            }
-            html += '</select></td></tr>';
+            html += cfOptRow('Security level',
+                'How readily Cloudflare shows a visitor a challenge page.',
+                cfSelect('security_level', levels, features.security_level, false), false);
         }
 
-        // Email Obfuscation (toggle)
-        if (features.email_obfuscation !== undefined) {
-            const checked = features.email_obfuscation === 'on' ? ' checked' : '';
-            html += '<tr><th>Email Address Obfuscation<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Hide email addresses from bots and scrapers</span></th>';
-            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="email_obfuscation"' + checked + '>';
-            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+        // Every remaining security setting is a plain on/off, so they are one
+        // list rather than six near-identical blocks.
+        const securityToggles = [
+            { key: 'email_obfuscation', label: 'Email address obfuscation',
+              desc: 'Hides email addresses in your pages from scrapers.' },
+            { key: 'hotlink_protection', label: 'Hotlink protection',
+              desc: 'Stops other sites embedding your images and using your bandwidth.' },
+            { key: 'server_side_exclude', label: 'Server-side excludes',
+              desc: 'Hides content you have marked up from visitors Cloudflare considers suspicious.' },
+            { key: 'privacy_pass', label: 'Privacy Pass',
+              desc: 'Shows fewer CAPTCHAs to visitors carrying Privacy Pass tokens.' },
+        ];
+        for (const item of securityToggles) {
+            const val = features[item.key];
+            if (val === undefined) continue;
+            html += cfOptRow(item.label, item.desc, cfToggle(item.key, val === 'on', false), val === 'on');
         }
 
-        // Hotlink Protection (toggle)
-        if (features.hotlink_protection !== undefined) {
-            const checked = features.hotlink_protection === 'on' ? ' checked' : '';
-            html += '<tr><th>Hotlink Protection<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Prevent other sites from embedding your images</span></th>';
-            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="hotlink_protection"' + checked + '>';
-            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-        }
-
-        // Server-side Excludes (toggle)
-        if (features.server_side_exclude !== undefined) {
-            const checked = features.server_side_exclude === 'on' ? ' checked' : '';
-            html += '<tr><th>Server-side Excludes<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Automatically hide specific content from suspicious visitors</span></th>';
-            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="server_side_exclude"' + checked + '>';
-            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-        }
-
-        // Privacy Pass (toggle)
-        if (features.privacy_pass !== undefined) {
-            const checked = features.privacy_pass === 'on' ? ' checked' : '';
-            html += '<tr><th>Privacy Pass<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Reduce CAPTCHAs for visitors using Privacy Pass tokens</span></th>';
-            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="privacy_pass"' + checked + '>';
-            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
-        }
-
-        // Challenge Passage TTL (dropdown)
         if (features.challenge_ttl !== undefined) {
-            html += '<tr><th>Challenge Passage<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">How long a visitor who passed a challenge can access your site</span></th>';
-            html += '<td style="text-align: right;"><select data-cf-setting="challenge_ttl" class="ccm-cf-select">';
             const ttlOptions = [
                 [300, '5 minutes'], [900, '15 minutes'], [1800, '30 minutes'],
                 [2700, '45 minutes'], [3600, '1 hour'], [7200, '2 hours'],
@@ -3636,14 +3626,12 @@
                 [57600, '16 hours'], [86400, '1 day'], [604800, '1 week'],
                 [2592000, '1 month'], [31536000, '1 year'],
             ];
-            for (const [tval, tlabel] of ttlOptions) {
-                const sel = features.challenge_ttl === tval ? ' selected' : '';
-                html += '<option value="' + tval + '"' + sel + '>' + tlabel + '</option>';
-            }
-            html += '</select></td></tr>';
+            html += cfOptRow('Challenge passage',
+                'How long a visitor who passed a challenge can browse before being asked again.',
+                cfSelect('challenge_ttl', ttlOptions, features.challenge_ttl, false), false);
         }
 
-        html += '</table>';
+        html += '</div>';
         container.innerHTML = html;
 
         // Bind controls
@@ -3657,23 +3645,18 @@
         const container = $('#cf-network-settings');
         if (!container) return;
 
-        let html = '<table class="ccm-table">';
+        let html = '<div class="ccm-optgroup__body">';
 
-        // SSL Mode (dropdown)
         if (features.ssl !== undefined) {
             const modes = [
                 ['off', 'Off'],
                 ['flexible', 'Flexible'],
                 ['full', 'Full'],
-                ['strict', 'Full (Strict)'],
+                ['strict', 'Full (strict)'],
             ];
-            html += '<tr><th>SSL/TLS Encryption Mode<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Encryption between visitors, Cloudflare, and your origin server</span></th>';
-            html += '<td style="text-align: right;"><select data-cf-setting="ssl" class="ccm-cf-select">';
-            for (const [val, label] of modes) {
-                const sel = features.ssl === val ? ' selected' : '';
-                html += '<option value="' + val + '"' + sel + '>' + label + '</option>';
-            }
-            html += '</select></td></tr>';
+            html += cfOptRow('SSL/TLS mode',
+                'How traffic is encrypted between the visitor, Cloudflare and this server. Full (strict) is the only one that verifies the origin certificate.',
+                cfSelect('ssl', modes, features.ssl, false), false);
         }
 
         // Toggle settings for network panel
@@ -3693,29 +3676,22 @@
         for (const item of networkToggles) {
             const val = features[item.key];
             if (val === undefined) continue;
-            const checked = val === 'on' ? ' checked' : '';
-            html += '<tr><th>' + escHtml(item.label) + '<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">' + escHtml(item.desc) + '</span></th>';
-            html += '<td style="text-align: right;"><label class="ccm-toggle"><input type="checkbox" data-cf-setting="' + item.key + '"' + checked + '>';
-            html += '<span class="ccm-toggle-slider"></span></label></td></tr>';
+            html += cfOptRow(item.label, item.desc, cfToggle(item.key, val === 'on', false), val === 'on');
         }
 
         // Pseudo IPv4 (dropdown)
         if (features.pseudo_ipv4 !== undefined) {
-            html += '<tr><th>Pseudo IPv4<br><span class="ccm-text-muted" style="font-weight: normal; font-size: 0.85em;">Add an IPv4 header for IPv6 visitors for compatibility with older systems</span></th>';
-            html += '<td style="text-align: right;"><select data-cf-setting="pseudo_ipv4" class="ccm-cf-select">';
             const pv4Options = [
                 ['off', 'Off'],
-                ['add_header', 'Add Header'],
-                ['overwrite_header', 'Overwrite Headers'],
+                ['add_header', 'Add a header'],
+                ['overwrite_header', 'Overwrite the header'],
             ];
-            for (const [val, label] of pv4Options) {
-                const sel = features.pseudo_ipv4 === val ? ' selected' : '';
-                html += '<option value="' + val + '"' + sel + '>' + label + '</option>';
-            }
-            html += '</select></td></tr>';
+            html += cfOptRow('Pseudo IPv4',
+                'Sends an IPv4-shaped address to this server for IPv6 visitors, for software that cannot read an IPv6 address.',
+                cfSelect('pseudo_ipv4', pv4Options, features.pseudo_ipv4, false), false);
         }
 
-        html += '</table>';
+        html += '</div>';
         container.innerHTML = html;
 
         // Bind controls
@@ -3735,57 +3711,53 @@
             const cacheRatio = req.all > 0 ? Math.round((req.cached / req.all) * 100) : 0;
             const bwCacheRatio = bw.all > 0 ? Math.round((bw.cached / bw.all) * 100) : 0;
 
-            let html = '<div class="ccm-cf-analytics-grid">';
+            // The same stat tiles every other page uses, rather than a
+            // Cloudflare-only card. Six of them, because seven left one
+            // stranded on a row of its own; the HTTPS share now sits under
+            // the request count it belongs to.
+            const sslPct = req.all > 0 ? Math.round((req.ssl / req.all) * 100) : 0;
+            const threats = d.threats || 0;
 
-            // Requests card
-            html += '<div class="ccm-cf-stat-card">';
-            html += '<div class="ccm-cf-stat-number">' + formatNumber(req.all) + '</div>';
-            html += '<div class="ccm-cf-stat-label">Total Requests</div>';
-            html += '<div class="ccm-cf-stat-detail">';
-            html += '<span class="ccm-success">' + formatNumber(req.cached) + ' cached</span> · ';
-            html += '<span class="ccm-text-muted">' + formatNumber(req.uncached) + ' uncached</span>';
-            html += '</div></div>';
+            let html = '<div class="ccm-stat-grid">';
 
-            // Bandwidth card
-            html += '<div class="ccm-cf-stat-card">';
-            html += '<div class="ccm-cf-stat-number">' + formatBytes(bw.all) + '</div>';
-            html += '<div class="ccm-cf-stat-label">Bandwidth</div>';
-            html += '<div class="ccm-cf-stat-detail">';
-            html += '<span class="ccm-success">' + formatBytes(bw.cached) + ' cached</span> · ';
-            html += '<span class="ccm-text-muted">' + formatBytes(bw.uncached) + ' uncached</span>';
-            html += '</div></div>';
+            html += '<div class="ccm-stat-tile">'
+                + '<div class="ccm-stat-tile__value">' + formatNumber(req.all) + '</div>'
+                + '<div class="ccm-stat-tile__label">Requests</div>'
+                + '<div class="ccm-stat-tile__sub">' + formatNumber(req.cached) + ' cached, '
+                + formatNumber(req.uncached) + ' from this server</div>'
+                + '<div class="ccm-stat-tile__sub">' + sslPct + '% over HTTPS</div>'
+                + '</div>';
 
-            // Cache ratio card
-            html += '<div class="ccm-cf-stat-card">';
-            html += '<div class="ccm-cf-stat-number">' + cacheRatio + '%</div>';
-            html += '<div class="ccm-cf-stat-label">Request Cache Ratio</div>';
-            html += '<div class="ccm-cf-stat-bar"><div class="ccm-cf-stat-bar-fill" style="width: ' + cacheRatio + '%;"></div></div>';
-            html += '<div class="ccm-cf-stat-detail">' + bwCacheRatio + '% bandwidth saved</div></div>';
+            html += '<div class="ccm-stat-tile">'
+                + '<div class="ccm-stat-tile__value">' + formatBytes(bw.all) + '</div>'
+                + '<div class="ccm-stat-tile__label">Bandwidth</div>'
+                + '<div class="ccm-stat-tile__sub">' + formatBytes(bw.cached) + ' of it served by Cloudflare</div>'
+                + '</div>';
 
-            // Page views card
-            html += '<div class="ccm-cf-stat-card">';
-            html += '<div class="ccm-cf-stat-number">' + formatNumber(d.pageviews || 0) + '</div>';
-            html += '<div class="ccm-cf-stat-label">Page Views</div>';
-            html += '</div>';
+            html += '<div class="ccm-stat-tile">'
+                + '<div class="ccm-stat-tile__value">' + cacheRatio + '<small>%</small></div>'
+                + '<div class="ccm-stat-tile__label">Requests served from cache</div>'
+                + '<div class="ccm-meter" style="margin: 0.5rem 0 0.4rem;"><i style="width: ' + cacheRatio + '%;"></i></div>'
+                + '<div class="ccm-stat-tile__sub">' + bwCacheRatio + '% of bandwidth saved</div>'
+                + '</div>';
 
-            // Unique visitors card
-            html += '<div class="ccm-cf-stat-card">';
-            html += '<div class="ccm-cf-stat-number">' + formatNumber(d.uniques || 0) + '</div>';
-            html += '<div class="ccm-cf-stat-label">Unique Visitors</div>';
-            html += '</div>';
+            html += '<div class="ccm-stat-tile">'
+                + '<div class="ccm-stat-tile__value">' + formatNumber(d.pageviews || 0) + '</div>'
+                + '<div class="ccm-stat-tile__label">Page views</div>'
+                + '</div>';
 
-            // Threats card
-            html += '<div class="ccm-cf-stat-card">';
-            html += '<div class="ccm-cf-stat-number' + ((d.threats || 0) > 0 ? ' ccm-cf-stat-warning' : '') + '">' + formatNumber(d.threats || 0) + '</div>';
-            html += '<div class="ccm-cf-stat-label">Threats Blocked</div>';
-            html += '</div>';
+            html += '<div class="ccm-stat-tile">'
+                + '<div class="ccm-stat-tile__value">' + formatNumber(d.uniques || 0) + '</div>'
+                + '<div class="ccm-stat-tile__label">Unique visitors</div>'
+                + '</div>';
 
-            // Encrypted requests
-            html += '<div class="ccm-cf-stat-card">';
-            html += '<div class="ccm-cf-stat-number">' + formatNumber(req.ssl || 0) + '</div>';
-            html += '<div class="ccm-cf-stat-label">Encrypted Requests</div>';
-            html += '<div class="ccm-cf-stat-detail">' + (req.all > 0 ? Math.round((req.ssl / req.all) * 100) : 0) + '% of traffic over HTTPS</div>';
-            html += '</div>';
+            html += '<div class="ccm-stat-tile">'
+                + '<div class="ccm-stat-tile__value">' + formatNumber(threats) + '</div>'
+                + '<div class="ccm-stat-tile__label">Threats blocked</div>'
+                + '<div class="ccm-stat-tile__sub"><span class="ccm-dot '
+                + (threats > 0 ? 'ccm-dot-warn' : 'ccm-dot-ok') + '"></span>'
+                + (threats > 0 ? 'Cloudflare stopped these before they reached the site' : 'Nothing blocked in this period')
+                + '</div></div>';
 
             html += '</div>';
             container.innerHTML = html;

@@ -1935,6 +1935,18 @@ function ccm_tools_render_redis_page() {
                 </div>
             <?php endif; ?>
 
+            <?php
+            /*
+             * Status and the drop-in's live readings sit side by side. Both are
+             * read rather than set — nothing in either panel is a decision — so
+             * pairing them stops a long page spending two full-width blocks on
+             * reference detail. .ccm-grid-2 collapses to one column on a phone,
+             * and when the drop-in is not running the Status panel simply takes
+             * the whole width on its own.
+             */
+            ?>
+            <div class="ccm-grid-2">
+
             <!-- Status -->
             <div class="ccm-panel">
                 <div class="ccm-panel__head">
@@ -2025,7 +2037,7 @@ function ccm_tools_render_redis_page() {
 
             <?php if ($runtime) : ?>
             <!-- Drop-in runtime -->
-            <div class="ccm-panel" style="margin-top: var(--ccm-space-md);">
+            <div class="ccm-panel">
                 <div class="ccm-panel__head">
                     <span><?php _e('Drop-in runtime', 'ccm-tools'); ?></span>
                     <span class="ccm-chip ccm-chip--info"><?php _e('Live values from the running drop-in', 'ccm-tools'); ?></span>
@@ -2059,248 +2071,281 @@ function ccm_tools_render_redis_page() {
             </div>
             <?php endif; ?>
 
+            </div><!-- /.ccm-grid-2 -->
+
             <?php if ($extension_available) : ?>
 
             <form id="redis-settings-form">
 
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_connection), count($constants_connection)); ?></span>
-                        <h2><?php _e('Connection', 'ccm-tools'); ?></h2>
-                        <p><?php _e('Where Redis is and how to reach it. Anything defined as a constant in wp-config.php always wins over what is saved here.', 'ccm-tools'); ?></p>
-                    </div>
-                </div>
-
-                <div class="ccm-grid-2">
-                    <div class="ccm-optfield">
-                        <label for="redis-scheme"><?php _e('Connection type', 'ccm-tools'); ?></label>
-                        <select id="redis-scheme" name="scheme" class="ccm-input">
-                            <option value="tcp" <?php selected($settings['scheme'], 'tcp'); ?>><?php _e('TCP/IP', 'ccm-tools'); ?></option>
-                            <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix socket', 'ccm-tools'); ?></option>
-                            <option value="tls" <?php selected($settings['scheme'], 'tls'); ?>><?php _e('TLS/SSL', 'ccm-tools'); ?></option>
-                        </select>
-                    </div>
-                    <div class="ccm-optfield" id="redis-database-field">
-                        <label for="redis-database"><?php _e('Database index', 'ccm-tools'); ?></label>
-                        <input type="number" id="redis-database" name="database" class="ccm-input" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
-                        <span class="ccm-optfield__hint"><?php _e('0–15', 'ccm-tools'); ?></span>
-                    </div>
-                </div>
-
-                <div class="ccm-row" id="tcp-settings" style="align-items: flex-start; margin-top: var(--ccm-space-md);<?php echo $is_unix ? ' display:none;' : ''; ?>">
-                    <div class="ccm-optfield" style="flex: 2 1 16rem;">
-                        <label for="redis-host"><?php _e('Host', 'ccm-tools'); ?></label>
-                        <input type="text" id="redis-host" name="host" class="ccm-input" value="<?php echo esc_attr($settings['host']); ?>" placeholder="127.0.0.1">
-                    </div>
-                    <div class="ccm-optfield" style="flex: 1 1 8rem;">
-                        <label for="redis-port"><?php _e('Port', 'ccm-tools'); ?></label>
-                        <input type="number" id="redis-port" name="port" class="ccm-input" value="<?php echo esc_attr($settings['port']); ?>" placeholder="6379" min="1" max="65535">
-                    </div>
-                </div>
-
-                <div id="unix-settings" style="margin-top: var(--ccm-space-md);<?php echo $is_unix ? '' : ' display:none;'; ?>">
-                    <div class="ccm-optfield" style="max-width: none;">
-                        <label for="redis-path"><?php _e('Socket path', 'ccm-tools'); ?></label>
-                        <input type="text" id="redis-path" name="path" class="ccm-input" value="<?php echo esc_attr($settings['path']); ?>" placeholder="/var/run/redis/redis.sock">
-                    </div>
-                </div>
-
-                <div class="ccm-optfield" style="max-width: none; margin-top: var(--ccm-space-md);">
-                    <label for="redis-password"><?php _e('Password', 'ccm-tools'); ?></label>
-                    <input type="password" id="redis-password" name="password" class="ccm-input" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>" autocomplete="new-password">
-                </div>
-
-                <div class="ccm-optfield" style="max-width: none; margin-top: var(--ccm-space-md);">
-                    <label for="redis-username"><?php _e('Username (Redis 6.0+ ACL)', 'ccm-tools'); ?></label>
-                    <input type="text" id="redis-username" name="username" class="ccm-input" value="<?php echo esc_attr($settings['username'] ?? ''); ?>" placeholder="<?php esc_attr_e('Leave empty for the default user', 'ccm-tools'); ?>">
-                    <span class="ccm-optfield__hint"><?php _e('Only needed if the Redis server uses ACL authentication.', 'ccm-tools'); ?></span>
-                </div>
-
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_cache), count($constants_cache)); ?></span>
-                        <h2><?php _e('Cache behaviour', 'ccm-tools'); ?></h2>
-                        <p><?php _e('How long entries live, and how this site keeps its cache separate from anyone else on the same Redis server.', 'ccm-tools'); ?></p>
-                    </div>
-                </div>
-
-                <div class="ccm-optfield" style="max-width: none;">
-                    <label for="redis-key-salt"><?php _e('Key prefix', 'ccm-tools'); ?></label>
-                    <span class="ccm-row" style="flex-wrap: nowrap;">
-                        <input type="text" id="redis-key-salt" name="key_salt" class="ccm-input ccm-mono" style="flex: 1;" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST) . '_'); ?>">
-                        <button type="button" id="redis-generate-salt" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Generate', 'ccm-tools'); ?></button>
-                    </span>
-                    <span class="ccm-optfield__hint"><?php _e('Generated automatically so this site never reads or writes another site\'s cache when several installs share one Redis server — an empty prefix is exactly how that collision happens. Only change it to deliberately share cache with another install.', 'ccm-tools'); ?></span>
-                </div>
-
-                <div class="ccm-optfield" style="margin-top: var(--ccm-space-md);">
-                    <label for="redis-max-ttl"><?php _e('Max TTL', 'ccm-tools'); ?></label>
-                    <span class="ccm-optfield__inline">
-                        <input type="number" id="redis-max-ttl" name="max_ttl" class="ccm-input" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0" placeholder="604800">
-                        <span class="ccm-optfield__suffix"><?php _e('sec (0 = no limit)', 'ccm-tools'); ?></span>
-                    </span>
-                </div>
-
-                <div class="ccm-opts" style="margin-top: var(--ccm-space-md);">
-                    <div class="ccm-opt<?php echo $settings['selective_flush'] ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Selective flush', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Flush Cache clears only this site\'s own keys, never the whole Redis database. Turn this off only if you deliberately want a flush here to clear every site sharing this server.', 'ccm-tools'); ?></p>
+                <section class="ccm-optgroup" data-group="connection">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Connection', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Where Redis is and how to reach it. Anything defined as a constant in wp-config.php always wins over what is saved here.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_connection), count($constants_connection)); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <?php
+                        /*
+                         * The stack's own gap spaces these fields, so the
+                         * margin-top each one used to carry is gone. Adding it
+                         * back would double up against the gap.
+                         */
+                        ?>
+                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md);">
+                            <div class="ccm-grid-2">
+                                <div class="ccm-optfield">
+                                    <label for="redis-scheme"><?php _e('Connection type', 'ccm-tools'); ?></label>
+                                    <select id="redis-scheme" name="scheme" class="ccm-input">
+                                        <option value="tcp" <?php selected($settings['scheme'], 'tcp'); ?>><?php _e('TCP/IP', 'ccm-tools'); ?></option>
+                                        <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix socket', 'ccm-tools'); ?></option>
+                                        <option value="tls" <?php selected($settings['scheme'], 'tls'); ?>><?php _e('TLS/SSL', 'ccm-tools'); ?></option>
+                                    </select>
+                                </div>
+                                <div class="ccm-optfield" id="redis-database-field">
+                                    <label for="redis-database"><?php _e('Database index', 'ccm-tools'); ?></label>
+                                    <input type="number" id="redis-database" name="database" class="ccm-input" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
+                                    <span class="ccm-optfield__hint"><?php _e('0–15', 'ccm-tools'); ?></span>
+                                </div>
                             </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="selective_flush" <?php checked($settings['selective_flush']); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
+
+                            <?php
+                            /*
+                             * js/main.js flips these two by id with an inline
+                             * style.display (flex for the TCP row, block for the
+                             * socket path), so whichever starts hidden must do it
+                             * with an inline display: none. .ccm-hide is
+                             * `display: none !important` and an inline style
+                             * cannot beat it, so the field would never appear.
+                             */
+                            ?>
+                            <div class="ccm-row" id="tcp-settings" style="align-items: flex-start;<?php echo $is_unix ? ' display: none;' : ''; ?>">
+                                <div class="ccm-optfield" style="flex: 2 1 16rem;">
+                                    <label for="redis-host"><?php _e('Host', 'ccm-tools'); ?></label>
+                                    <input type="text" id="redis-host" name="host" class="ccm-input" value="<?php echo esc_attr($settings['host']); ?>" placeholder="127.0.0.1">
+                                </div>
+                                <div class="ccm-optfield" style="flex: 1 1 8rem;">
+                                    <label for="redis-port"><?php _e('Port', 'ccm-tools'); ?></label>
+                                    <input type="number" id="redis-port" name="port" class="ccm-input" value="<?php echo esc_attr($settings['port']); ?>" placeholder="6379" min="1" max="65535">
+                                </div>
+                            </div>
+
+                            <div id="unix-settings"<?php echo $is_unix ? '' : ' style="display: none;"'; ?>>
+                                <div class="ccm-optfield" style="max-width: none;">
+                                    <label for="redis-path"><?php _e('Socket path', 'ccm-tools'); ?></label>
+                                    <input type="text" id="redis-path" name="path" class="ccm-input" value="<?php echo esc_attr($settings['path']); ?>" placeholder="/var/run/redis/redis.sock">
+                                </div>
+                            </div>
+
+                            <div class="ccm-optfield" style="max-width: none;">
+                                <label for="redis-password"><?php _e('Password', 'ccm-tools'); ?></label>
+                                <input type="password" id="redis-password" name="password" class="ccm-input" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>" autocomplete="new-password">
+                            </div>
+
+                            <div class="ccm-optfield" style="max-width: none;">
+                                <label for="redis-username"><?php _e('Username (Redis 6.0+ ACL)', 'ccm-tools'); ?></label>
+                                <input type="text" id="redis-username" name="username" class="ccm-input" value="<?php echo esc_attr($settings['username'] ?? ''); ?>" placeholder="<?php esc_attr_e('Leave empty for the default user', 'ccm-tools'); ?>">
+                                <span class="ccm-optfield__hint"><?php _e('Only needed if the Redis server uses ACL authentication.', 'ccm-tools'); ?></span>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </section>
+
+                <section class="ccm-optgroup" data-group="cache">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Cache behaviour', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('How long entries live, and how this site keeps its cache separate from anyone else on the same Redis server.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_cache), count($constants_cache)); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
+                            <div class="ccm-optfield" style="max-width: none;">
+                                <label for="redis-key-salt"><?php _e('Key prefix', 'ccm-tools'); ?></label>
+                                <span class="ccm-row" style="flex-wrap: nowrap;">
+                                    <input type="text" id="redis-key-salt" name="key_salt" class="ccm-input ccm-mono" style="flex: 1;" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST) . '_'); ?>">
+                                    <button type="button" id="redis-generate-salt" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Generate', 'ccm-tools'); ?></button>
+                                </span>
+                                <span class="ccm-optfield__hint"><?php _e('Generated automatically so this site never reads or writes another site\'s cache when several installs share one Redis server — an empty prefix is exactly how that collision happens. Only change it to deliberately share cache with another install.', 'ccm-tools'); ?></span>
+                            </div>
+
+                            <div class="ccm-optfield">
+                                <label for="redis-max-ttl"><?php _e('Max TTL', 'ccm-tools'); ?></label>
+                                <span class="ccm-optfield__inline">
+                                    <input type="number" id="redis-max-ttl" name="max_ttl" class="ccm-input" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0" placeholder="604800">
+                                    <span class="ccm-optfield__suffix"><?php _e('sec (0 = no limit)', 'ccm-tools'); ?></span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo $settings['selective_flush'] ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Selective flush', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Flush Cache clears only this site\'s own keys, never the whole Redis database. Turn this off only if you deliberately want a flush here to clear every site sharing this server.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="selective_flush" <?php checked($settings['selective_flush']); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
                 <?php if ($has_woocommerce) :
                     $wc_on = (int) !empty($settings['wc_cache_cart_fragments'])
                            + (int) !empty($settings['wc_persistent_cart'])
                            + (int) (empty($settings['wc_session_cache']) || $settings['wc_session_cache']);
                     ?>
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php printf(esc_html__('%1$d of %2$d on', 'ccm-tools'), $wc_on, 3); ?></span>
-                        <h2><?php _e('WooCommerce', 'ccm-tools'); ?></h2>
-                        <p><?php _e('Cart, session and product data are the highest-traffic reads on a store, so caching them in Redis is what cuts database load at checkout.', 'ccm-tools'); ?></p>
-                    </div>
-                </div>
+                <section class="ccm-optgroup" data-group="woocommerce">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('WooCommerce', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Cart, session and product data are the highest-traffic reads on a store, so caching them in Redis is what cuts database load at checkout.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d on', 'ccm-tools'), $wc_on, 3); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
+                            <div class="ccm-grid-2">
+                                <div class="ccm-optfield">
+                                    <label for="wc-product-cache-ttl"><?php _e('Product cache TTL', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="wc-product-cache-ttl" name="wc_product_cache_ttl" class="ccm-input" value="<?php echo esc_attr(!empty($settings['wc_product_cache_ttl']) ? $settings['wc_product_cache_ttl'] : 3600); ?>" min="0">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                    <span class="ccm-optfield__hint"><?php _e('3600 = one hour.', 'ccm-tools'); ?></span>
+                                </div>
+                                <div class="ccm-optfield">
+                                    <label for="wc-session-cache-ttl"><?php _e('Session cache TTL', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="wc-session-cache-ttl" name="wc_session_cache_ttl" class="ccm-input" value="<?php echo esc_attr(!empty($settings['wc_session_cache_ttl']) ? $settings['wc_session_cache_ttl'] : 172800); ?>" min="0">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                    <span class="ccm-optfield__hint"><?php _e('172800 = 48 hours, matching WooCommerce\'s own default.', 'ccm-tools'); ?></span>
+                                </div>
+                            </div>
+                        </div>
 
-                <div class="ccm-grid-2">
-                    <div class="ccm-optfield">
-                        <label for="wc-product-cache-ttl"><?php _e('Product cache TTL', 'ccm-tools'); ?></label>
-                        <span class="ccm-optfield__inline">
-                            <input type="number" id="wc-product-cache-ttl" name="wc_product_cache_ttl" class="ccm-input" value="<?php echo esc_attr(!empty($settings['wc_product_cache_ttl']) ? $settings['wc_product_cache_ttl'] : 3600); ?>" min="0">
-                            <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                        </span>
-                        <span class="ccm-optfield__hint"><?php _e('3600 = one hour.', 'ccm-tools'); ?></span>
-                    </div>
-                    <div class="ccm-optfield">
-                        <label for="wc-session-cache-ttl"><?php _e('Session cache TTL', 'ccm-tools'); ?></label>
-                        <span class="ccm-optfield__inline">
-                            <input type="number" id="wc-session-cache-ttl" name="wc_session_cache_ttl" class="ccm-input" value="<?php echo esc_attr(!empty($settings['wc_session_cache_ttl']) ? $settings['wc_session_cache_ttl'] : 172800); ?>" min="0">
-                            <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                        </span>
-                        <span class="ccm-optfield__hint"><?php _e('172800 = 48 hours, matching WooCommerce\'s own default.', 'ccm-tools'); ?></span>
-                    </div>
-                </div>
-
-                <div class="ccm-opts" style="margin-top: var(--ccm-space-md);">
-                    <div class="ccm-opt<?php echo !empty($settings['wc_cache_cart_fragments']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Cache cart fragments', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Speeds up the AJAX cart update fired on every add-to-cart click.', 'ccm-tools'); ?></p>
+                        <div class="ccm-opt<?php echo !empty($settings['wc_cache_cart_fragments']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Cache cart fragments', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Speeds up the AJAX cart update fired on every add-to-cart click.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="wc_cache_cart_fragments" <?php checked(!empty($settings['wc_cache_cart_fragments'])); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
                             </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="wc_cache_cart_fragments" <?php checked(!empty($settings['wc_cache_cart_fragments'])); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
+                        </div>
+                        <div class="ccm-opt<?php echo !empty($settings['wc_persistent_cart']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Persistent cart in Redis', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Stores a logged-in shopper\'s cart in Redis instead of user meta, for a faster checkout.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="wc_persistent_cart" <?php checked(!empty($settings['wc_persistent_cart'])); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="ccm-opt<?php echo (empty($settings['wc_session_cache']) || $settings['wc_session_cache']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Session data caching', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('On by default. Caches WooCommerce session data in Redis rather than the database.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="wc_session_cache" <?php checked(empty($settings['wc_session_cache']) || $settings['wc_session_cache']); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
                     </div>
-                    <div class="ccm-opt<?php echo !empty($settings['wc_persistent_cart']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Persistent cart in Redis', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Stores a logged-in shopper\'s cart in Redis instead of user meta, for a faster checkout.', 'ccm-tools'); ?></p>
-                            </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="wc_persistent_cart" <?php checked(!empty($settings['wc_persistent_cart'])); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="ccm-opt<?php echo (empty($settings['wc_session_cache']) || $settings['wc_session_cache']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Session data caching', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('On by default. Caches WooCommerce session data in Redis rather than the database.', 'ccm-tools'); ?></p>
-                            </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="wc_session_cache" <?php checked(empty($settings['wc_session_cache']) || $settings['wc_session_cache']); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
+                </section>
                 <?php endif; // WooCommerce ?>
 
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_advanced), count($constants_advanced)); ?></span>
-                        <h2><?php _e('Advanced', 'ccm-tools'); ?></h2>
-                        <p><?php _e('Timeouts and encoding — including the one combination that has taken down production sites before.', 'ccm-tools'); ?></p>
-                    </div>
-                </div>
-
-                <div class="ccm-grid-2">
-                    <div class="ccm-optfield">
-                        <label for="redis-timeout"><?php _e('Connection timeout', 'ccm-tools'); ?></label>
-                        <span class="ccm-optfield__inline">
-                            <input type="number" id="redis-timeout" name="timeout" class="ccm-input" value="<?php echo esc_attr($settings['timeout']); ?>" min="0" step="0.1">
-                            <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                        </span>
-                    </div>
-                    <div class="ccm-optfield">
-                        <label for="redis-read-timeout"><?php _e('Read timeout', 'ccm-tools'); ?></label>
-                        <span class="ccm-optfield__inline">
-                            <input type="number" id="redis-read-timeout" name="read_timeout" class="ccm-input" value="<?php echo esc_attr($settings['read_timeout']); ?>" min="0" step="0.1">
-                            <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                        </span>
-                    </div>
-                </div>
-
-                <div class="ccm-grid-2" style="margin-top: var(--ccm-space-md);">
-                    <div class="ccm-optfield">
-                        <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
-                        <select id="redis-serializer" name="serializer" class="ccm-input">
-                            <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP', 'ccm-tools'); ?><?php echo extension_loaded('igbinary') ? ' (' . __('fallback', 'ccm-tools') . ')' : ' (' . __('default', 'ccm-tools') . ')'; ?></option>
-                            <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary')); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('default — faster, smaller', 'ccm-tools') . ')'; ?></option>
-                            <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack')); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
-                        </select>
-                        <span class="ccm-optfield__hint"><?php _e('Changing this flushes the cache once, automatically, so nothing tries to decode a value with the wrong serializer.', 'ccm-tools'); ?></span>
-                    </div>
-                    <div class="ccm-optfield">
-                        <label for="redis-compression"><?php _e('Compression', 'ccm-tools'); ?></label>
-                        <select id="redis-compression" name="compression" class="ccm-input">
-                            <option value="none" <?php selected($settings['compression'], 'none'); ?>><?php _e('None (default)', 'ccm-tools'); ?></option>
-                            <option value="lzf" <?php selected($settings['compression'], 'lzf'); ?> <?php disabled(!$has_lzf); ?>><?php _e('LZF', 'ccm-tools'); ?><?php echo !$has_lzf ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('fast', 'ccm-tools') . ')'; ?></option>
-                            <option value="lz4" <?php selected($settings['compression'], 'lz4'); ?> <?php disabled(!$has_lz4); ?>><?php _e('LZ4', 'ccm-tools'); ?><?php echo !$has_lz4 ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('very fast — see warning', 'ccm-tools') . ')'; ?></option>
-                            <option value="zstd" <?php selected($settings['compression'], 'zstd'); ?> <?php disabled(!$has_zstd); ?>><?php _e('Zstandard', 'ccm-tools'); ?><?php echo !$has_zstd ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('best ratio', 'ccm-tools') . ')'; ?></option>
-                        </select>
-                        <span class="ccm-optfield__hint"><?php _e('LZ4 with the igbinary serializer has caused production sites to hit "Allowed memory size exhausted" fatals when a compressed value failed to round-trip. Leave this on None with igbinary unless LZ4 or Zstandard has been tested on staging first.', 'ccm-tools'); ?></span>
-                    </div>
-                </div>
-
-                <div class="ccm-opts" style="margin-top: var(--ccm-space-md);">
-                    <div class="ccm-opt<?php echo !empty($settings['async_flush']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Async flush', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Uses non-blocking UNLINK and FLUSHDB ASYNC (Redis 4.0+) so a flush does not stall other requests while it runs.', 'ccm-tools'); ?></p>
+                <section class="ccm-optgroup" data-group="advanced">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Advanced', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Timeouts and encoding — including the one combination that has taken down production sites before.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_advanced), count($constants_advanced)); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
+                            <div class="ccm-grid-2">
+                                <div class="ccm-optfield">
+                                    <label for="redis-timeout"><?php _e('Connection timeout', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="redis-timeout" name="timeout" class="ccm-input" value="<?php echo esc_attr($settings['timeout']); ?>" min="0" step="0.1">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                </div>
+                                <div class="ccm-optfield">
+                                    <label for="redis-read-timeout"><?php _e('Read timeout', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="redis-read-timeout" name="read_timeout" class="ccm-input" value="<?php echo esc_attr($settings['read_timeout']); ?>" min="0" step="0.1">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                </div>
                             </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="async_flush" <?php checked(!empty($settings['async_flush'])); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
+
+                            <div class="ccm-grid-2">
+                                <div class="ccm-optfield">
+                                    <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
+                                    <select id="redis-serializer" name="serializer" class="ccm-input">
+                                        <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP', 'ccm-tools'); ?><?php echo extension_loaded('igbinary') ? ' (' . __('fallback', 'ccm-tools') . ')' : ' (' . __('default', 'ccm-tools') . ')'; ?></option>
+                                        <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary')); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('default — faster, smaller', 'ccm-tools') . ')'; ?></option>
+                                        <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack')); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
+                                    </select>
+                                    <span class="ccm-optfield__hint"><?php _e('Changing this flushes the cache once, automatically, so nothing tries to decode a value with the wrong serializer.', 'ccm-tools'); ?></span>
+                                </div>
+                                <div class="ccm-optfield">
+                                    <label for="redis-compression"><?php _e('Compression', 'ccm-tools'); ?></label>
+                                    <select id="redis-compression" name="compression" class="ccm-input">
+                                        <option value="none" <?php selected($settings['compression'], 'none'); ?>><?php _e('None (default)', 'ccm-tools'); ?></option>
+                                        <option value="lzf" <?php selected($settings['compression'], 'lzf'); ?> <?php disabled(!$has_lzf); ?>><?php _e('LZF', 'ccm-tools'); ?><?php echo !$has_lzf ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('fast', 'ccm-tools') . ')'; ?></option>
+                                        <option value="lz4" <?php selected($settings['compression'], 'lz4'); ?> <?php disabled(!$has_lz4); ?>><?php _e('LZ4', 'ccm-tools'); ?><?php echo !$has_lz4 ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('very fast — see warning', 'ccm-tools') . ')'; ?></option>
+                                        <option value="zstd" <?php selected($settings['compression'], 'zstd'); ?> <?php disabled(!$has_zstd); ?>><?php _e('Zstandard', 'ccm-tools'); ?><?php echo !$has_zstd ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('best ratio', 'ccm-tools') . ')'; ?></option>
+                                    </select>
+                                    <span class="ccm-optfield__hint"><?php _e('LZ4 with the igbinary serializer has caused production sites to hit "Allowed memory size exhausted" fatals when a compressed value failed to round-trip. Leave this on None with igbinary unless LZ4 or Zstandard has been tested on staging first.', 'ccm-tools'); ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['async_flush']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Async flush', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Uses non-blocking UNLINK and FLUSHDB ASYNC (Redis 4.0+) so a flush does not stall other requests while it runs.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="async_flush" <?php checked(!empty($settings['async_flush'])); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="ccm-opt<?php echo empty($settings['disable_comment']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('HTML footnote', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Appends an HTML comment with cache hit/miss counts and Redis timing to page output, for debugging.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="disable_comment" <?php checked(empty($settings['disable_comment'])); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
                     </div>
-                    <div class="ccm-opt<?php echo empty($settings['disable_comment']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('HTML footnote', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Appends an HTML comment with cache hit/miss counts and Redis timing to page output, for debugging.', 'ccm-tools'); ?></p>
-                            </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="disable_comment" <?php checked(empty($settings['disable_comment'])); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
+                </section>
 
                 <div class="ccm-row" style="margin-top: var(--ccm-space-xl);">
                     <button type="submit" id="redis-save-settings" class="ccm-button ccm-button-primary"><?php _e('Save Settings', 'ccm-tools'); ?></button>
@@ -2386,16 +2431,27 @@ function ccm_tools_render_redis_page() {
                         <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-sm);">
                             <?php _e('The Redis PHP extension has to be installed on the server before object caching can be used here.', 'ccm-tools'); ?>
                         </p>
-                        <div class="ccm-stack--sm">
-                            <div>
-                                <strong style="font-size: var(--ccm-text-sm);"><?php _e('Ubuntu/Debian', 'ccm-tools'); ?></strong>
-                                <pre class="ccm-mono" style="margin: 0.3rem 0 0; padding: var(--ccm-space-sm); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); overflow-x: auto;">sudo apt-get install php-redis
+                        <div class="ccm-stack ccm-stack--sm">
+                            <?php
+                            /*
+                             * Two command blocks, one per distribution family.
+                             * Only one of them is ever the reader's, so they
+                             * read as alternatives rather than steps — side by
+                             * side says that better than one above the other,
+                             * and neither is longer than two short lines.
+                             */
+                            ?>
+                            <div class="ccm-grid-2">
+                                <div>
+                                    <strong style="font-size: var(--ccm-text-sm);"><?php _e('Ubuntu/Debian', 'ccm-tools'); ?></strong>
+                                    <pre class="ccm-mono" style="margin: 0.3rem 0 0; padding: var(--ccm-space-sm); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); overflow-x: auto;">sudo apt-get install php-redis
 sudo systemctl restart php-fpm</pre>
-                            </div>
-                            <div>
-                                <strong style="font-size: var(--ccm-text-sm);"><?php _e('CentOS/RHEL', 'ccm-tools'); ?></strong>
-                                <pre class="ccm-mono" style="margin: 0.3rem 0 0; padding: var(--ccm-space-sm); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); overflow-x: auto;">sudo yum install php-pecl-redis
+                                </div>
+                                <div>
+                                    <strong style="font-size: var(--ccm-text-sm);"><?php _e('CentOS/RHEL', 'ccm-tools'); ?></strong>
+                                    <pre class="ccm-mono" style="margin: 0.3rem 0 0; padding: var(--ccm-space-sm); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); overflow-x: auto;">sudo yum install php-pecl-redis
 sudo systemctl restart php-fpm</pre>
+                                </div>
                             </div>
                             <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0;">
                                 <?php _e('cPanel/WHM: WHM → Software → Module Installers → PHP PECL → install "redis". On managed hosting, ask the host to enable the Redis PHP extension.', 'ccm-tools'); ?>

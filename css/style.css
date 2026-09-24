@@ -36,6 +36,8 @@
     --ccm-primary-on-surface: #48690f;
     --ccm-primary-hover: #4a7018;
     --ccm-primary-light: rgba(148, 200, 62, 0.12);
+    --ccm-opt-on-bg: rgba(148, 200, 62, 0.08);
+    --ccm-opt-on-bg-hover: rgba(148, 200, 62, 0.13);
     --ccm-brand-raw: #94c83e;
     --ccm-secondary: #4b4a42;
     --ccm-accent: #2d8a9b;
@@ -149,6 +151,8 @@
         --ccm-primary-on-surface: #a8d857;
         --ccm-primary-hover: #a5d94f;
         --ccm-primary-light: rgba(148, 200, 62, 0.14);
+        --ccm-opt-on-bg: rgba(148, 200, 62, 0.06);
+        --ccm-opt-on-bg-hover: rgba(148, 200, 62, 0.10);
         --ccm-secondary: #cfcfcf;
         --ccm-accent: #3aaabe;
         --ccm-teal: #3aaabe;
@@ -205,6 +209,8 @@ html[data-ccm-theme="dark"] {
     --ccm-primary-on-surface: #a8d857;
     --ccm-primary-hover: #a5d94f;
     --ccm-primary-light: rgba(148, 200, 62, 0.14);
+    --ccm-opt-on-bg: rgba(148, 200, 62, 0.06);
+    --ccm-opt-on-bg-hover: rgba(148, 200, 62, 0.10);
     --ccm-secondary: #cfcfcf;
     --ccm-accent: #3aaabe;
     --ccm-teal: #3aaabe;
@@ -481,184 +487,9 @@ html[data-ccm-theme="light"] {
     margin: var(--ccm-space-lg) 0;
 }
 
-.ccm-opt-group {
-    border: 1px solid var(--ccm-border);
-    border-radius: var(--ccm-radius-lg);
-    overflow: hidden;
-}
+/* The Database page renders the shared .ccm-optgroup / .ccm-opt card now,
+   so its own row component has gone, along with the rules for it. */
 
-.ccm-opt-group-header {
-    display: flex;
-    align-items: center;
-    gap: var(--ccm-space-sm);
-    padding: var(--ccm-space-md);
-    font-weight: 600;
-    font-size: var(--ccm-text-sm);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.ccm-opt-group.safe .ccm-opt-group-header {
-    background: var(--ccm-success-bg);
-    color: var(--ccm-success);
-    border-bottom: 1px solid rgba(34, 197, 94, 0.2);
-}
-
-.ccm-opt-group.moderate .ccm-opt-group-header {
-    background: var(--ccm-warning-bg);
-    color: var(--ccm-warning);
-    border-bottom: 1px solid rgba(245, 158, 11, 0.2);
-}
-
-.ccm-opt-group.high .ccm-opt-group-header {
-    background: var(--ccm-error-bg);
-    color: var(--ccm-error);
-    border-bottom: 1px solid rgba(239, 68, 68, 0.2);
-}
-
-.ccm-opt-group-items {
-    display: flex;
-    flex-direction: column;
-}
-
-.ccm-opt-item {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 16px;
-    border-bottom: 1px solid var(--ccm-border);
-    border-left: 3px solid transparent;
-    transition: background var(--ccm-transition), border-color var(--ccm-transition);
-}
-
-.ccm-opt-item:last-child {
-    border-bottom: none;
-}
-
-.ccm-opt-item:hover {
-    background: var(--ccm-bg);
-}
-
-.ccm-opt-item input[type="checkbox"] {
-    flex: 0 0 18px;
-    width: 18px !important;
-    height: 18px !important;
-    min-width: 18px !important;
-    max-width: 18px !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    accent-color: var(--ccm-primary);
-    cursor: pointer;
-}
-
-.ccm-opt-item-content {
-    flex: 1 1 auto;
-    min-width: 0;
-    padding: 0 !important;
-    margin: 0 !important;
-}
-
-.ccm-opt-item-label {
-    display: block !important;
-    font-size: 14px !important;
-    font-weight: 500 !important;
-    line-height: 1.4 !important;
-    color: var(--ccm-text) !important;
-    cursor: pointer;
-    margin: 0 0 4px 0 !important;
-    padding: 0 !important;
-}
-
-.ccm-opt-item-desc {
-    display: block !important;
-    font-size: 13px !important;
-    font-weight: 400 !important;
-    line-height: 1.4 !important;
-    color: var(--ccm-text-muted) !important;
-    margin: 0 !important;
-    padding: 0 !important;
-}
-
-.ccm-opt-item-stat {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 3rem;
-    padding: var(--ccm-space-xs) var(--ccm-space-sm);
-    font-size: var(--ccm-text-sm);
-    font-weight: 600;
-    background: var(--ccm-bg);
-    border-radius: var(--ccm-radius-sm);
-    color: var(--ccm-text-muted);
-}
-
-.ccm-opt-item-stat.has-items {
-    background: var(--ccm-primary-light);
-    color: var(--ccm-primary);
-}
-
-.ccm-opt-item-stat.warning {
-    background: var(--ccm-error-bg);
-    color: var(--ccm-error);
-}
-
-/* .htaccess Option Status Indicators */
-.ccm-opt-item-status {
-    flex: 0 0 130px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--ccm-space-xs);
-    padding: var(--ccm-space-xs) var(--ccm-space-sm);
-    font-size: var(--ccm-text-sm);
-    font-weight: 500;
-    border-radius: var(--ccm-radius-sm);
-    white-space: nowrap;
-    box-sizing: border-box;
-}
-
-.ccm-opt-item-status small {
-    font-size: var(--ccm-text-xs);
-    opacity: 0.9;
-}
-
-.ccm-opt-item-status.ccm-status-applied {
-    background: var(--ccm-success-bg);
-    color: var(--ccm-success);
-}
-
-.ccm-opt-item-status.ccm-status-not-applied {
-    background: var(--ccm-bg);
-    color: var(--ccm-text-muted);
-}
-
-.ccm-opt-item-status.ccm-status-pending {
-    background: var(--ccm-info-bg);
-    color: var(--ccm-info);
-}
-
-.ccm-opt-item-status.ccm-status-will-remove {
-    background: var(--ccm-warning-bg);
-    color: var(--ccm-warning);
-}
-
-/* Row highlighting based on status */
-.ccm-opt-item.ccm-status-applied {
-    border-left-color: var(--ccm-success);
-}
-
-.ccm-opt-item.ccm-status-not-applied {
-    border-left-color: var(--ccm-text-muted);
-}
-
-.ccm-opt-item.ccm-status-pending {
-    border-left-color: var(--ccm-info);
-}
-
-.ccm-opt-item.ccm-status-will-remove {
-    border-left-color: var(--ccm-warning);
-}
 
 /* Optimization Progress */
 .ccm-optimization-progress {
@@ -689,7 +520,6 @@ html[data-ccm-theme="light"] {
 .ccm-subtask-progress {
     padding: var(--ccm-space-sm) var(--ccm-space-md) !important;
     background: var(--ccm-primary-light);
-    border-left: 3px solid var(--ccm-primary);
 }
 
 .ccm-subtask-info {
@@ -1012,7 +842,7 @@ html[data-ccm-theme="light"] {
     background: var(--ccm-surface);
     border-radius: var(--ccm-radius-lg);
     box-shadow: var(--ccm-shadow-lg);
-    border-left: 4px solid var(--ccm-primary);
+    border: 1px solid var(--ccm-border);
     transform: translateX(120%);
     transition: transform var(--ccm-transition-slow) ease;
     max-width: 400px;
@@ -1023,22 +853,22 @@ html[data-ccm-theme="light"] {
 }
 
 .ccm-notification-success {
-    border-left-color: var(--ccm-success);
+    border-color: var(--ccm-success);
     background: var(--ccm-success-bg);
 }
 
 .ccm-notification-error {
-    border-left-color: var(--ccm-error);
+    border-color: var(--ccm-error);
     background: var(--ccm-error-bg);
 }
 
 .ccm-notification-warning {
-    border-left-color: var(--ccm-warning);
+    border-color: var(--ccm-warning);
     background: var(--ccm-warning-bg);
 }
 
 .ccm-notification-info {
-    border-left-color: var(--ccm-info);
+    border-color: var(--ccm-info);
     background: var(--ccm-info-bg);
 }
 
@@ -1198,12 +1028,16 @@ html[data-ccm-theme="light"] {
     overflow: hidden;
 }
 
+/* A present extension tints its own chip; a missing one is outlined. Neither
+   needs a rail. */
 .ccm-extension-item.ccm-success {
-    border-left: 3px solid var(--ccm-success);
+    border-color: color-mix(in srgb, var(--ccm-success) 40%, var(--ccm-border));
+    background: color-mix(in srgb, var(--ccm-success) 8%, transparent);
 }
 
 .ccm-extension-item.ccm-error {
-    border-left: 3px solid var(--ccm-error);
+    border-color: color-mix(in srgb, var(--ccm-error) 40%, var(--ccm-border));
+    background: color-mix(in srgb, var(--ccm-error) 8%, transparent);
 }
 
 .ccm-extension-item strong {
@@ -1256,6 +1090,24 @@ html[data-ccm-theme="light"] {
    background and text, which in light theme puts terminal-coloured
    syntax spans on a near-white box and the log becomes unreadable.
    The dark surface here is deliberate and the same in both themes. */
+/* The viewer is a fixed dark surface in both themes, so anything written into
+   it has to be light. Without this, a failed load prints the light theme's
+   dark red on a near-black ground and cannot be read at all. */
+.ccm-tools .ccm-error-log-viewer,
+.ccm-tools .ccm-htaccess-viewer {
+    color: #e2e8f0;
+}
+
+.ccm-tools .ccm-error-log-viewer .ccm-error,
+.ccm-tools .ccm-htaccess-viewer .ccm-error {
+    color: #fca5a5;
+}
+
+.ccm-tools .ccm-error-log-viewer .ccm-text-muted,
+.ccm-tools .ccm-htaccess-viewer .ccm-text-muted {
+    color: #94a3b8;
+}
+
 .ccm-tools .ccm-error-log-viewer pre {
     margin: 0;
     padding: var(--ccm-space-lg);
@@ -3393,8 +3245,7 @@ html[data-ccm-theme="dark"] .ccm-tools select {
     gap: var(--ccm-space-sm);
     padding: 0.7rem 0.9rem;
     background: var(--ccm-surface);
-    border: 1px solid var(--ccm-border);
-    border-left: 3px solid var(--ccm-primary);
+    border: 1px solid var(--ccm-primary);
     border-radius: var(--ccm-radius);
     box-shadow: var(--ccm-shadow-lg);
     color: var(--ccm-text);
@@ -3405,10 +3256,10 @@ html[data-ccm-theme="dark"] .ccm-tools select {
 }
 
 .ccm-notification.show { transform: translateX(0); }
-.ccm-notification-success { border-left-color: var(--ccm-success); }
-.ccm-notification-error   { border-left-color: var(--ccm-error); }
-.ccm-notification-warning { border-left-color: var(--ccm-warning); }
-.ccm-notification-info    { border-left-color: var(--ccm-info); }
+.ccm-notification-success { border-color: var(--ccm-success); }
+.ccm-notification-error   { border-color: var(--ccm-error); }
+.ccm-notification-warning { border-color: var(--ccm-warning); }
+.ccm-notification-info    { border-color: var(--ccm-info); }
 
 /* ── Status text ───────────────────────────────────────────────── */
 
@@ -4205,12 +4056,13 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 .ccm-opts {
     display: grid;
-    gap: 1px;
-    background: var(--ccm-border);
+    background: var(--ccm-surface);
     border: 1px solid var(--ccm-border);
     border-radius: var(--ccm-radius-lg);
     overflow: hidden;
 }
+
+.ccm-opts > .ccm-opt + .ccm-opt { border-top: 1px solid var(--ccm-border); }
 
 .ccm-opt { background: var(--ccm-surface); transition: background var(--ccm-transition-fast); }
 .ccm-opt:hover { background: var(--ccm-bg-secondary); }
@@ -4240,10 +4092,64 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     line-height: 1.55;
 }
 
-/* An enabled row gets a brand edge, so scanning for what is on does not mean
-   reading every switch position down the column. */
-.ccm-opt.is-on { box-shadow: inset 3px 0 0 var(--ccm-brand-raw); }
-.ccm-opt.is-on .ccm-opt__label { color: var(--ccm-text); }
+/* No accent bar on an enabled row. A coloured edge down the left of every
+   card is the single most recognisable generated-UI tic, and the switch on
+   the right already says what is on. An enabled row lifts its own surface
+   instead, which reads at a glance without drawing a stripe. */
+.ccm-opt.is-on { background: var(--ccm-opt-on-bg); }
+.ccm-opt.is-on:hover { background: var(--ccm-opt-on-bg-hover); }
+
+/* ── Option group ──────────────────────────────────────────────
+   One container per group, with the group's name and its live count in the
+   header, rather than a floating eyebrow and heading above a borderless list.
+   Every settings page uses this, so the pages stop reading as variations on
+   each other. */
+
+.ccm-optgroup {
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-lg);
+    background: var(--ccm-surface);
+    overflow: hidden;
+}
+
+.ccm-optgroup + .ccm-optgroup { margin-top: var(--ccm-space-lg); }
+
+.ccm-optgroup__head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--ccm-space-md);
+    padding: 0.85rem var(--ccm-space-md);
+    background: var(--ccm-bg-secondary);
+    border-bottom: 1px solid var(--ccm-border);
+}
+
+.ccm-optgroup__title {
+    margin: 0;
+    font-size: var(--ccm-text-md);
+    font-weight: 650;
+    color: var(--ccm-text);
+    letter-spacing: -0.01em;
+}
+
+.ccm-optgroup__note {
+    margin: 0.15rem 0 0;
+    font-size: var(--ccm-text-xs);
+    color: var(--ccm-text-muted);
+    line-height: 1.5;
+    max-width: 80ch;
+}
+
+.ccm-optgroup__count {
+    margin-left: auto;
+    flex: 0 0 auto;
+    font-size: var(--ccm-text-xs);
+    font-weight: 600;
+    color: var(--ccm-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ccm-optgroup__body > .ccm-opt + .ccm-opt { border-top: 1px solid var(--ccm-border); }
 
 .ccm-opt__fields {
     padding: 0 var(--ccm-space-md) var(--ccm-space-md);
@@ -4296,7 +4202,10 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     align-items: flex-start;
     padding: 0.8rem var(--ccm-space-md);
     border: 1px solid var(--ccm-border);
-    border-left: 3px solid var(--ccm-alert-accent, var(--ccm-info));
+    /* No left accent rail here either. The tinted ground and the coloured
+       dot already carry the severity, and a stripe down every notice is the
+       same generated-UI tic as the one on the option rows. */
+    border-color: color-mix(in srgb, var(--ccm-alert-accent, var(--ccm-info)) 28%, var(--ccm-border));
     border-radius: var(--ccm-radius);
     background: color-mix(in srgb, var(--ccm-alert-accent, var(--ccm-info)) 7%, var(--ccm-surface));
     color: var(--ccm-text-2, var(--ccm-text));
@@ -4422,72 +4331,6 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 .ccm-optimization-options { display: grid; gap: var(--ccm-space-lg); }
 
-.ccm-opt-group {
-    border: 1px solid var(--ccm-border);
-    border-radius: var(--ccm-radius-lg);
-    overflow: hidden;
-    background: var(--ccm-surface);
-}
-
-.ccm-opt-group-header {
-    padding: 0.6rem var(--ccm-space-md);
-    background: var(--ccm-bg-secondary);
-    border-bottom: 1px solid var(--ccm-border);
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-weight: 700;
-    color: var(--ccm-text-muted);
-}
-
-/* The risk of a group reads off its header, not off a whole coloured panel. */
-.ccm-opt-group.safe .ccm-opt-group-header        { color: var(--ccm-success); }
-.ccm-opt-group.moderate .ccm-opt-group-header,
-.ccm-opt-group.caution .ccm-opt-group-header     { color: var(--ccm-warning); }
-.ccm-opt-group.high .ccm-opt-group-header,
-.ccm-opt-group.dangerous .ccm-opt-group-header   { color: var(--ccm-error); }
-
-.ccm-opt-group-items { display: grid; gap: 1px; background: var(--ccm-border); }
-
-.ccm-opt-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.7rem;
-    padding: 0.7rem var(--ccm-space-md);
-    background: var(--ccm-surface);
-    transition: background var(--ccm-transition-fast);
-}
-
-.ccm-opt-item:hover { background: var(--ccm-bg-secondary); }
-.ccm-opt-item > input[type="checkbox"] { margin-top: 0.15rem; flex: 0 0 auto; }
-.ccm-opt-item-content { flex: 1 1 auto; min-width: 0; display: grid; gap: 0.15rem; }
-
-.ccm-opt-item-label {
-    font-size: var(--ccm-text-sm);
-    font-weight: 600;
-    color: var(--ccm-text);
-    cursor: pointer;
-}
-
-.ccm-opt-item-desc { font-size: var(--ccm-text-xs); color: var(--ccm-text-muted); line-height: 1.5; }
-
-/* The row count is the whole point: it says whether a task is worth running. */
-.ccm-opt-item-stat {
-    flex: 0 0 auto;
-    align-self: center;
-    padding: 0.15rem 0.5rem;
-    border-radius: var(--ccm-radius-sm);
-    background: var(--ccm-bg-secondary);
-    color: var(--ccm-text-muted);
-    font-size: 0.72rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.ccm-opt-item-stat.ccm-success { background: var(--ccm-success-bg); color: var(--ccm-success); }
-.ccm-opt-item-stat.ccm-warning { background: var(--ccm-warning-bg); color: var(--ccm-warning); }
-.ccm-opt-item-stat.ccm-error   { background: var(--ccm-error-bg);   color: var(--ccm-error); }
 
 /* ── Narrow screens ────────────────────────────────────────────
    The tab bar has ten items. Letting it wrap puts each on its own line and

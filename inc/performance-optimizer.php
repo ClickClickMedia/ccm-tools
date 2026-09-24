@@ -2709,17 +2709,17 @@ function ccm_tools_render_perf_page() {
                 foreach ($group['items'] as $it) { if (!empty($settings[$it['key']])) { $group_on++; } }
                 ?>
                 <section class="ccm-optgroup" data-group="<?php echo esc_attr($slug); ?>">
-                    <div class="ccm-section">
+                    <header class="ccm-optgroup__head">
                         <div>
-                            <span class="ccm-section__eyebrow"><?php echo esc_html(sprintf(
-                                /* translators: 1: enabled, 2: total */
-                                __('%1$d of %2$d on', 'ccm-tools'), $group_on, count($group['items'])
-                            )); ?></span>
-                            <h2><?php echo esc_html($group['label']); ?></h2>
-                            <p><?php echo esc_html($group['blurb']); ?></p>
+                            <h2 class="ccm-optgroup__title"><?php echo esc_html($group['label']); ?></h2>
+                            <p class="ccm-optgroup__note"><?php echo esc_html($group['blurb']); ?></p>
                         </div>
-                    </div>
-                    <div class="ccm-opts">
+                        <span class="ccm-optgroup__count" data-group-count><?php echo esc_html(sprintf(
+                            /* translators: 1: enabled, 2: total */
+                            __('%1$d of %2$d on', 'ccm-tools'), $group_on, count($group['items'])
+                        )); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
                         <?php foreach ($group['items'] as $item) { ccm_tools_perf_render_option($item, $settings); } ?>
                     </div>
                 </section>

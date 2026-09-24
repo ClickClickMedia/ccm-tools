@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.3.0
+ * Version: 8.4.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.3.0');
+    define('CCM_HELPER_VERSION', '8.4.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -880,10 +880,11 @@ class CCMSettings {
                 color: #135e96;
             }
             
-            /* Style the entire row for front page */
+            /* Style the entire row for front page. The tinted row and the
+               indicator beside the title are what mark it; there is no accent
+               rail down the left edge. */
             tr.ccm-front-page-row {
                 background-color: #f0f8ff !important;
-                border-left: 4px solid #2271b1 !important;
             }
             
             tr.ccm-front-page-row:hover {
@@ -1107,60 +1108,87 @@ class CCMSettings {
 
                 </div>
 
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php _e('Environment', 'ccm-tools'); ?></span>
-                        <h2><?php _e('What this site is running on', 'ccm-tools'); ?></h2>
-                        <p><?php _e('Read live from the running interpreter and the database, not from wp-config.', 'ccm-tools'); ?></p>
-                    </div>
-                </div>
+                <?php
+                /*
+                 * Reference material below, paired two-up. Each pair gets its
+                 * OWN .ccm-grid-2: the grid auto-fits, so one grid holding four
+                 * panels opens a third column on a wide screen and strands the
+                 * fourth panel half-width on a row by itself.
+                 */
+                $db_info = ccm_tools_get_database_size();
+                ?>
+                <div class="ccm-stack">
 
-                <div class="ccm-grid-2">
-                <!-- Database Information Card -->
-                <div class="ccm-card">
-                    <h2><?php _e('Database Information', 'ccm-tools'); ?></h2>
-                    <?php
-                    $db_info = ccm_tools_get_database_size();
-                    ?>
-                    <table class="ccm-table">
-                        <tr>
-                            <th><?php _e('Database Size', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html($db_info['size']); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Number of Tables', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html($db_info['tables']); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Database Host', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(DB_HOST); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Database Name', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(DB_NAME); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Database User', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(DB_USER); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Database Charset', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(defined('DB_CHARSET') ? DB_CHARSET : 'utf8'); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Database Collation', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(defined('DB_COLLATE') && DB_COLLATE ? DB_COLLATE : 'Default'); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('MySQL Version', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html($GLOBALS['wpdb']->db_version()); ?></td>
-                        </tr>
-                    </table>
-                </div>
-                
-                <!-- PHP Information Card -->
-                <div class="ccm-card">
-                    <h2><?php _e('PHP Information', 'ccm-tools'); ?></h2>
+                    <div class="ccm-grid-2">
+
+                        <div class="ccm-panel">
+                            <div class="ccm-panel__head"><span><?php _e('Database Information', 'ccm-tools'); ?></span></div>
+                            <div class="ccm-kv">
+                                <div><span class="ccm-kv__k"><?php _e('Database Size', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($db_info['size']); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Number of Tables', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($db_info['tables']); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Database Host', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(DB_HOST); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Database Name', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(DB_NAME); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Database User', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(DB_USER); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Database Charset', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(defined('DB_CHARSET') ? DB_CHARSET : 'utf8'); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Database Collation', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(defined('DB_COLLATE') && DB_COLLATE ? DB_COLLATE : 'Default'); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('MySQL Version', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($GLOBALS['wpdb']->db_version()); ?></span></div>
+                            </div>
+                        </div>
+
+                        <div class="ccm-panel">
+                            <div class="ccm-panel__head"><span><?php _e('Server Information', 'ccm-tools'); ?></span></div>
+                            <div class="ccm-kv">
+                                <div><span class="ccm-kv__k"><?php _e('Server Software', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo isset($_SERVER['SERVER_SOFTWARE']) ? esc_html($_SERVER['SERVER_SOFTWARE']) : ''; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Operating System', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(PHP_OS); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Architecture', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(PHP_INT_SIZE * 8); ?> <?php _e('Bit', 'ccm-tools'); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Server Protocol', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo isset($_SERVER['SERVER_PROTOCOL']) ? esc_html($_SERVER['SERVER_PROTOCOL']) : ''; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('HTTPS Enabled', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? esc_html__('Yes', 'ccm-tools') : esc_html__('No', 'ccm-tools'); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Server IP', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php
+                                        if (isset($_SERVER['SERVER_ADDR'])) {
+                                            echo esc_html($_SERVER['SERVER_ADDR']);
+                                        } elseif (isset($_SERVER['LOCAL_ADDR'])) {
+                                            echo esc_html($_SERVER['LOCAL_ADDR']);
+                                        } else {
+                                            _e('Not available', 'ccm-tools');
+                                        }
+                                     ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Server Port', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo isset($_SERVER['SERVER_PORT']) ? esc_html($_SERVER['SERVER_PORT']) : ''; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Cloudflare', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php
+                                        $cf_info = function_exists('ccm_tools_cf_detect') ? ccm_tools_cf_detect() : array('detected' => false);
+                                        if (!empty($cf_info['detected'])) {
+                                            echo '<span class="ccm-chip ccm-chip--good">' . esc_html__('Detected', 'ccm-tools') . '</span>';
+                                            if (!empty($cf_info['ray_id'])) {
+                                                echo ' <span class="ccm-note">(Ray: ' . esc_html($cf_info['ray_id']) . ')</span>';
+                                            }
+                                            $cf_s = function_exists('ccm_tools_cf_get_settings') ? ccm_tools_cf_get_settings() : array();
+                                            if (empty($cf_s['connected'])) {
+                                                echo ' <a href="' . esc_url(admin_url('admin.php?page=ccm-tools-cloudflare')) . '">' . esc_html__('Connect API', 'ccm-tools') . '</a>';
+                                            }
+                                        } else {
+                                            echo '<span class="ccm-text-muted">' . esc_html__('Not detected', 'ccm-tools') . '</span>';
+                                        }
+                                     ?></span></div>
+                            </div>
+                        </div>
+
+                    </div>
+
                     <?php
                     // Get PHP settings
                     $memory_limit = ini_get('memory_limit');
@@ -1168,19 +1196,19 @@ class CCMSettings {
                     $post_max_size = ini_get('post_max_size');
                     $upload_max_filesize = ini_get('upload_max_filesize');
                     $max_input_vars = (int) ini_get('max_input_vars');
-                    
+
                     // Convert sizes to bytes for comparison
                     $memory_limit_bytes = ccm_tools_convert_php_size_to_bytes($memory_limit);
                     $post_max_size_bytes = ccm_tools_convert_php_size_to_bytes($post_max_size);
                     $upload_max_filesize_bytes = ccm_tools_convert_php_size_to_bytes($upload_max_filesize);
-                    
+
                     // Define thresholds
                     $memory_limit_threshold = 256 * 1024 * 1024; // 256MB
                     $execution_time_threshold = 30; // 30 seconds
                     $post_size_threshold = 62 * 1024 * 1024; // 62MB
                     $upload_size_threshold = 62 * 1024 * 1024; // 62MB
                     $input_vars_threshold = 10000;
-                    
+
                     // Determine status classes and suggestions.
                     // -1 means "unlimited" for memory_limit — it's numeric, so
                     // without this check it reads as less than the 256M
@@ -1189,323 +1217,239 @@ class CCMSettings {
                     $memory_limit_unlimited = ($memory_limit_bytes < 0);
                     $memory_class = ($memory_limit_unlimited || $memory_limit_bytes >= $memory_limit_threshold) ? 'ccm-success' : 'ccm-error';
                     $memory_suggestion = ($memory_limit_unlimited || $memory_limit_bytes >= $memory_limit_threshold) ? '' : __('Recommend: 512M or higher', 'ccm-tools');
-                    
+
                     $execution_class = $max_execution_time <= $execution_time_threshold ? 'ccm-error' : 'ccm-success';
                     $execution_suggestion = $max_execution_time <= $execution_time_threshold ? __('Recommend: 180 seconds or higher', 'ccm-tools') : '';
-                    
+
                     $post_class = $post_max_size_bytes <= $post_size_threshold ? 'ccm-error' : 'ccm-success';
                     $post_suggestion = $post_max_size_bytes <= $post_size_threshold ? __('Recommend: 256M or higher', 'ccm-tools') : '';
-                    
+
                     $upload_class = $upload_max_filesize_bytes <= $upload_size_threshold ? 'ccm-error' : 'ccm-success';
                     $upload_suggestion = $upload_max_filesize_bytes <= $upload_size_threshold ? __('Recommend: 256M or higher', 'ccm-tools') : '';
-                    
+
                     $vars_class = $max_input_vars < $input_vars_threshold ? 'ccm-error' : 'ccm-success';
                     $vars_suggestion = $max_input_vars < $input_vars_threshold ? __('Recommend: 10000 or higher', 'ccm-tools') : '';
-                    
+
                     // Display Errors check
                     $display_errors = ini_get('display_errors');
                     $display_errors_class = $display_errors ? 'ccm-warning' : 'ccm-success';
                     $display_errors_suggestion = $display_errors ? __('Recommend: Disable for production sites', 'ccm-tools') : '';
-                    ?>
-                    <table class="ccm-table">
-                        <tr>
-                            <th><?php _e('PHP Version', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(phpversion()); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Memory Limit', 'ccm-tools'); ?></th>
-                            <td>
-                                <span class="<?php echo esc_attr($memory_class); ?>"><?php echo esc_html($memory_limit); ?></span>
-                                <?php if ($memory_suggestion): ?>
-                                    <br><small class="ccm-note"><?php echo esc_html($memory_suggestion); ?></small>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Max Execution Time', 'ccm-tools'); ?></th>
-                            <td>
-                                <span class="<?php echo esc_attr($execution_class); ?>"><?php echo esc_html($max_execution_time); ?> <?php _e('seconds', 'ccm-tools'); ?></span>
-                                <?php if ($execution_suggestion): ?>
-                                    <br><small class="ccm-note"><?php echo esc_html($execution_suggestion); ?></small>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Post Max Size', 'ccm-tools'); ?></th>
-                            <td>
-                                <span class="<?php echo esc_attr($post_class); ?>"><?php echo esc_html($post_max_size); ?></span>
-                                <?php if ($post_suggestion): ?>
-                                    <br><small class="ccm-note"><?php echo esc_html($post_suggestion); ?></small>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Upload Max Filesize', 'ccm-tools'); ?></th>
-                            <td>
-                                <span class="<?php echo esc_attr($upload_class); ?>"><?php echo esc_html($upload_max_filesize); ?></span>
-                                <?php if ($upload_suggestion): ?>
-                                    <br><small class="ccm-note"><?php echo esc_html($upload_suggestion); ?></small>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Max Input Vars', 'ccm-tools'); ?></th>
-                            <td>
-                                <span class="<?php echo esc_attr($vars_class); ?>"><?php echo esc_html($max_input_vars); ?></span>
-                                <?php if ($vars_suggestion): ?>
-                                    <br><small class="ccm-note"><?php echo esc_html($vars_suggestion); ?></small>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Display Errors', 'ccm-tools'); ?></th>
-                            <td>
-                                <span class="<?php echo esc_attr($display_errors_class); ?>">
-                                    <?php echo $display_errors ? __('Enabled', 'ccm-tools') : __('Disabled', 'ccm-tools'); ?>
-                                </span>
-                                <?php if ($display_errors_suggestion): ?>
-                                    <br><small class="ccm-note"><?php echo esc_html($display_errors_suggestion); ?></small>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Allow URL fopen', 'ccm-tools'); ?></th>
-                            <td><?php echo ini_get('allow_url_fopen') ? __('Enabled', 'ccm-tools') : __('Disabled', 'ccm-tools'); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Default Timezone', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(date_default_timezone_get()); ?></td>
-                        </tr>
-                    </table>
-                </div>
-                
-                <!-- PHP Extensions Card -->
-                <div class="ccm-card">
-                    <h2><?php _e('PHP Extensions', 'ccm-tools'); ?></h2>
-                    <div class="ccm-extensions-grid">
-                        <?php
-                        $required_extensions = array(
-                            'mysqli' => __('Required for WordPress database', 'ccm-tools'),
-                            'curl' => __('Required for remote requests', 'ccm-tools'),
-                            'gd' => __('Required for image manipulation', 'ccm-tools'),
-                            'mbstring' => __('Required for multibyte string handling', 'ccm-tools'),
-                            'xml' => __('Required for XML processing', 'ccm-tools'),
-                            'zip' => __('Required for plugin/theme installation', 'ccm-tools'),
-                            'openssl' => __('Required for secure connections', 'ccm-tools'),
-                            'json' => __('Required for JSON handling', 'ccm-tools'),
-                            'fileinfo' => __('Required for file type detection', 'ccm-tools'),
-                            'exif' => __('Recommended for image metadata', 'ccm-tools'),
-                            'imagick' => __('Recommended for advanced image processing', 'ccm-tools')
-                        );
-                        
-                        foreach ($required_extensions as $ext => $desc) {
-                            $loaded = extension_loaded($ext);
-                            // The description is the tooltip, not the label: twelve
-                            // extensions each spelling out why they exist filled a
-                            // whole screen to say "all present".
-                            echo '<div class="ccm-extension-item ' . ($loaded ? 'ccm-success' : 'ccm-error') . '"'
-                                . ' title="' . esc_attr($desc) . '">';
-                            echo '<span class="ccm-icon" aria-hidden="true">' . ($loaded ? '✓' : '✗') . '</span>';
-                            echo '<strong>' . esc_html($ext) . '</strong>';
-                            echo '<span class="screen-reader-text">' . esc_html($desc) . '</span>';
-                            echo '</div>';
+
+                    // The chip in the panel header carries the severity that a
+                    // coloured edge used to: it says how many settings sit under
+                    // the house recommendation, without drawing a rail.
+                    $php_below = 0;
+                    foreach (array($memory_suggestion, $execution_suggestion, $post_suggestion, $upload_suggestion, $vars_suggestion) as $php_sugg) {
+                        if ($php_sugg !== '') {
+                            $php_below++;
                         }
-                        ?>
-                    </div>
-                </div>
-                
-                <!-- Server Information Card -->
-                <div class="ccm-card">
-                    <h2><?php _e('Server Information', 'ccm-tools'); ?></h2>
-                    <table class="ccm-table">
-                        <tr>
-                            <th><?php _e('Server Software', 'ccm-tools'); ?></th>
-                            <td><?php echo isset($_SERVER['SERVER_SOFTWARE']) ? esc_html($_SERVER['SERVER_SOFTWARE']) : ''; ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Operating System', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(PHP_OS); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Architecture', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(PHP_INT_SIZE * 8); ?> <?php _e('Bit', 'ccm-tools'); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Server Protocol', 'ccm-tools'); ?></th>
-                            <td><?php echo isset($_SERVER['SERVER_PROTOCOL']) ? esc_html($_SERVER['SERVER_PROTOCOL']) : ''; ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('HTTPS Enabled', 'ccm-tools'); ?></th>
-                            <td><?php echo isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? __('Yes', 'ccm-tools') : __('No', 'ccm-tools'); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Server IP', 'ccm-tools'); ?></th>
-                            <td>
-                                <?php 
-                                if (isset($_SERVER['SERVER_ADDR'])) {
-                                    echo esc_html($_SERVER['SERVER_ADDR']);
-                                } elseif (isset($_SERVER['LOCAL_ADDR'])) {
-                                    echo esc_html($_SERVER['LOCAL_ADDR']);
-                                } else {
-                                    _e('Not available', 'ccm-tools');
-                                }
-                                ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Server Port', 'ccm-tools'); ?></th>
-                            <td><?php echo isset($_SERVER['SERVER_PORT']) ? esc_html($_SERVER['SERVER_PORT']) : ''; ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Cloudflare', 'ccm-tools'); ?></th>
-                            <td>
-                                <?php
-                                $cf_info = function_exists('ccm_tools_cf_detect') ? ccm_tools_cf_detect() : array('detected' => false);
-                                if (!empty($cf_info['detected'])) {
-                                    echo '<span class="ccm-success">✓ ' . esc_html__('Detected', 'ccm-tools') . '</span>';
-                                    if (!empty($cf_info['ray_id'])) {
-                                        echo ' <small style="color: var(--ccm-text-muted);">(Ray: ' . esc_html($cf_info['ray_id']) . ')</small>';
-                                    }
-                                    $cf_s = function_exists('ccm_tools_cf_get_settings') ? ccm_tools_cf_get_settings() : array();
-                                    if (empty($cf_s['connected'])) {
-                                        echo ' — <a href="' . esc_url(admin_url('admin.php?page=ccm-tools-cloudflare')) . '">' . esc_html__('Connect API', 'ccm-tools') . '</a>';
-                                    }
-                                } else {
-                                    echo '<span class="ccm-text-muted">' . esc_html__('Not detected', 'ccm-tools') . '</span>';
-                                }
-                                ?>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-                
-                </div><!-- /.ccm-grid-2 -->
+                    }
 
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php _e('Controls', 'ccm-tools'); ?></span>
-                        <h2><?php _e('WordPress and debugging', 'ccm-tools'); ?></h2>
-                        <p><?php _e('These write to wp-config.php. A backup is taken before every change.', 'ccm-tools'); ?></p>
-                    </div>
-                </div>
-
-                <!-- WordPress Environment Card -->
-                <div class="ccm-card">
-                    <h2><?php _e('WordPress Environment', 'ccm-tools'); ?></h2>
-                    <?php 
                     global $wp_version;
-                    
-                    // Get update information
                     $wp_update_info = ccm_tools_check_wordpress_updates();
-                    $needs_update = $wp_update_info['needs_update'] ?? false;
+                    $needs_update = isset($wp_update_info['needs_update']) ? $wp_update_info['needs_update'] : false;
                     ?>
-                    <table class="ccm-table">
-                        <tr>
-                            <th><?php _e('WordPress Version', 'ccm-tools'); ?></th>
-                            <td>
-                                <?php if ($needs_update): ?>
-                                    <span class="ccm-error">
-                                        <?php echo esc_html($wp_version); ?>
-                                    </span>
-                                    <a href="<?php echo esc_url($wp_update_info['update_url']); ?>" class="ccm-update-link">
-                                        <?php echo sprintf(__('Update to %s', 'ccm-tools'), esc_html($wp_update_info['latest_version'])); ?>
-                                    </a>
-                                <?php else: ?>
-                                    <span class="ccm-success">
-                                        <?php echo esc_html($wp_version); ?> 
-                                        <small><?php _e('(up to date)', 'ccm-tools'); ?></small>
-                                    </span>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('CCM Tools Version', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(CCM_HELPER_VERSION); ?></td>
-                        </tr>
-                        
+                    <div class="ccm-grid-2">
 
-                        <?php if ($redis_status['server_available']): ?>
-                        <tr>
-                            <th><?php _e('Redis Cache', 'ccm-tools'); ?></th>
-                            <td>
-                                <div class="ccm-config-control">
-                                    <div>
-                                        <strong><?php _e('Server:', 'ccm-tools'); ?></strong> 
-                                        <span class="ccm-success"><?php _e('Available', 'ccm-tools'); ?></span>
-                                        <?php if (!empty($redis_status['version'])): ?>
-                                            (<?php echo esc_html($redis_status['version']); ?>)
-                                        <?php endif; ?>
+                        <div class="ccm-panel">
+                            <div class="ccm-panel__head">
+                                <span><?php _e('PHP Information', 'ccm-tools'); ?></span>
+                                <span class="ccm-chip <?php echo $php_below ? 'ccm-chip--warn' : 'ccm-chip--good'; ?>"><?php
+                                    echo $php_below
+                                        ? esc_html(sprintf(
+                                            /* translators: %d: how many PHP settings sit under the recommended value */
+                                            __('%d below recommendation', 'ccm-tools'), $php_below
+                                        ))
+                                        : esc_html__('Meets every recommendation', 'ccm-tools');
+                                ?></span>
+                            </div>
+                            <div class="ccm-kv">
+                                <div><span class="ccm-kv__k"><?php _e('PHP Version', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(phpversion()); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Memory Limit', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><span class="<?php echo esc_attr($memory_class); ?>"><?php echo esc_html($memory_limit); ?></span>
+                                        <?php if ($memory_suggestion) : ?><small class="ccm-note"><?php echo esc_html($memory_suggestion); ?></small><?php endif; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Max Execution Time', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><span class="<?php echo esc_attr($execution_class); ?>"><?php echo esc_html($max_execution_time); ?> <?php _e('seconds', 'ccm-tools'); ?></span>
+                                        <?php if ($execution_suggestion) : ?><small class="ccm-note"><?php echo esc_html($execution_suggestion); ?></small><?php endif; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Post Max Size', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><span class="<?php echo esc_attr($post_class); ?>"><?php echo esc_html($post_max_size); ?></span>
+                                        <?php if ($post_suggestion) : ?><small class="ccm-note"><?php echo esc_html($post_suggestion); ?></small><?php endif; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Upload Max Filesize', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><span class="<?php echo esc_attr($upload_class); ?>"><?php echo esc_html($upload_max_filesize); ?></span>
+                                        <?php if ($upload_suggestion) : ?><small class="ccm-note"><?php echo esc_html($upload_suggestion); ?></small><?php endif; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Max Input Vars', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><span class="<?php echo esc_attr($vars_class); ?>"><?php echo esc_html($max_input_vars); ?></span>
+                                        <?php if ($vars_suggestion) : ?><small class="ccm-note"><?php echo esc_html($vars_suggestion); ?></small><?php endif; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Display Errors', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><span class="<?php echo esc_attr($display_errors_class); ?>"><?php echo $display_errors ? esc_html__('Enabled', 'ccm-tools') : esc_html__('Disabled', 'ccm-tools'); ?></span>
+                                        <?php if ($display_errors_suggestion) : ?><small class="ccm-note"><?php echo esc_html($display_errors_suggestion); ?></small><?php endif; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Allow URL fopen', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo ini_get('allow_url_fopen') ? esc_html__('Enabled', 'ccm-tools') : esc_html__('Disabled', 'ccm-tools'); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Default Timezone', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(date_default_timezone_get()); ?></span></div>
+                            </div>
+                        </div>
+
+                        <div class="ccm-panel">
+                            <div class="ccm-panel__head"><span><?php _e('WordPress Environment', 'ccm-tools'); ?></span></div>
+                            <div class="ccm-kv">
+                                <div><span class="ccm-kv__k"><?php _e('WordPress Version', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($wp_version); ?>
+                                        <?php if ($needs_update) : ?>
+                                            <a href="<?php echo esc_url($wp_update_info['update_url']); ?>" class="ccm-update-link"><?php
+                                                /* translators: %s: the WordPress version available */
+                                                printf(esc_html__('Update to %s', 'ccm-tools'), esc_html($wp_update_info['latest_version']));
+                                            ?></a>
+                                        <?php else : ?>
+                                            <span class="ccm-chip ccm-chip--good"><?php _e('up to date', 'ccm-tools'); ?></span>
+                                        <?php endif; ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('CCM Tools Version', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(CCM_HELPER_VERSION); ?></span></div>
+                                <?php if ($redis_status['server_available']) : ?>
+                                    <div><span class="ccm-kv__k"><?php _e('Redis Cache', 'ccm-tools'); ?></span>
+                                         <span class="ccm-kv__v">
+                                            <span class="ccm-chip ccm-chip--good"><?php _e('Available', 'ccm-tools'); ?></span>
+                                            <?php if (!empty($redis_status['version'])) : ?>
+                                                <span class="ccm-note"><?php echo esc_html($redis_status['version']); ?></span>
+                                            <?php endif; ?>
+                                            <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-redis')); ?>" class="ccm-button ccm-button-small"><?php _e('Configure', 'ccm-tools'); ?></a>
+                                         </span></div>
+                                <?php endif; ?>
+                                <div><span class="ccm-kv__k"><?php _e('Site URL', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_url(site_url()); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Home URL', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_url(home_url()); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Active Theme', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(wp_get_theme()->get('Name') . ' (' . wp_get_theme()->get('Version') . ')'); ?></span></div>
+                                <div><span class="ccm-kv__k"><?php _e('Active Plugins', 'ccm-tools'); ?></span>
+                                     <span class="ccm-kv__v"><?php echo esc_html(count(get_option('active_plugins'))); ?></span></div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <?php
+                    $required_extensions = array(
+                        'mysqli' => __('Required for WordPress database', 'ccm-tools'),
+                        'curl' => __('Required for remote requests', 'ccm-tools'),
+                        'gd' => __('Required for image manipulation', 'ccm-tools'),
+                        'mbstring' => __('Required for multibyte string handling', 'ccm-tools'),
+                        'xml' => __('Required for XML processing', 'ccm-tools'),
+                        'zip' => __('Required for plugin/theme installation', 'ccm-tools'),
+                        'openssl' => __('Required for secure connections', 'ccm-tools'),
+                        'json' => __('Required for JSON handling', 'ccm-tools'),
+                        'fileinfo' => __('Required for file type detection', 'ccm-tools'),
+                        'exif' => __('Recommended for image metadata', 'ccm-tools'),
+                        'imagick' => __('Recommended for advanced image processing', 'ccm-tools')
+                    );
+
+                    $ext_loaded = 0;
+                    foreach ($required_extensions as $ext => $desc) {
+                        if (extension_loaded($ext)) {
+                            $ext_loaded++;
+                        }
+                    }
+                    $ext_total = count($required_extensions);
+
+                    /*
+                     * Full width on purpose, not a card stranded at half width:
+                     * the extensions are a wrapping row of chips, so they read
+                     * better across the page than stacked in one column.
+                     */
+                    ?>
+                    <div class="ccm-panel">
+                        <div class="ccm-panel__head">
+                            <span><?php _e('PHP Extensions', 'ccm-tools'); ?></span>
+                            <span class="ccm-chip <?php echo $ext_loaded === $ext_total ? 'ccm-chip--good' : 'ccm-chip--warn'; ?>"><?php echo esc_html(sprintf(
+                                /* translators: 1: extensions loaded, 2: extensions checked */
+                                __('%1$d of %2$d loaded', 'ccm-tools'), $ext_loaded, $ext_total
+                            )); ?></span>
+                        </div>
+                        <div class="ccm-panel__body">
+                            <div class="ccm-extensions-grid">
+                                <?php
+                                foreach ($required_extensions as $ext => $desc) {
+                                    $loaded = extension_loaded($ext);
+                                    // The description is the tooltip, not the label: twelve
+                                    // extensions each spelling out why they exist filled a
+                                    // whole screen to say "all present".
+                                    echo '<div class="ccm-extension-item ' . ($loaded ? 'ccm-success' : 'ccm-error') . '"'
+                                        . ' title="' . esc_attr($desc) . '">';
+                                    echo '<span class="ccm-icon" aria-hidden="true">' . ($loaded ? '✓' : '✗') . '</span>';
+                                    echo '<strong>' . esc_html($ext) . '</strong>';
+                                    echo '<span class="screen-reader-text">' . esc_html($desc) . '</span>';
+                                    echo '</div>';
+                                }
+                                ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <?php $debug_status = $debug_mode_enabled ? __('Enabled', 'ccm-tools') : __('Disabled', 'ccm-tools'); ?>
+                    <section class="ccm-optgroup">
+                        <header class="ccm-optgroup__head">
+                            <div>
+                                <h2 class="ccm-optgroup__title"><?php _e('WordPress and debugging', 'ccm-tools'); ?></h2>
+                                <p class="ccm-optgroup__note"><?php _e('These write to wp-config.php. A backup is taken before every change.', 'ccm-tools'); ?></p>
+                            </div>
+                        </header>
+                        <div class="ccm-optgroup__body">
+
+                            <div class="ccm-opt<?php echo $debug_mode_enabled ? ' is-on' : ''; ?>">
+                                <div class="ccm-opt__main">
+                                    <div class="ccm-opt__text">
+                                        <span class="ccm-opt__label"><?php _e('WP Debug Mode', 'ccm-tools'); ?></span>
+                                        <span class="ccm-chip <?php echo $debug_mode_enabled ? 'ccm-chip--warn' : 'ccm-chip--good'; ?>"><?php echo esc_html($debug_status); ?></span>
+                                        <p class="ccm-opt__desc"><?php _e('Sets WP_DEBUG. Turn it on to chase a fault, then turn it back off — a live site should not be left running with it on.', 'ccm-tools'); ?></p>
                                     </div>
-                                    <a href="<?php echo esc_url(admin_url('admin.php?page=ccm-tools-redis')); ?>" class="ccm-button ccm-button-small">
-                                        <?php _e('Configure', 'ccm-tools'); ?>
-                                    </a>
-                                </div>
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                        
-                        <tr>
-                            <th><?php _e('Site URL', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_url(site_url()); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Home URL', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_url(home_url()); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('WP Debug Mode', 'ccm-tools'); ?></th>
-                            <td>
-                                <div class="ccm-config-control">
-                                    <?php 
-                                    $debug_status = $debug_mode_enabled ? 'Enabled' : 'Disabled';
-                                    $debug_class = $debug_mode_enabled ? 'ccm-warning' : 'ccm-success';
-                                    ?>
-                                    <span class="<?php echo esc_attr($debug_class); ?>">
-                                        <?php echo esc_html($debug_status); ?>
-                                    </span>
                                     <button id="toggle-debug" class="ccm-button" data-enabled="<?php echo $debug_mode_enabled ? 'true' : 'false'; ?>">
                                         <?php echo $debug_mode_enabled ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
                                     </button>
                                 </div>
-                            </td>
-                        </tr>
-                        <?php if ($debug_mode_enabled): ?>
-                        <tr>
-                            <th><?php _e('WP Debug Log', 'ccm-tools'); ?></th>
-                            <td>
-                                <div class="ccm-config-control debug-dependent-controls">
-                                    <span class="<?php echo esc_attr($debug_log_class); ?>">
-                                        <?php echo esc_html($debug_log_status); ?>
-                                    </span>
-                                    <button id="toggle-debug-log" class="ccm-button" data-enabled="<?php echo $debug_log_status === 'Enabled' ? 'true' : 'false'; ?>">
-                                        <?php echo $debug_log_status === 'Enabled' ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
-                                    </button>
+                            </div>
+
+                            <?php if ($debug_mode_enabled) : ?>
+                                <div class="ccm-opt<?php echo $debug_log_status === 'Enabled' ? ' is-on' : ''; ?>">
+                                    <div class="ccm-opt__main">
+                                        <div class="ccm-opt__text">
+                                            <span class="ccm-opt__label"><?php _e('WP Debug Log', 'ccm-tools'); ?></span>
+                                            <span class="ccm-chip <?php echo $debug_log_status === 'Enabled' ? 'ccm-chip--info' : ''; ?>"><?php echo esc_html($debug_log_status); ?></span>
+                                            <p class="ccm-opt__desc"><?php _e('Writes notices and warnings to wp-content/debug.log rather than showing them. This is the safe half of debugging.', 'ccm-tools'); ?></p>
+                                        </div>
+                                        <button id="toggle-debug-log" class="ccm-button" data-enabled="<?php echo $debug_log_status === 'Enabled' ? 'true' : 'false'; ?>">
+                                            <?php echo $debug_log_status === 'Enabled' ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
+                                        </button>
+                                    </div>
                                 </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('WP Debug Display', 'ccm-tools'); ?></th>
-                            <td>
-                                <div class="ccm-config-control debug-dependent-controls">
-                                    <span class="<?php echo esc_attr($debug_display_class); ?>">
-                                        <?php echo esc_html($debug_display_status); ?>
-                                    </span>
-                                    <button id="toggle-debug-display" class="ccm-button" data-enabled="<?php echo $debug_display_status === 'Enabled' ? 'true' : 'false'; ?>">
-                                        <?php echo $debug_display_status === 'Enabled' ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
-                                    </button>
+
+                                <div class="ccm-opt<?php echo $debug_display_status === 'Enabled' ? ' is-on' : ''; ?>">
+                                    <div class="ccm-opt__main">
+                                        <div class="ccm-opt__text">
+                                            <span class="ccm-opt__label"><?php _e('WP Debug Display', 'ccm-tools'); ?></span>
+                                            <span class="ccm-chip <?php echo $debug_display_status === 'Enabled' ? 'ccm-chip--bad' : ''; ?>"><?php echo esc_html($debug_display_status); ?></span>
+                                            <p class="ccm-opt__desc">
+                                                <?php _e('Prints errors into the page itself.', 'ccm-tools'); ?>
+                                                <?php if ($debug_display_status === 'Enabled') : ?>
+                                                    <?php _e('Warning: Errors will be displayed on the frontend', 'ccm-tools'); ?>
+                                                <?php endif; ?>
+                                            </p>
+                                        </div>
+                                        <button id="toggle-debug-display" class="ccm-button" data-enabled="<?php echo $debug_display_status === 'Enabled' ? 'true' : 'false'; ?>">
+                                            <?php echo $debug_display_status === 'Enabled' ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
+                                        </button>
+                                    </div>
                                 </div>
-                                <?php if ($debug_display_status === 'Enabled'): ?>
-                                <small class="ccm-warning debug-display-warning"><?php _e('Warning: Errors will be displayed on the frontend', 'ccm-tools'); ?></small>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endif; ?>
-                        <tr>
-                            <th><?php _e('WP Memory Limit', 'ccm-tools'); ?></th>
-                            <td>
-                                <div class="ccm-config-control">
-                                    <span><?php echo esc_html(WP_MEMORY_LIMIT); ?></span>
-                                    <div class="ccm-config-select">
+                            <?php endif; ?>
+
+                            <div class="ccm-opt">
+                                <div class="ccm-opt__main">
+                                    <div class="ccm-opt__text">
+                                        <span class="ccm-opt__label"><?php _e('WP Memory Limit', 'ccm-tools'); ?></span>
+                                        <span class="ccm-chip"><?php echo esc_html(WP_MEMORY_LIMIT); ?></span>
+                                        <p class="ccm-opt__desc"><?php _e('Sets WP_MEMORY_LIMIT, which is what WordPress allows itself. The PHP memory limit above is the ceiling it cannot go past.', 'ccm-tools'); ?></p>
+                                    </div>
+                                    <div class="ccm-row">
                                         <select id="memory-limit" aria-label="<?php esc_attr_e('PHP memory limit', 'ccm-tools'); ?>">
                                             <option value="40M" <?php selected(WP_MEMORY_LIMIT, '40M'); ?>><?php _e('Default (40M)', 'ccm-tools'); ?></option>
                                             <option value="64M" <?php selected(WP_MEMORY_LIMIT, '64M'); ?>><?php _e('64M', 'ccm-tools'); ?></option>
@@ -1519,17 +1463,11 @@ class CCMSettings {
                                         </button>
                                     </div>
                                 </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Active Theme', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(wp_get_theme()->get('Name') . ' (' . wp_get_theme()->get('Version') . ')'); ?></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Active Plugins', 'ccm-tools'); ?></th>
-                            <td><?php echo esc_html(count(get_option('active_plugins'))); ?></td>
-                        </tr>
-                    </table>
+                            </div>
+
+                        </div>
+                    </section>
+
                 </div>
             </div>
         </div>
@@ -1585,25 +1523,41 @@ class CCMSettings {
                     <?php _e('Most of these are routine housekeeping, but anything marked as permanent deletes rows that cannot be recovered from here.', 'ccm-tools'); ?></div>
                 </div>
 
-                <div class="ccm-toolbar" style="margin-bottom: var(--ccm-space-lg);">
-                    <span class="ccm-text-muted" style="font-size: var(--ccm-text-sm); font-weight: 600;">
-                        <?php _e('Quick select', 'ccm-tools'); ?>
-                    </span>
-                    <button id="select-all-safe" class="ccm-button ccm-button-secondary ccm-button-small">
-                        <?php _e('Everything safe', 'ccm-tools'); ?>
-                    </button>
-                    <button id="deselect-all" class="ccm-button ccm-button-secondary ccm-button-small">
-                        <?php _e('Nothing', 'ccm-tools'); ?>
-                    </button>
-                </div>
-
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php _e('Housekeeping', 'ccm-tools'); ?></span>
-                        <h2><?php _e('Optimisation tasks', 'ccm-tools'); ?></h2>
-                        <p><?php _e('Safe tasks are ticked for you. Each one shows how many rows it would actually touch, so you can see whether it is worth running.', 'ccm-tools'); ?></p>
+                <?php
+                /*
+                 * The heading and the quick-select buttons are one contained
+                 * group, the same shape every other settings page uses. The
+                 * list itself stays exactly where it was: js/main.js replaces
+                 * the innerHTML of #optimization-options and renders its own
+                 * bordered groups, so it is deliberately NOT nested inside this
+                 * card — that would be cards inside a card.
+                 *
+                 * .ccm-panel__body is here only for its padding.
+                 * .ccm-optgroup__body has none of its own, because it normally
+                 * holds .ccm-opt rows that pad themselves.
+                 */
+                ?>
+                <section class="ccm-optgroup">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Optimisation tasks', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Safe tasks are ticked for you. Each one shows how many rows it would actually touch, so you can see whether it is worth running.', 'ccm-tools'); ?></p>
+                        </div>
+                    </header>
+                    <div class="ccm-optgroup__body ccm-panel__body">
+                        <div class="ccm-row">
+                            <span class="ccm-text-muted" style="font-size: var(--ccm-text-sm); font-weight: 600;">
+                                <?php _e('Quick select', 'ccm-tools'); ?>
+                            </span>
+                            <button id="select-all-safe" class="ccm-button ccm-button-secondary ccm-button-small">
+                                <?php _e('Everything safe', 'ccm-tools'); ?>
+                            </button>
+                            <button id="deselect-all" class="ccm-button ccm-button-secondary ccm-button-small">
+                                <?php _e('Nothing', 'ccm-tools'); ?>
+                            </button>
+                        </div>
                     </div>
-                </div>
+                </section>
 
                 <div id="optimization-options" class="ccm-optimization-options">
                     <div class="ccm-empty">
@@ -1738,36 +1692,48 @@ class CCMSettings {
                     </div>
                 </div>
 
-                <div class="ccm-section">
-                    <div>
-                        <span class="ccm-section__eyebrow"><?php _e('Testing', 'ccm-tools'); ?></span>
-                        <h2><?php _e('Admin-only payment methods', 'ccm-tools'); ?></h2>
-                        <p><?php _e('Hides Cash on Delivery and Bank Transfer from everyone except administrators, so you can place a real test order without leaving an unpaid route open to customers.', 'ccm-tools'); ?></p>
-                    </div>
-                </div>
-
-                <div class="ccm-opts">
-                    <div class="ccm-opt<?php echo $admin_payment_enabled ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Restrict to administrators', 'ccm-tools'); ?></span>
-                                <?php if ($admin_payment_enabled) : ?>
-                                    <span class="ccm-chip ccm-chip--warn"><?php _e('Active', 'ccm-tools'); ?></span>
-                                <?php endif; ?>
-                                <p class="ccm-opt__desc"><?php _e('Applies at the classic checkout and in the block cart. Stripe and PayPal are unaffected.', 'ccm-tools'); ?></p>
+                <section class="ccm-optgroup">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Admin-only payment methods', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Hides Cash on Delivery and Bank Transfer from everyone except administrators, so you can place a real test order without leaving an unpaid route open to customers.', 'ccm-tools'); ?></p>
+                        </div>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-opt<?php echo $admin_payment_enabled ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Restrict to administrators', 'ccm-tools'); ?></span>
+                                    <?php if ($admin_payment_enabled) : ?>
+                                        <span class="ccm-chip ccm-chip--warn"><?php _e('Active', 'ccm-tools'); ?></span>
+                                    <?php endif; ?>
+                                    <p class="ccm-opt__desc"><?php _e('Applies at the classic checkout and in the block cart. Stripe and PayPal are unaffected.', 'ccm-tools'); ?></p>
+                                </div>
+                                <?php
+                                /*
+                                 * js/main.js reads data-enabled to decide which way to
+                                 * flip this. The attribute was never emitted, so it read
+                                 * as false every time and the button always sent
+                                 * enable: true — meaning the restriction could be turned
+                                 * on but never off, and Cash on Delivery and Bank
+                                 * Transfer stayed hidden from real customers after
+                                 * testing was finished.
+                                 */
+                                ?>
+                                <button type="button" id="toggle-admin-payment"
+                                        data-enabled="<?php echo $admin_payment_enabled ? 'true' : 'false'; ?>"
+                                        class="ccm-button <?php echo $admin_payment_enabled ? 'ccm-button-danger' : 'ccm-button-primary'; ?> ccm-button-small">
+                                    <?php echo $admin_payment_enabled
+                                        ? esc_html__('Turn off', 'ccm-tools')
+                                        : esc_html__('Turn on', 'ccm-tools'); ?>
+                                </button>
                             </div>
-                            <button type="button" id="toggle-admin-payment"
-                                    class="ccm-button <?php echo $admin_payment_enabled ? 'ccm-button-danger' : 'ccm-button-primary'; ?> ccm-button-small">
-                                <?php echo $admin_payment_enabled
-                                    ? esc_html__('Turn off', 'ccm-tools')
-                                    : esc_html__('Turn on', 'ccm-tools'); ?>
-                            </button>
                         </div>
                     </div>
-                </div>
+                </section>
 
                 <?php if (is_array($payment_gateways_info)) : ?>
-                    <div class="ccm-panel" style="margin-top: var(--ccm-space-md);">
+                    <div class="ccm-panel">
                         <div class="ccm-panel__head"><span><?php _e('Gateway status', 'ccm-tools'); ?></span></div>
                         <div class="ccm-kv">
                             <div>
@@ -1838,74 +1804,70 @@ class CCMSettings {
         ?>
         <div class="wrap ccm-tools">
             <h1>Front Page Debug Information</h1>
-            
-            <div class="ccm-card">
-                <h2>WordPress Front Page Settings</h2>
-                <table class="ccm-table">
-                    <tr>
-                        <th>Show on Front</th>
-                        <td><?php echo esc_html($debug_info['show_on_front']); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Page on Front (Front Page ID)</th>
-                        <td><?php echo esc_html($debug_info['page_on_front']); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Page for Posts</th>
-                        <td><?php echo esc_html($debug_info['page_for_posts']); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Current Screen</th>
-                        <td><?php echo esc_html($debug_info['current_screen'] ? $debug_info['current_screen']->base . ' (' . $debug_info['current_screen']->post_type . ')' : 'N/A'); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Current Page Now</th>
-                        <td><?php echo esc_html($debug_info['current_pagenow']); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Current Post Type</th>
-                        <td><?php echo esc_html($debug_info['current_post_type']); ?></td>
-                    </tr>
-                </table>
-            </div>
-            
-            <?php if ($debug_info['page_on_front']): ?>
-            <div class="ccm-card">
-                <h2>Front Page Details</h2>
-                <?php 
-                $front_page = get_post($debug_info['page_on_front']);
-                if ($front_page): ?>
-                <table class="ccm-table">
-                    <tr>
-                        <th>Title</th>
-                        <td><?php echo esc_html($front_page->post_title); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Post Type</th>
-                        <td><?php echo esc_html($front_page->post_type); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Status</th>
-                        <td><?php echo esc_html($front_page->post_status); ?></td>
-                    </tr>
-                    <tr>
-                        <th>Date</th>
-                        <td><?php echo esc_html($front_page->post_date); ?></td>
-                    </tr>
-                </table>
-                <?php endif; ?>
-            </div>
-            <?php endif; ?>
-            
-            <div class="ccm-card">
-                <h2>Instructions</h2>
-                <p>If the front page is not appearing at the top of your page list:</p>
-                <ol>
-                    <li>Make sure "Page on Front" has a valid ID (not 0)</li>
-                    <li>Go to Pages → All Pages</li>
-                    <li>Check if you see the debug notice at the top</li>
-                    <li>Look for the 🏠 Front Page indicator</li>
-                </ol>
+
+            <?php
+            /*
+             * Two short reference panels side by side, then the steps full
+             * width. The grid auto-fits, so when there is no front page set and
+             * the second panel is absent, the first one simply spans the row
+             * rather than sitting stranded at half width.
+             */
+            ?>
+            <div class="ccm-stack">
+
+                <div class="ccm-grid-2">
+
+                    <div class="ccm-panel">
+                        <div class="ccm-panel__head"><span>WordPress Front Page Settings</span></div>
+                        <div class="ccm-kv">
+                            <div><span class="ccm-kv__k">Show on Front</span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($debug_info['show_on_front']); ?></span></div>
+                            <div><span class="ccm-kv__k">Page on Front (Front Page ID)</span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($debug_info['page_on_front']); ?></span></div>
+                            <div><span class="ccm-kv__k">Page for Posts</span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($debug_info['page_for_posts']); ?></span></div>
+                            <div><span class="ccm-kv__k">Current Screen</span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($debug_info['current_screen'] ? $debug_info['current_screen']->base . ' (' . $debug_info['current_screen']->post_type . ')' : 'N/A'); ?></span></div>
+                            <div><span class="ccm-kv__k">Current Page Now</span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($debug_info['current_pagenow']); ?></span></div>
+                            <div><span class="ccm-kv__k">Current Post Type</span>
+                                 <span class="ccm-kv__v"><?php echo esc_html($debug_info['current_post_type']); ?></span></div>
+                        </div>
+                    </div>
+
+                    <?php
+                    $front_page = $debug_info['page_on_front'] ? get_post($debug_info['page_on_front']) : null;
+                    if ($front_page) : ?>
+                        <div class="ccm-panel">
+                            <div class="ccm-panel__head"><span>Front Page Details</span></div>
+                            <div class="ccm-kv">
+                                <div><span class="ccm-kv__k">Title</span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($front_page->post_title); ?></span></div>
+                                <div><span class="ccm-kv__k">Post Type</span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($front_page->post_type); ?></span></div>
+                                <div><span class="ccm-kv__k">Status</span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($front_page->post_status); ?></span></div>
+                                <div><span class="ccm-kv__k">Date</span>
+                                     <span class="ccm-kv__v"><?php echo esc_html($front_page->post_date); ?></span></div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                </div>
+
+                <div class="ccm-panel">
+                    <div class="ccm-panel__head"><span>Instructions</span></div>
+                    <div class="ccm-panel__body">
+                        <p>If the front page is not appearing at the top of your page list:</p>
+                        <ol>
+                            <li>Make sure "Page on Front" has a valid ID (not 0)</li>
+                            <li>Go to Pages → All Pages</li>
+                            <li>Check if you see the debug notice at the top</li>
+                            <li>Look for the 🏠 Front Page indicator</li>
+                        </ol>
+                    </div>
+                </div>
+
             </div>
         </div>
         <?php

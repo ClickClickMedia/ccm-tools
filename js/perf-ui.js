@@ -28,8 +28,11 @@
         $$('.ccm-optgroup').forEach(function (group) {
             var rows = $$('.ccm-opt', group);
             var n = rows.filter(function (o) { return o.dataset.state === 'on'; }).length;
-            var eyebrow = $('.ccm-section__eyebrow', group);
-            if (eyebrow) { eyebrow.textContent = n + ' of ' + rows.length + ' on'; }
+            // The live count moved into the group card's header. The old
+            // eyebrow selector is kept as a fallback so a page that has not
+            // been converted yet still updates.
+            var count = $('[data-group-count]', group) || $('.ccm-section__eyebrow', group);
+            if (count) { count.textContent = n + ' of ' + rows.length + ' on'; }
         });
     }
 

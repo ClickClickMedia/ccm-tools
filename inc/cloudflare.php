@@ -1136,15 +1136,15 @@ function ccm_tools_cf_render_zone_panel(): void {
 function ccm_tools_cf_render_cache_section(): void {
     $settings = ccm_tools_cf_get_settings();
     ?>
-    <div class="ccm-section">
-        <div>
-            <span class="ccm-section__eyebrow"><?php _e('Edge cache', 'ccm-tools'); ?></span>
-            <h2><?php _e('Cache', 'ccm-tools'); ?></h2>
-            <p><?php _e('Purge everything from the button at the top of this page. The options below cover specific URLs, purging automatically when content changes, and bypassing the cache entirely.', 'ccm-tools'); ?></p>
-        </div>
-    </div>
+    <section class="ccm-optgroup">
+        <header class="ccm-optgroup__head">
+            <div>
+                <h2 class="ccm-optgroup__title"><?php _e('Cache', 'ccm-tools'); ?></h2>
+                <p class="ccm-optgroup__note"><?php _e('Purge everything from the button at the top of this page. The options below cover specific URLs, purging automatically when content changes, and bypassing the cache entirely.', 'ccm-tools'); ?></p>
+            </div>
+        </header>
 
-    <div class="ccm-opts">
+        <div class="ccm-optgroup__body">
         <div class="ccm-opt">
             <div class="ccm-opt__main">
                 <div class="ccm-opt__text">
@@ -1191,7 +1191,8 @@ function ccm_tools_cf_render_cache_section(): void {
                 </label>
             </div>
         </div>
-    </div>
+        </div>
+    </section>
     <?php
 }
 
@@ -1216,20 +1217,19 @@ function ccm_tools_cf_render_cache_section(): void {
  */
 function ccm_tools_cf_render_security_section(): void {
     ?>
-    <div class="ccm-section">
-        <div>
-            <span class="ccm-section__eyebrow"><?php _e('Zone', 'ccm-tools'); ?></span>
-            <h2><?php _e('Security', 'ccm-tools'); ?></h2>
-            <p><?php _e('Challenge and bot controls for this zone. Toggle switches require the API Token to have Zone Settings: Edit permission.', 'ccm-tools'); ?></p>
-        </div>
-    </div>
-    <div class="ccm-panel">
-        <div class="ccm-panel__body ccm-panel__body--flush">
+    <section class="ccm-optgroup">
+        <header class="ccm-optgroup__head">
+            <div>
+                <h2 class="ccm-optgroup__title"><?php _e('Security', 'ccm-tools'); ?></h2>
+                <p class="ccm-optgroup__note"><?php _e('Challenge and bot controls for this zone. Changing a switch needs the API token to carry the Zone Settings: Edit permission.', 'ccm-tools'); ?></p>
+            </div>
+        </header>
+        <div class="ccm-optgroup__body--host">
             <div id="cf-security-settings">
                 <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading security settings...', 'ccm-tools'); ?></p></div>
             </div>
         </div>
-    </div>
+    </section>
     <?php
 }
 
@@ -1250,20 +1250,19 @@ function ccm_tools_cf_render_security_section(): void {
  */
 function ccm_tools_cf_render_network_section(): void {
     ?>
-    <div class="ccm-section">
-        <div>
-            <span class="ccm-section__eyebrow"><?php _e('Zone', 'ccm-tools'); ?></span>
-            <h2><?php _e('SSL/TLS and network', 'ccm-tools'); ?></h2>
-            <p><?php _e('Encryption and protocol settings for this zone. 0-RTT (below) lets returning visitors skip a round trip, but it carries a replay risk for non-idempotent requests such as form submissions or checkouts — leave it off unless the app is known to guard against replayed requests.', 'ccm-tools'); ?></p>
-        </div>
-    </div>
-    <div class="ccm-panel">
-        <div class="ccm-panel__body ccm-panel__body--flush">
+    <section class="ccm-optgroup">
+        <header class="ccm-optgroup__head">
+            <div>
+                <h2 class="ccm-optgroup__title"><?php _e('SSL/TLS and network', 'ccm-tools'); ?></h2>
+                <p class="ccm-optgroup__note"><?php _e('Encryption and protocol settings for this zone. 0-RTT (below) lets returning visitors skip a round trip, but it carries a replay risk for non-idempotent requests such as form submissions or checkouts — leave it off unless the app is known to guard against replayed requests.', 'ccm-tools'); ?></p>
+            </div>
+        </header>
+        <div class="ccm-optgroup__body--host">
             <div id="cf-network-settings">
                 <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading network settings...', 'ccm-tools'); ?></p></div>
             </div>
         </div>
-    </div>
+    </section>
     <?php
 }
 
@@ -1280,20 +1279,19 @@ function ccm_tools_cf_render_network_section(): void {
  */
 function ccm_tools_cf_render_dns_section(array $settings): void {
     ?>
-    <div class="ccm-section">
-        <div>
-            <span class="ccm-section__eyebrow"><?php _e('Read-only', 'ccm-tools'); ?></span>
-            <h2><?php _e('DNS records', 'ccm-tools'); ?></h2>
-            <p><?php _e('A read-only view of this zone\'s DNS records. Manage records in the Cloudflare dashboard.', 'ccm-tools'); ?></p>
-        </div>
-    </div>
-    <div class="ccm-panel">
-        <div class="ccm-panel__body ccm-panel__body--flush">
+    <section class="ccm-optgroup">
+        <header class="ccm-optgroup__head">
+            <div>
+                <h2 class="ccm-optgroup__title"><?php _e('DNS records', 'ccm-tools'); ?></h2>
+                <p class="ccm-optgroup__note"><?php _e('A read-only view of this zone\'s DNS records. Manage records in the Cloudflare dashboard.', 'ccm-tools'); ?></p>
+            </div>
+        </header>
+        <div class="ccm-optgroup__body--host">
             <div id="cf-dns-records">
                 <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p></div>
             </div>
         </div>
-    </div>
+    </section>
     <?php
 }
 

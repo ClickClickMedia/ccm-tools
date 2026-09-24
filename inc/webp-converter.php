@@ -1330,6 +1330,14 @@ function ccm_tools_webp_background_queue_script() {
  * uploads backup) is detail needed rarely, so it stays compact or tucked
  * into a disclosure.
  *
+ * Containers: settings are one `.ccm-optgroup` card, the same component the
+ * .htaccess and Performance pages use, with the group name, its one line of
+ * context and the live count all in the card header rather than floating
+ * above the list. Bulk conversion keeps a full-width `.ccm-panel` because it
+ * is the primary action here. The two reference blocks — which library is
+ * present, and the one-image test — share a `.ccm-grid-2` row, which drops
+ * to one column on a narrow screen.
+ *
  * @return void
  */
 /**
@@ -1479,22 +1487,23 @@ function ccm_tools_render_webp_page() {
                 </div>
             </div>
 
-            <!-- Bulk conversion -->
-            <div class="ccm-section">
-                <div>
-                    <span class="ccm-section__eyebrow"><?php echo esc_html(sprintf(
+            <!-- Bulk conversion: the main thing this page does, so it stays
+                 full width rather than sharing a row with anything. -->
+            <div class="ccm-panel" style="margin-bottom: var(--ccm-space-xl);">
+                <div class="ccm-panel__head">
+                    <span><?php _e('Bulk conversion', 'ccm-tools'); ?></span>
+                    <span class="ccm-text-muted" style="font-size: var(--ccm-text-xs);"><?php echo esc_html(sprintf(
                         /* translators: 1: converted count, 2: total eligible count */
                         __('%1$d of %2$d converted', 'ccm-tools'),
                         $stats['converted_images'],
                         $stats['total_images']
                     )); ?></span>
-                    <h2><?php _e('Bulk conversion', 'ccm-tools'); ?></h2>
-                    <p><?php _e('Converts every eligible image already in the media library. Regenerating deletes the existing WebP files first and redoes them with the current quality and library settings.', 'ccm-tools'); ?></p>
                 </div>
-            </div>
-
-            <div class="ccm-panel">
                 <div class="ccm-panel__body">
+
+                    <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-md);">
+                        <?php _e('Converts every eligible image already in the media library. Regenerating deletes the existing WebP files first and redoes them with the current quality and library settings.', 'ccm-tools'); ?>
+                    </p>
 
                     <div id="webp-bulk-idle">
                         <p style="margin: 0 0 var(--ccm-space-md);">
@@ -1529,95 +1538,101 @@ function ccm_tools_render_webp_page() {
                 </div>
             </div>
 
-            <!-- Settings -->
-            <div class="ccm-section">
-                <div>
-                    <span class="ccm-section__eyebrow"><?php echo esc_html(sprintf(
-                        /* translators: 1: enabled count, 2: total count */
-                        __('%1$d of %2$d on', 'ccm-tools'), $opts_on, count($opt_keys)
-                    )); ?></span>
-                    <h2><?php _e('Settings', 'ccm-tools'); ?></h2>
-                    <p><?php _e('The master switch above turns all of this on or off. These control what happens while it is on.', 'ccm-tools'); ?></p>
-                </div>
-            </div>
-
+            <!-- Settings: one contained group, so the quality field and the
+                 toggles it applies to sit in the same card. -->
             <form id="webp-settings-form">
-                <div class="ccm-optfield" style="max-width: 18rem; margin-bottom: var(--ccm-space-lg);">
-                    <label for="webp-quality"><?php _e('Quality', 'ccm-tools'); ?></label>
-                    <span class="ccm-optfield__inline">
-                        <input type="number" name="quality" id="webp-quality" class="ccm-input"
-                               min="1" max="100" value="<?php echo esc_attr($settings['quality']); ?>">
-                        <span class="ccm-optfield__suffix"><?php _e('/ 100', 'ccm-tools'); ?></span>
-                    </span>
-                    <span class="ccm-optfield__hint"><?php _e('85 is the default and is close to lossless. Push it past 90 and the file barely shrinks for the extra size.', 'ccm-tools'); ?></span>
-                </div>
-
-                <div class="ccm-opts">
-                    <div class="ccm-opt<?php echo !empty($settings['serve_webp']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Serve WebP to capable browsers', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Rewrites image URLs to the WebP version for browsers that support it. Anything older still gets the original file.', 'ccm-tools'); ?></p>
+                <section class="ccm-optgroup" data-group="settings">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Settings', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('The master switch above turns all of this on or off. These control what happens while it is on.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php echo esc_html(sprintf(
+                            /* translators: 1: enabled count, 2: total count */
+                            __('%1$d of %2$d on', 'ccm-tools'), $opts_on, count($opt_keys)
+                        )); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-opt">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <label class="ccm-opt__label" for="webp-quality"><?php _e('Quality', 'ccm-tools'); ?></label>
+                                    <p class="ccm-opt__desc"><?php _e('85 is the default and is close to lossless. Push it past 90 and the file barely shrinks for the extra size.', 'ccm-tools'); ?></p>
+                                </div>
+                                <span class="ccm-optfield__inline">
+                                    <input type="number" name="quality" id="webp-quality" class="ccm-input"
+                                           min="1" max="100" value="<?php echo esc_attr($settings['quality']); ?>">
+                                    <span class="ccm-optfield__suffix"><?php _e('/ 100', 'ccm-tools'); ?></span>
+                                </span>
                             </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="serve_webp" id="webp-serve" value="1" <?php checked($settings['serve_webp'], true); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['serve_webp']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Serve WebP to capable browsers', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Rewrites image URLs to the WebP version for browsers that support it. Anything older still gets the original file.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="serve_webp" id="webp-serve" value="1" <?php checked($settings['serve_webp'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['convert_on_upload']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Convert on upload', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Creates the WebP version the moment an image is added to the media library, so new uploads never join the backlog.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="convert_on_upload" id="webp-convert-on-upload" value="1" <?php checked($settings['convert_on_upload'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['convert_on_demand']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Convert on demand', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Converts an image during a visitor\'s request, the first time it is actually needed, instead of waiting for a bulk run. That first request is a little slower while the conversion happens, but nothing is left unconverted.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="convert_on_demand" id="webp-convert-on-demand" value="1" <?php checked($settings['convert_on_demand'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['keep_originals']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Keep original files', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Leaves the original JPG, PNG or GIF in place next to the WebP version. Turning this off removes the fallback that older browsers need.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="keep_originals" id="webp-keep-originals" value="1" <?php checked($settings['keep_originals'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['convert_bg_images']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Convert background images', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php echo esc_html__('Rewrites background-image URLs to WebP in inline styles and style blocks, which covers most page builders. Only touches images already in this site\'s uploads folder.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="convert_bg_images" id="webp-bg-images" value="1" <?php checked($settings['convert_bg_images'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
                     </div>
-
-                    <div class="ccm-opt<?php echo !empty($settings['convert_on_upload']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Convert on upload', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Creates the WebP version the moment an image is added to the media library, so new uploads never join the backlog.', 'ccm-tools'); ?></p>
-                            </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="convert_on_upload" id="webp-convert-on-upload" value="1" <?php checked($settings['convert_on_upload'], true); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="ccm-opt<?php echo !empty($settings['convert_on_demand']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Convert on demand', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Converts an image during a visitor\'s request, the first time it is actually needed, instead of waiting for a bulk run. That first request is a little slower while the conversion happens, but nothing is left unconverted.', 'ccm-tools'); ?></p>
-                            </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="convert_on_demand" id="webp-convert-on-demand" value="1" <?php checked($settings['convert_on_demand'], true); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="ccm-opt<?php echo !empty($settings['keep_originals']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Keep original files', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php _e('Leaves the original JPG, PNG or GIF in place next to the WebP version. Turning this off removes the fallback that older browsers need.', 'ccm-tools'); ?></p>
-                            </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="keep_originals" id="webp-keep-originals" value="1" <?php checked($settings['keep_originals'], true); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="ccm-opt<?php echo !empty($settings['convert_bg_images']) ? ' is-on' : ''; ?>">
-                        <div class="ccm-opt__main">
-                            <div class="ccm-opt__text">
-                                <span class="ccm-opt__label"><?php _e('Convert background images', 'ccm-tools'); ?></span>
-                                <p class="ccm-opt__desc"><?php echo esc_html__('Rewrites background-image URLs to WebP in inline styles and style blocks, which covers most page builders. Only touches images already in this site\'s uploads folder.', 'ccm-tools'); ?></p>
-                            </div>
-                            <label class="ccm-toggle">
-                                <input type="checkbox" name="convert_bg_images" id="webp-bg-images" value="1" <?php checked($settings['convert_bg_images'], true); ?>>
-                                <span class="ccm-toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
+                </section>
 
                 <div class="ccm-row" style="margin-top: var(--ccm-space-md);">
                     <button type="submit" id="save-webp-settings" class="ccm-button ccm-button-primary">
@@ -1628,111 +1643,112 @@ function ccm_tools_render_webp_page() {
 
             <?php endif; // if ($available) ?>
 
-            <!-- Extensions -->
-            <div class="ccm-section">
-                <div>
-                    <span class="ccm-section__eyebrow"><?php echo esc_html(sprintf(
-                        /* translators: %d: number of image processing extensions detected on this server */
-                        _n('%d extension detected', '%d extensions detected', count($extensions), 'ccm-tools'),
-                        count($extensions)
-                    )); ?></span>
-                    <h2><?php _e('Image processing', 'ccm-tools'); ?></h2>
-                    <p><?php _e('The PHP extension that creates WebP files, and which one this site prefers when more than one is available.', 'ccm-tools'); ?></p>
-                </div>
-            </div>
+            <!-- Reference detail rather than decisions: which library does the
+                 work, and a one-image spot check. The two share a row on a wide
+                 screen and drop to one column on a narrow one. -->
+            <div class="ccm-grid-2" style="margin-top: var(--ccm-space-xl);">
 
-            <div class="ccm-panel">
-                <div class="ccm-panel__head">
-                    <span><?php _e('Detected on this server', 'ccm-tools'); ?></span>
-                    <?php if ($active) : ?>
-                        <span class="ccm-chip ccm-chip--good"><?php echo esc_html(sprintf(
-                            /* translators: %s: name of the image library actually in use, e.g. "ImageMagick" */
-                            __('Using %s', 'ccm-tools'), $active['name']
-                        )); ?></span>
-                    <?php else : ?>
-                        <span class="ccm-chip ccm-chip--bad"><?php _e('None available', 'ccm-tools'); ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="ccm-kv">
-                    <?php if (empty($extensions)) : ?>
-                        <div>
-                            <span class="ccm-kv__k"><?php _e('Extensions', 'ccm-tools'); ?></span>
-                            <span class="ccm-kv__v ccm-text-muted"><?php _e('Neither GD nor ImageMagick is loaded on this server.', 'ccm-tools'); ?></span>
-                        </div>
-                    <?php endif; ?>
-                    <?php foreach ($extensions as $ext_name => $ext) : ?>
-                        <div>
-                            <span class="ccm-kv__k"><?php echo esc_html($ext['name']); ?></span>
-                            <span class="ccm-kv__v">
-                                <?php echo esc_html(sprintf(
-                                    /* translators: %s: version string reported by the library */
-                                    __('Version %s', 'ccm-tools'), ccm_tools_webp_clean_version($ext['version'])
-                                )); ?>
-                                <span class="ccm-chip<?php echo $ext['webp_support'] ? ' ccm-chip--good' : ' ccm-chip--bad'; ?>">
-                                    <?php echo $ext['webp_support'] ? esc_html__('WebP', 'ccm-tools') : esc_html__('No WebP', 'ccm-tools'); ?>
+                <div class="ccm-panel">
+                    <div class="ccm-panel__head">
+                        <span><?php _e('Image processing', 'ccm-tools'); ?></span>
+                        <span class="ccm-row">
+                            <span class="ccm-text-muted" style="font-size: var(--ccm-text-xs);"><?php echo esc_html(sprintf(
+                                /* translators: %d: number of image processing extensions detected on this server */
+                                _n('%d extension detected', '%d extensions detected', count($extensions), 'ccm-tools'),
+                                count($extensions)
+                            )); ?></span>
+                            <?php if ($active) : ?>
+                                <span class="ccm-chip ccm-chip--good"><?php echo esc_html(sprintf(
+                                    /* translators: %s: name of the image library actually in use, e.g. "ImageMagick" */
+                                    __('Using %s', 'ccm-tools'), $active['name']
+                                )); ?></span>
+                            <?php else : ?>
+                                <span class="ccm-chip ccm-chip--bad"><?php _e('None available', 'ccm-tools'); ?></span>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                    <div class="ccm-panel__body">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0;">
+                            <?php _e('The PHP extension that creates WebP files, and which one this site prefers when more than one is available.', 'ccm-tools'); ?>
+                        </p>
+                    </div>
+                    <div class="ccm-kv">
+                        <?php if (empty($extensions)) : ?>
+                            <div>
+                                <span class="ccm-kv__k"><?php _e('Extensions', 'ccm-tools'); ?></span>
+                                <span class="ccm-kv__v ccm-text-muted"><?php _e('Neither GD nor ImageMagick is loaded on this server.', 'ccm-tools'); ?></span>
+                            </div>
+                        <?php endif; ?>
+                        <?php foreach ($extensions as $ext_name => $ext) : ?>
+                            <div>
+                                <span class="ccm-kv__k"><?php echo esc_html($ext['name']); ?></span>
+                                <span class="ccm-kv__v">
+                                    <?php echo esc_html(sprintf(
+                                        /* translators: %s: version string reported by the library */
+                                        __('Version %s', 'ccm-tools'), ccm_tools_webp_clean_version($ext['version'])
+                                    )); ?>
+                                    <span class="ccm-chip<?php echo $ext['webp_support'] ? ' ccm-chip--good' : ' ccm-chip--bad'; ?>">
+                                        <?php echo $ext['webp_support'] ? esc_html__('WebP', 'ccm-tools') : esc_html__('No WebP', 'ccm-tools'); ?>
+                                    </span>
+                                    <small><?php echo esc_html(sprintf(
+                                        /* translators: 1: JPEG supported tick/cross, 2: PNG supported tick/cross, 3: GIF supported tick/cross */
+                                        __('Also reads JPEG %1$s, PNG %2$s, GIF %3$s', 'ccm-tools'),
+                                        $ext['jpeg_support'] ? '✓' : '✗',
+                                        $ext['png_support'] ? '✓' : '✗',
+                                        $ext['gif_support'] ? '✓' : '✗'
+                                    )); ?></small>
                                 </span>
-                                <small><?php echo esc_html(sprintf(
-                                    /* translators: 1: JPEG supported tick/cross, 2: PNG supported tick/cross, 3: GIF supported tick/cross */
-                                    __('Also reads JPEG %1$s, PNG %2$s, GIF %3$s', 'ccm-tools'),
-                                    $ext['jpeg_support'] ? '✓' : '✗',
-                                    $ext['png_support'] ? '✓' : '✗',
-                                    $ext['gif_support'] ? '✓' : '✗'
-                                )); ?></small>
-                            </span>
-                        </div>
-                    <?php endforeach; ?>
-                    <?php if ($available) : ?>
-                        <div>
-                            <span class="ccm-kv__k"><?php _e('Preferred library', 'ccm-tools'); ?></span>
-                            <span class="ccm-kv__v">
-                                <select name="preferred_extension" id="webp-preferred-extension" aria-label="<?php esc_attr_e('Preferred image library', 'ccm-tools'); ?>">
-                                    <option value="auto" <?php selected($settings['preferred_extension'], 'auto'); ?>><?php _e('Auto (best available)', 'ccm-tools'); ?></option>
-                                    <?php foreach ($extensions as $ext_name => $ext) : ?>
-                                        <?php if ($ext['webp_support']) : ?>
-                                            <option value="<?php echo esc_attr($ext_name); ?>" <?php selected($settings['preferred_extension'], $ext_name); ?>>
-                                                <?php echo esc_html($ext['name']); ?>
-                                            </option>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                </select>
-                                <small><?php _e('Auto prefers ImageMagick over GD when both are present.', 'ccm-tools'); ?></small>
-                            </span>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <?php if ($available) : ?>
-
-            <!-- Test conversion -->
-            <div class="ccm-section">
-                <div>
-                    <span class="ccm-section__eyebrow"><?php _e('Spot check', 'ccm-tools'); ?></span>
-                    <h2><?php _e('Test conversion', 'ccm-tools'); ?></h2>
-                    <p><?php _e('Converts one image with the current quality and library settings, and shows the before and after sizes.', 'ccm-tools'); ?></p>
-                </div>
-            </div>
-
-            <div class="ccm-panel">
-                <div class="ccm-panel__body">
-                    <div class="ccm-row">
-                        <input type="file" id="test-image-upload" accept="image/jpeg,image/png,image/gif" class="ccm-hide" aria-label="<?php esc_attr_e('Choose an image to test convert', 'ccm-tools'); ?>">
-                        <button type="button" id="select-test-image" class="ccm-button ccm-button-secondary ccm-button-small">
-                            <?php _e('Choose an image', 'ccm-tools'); ?>
-                        </button>
-                        <span id="test-image-name" class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"></span>
-                        <span class="ccm-toolbar__spacer"></span>
-                        <button type="button" id="run-test-conversion" class="ccm-button ccm-button-primary ccm-button-small" disabled>
-                            <?php _e('Convert', 'ccm-tools'); ?>
-                        </button>
-                    </div>
-                    <div id="test-conversion-result" style="display: none; margin-top: var(--ccm-space-md);">
-                        <div id="test-result-content"></div>
+                            </div>
+                        <?php endforeach; ?>
+                        <?php if ($available) : ?>
+                            <div>
+                                <span class="ccm-kv__k"><?php _e('Preferred library', 'ccm-tools'); ?></span>
+                                <span class="ccm-kv__v">
+                                    <select name="preferred_extension" id="webp-preferred-extension" aria-label="<?php esc_attr_e('Preferred image library', 'ccm-tools'); ?>">
+                                        <option value="auto" <?php selected($settings['preferred_extension'], 'auto'); ?>><?php _e('Auto (best available)', 'ccm-tools'); ?></option>
+                                        <?php foreach ($extensions as $ext_name => $ext) : ?>
+                                            <?php if ($ext['webp_support']) : ?>
+                                                <option value="<?php echo esc_attr($ext_name); ?>" <?php selected($settings['preferred_extension'], $ext_name); ?>>
+                                                    <?php echo esc_html($ext['name']); ?>
+                                                </option>
+                                            <?php endif; ?>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small><?php _e('Auto prefers ImageMagick over GD when both are present.', 'ccm-tools'); ?></small>
+                                </span>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
-            </div>
 
-            <?php endif; // if ($available) ?>
+                <?php if ($available) : ?>
+                <div class="ccm-panel">
+                    <div class="ccm-panel__head">
+                        <span><?php _e('Test conversion', 'ccm-tools'); ?></span>
+                    </div>
+                    <div class="ccm-panel__body">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-md);">
+                            <?php _e('Converts one image with the current quality and library settings, and shows the before and after sizes.', 'ccm-tools'); ?>
+                        </p>
+                        <div class="ccm-row">
+                            <input type="file" id="test-image-upload" accept="image/jpeg,image/png,image/gif" class="ccm-hide" aria-label="<?php esc_attr_e('Choose an image to test convert', 'ccm-tools'); ?>">
+                            <button type="button" id="select-test-image" class="ccm-button ccm-button-secondary ccm-button-small">
+                                <?php _e('Choose an image', 'ccm-tools'); ?>
+                            </button>
+                            <span id="test-image-name" class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"></span>
+                            <span class="ccm-toolbar__spacer"></span>
+                            <button type="button" id="run-test-conversion" class="ccm-button ccm-button-primary ccm-button-small" disabled>
+                                <?php _e('Convert', 'ccm-tools'); ?>
+                            </button>
+                        </div>
+                        <div id="test-conversion-result" style="display: none; margin-top: var(--ccm-space-md);">
+                            <div id="test-result-content"></div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; // if ($available) ?>
+
+            </div>
 
             <!-- Housekeeping -->
             <div class="ccm-section">
