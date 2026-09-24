@@ -4099,6 +4099,13 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-opt.is-on { background: var(--ccm-opt-on-bg); }
 .ccm-opt.is-on:hover { background: var(--ccm-opt-on-bg-hover); }
 
+/* A task with nothing left to run cannot be actioned, so it recedes. The
+   checkbox is already disabled; this stops a finished row competing for
+   attention with the ones you can still do something about. */
+.ccm-opt.is-done { background: transparent; }
+.ccm-opt.is-done .ccm-opt__label { color: var(--ccm-text-muted); font-weight: 600; }
+.ccm-opt.is-done:hover { background: var(--ccm-bg-secondary); }
+
 /* ── Option group ──────────────────────────────────────────────
    One container per group, with the group's name and its live count in the
    header, rather than a floating eyebrow and heading above a borderless list.

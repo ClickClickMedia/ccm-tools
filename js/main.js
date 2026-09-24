@@ -465,12 +465,25 @@
                 if (descEl) {
                     descEl.textContent = 'Already done, nothing to run.';
                 }
-                const statEl = row ? row.querySelector('[data-opt-stat]') : null;
-                if (statEl) {
+                // The chip is only rendered when the task has a count to show,
+                // and the five index tasks never do. Without this they were the
+                // only finished rows with no Done marker, which read as though
+                // they had been missed.
+                if (row) {
+                    let statEl = row.querySelector('[data-opt-stat]');
+                    if (!statEl) {
+                        statEl = document.createElement('span');
+                        statEl.setAttribute('data-opt-stat', '');
+                        const label = row.querySelector('.ccm-opt__label');
+                        if (label && label.parentNode) {
+                            label.parentNode.insertBefore(statEl, label.nextSibling);
+                        }
+                    }
                     statEl.textContent = 'Done';
                     statEl.className = 'ccm-chip ccm-chip--good';
+                    row.classList.remove('is-on');
+                    row.classList.add('is-done');
                 }
-                if (row) { row.classList.remove('is-on'); }
             }
 
             // Enable run button

@@ -1,5 +1,17 @@
 # CCM Tools — Changelog
 
+## v8.4.1 — Every finished database task says so
+
+On the Database page, a task with nothing left to run said "Already done,
+nothing to run" but only some of them carried the Done marker beside the name.
+The marker was written into the chip that shows the row's count, and the five
+index tasks have no count to show, so they had no chip to write into. One is
+created for them now.
+
+Finished rows are also muted, so the tasks you can still act on are the ones
+that stand out.
+
+
 ## v8.4.0 — One component, no accent rails
 
 The v8.3.0 pages were consistent in palette but not in construction, so they
