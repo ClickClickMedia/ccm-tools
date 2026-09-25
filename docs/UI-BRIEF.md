@@ -1,6 +1,6 @@
 # CCM Tools UI brief
 
-How a page in this plugin is built, as of v8.6.1. Follow it exactly so the
+How a page in this plugin is built, as of v8.6.2. Follow it exactly so the
 eight screens read as one product rather than eight people's work.
 
 Two pages are already rebuilt and are the reference. Read them before you

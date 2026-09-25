@@ -1,5 +1,36 @@
 # CCM Tools — Changelog
 
+## v8.6.2 — Two database sweeps that reached past their own scope
+
+Both of these were found in the v8.5.0 review and missed when the rest were
+fixed.
+
+### Removing orphaned term relationships deleted things that were not orphans
+
+`term_relationships.object_id` does not always hold a post id. It holds
+whichever object type the taxonomy was registered against: WordPress core's own
+link_category taxonomy keeps `wp_links.link_id` there, BuddyPress member and
+group types keep user and group ids, and any user-taxonomy plugin does the
+same. The sweep joined to `wp_posts` and deleted every row that did not match,
+so on a site running BuddyPress or the Links Manager it wiped every one of
+those assignments in a single statement — from an option that describes itself
+as removing relationships for deleted posts.
+
+It is now restricted to taxonomies actually registered against a post type, and
+the figure shown before the click uses the same restriction.
+
+### Deleting spam or trashed comments purged unrelated data
+
+Both sweeps finished with a site-wide "delete every orphaned commentmeta row",
+not just the rows belonging to the comments they had removed. That is offered
+separately as its own option, graded moderate and off by default, so two
+default-on cleanups graded safe were quietly doing the work of a riskier one
+nobody had ticked.
+
+Each now deletes the meta belonging to the comments it is removing, by id, and
+reports how many rows actually went rather than assuming success.
+
+
 ## v8.6.1 — The Database page's figures now match what the buttons do
 
 Three small corrections, all the same shape: the number shown before a

@@ -1121,18 +1121,39 @@ function ccm_tools_optimization_update_collation() {
  */
 function ccm_tools_optimization_clean_spam_comments() {
     global $wpdb;
-    
-    $count = $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
-    
-    // Clean orphaned commentmeta for deleted comments
-    if ($count > 0) {
-        $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+
+    /*
+     * Collect the ids first, then delete their meta by id.
+     *
+     * This used to finish with a site-wide
+     * "DELETE FROM commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM comments)",
+     * which removes every orphaned row on the site, not just the ones belonging
+     * to the comments it had removed. That is offered separately as its own
+     * option, graded moderate and off by default — so a safe, default-on
+     * cleanup was quietly doing the work of a riskier one nobody had ticked.
+     */
+    $ids = $wpdb->get_col("SELECT comment_ID FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
+
+    if (empty($ids)) {
+        return array(
+            'success' => true,
+            'message' => __('No spam comments to delete', 'ccm-tools'),
+            'count'   => 0,
+        );
     }
-    
+
+    // Meta first: once the comment row is gone the ids are harder to justify.
+    ccm_tools_delete_ids_in_chunks($wpdb->commentmeta, 'comment_id', $ids);
+    $report = ccm_tools_delete_ids_in_chunks($wpdb->comments, 'comment_ID', $ids);
+
     return array(
-        'success' => $count !== false,
-        'message' => sprintf(__('%d spam comments deleted', 'ccm-tools'), $count ?: 0),
-        'count' => $count ?: 0
+        'success' => empty($report['failed']),
+        'message' => sprintf(
+            /* translators: %d: number of comments actually deleted */
+            __('%d spam comments deleted', 'ccm-tools'),
+            (int) $report['affected']
+        ),
+        'count'   => (int) $report['affected'],
     );
 }
 
@@ -1142,22 +1163,37 @@ function ccm_tools_optimization_clean_spam_comments() {
 function ccm_tools_optimization_clean_trashed_comments() {
     global $wpdb;
     
-    $count = $wpdb->query(
+    /*
+     * Same rule as the spam sweep: take these rows' meta by id, never the
+     * site-wide orphan purge, which is a separate option graded moderate and
+     * off by default.
+     */
+    $ids = $wpdb->get_col(
         $wpdb->prepare(
-            "DELETE FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
+            "SELECT comment_ID FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
             gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
-    
-    // Clean orphaned commentmeta
-    if ($count > 0) {
-        $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+
+    if (empty($ids)) {
+        return array(
+            'success' => true,
+            'message' => __('No trashed comments older than 30 days', 'ccm-tools'),
+            'count'   => 0,
+        );
     }
-    
+
+    ccm_tools_delete_ids_in_chunks($wpdb->commentmeta, 'comment_id', $ids);
+    $report = ccm_tools_delete_ids_in_chunks($wpdb->comments, 'comment_ID', $ids);
+
     return array(
-        'success' => $count !== false,
-        'message' => sprintf(__('%d trashed comments deleted (>30 days old)', 'ccm-tools'), $count ?: 0),
-        'count' => $count ?: 0
+        'success' => empty($report['failed']),
+        'message' => sprintf(
+            /* translators: %d: number of comments actually deleted */
+            __('%d trashed comments deleted (>30 days old)', 'ccm-tools'),
+            (int) $report['affected']
+        ),
+        'count'   => (int) $report['affected'],
     );
 }
 
@@ -1643,16 +1679,56 @@ function ccm_tools_optimization_clean_orphaned_termmeta() {
 function ccm_tools_optimization_clean_orphaned_relationships() {
     global $wpdb;
     
+    /*
+     * object_id is not always a post id.
+     *
+     * term_relationships stores whichever object type the taxonomy was
+     * registered against. WordPress core's own link_category taxonomy keeps
+     * wp_links.link_id there; BuddyPress member and group types keep user and
+     * group ids; any "user taxonomy" plugin does the same. Joining
+     * term_relationships to wp_posts and deleting every row that does not
+     * match therefore wiped every one of those assignments in a single
+     * statement, on a screen that describes itself as removing relationships
+     * for deleted posts.
+     *
+     * Restricting to taxonomies actually registered against a post type makes
+     * the query do what the label says. It also means the sweep only ever
+     * considers taxonomies the running site has registered, so a plugin that
+     * is deactivated at the time is left alone rather than having its data
+     * treated as orphaned.
+     */
+    $taxonomies = function_exists('get_object_taxonomies') && function_exists('get_post_types')
+        ? get_object_taxonomies(get_post_types(array(), 'names'), 'names')
+        : array();
+
+    if (empty($taxonomies)) {
+        return array(
+            'success' => true,
+            'message' => __('No post taxonomies are registered, so nothing was removed', 'ccm-tools'),
+            'count'   => 0,
+        );
+    }
+
+    $placeholders = implode(', ', array_fill(0, count($taxonomies), '%s'));
+
     $count = $wpdb->query(
-        "DELETE tr FROM {$wpdb->term_relationships} tr 
-        LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID 
-        WHERE p.ID IS NULL"
+        $wpdb->prepare(
+            "DELETE tr FROM {$wpdb->term_relationships} tr"
+            . " INNER JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id"
+            . " LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID"
+            . " WHERE p.ID IS NULL AND tt.taxonomy IN ({$placeholders})",
+            array_values($taxonomies)
+        )
     );
-    
+
     return array(
         'success' => $count !== false,
-        'message' => sprintf(__('%d orphaned term relationships deleted', 'ccm-tools'), $count ?: 0),
-        'count' => $count ?: 0
+        'message' => sprintf(
+            /* translators: %d: number of relationships deleted */
+            __('%d orphaned term relationships deleted', 'ccm-tools'),
+            (int) ($count ?: 0)
+        ),
+        'count'   => (int) ($count ?: 0),
     );
 }
 
@@ -1759,12 +1835,26 @@ function ccm_tools_get_optimization_stats() {
         WHERE t.term_id IS NULL"
     );
     
-    // Orphaned term relationships
-    $stats['orphaned_relationships'] = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM {$wpdb->term_relationships} tr 
-        LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID 
-        WHERE p.ID IS NULL"
-    );
+    // Orphaned term relationships. Counted with the same post-taxonomy
+    // restriction the sweep applies, so the figure describes the click.
+    $rel_taxonomies = function_exists('get_object_taxonomies') && function_exists('get_post_types')
+        ? get_object_taxonomies(get_post_types(array(), 'names'), 'names')
+        : array();
+
+    if (empty($rel_taxonomies)) {
+        $stats['orphaned_relationships'] = 0;
+    } else {
+        $rel_placeholders = implode(', ', array_fill(0, count($rel_taxonomies), '%s'));
+        $stats['orphaned_relationships'] = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->term_relationships} tr"
+                . " INNER JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id"
+                . " LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID"
+                . " WHERE p.ID IS NULL AND tt.taxonomy IN ({$rel_placeholders})",
+                array_values($rel_taxonomies)
+            )
+        );
+    }
     
     // Table count
     $stats['table_count'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()");
