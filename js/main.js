@@ -926,16 +926,21 @@
      * Initialize .htaccess options and event handlers
      */
     function initHtaccessOptions() {
-        // Add change listeners to htaccess checkboxes for dynamic status updates
-        const optionsContainer = document.querySelector('#htaccess-options');
-        if (optionsContainer) {
-            optionsContainer.addEventListener('change', (e) => {
-                if (e.target.matches('input[name="htaccess_options[]"]')) {
-                    updateHtaccessOptionStatus(e.target);
-                }
-            });
-        }
-        
+        // Status chips on the htaccess checkboxes, delegated from document for
+        // the same reason the buttons below are: every .htaccess write returns
+        // a fresh copy of the page body and we replace #resultBox with it, so
+        // the old #htaccess-options node — and any listener bound to it — is
+        // thrown away. Bound to the node the chips froze after the first save,
+        // and the label whose whole job is to say what saving will do started
+        // lying about it.
+        document.addEventListener('change', (e) => {
+            const target = e.target;
+            if (!target || typeof target.matches !== 'function') return;
+            if (target.matches('#htaccess-options input[name="htaccess_options[]"]')) {
+                updateHtaccessOptionStatus(target);
+            }
+        });
+
         // .htaccess Tools (using event delegation)
         document.addEventListener('click', async (e) => {
             // Add htaccess
@@ -975,9 +980,21 @@
                     'Remove'
                 );
             }
+
+            // Restore htaccess from the most recent backup
+            if (e.target.id === 'htrestore' || e.target.closest('#htrestore')) {
+                e.preventDefault();
+                showConfirmModal(
+                    'Restore .htaccess from the most recent backup? The current .htaccess is replaced outright, so anything added to it since that backup was taken — redirects, security rules, whatever another plugin wrote — is gone.',
+                    () => {
+                        makeAjaxRequest('ccm_tools_restore_htaccess');
+                    },
+                    'Restore'
+                );
+            }
         });
     }
-    
+
     /**
      * Update the status indicator for a htaccess option based on checkbox state
      * @param {HTMLInputElement} checkbox - The checkbox element
@@ -1457,7 +1474,22 @@
                 }
             });
         }
-        
+
+        // Number of lines to show. loadErrorLog() reads #log-lines when it
+        // runs, but nothing made it run: without this the pick sat there doing
+        // nothing until the 30-second auto-refresh happened to fire, which
+        // reads as a broken control.
+        const logLines = $('#log-lines');
+        if (logLines) {
+            logLines.addEventListener('change', () => {
+                const logFileSelect = $('#log-file-select');
+                const logFile = logFileSelect?.value;
+                if (logFile) {
+                    loadErrorLog(logFile);
+                }
+            });
+        }
+
         // Clear log button (using event delegation)
         document.addEventListener('click', async (e) => {
             if (e.target.id === 'clear-log' || e.target.closest('#clear-log')) {
@@ -2097,11 +2129,26 @@
         if (progressDiv) progressDiv.style.display = 'block';
         if (logBox) logBox.innerHTML = '';
         
-        let offset = 0;
         const batchSize = 5;
         let totalConverted = 0;
         let totalErrors = 0;
-        
+
+        // The server only records an image as converted once a file actually
+        // converted, so anything that fails is still "unconverted" and comes
+        // straight back in the next batch. Asking from offset 0 every pass and
+        // only stopping on an empty batch meant one CMYK JPEG — or an uploads
+        // directory we cannot write to — spun admin-ajax forever, with a log
+        // entry per attempt until the tab died.
+        //
+        // attemptedIds is what ends the run: one go per attachment, so a batch
+        // the server keeps handing back is filtered down to nothing and the
+        // loop breaks. failedIds is the subset that failed, which is both what
+        // the summary reports and how far the offset has to step to get past
+        // the stuck rows at the front of the server's list.
+        const attemptedIds = new Set();
+        const failedIds = new Set();
+        const failedLabels = [];
+
         try {
             // Get first batch to determine total
             const firstBatch = await ajax('ccm_tools_get_unconverted_images', { offset: 0, limit: batchSize });
@@ -2119,31 +2166,43 @@
             let processedCount = 0;
             
             while (!webpConversionStopped) {
-                const batchResponse = await ajax('ccm_tools_get_unconverted_images', { offset: 0, limit: batchSize });
-                const images = batchResponse.data?.images || [];
-                
+                // The failures stay in the server's list, ordered by ID with
+                // everything converted dropped out, so they are exactly the
+                // rows at the front of what is left: stepping the offset past
+                // them is what lets the rest of the library still be reached.
+                const batchResponse = await ajax('ccm_tools_get_unconverted_images', { offset: failedIds.size, limit: batchSize });
+                const images = (batchResponse.data?.images || [])
+                    .filter(image => !attemptedIds.has(String(image.id)));
+
+                // Nothing left, or nothing left that has not already had its go
+                // this run. Either way there is no more work to do, and this is
+                // the break that the old empty-batch test never reached.
                 if (images.length === 0) {
                     break;
                 }
-                
+
                 for (const image of images) {
                     if (webpConversionStopped) break;
-                    
+
+                    attemptedIds.add(String(image.id));
+
                     try {
                         const convertResponse = await ajax('ccm_tools_convert_single_image', { attachment_id: image.id });
                         totalConverted++;
                         addLogEntry(logBox, `✓ ${image.title || 'Image #' + image.id}: ${convertResponse.data?.message || 'Converted'}`, 'success');
                     } catch (error) {
                         totalErrors++;
+                        failedIds.add(String(image.id));
+                        failedLabels.push(image.title || 'Image #' + image.id);
                         addLogEntry(logBox, `✗ ${image.title || 'Image #' + image.id}: ${error.message}`, 'error');
                     }
-                    
+
                     processedCount++;
-                    
+
                     // Update progress
                     if (currentSpan) currentSpan.textContent = totalConverted + totalErrors;
                     if (progressBar) {
-                        const percent = Math.round(((totalConverted + totalErrors) / total) * 100);
+                        const percent = Math.min(100, Math.round(((totalConverted + totalErrors) / total) * 100));
                         progressBar.style.width = `${percent}%`;
                     }
                     
@@ -2158,12 +2217,21 @@
             }
             
             // Summary
-            const summaryType = webpConversionStopped ? 'warning' : 'success';
-            const summaryMsg = webpConversionStopped 
+            const summaryType = (webpConversionStopped || totalErrors > 0) ? 'warning' : 'success';
+            const summaryMsg = webpConversionStopped
                 ? `Conversion stopped. Converted: ${totalConverted}, Errors: ${totalErrors}`
-                : `Conversion complete! Converted: ${totalConverted}, Errors: ${totalErrors}`;
+                : `Conversion complete. Converted: ${totalConverted}, Errors: ${totalErrors}`;
             addLogEntry(logBox, summaryMsg, summaryType);
-            
+
+            // Name the ones that were skipped. A run that quietly stops short
+            // looks the same as a run with nothing left to do, and these images
+            // will be skipped again on every run until someone looks at them.
+            if (failedIds.size > 0) {
+                const shown = failedLabels.slice(0, 10).join(', ');
+                const rest = failedLabels.length > 10 ? `, and ${failedLabels.length - 10} more` : '';
+                addLogEntry(logBox, `${failedIds.size} image${failedIds.size === 1 ? '' : 's'} could not be converted and were skipped: ${shown}${rest}. They stay unconverted until the cause is fixed — usually a damaged or CMYK source file, or an uploads directory the server cannot write to.`, 'warning');
+            }
+
         } catch (error) {
             addLogEntry(logBox, `Error: ${error.message}`, 'error');
         } finally {
@@ -3513,22 +3581,43 @@
     function bindCfSettingControls(container) {
         // On/off toggle switches (rocket_loader, always_online, webp)
         container.querySelectorAll('[data-cf-setting]').forEach(el => {
+            // Remember what the control read before it was touched. change
+            // fires after the value has already moved, so a cancelled
+            // confirmation has nothing to put back unless we keep it. Recorded
+            // again on focus, because the Under Attack toggle sets the
+            // security_level dropdown from code and that would leave this
+            // stale.
+            el.dataset.cfPrevious = cfControlValue(el);
+            el.addEventListener('focus', function () {
+                this.dataset.cfPrevious = cfControlValue(this);
+            });
+
             el.addEventListener('change', async function () {
                 const setting = this.dataset.cfSetting;
                 const isToggle = this.type === 'checkbox';
                 const isSelect = this.tagName === 'SELECT';
+                const previous = this.dataset.cfPrevious;
+                const newValue = cfControlValue(this);
+
+                // A wrong pick on some of these is felt by every visitor
+                // within seconds, so ask first — the same way the "I'm Under
+                // Attack" toggle beside them already does.
+                const question = cfConfirmMessage(setting, newValue);
+                if (question && !confirm(question)) {
+                    cfRestoreControl(this, previous);
+                    return;
+                }
 
                 this.disabled = true;
                 const params = { setting };
 
-                if (isToggle) {
-                    params.value = this.checked ? 'on' : 'off';
-                } else if (isSelect) {
-                    params.value = this.value;
+                if (isToggle || isSelect) {
+                    params.value = newValue;
                 }
 
                 try {
                     const res = await ajax('ccm_tools_cf_update_setting', params);
+                    this.dataset.cfPrevious = newValue;
                     showNotification(res.data.message, 'success');
                     // Sync Under Attack toggle when security_level dropdown changes
                     if (setting === 'security_level') {
@@ -3539,13 +3628,72 @@
                     }
                 } catch (err) {
                     showNotification('Failed: ' + err.message, 'error');
-                    if (isToggle) this.checked = !this.checked;
+                    cfRestoreControl(this, previous);
                 } finally {
                     this.disabled = false;
                 }
             });
         });
 
+    }
+
+    /**
+     * Read a CF setting control as the value the API would be sent.
+     */
+    function cfControlValue(el) {
+        if (el.type === 'checkbox') return el.checked ? 'on' : 'off';
+        return el.value;
+    }
+
+    /**
+     * Put a CF setting control back to the value it held before it was changed.
+     */
+    function cfRestoreControl(el, previous) {
+        if (previous === undefined) return;
+        if (el.type === 'checkbox') {
+            el.checked = previous === 'on';
+        } else {
+            el.value = previous;
+        }
+    }
+
+    /**
+     * The confirmation text for a CF setting change, or null when the setting
+     * does not need one. Each line says what actually goes wrong, because
+     * "are you sure" tells an operator nothing they can act on.
+     */
+    function cfConfirmMessage(setting, value) {
+        if (setting === 'ssl') {
+            switch (value) {
+                case 'off':
+                    return 'Turn SSL/TLS off? Cloudflare will serve this site over plain HTTP. Every visitor loses HTTPS, browsers mark the site as not secure, and anything still linking to the https:// address breaks.';
+                case 'flexible':
+                    return 'Set SSL/TLS to Flexible? Cloudflare will fetch from this server over plain HTTP. On an origin that already redirects HTTP to HTTPS — which this one most likely does — that is an endless redirect loop and the site stops loading for everyone.';
+                case 'full':
+                    return 'Set SSL/TLS to Full? Cloudflare will encrypt to the origin but will not check the origin certificate, so an expired or wrong-domain certificate on the server passes unnoticed.';
+                case 'strict':
+                    return 'Set SSL/TLS to Full (strict)? Cloudflare will refuse the origin unless its certificate is valid and matches this domain. If it is self-signed, expired or for another name, visitors get a 526 error until that is fixed.';
+                default:
+                    return 'Change the SSL/TLS mode? This decides how traffic between visitors, Cloudflare and this server is encrypted, and the wrong mode takes the site down for everyone.';
+            }
+        }
+
+        if (setting === 'security_level') {
+            switch (value) {
+                case 'under_attack':
+                    return 'Set the security level to I am Under Attack? Every visitor is held on a challenge page for about five seconds before the site loads, and anything that cannot solve a challenge — payment callbacks, webhooks, API clients, some crawlers — is turned away while it is on.';
+                case 'essentially_off':
+                    return 'Set the security level to Essentially off? Cloudflare stops challenging all but the worst traffic, so bots, scrapers and login attempts that are being blocked today will reach this server.';
+                case 'low':
+                    return 'Set the security level to Low? Cloudflare challenges only the most threatening visitors, so more bot and brute-force traffic reaches this server.';
+                case 'high':
+                    return 'Set the security level to High? Cloudflare challenges far more visitors, including real ones on shared or mobile addresses, and they will see a challenge page before the site.';
+                default:
+                    return 'Change the security level? This decides how readily Cloudflare shows visitors a challenge page, and it takes effect for everyone straight away.';
+            }
+        }
+
+        return null;
     }
 
     /*
@@ -4048,6 +4196,13 @@
         // Flush Redis Cache
         if (flushBtn) {
             flushBtn.addEventListener('click', async () => {
+                // Sits in the same row as Disable, which asks first, and empties
+                // more than Disable does: this drops every cached value on a
+                // live site in one click.
+                if (!confirm('Flush the whole Redis object cache? Every cached value for this site is dropped straight away, so the next visitors rebuild it all from the database and the site runs slower and the database busier until it fills again.')) {
+                    return;
+                }
+
                 flushBtn.disabled = true;
                 flushBtn.innerHTML = '<div class="ccm-spinner ccm-spinner-small"></div> Flushing...';
                 

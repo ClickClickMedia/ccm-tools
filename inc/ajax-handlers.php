@@ -24,10 +24,40 @@ if (!defined('ABSPATH')) {
  *              untouched and the temp file is cleaned up.
  */
 function ccm_tools_write_wp_config($path, $content) {
+    /*
+     * Refuse an empty write outright.
+     *
+     * The byte-count check below passes for a zero-byte write, because
+     * file_put_contents returns 0 and 0 === strlen('') — so a rename put an
+     * empty file over wp-config.php and the site white-screened with no way
+     * into wp-admin to fix it, which is the exact outage this function exists
+     * to prevent. Callers reach it with '' when file_get_contents() fails or a
+     * preg_replace hits its backtrack limit and returns null.
+     */
+    if (!is_string($content) || trim($content) === '') {
+        return false;
+    }
+
     // Timestamped backup of the current file, if it exists.
     if (file_exists($path)) {
         $backup_path = $path . '.ccm-backup-' . gmdate('YmdHis') . '-' . wp_generate_password(6, false, false);
         @copy($path, $backup_path);
+
+        /*
+         * Keep the five most recent and delete the rest. These accumulate one
+         * per debug toggle, memory-limit change and Redis config write, and
+         * each one is a full copy of wp-config.php sitting in the document
+         * root with the database password and every salt in it.
+         */
+        $existing = glob($path . '.ccm-backup-*');
+        if (is_array($existing) && count($existing) > 5) {
+            usort($existing, function ($a, $b) {
+                return filemtime($b) <=> filemtime($a);
+            });
+            foreach (array_slice($existing, 5) as $stale) {
+                @unlink($stale);
+            }
+        }
     }
 
     $dir = dirname($path);
@@ -436,7 +466,50 @@ function ccm_tools_ajax_remove_htaccess(): void {
     }
 }
 
+add_action('wp_ajax_ccm_tools_restore_htaccess', 'ccm_tools_ajax_restore_htaccess');
 /**
+ * Put the most recent .htaccess backup back.
+ *
+ * The plugin has taken a backup before every write for a long time and the
+ * page says so, but nothing could restore one. That matters most in the case
+ * the backups exist for: a directive this tool wrote is refused by the host,
+ * Apache returns 500 on every request including /wp-admin/, and the only tool
+ * that could undo it is the one behind the 500. A restore that can be run from
+ * a working admin screen turns "call the host" into one click, and for the
+ * locked-out case the backup is at least a known file to hand to whoever has
+ * SFTP.
+ *
+ * @return void
+ */
+function ccm_tools_ajax_restore_htaccess(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
+    }
+
+    if (!function_exists('ccm_tools_htaccess_latest_backup') || !function_exists('ccm_tools_htaccess_restore_backup')) {
+        wp_send_json_error('<p class="ccm-error">' . esc_html__('The .htaccess module is not loaded.', 'ccm-tools') . '</p>');
+    }
+
+    $backup = ccm_tools_htaccess_latest_backup();
+    if ($backup === '') {
+        wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html__('There is no backup to restore.', 'ccm-tools') . '</p>');
+    }
+
+    $result = ccm_tools_htaccess_restore_backup($backup);
+
+    if (!empty($result['success'])) {
+        wp_send_json_success(
+            '<p class="ccm-success"><span class="ccm-icon">✓</span>'
+            . esc_html($result['message']) . '</p>'
+            . ccm_tools_display_htaccess()
+        );
+    }
+
+    wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html($result['message']) . '</p>');
+}
+
+/**
  * Update WordPress debug mode setting
  */
 add_action('wp_ajax_ccm_tools_update_debug_mode', 'ccm_tools_ajax_update_debug_mode');
@@ -3672,6 +3745,23 @@ function ccm_tools_ajax_cf_connect(): void {
 
     $token   = isset($_POST['api_token']) ? trim(wp_unslash($_POST['api_token'])) : '';
     $zone_id = sanitize_text_field($_POST['zone_id'] ?? '');
+
+    /*
+     * The field is pre-filled with bullets when a token is already stored, so
+     * a value containing one means "leave the token alone" — the same rule the
+     * Site Health key field uses. Without this, changing only the Zone ID was
+     * impossible: the bullets fall outside the printable-ASCII test below and
+     * the operator was told their token format was invalid, which blamed them
+     * for a value the page itself had put there.
+     */
+    $existing = ccm_tools_cf_get_settings();
+    if ($token !== '' && strpos($token, "â¢") !== false) {
+        $token = isset($existing['api_token']) ? (string) $existing['api_token'] : '';
+
+        if ($token === '') {
+            wp_send_json_error(array('message' => __('The stored API token could not be read, so it needs entering again. This usually means the WordPress salts in wp-config.php have changed since it was saved.', 'ccm-tools')));
+        }
+    }
 
     if (empty($token)) {
         wp_send_json_error(array('message' => __('API Token is required.', 'ccm-tools')));

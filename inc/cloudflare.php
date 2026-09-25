@@ -161,12 +161,38 @@ function ccm_tools_cf_get_settings(): array {
  * @return void
  */
 function ccm_tools_cf_save_settings(array $settings): void {
+    $stored = get_option('ccm_tools_cf_settings', array());
+
+    /*
+     * Never write an empty token over one that is stored.
+     *
+     * ccm_tools_cf_get_settings() blanks api_token when it cannot decrypt it,
+     * which happens whenever the WordPress salts are rotated, because the
+     * cipher key is derived from AUTH_KEY and SECURE_AUTH_KEY. Any handler
+     * that round-trips get -> save then persisted that blank over the
+     * ciphertext, and a Cloudflare API token is shown once at creation, so it
+     * was gone for good. Keep the stored value and let the operator re-enter
+     * it deliberately.
+     */
+    if (empty($settings['api_token']) && !empty($stored['api_token'])) {
+        $settings['api_token'] = $stored['api_token'];
+    }
+
     if (!empty($settings['api_token']) && strpos($settings['api_token'], CCM_TOOLS_CF_TOKEN_ENC_PREFIX) !== 0) {
         $encrypted = ccm_tools_cf_encrypt_token($settings['api_token']);
+
         if ($encrypted !== false) {
             $settings['api_token'] = $encrypted;
+        } elseif (!empty($stored['api_token'])) {
+            /*
+             * Encryption is unavailable on this host. Writing the token in
+             * plaintext would be a silent downgrade, so keep whatever is
+             * already stored rather than replacing it with a readable copy.
+             */
+            $settings['api_token'] = $stored['api_token'];
         }
     }
+
     update_option('ccm_tools_cf_settings', $settings);
 }
 

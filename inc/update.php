@@ -317,11 +317,25 @@ class CCM_GitHub_Updater {
 
         // First check for assets (preferred way)
         if (!empty($this->github_response->assets) && is_array($this->github_response->assets)) {
+            /*
+             * Prefer the canonical name. A release carries two zips, and
+             * get_checksum_url() pairs the checksum by filename, so picking
+             * "whichever .zip GitHub happens to list first" would make the
+             * pairing depend on upload order — and since the gate now fails
+             * closed, a release uploaded in the other order would block every
+             * site's update rather than quietly skip the check.
+             */
             foreach ($this->github_response->assets as $asset) {
-                // Match the .zip suffix specifically (not just "contains .zip
-                // anywhere"), so the "ccm-tools.zip.sha256" checksum asset
-                // published alongside it (see get_checksum_url() below) is
-                // never mistaken for the actual download package.
+                if (isset($asset->browser_download_url, $asset->name) && $asset->name === 'ccm-tools.zip') {
+                    return $asset->browser_download_url;
+                }
+            }
+
+            // Match the .zip suffix specifically (not just "contains .zip
+            // anywhere"), so the "ccm-tools.zip.sha256" checksum asset
+            // published alongside it (see get_checksum_url() below) is
+            // never mistaken for the actual download package.
+            foreach ($this->github_response->assets as $asset) {
                 if (isset($asset->browser_download_url, $asset->name) && substr($asset->name, -4) === '.zip') {
                     return $asset->browser_download_url;
                 }
@@ -347,9 +361,21 @@ class CCM_GitHub_Updater {
             return '';
         }
 
-        foreach ($this->github_response->assets as $asset) {
-            if (isset($asset->browser_download_url, $asset->name) && substr($asset->name, -7) === '.sha256') {
-                return $asset->browser_download_url;
+        /*
+         * The checksum must belong to the zip we are actually downloading, not
+         * merely be the first asset ending .sha256. A release carries two zips
+         * (ccm-tools.zip and the versioned archive copy), so "first match" was
+         * only ever correct because build-zip.sh makes the second a byte-for-
+         * byte copy of the first. Tie them together by name instead.
+         */
+        $package = $this->get_download_url();
+        $want = $package !== '' ? basename((string) wp_parse_url($package, PHP_URL_PATH)) . '.sha256' : '';
+
+        if ($want !== '') {
+            foreach ($this->github_response->assets as $asset) {
+                if (isset($asset->browser_download_url, $asset->name) && $asset->name === $want) {
+                    return $asset->browser_download_url;
+                }
             }
         }
 
@@ -415,20 +441,58 @@ class CCM_GitHub_Updater {
 
         $this->get_repository_info();
 
-        if (empty($package) || $package !== $this->get_download_url()) {
-            return $reply;
+        /*
+         * This gate fails CLOSED.
+         *
+         * It used to return $reply whenever it could not verify — no checksum
+         * asset on the release, the fetch failing, or the stored package URL
+         * not matching the freshly-fetched one. WordPress then downloaded and
+         * installed the package unverified, with nothing in the admin to say
+         * the check had been skipped. Anyone who could make one HTTPS GET fail
+         * turned the integrity check off for the whole fleet, and cutting one
+         * release without the asset did the same by accident.
+         *
+         * Refusing an update is recoverable: the site stays on the version it
+         * is running and the admin sees why. Installing an unverified package
+         * is not.
+         */
+
+        /*
+         * The package URL comes from the 12-hour update_plugins transient while
+         * get_download_url() comes from our own 1-hour one, so they can
+         * legitimately disagree just after a release. Only treat a mismatch as
+         * "not ours" when the host is not ours either; if it IS our repo and
+         * the URL still differs, that is exactly the case worth refusing.
+         */
+        $ours = $this->get_download_url();
+        if ($package !== $ours) {
+            $host = strtolower((string) wp_parse_url($package, PHP_URL_HOST));
+            $is_github = ($host === 'github.com' || substr($host, -20) === 'githubusercontent.com');
+
+            if (!$is_github) {
+                return $reply;
+            }
+
+            return new WP_Error(
+                'ccm_package_url_mismatch',
+                __('The CCM Tools update package does not match the release this site checked against, so it has not been installed. Try again in an hour, once the update cache has refreshed.', 'ccm-tools')
+            );
         }
 
         $checksum_url = $this->get_checksum_url();
         if (empty($checksum_url)) {
-            error_log('CCM Tools: this release did not publish a ccm-tools.zip.sha256 asset; skipping the download integrity check.');
-            return $reply;
+            return new WP_Error(
+                'ccm_checksum_missing',
+                __('This CCM Tools release did not publish a checksum, so the download could not be verified and has not been installed.', 'ccm-tools')
+            );
         }
 
         $expected = $this->fetch_expected_checksum($checksum_url);
         if (empty($expected)) {
-            error_log('CCM Tools: could not read/parse the published checksum asset; skipping the download integrity check.');
-            return $reply;
+            return new WP_Error(
+                'ccm_checksum_unreadable',
+                __('The published checksum for this CCM Tools release could not be read, so the download could not be verified and has not been installed.', 'ccm-tools')
+            );
         }
 
         $tmp_file = download_url($package);

@@ -33,7 +33,7 @@ function ccm_tools_perf_get_settings() {
         'defer_js' => false,
         'defer_js_excludes' => array('jquery', 'jquery-core', 'jquery-migrate'),
         'delay_js' => false,
-        'delay_js_timeout' => 0, // 0 = wait for interaction, otherwise milliseconds
+        'delay_js_timeout' => 0, // Seconds. 0 = wait for a real interaction.
         'delay_js_excludes' => array(),
         'preload_css' => false,
         'preload_css_excludes' => array(),
@@ -630,7 +630,17 @@ function ccm_tools_perf_delay_js($tag, $handle, $src) {
  */
 function ccm_tools_perf_delay_js_script() {
     $settings = ccm_tools_perf_get_settings();
-    $timeout = isset($settings['delay_js_timeout']) ? intval($settings['delay_js_timeout']) : 0;
+    /*
+     * The field is labelled seconds, capped at 30, and suffixed "sec", but the
+     * value went straight into setTimeout, which takes milliseconds. Entering
+     * 10 gave a 10ms fallback and the highest the interface allowed was 30ms,
+     * so the setting could never do what it said. Convert here rather than
+     * relabel the field, because a fallback measured in milliseconds is not a
+     * useful thing to offer. Clamped, so an imported value cannot produce a
+     * delay measured in hours.
+     */
+    $seconds = isset($settings['delay_js_timeout']) ? intval($settings['delay_js_timeout']) : 0;
+    $timeout = max(0, min(30, $seconds)) * 1000;
     ?>
     <script>
     (function() {

@@ -1,5 +1,76 @@
 # CCM Tools — Changelog
 
+## v8.6.0 — The rest of the review findings
+
+Everything outstanding from the v8.5.0 review, fixed.
+
+### The .htaccess page could arm a site-breaking option by itself
+
+It worked out which options were "already applied" by searching the whole
+`.htaccess`, not its own block. A cache plugin writing a `wordpress_logged_in`
+cookie condition plus a security plugin writing a `/wp-json/` rule was enough
+to pre-tick Block REST API, which is a high-risk option, and one click on
+Update then blocked the REST API for logged-out visitors and took out the
+block editor, forms and most front-end AJAX. HSTS was pre-ticked the same way,
+adopting a one-year browser commitment nobody chose. Detection now reads only
+the block this plugin wrote. Verified against a realistic WP Rocket and
+Wordfence file: three options that used to pre-tick now come back off.
+
+### The .htaccess backups can be restored
+
+The plugin has taken a backup before every write for a long time and the page
+says so, but nothing could put one back. That matters most in the case the
+backups exist for: a directive is refused by the host, Apache returns 500 on
+every request including wp-admin, and the tool that could undo it is behind the
+500. There is a Restore button now, and every write is checked afterwards by
+fetching the home page and rolling back on a 5xx.
+
+### "Delete trashed posts" was marked Safe and ticked by default
+
+It ran four raw SQL deletes instead of `wp_delete_post()`, so attachments,
+revisions and child posts survived as orphans pointing at rows that no longer
+existed, WooCommerce order-item tables kept their rows forever, term counts
+were left overstated, and it reported success even when every delete failed.
+It goes through WordPress now, in batches, and reports what actually happened.
+
+### Two Database options destroyed each other's work
+
+Adding the postmeta index dropped every index containing that column, which
+includes the composite index the option above it had just spent twenty minutes
+building. Only genuinely single-column indexes are candidates now, and an index
+of ours that covers more than expected is left alone rather than dropped.
+
+### Also fixed
+
+- **The updater failed open.** No checksum asset, a failed fetch or a package
+  URL mismatch all meant "install it anyway", silently. It refuses now, and the
+  checksum is paired to the zip by filename rather than being whichever asset
+  happened to end in `.sha256`.
+- **WebP bulk conversion looped forever** on any image it could not convert,
+  hammering the site's own server indefinitely. It tracks what it has tried,
+  finishes, and names what it skipped.
+- **The wp-config writer accepted an empty write**, because its byte-count check
+  passes when the content is empty. That put a zero-byte file over wp-config.php.
+  Its backups are pruned to five now, rather than accumulating one per toggle.
+- **Cloudflare Reconnect could never succeed:** the field is pre-filled with
+  bullets and the handler rejected them as an invalid token. Bullets now mean
+  leave it alone. The token is also no longer wiped when the WordPress salts
+  rotate, which used to lose it for good.
+- **Deleting spam or trash no longer purges unrelated data**, and the oEmbed
+  cleanup no longer deletes Elementor, WPBakery and Yoast meta that merely has
+  `_oembed_` somewhere in the key.
+- **Large deletes are chunked**, so a site with hundreds of thousands of
+  revisions no longer exceeds `max_allowed_packet`, delete nothing, and report
+  success.
+- **The delayed-JavaScript timeout was a thousand times too small.** Labelled
+  seconds, capped at 30, and passed straight to `setTimeout`, which takes
+  milliseconds.
+- **Confirmations** on flushing Redis and on changing the Cloudflare SSL mode or
+  security level, matching the actions beside them that already confirmed.
+- **The error log's line count** applies straight away instead of waiting for
+  the next thirty-second refresh.
+
+
 ## v8.5.0 — Review findings, and three tests that would have caught them
 
 A full security and correctness review, five reviewers over the whole codebase,

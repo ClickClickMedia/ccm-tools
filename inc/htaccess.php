@@ -396,9 +396,56 @@ function ccm_tools_htaccess_content($options = array()): string {
 }
 
 /**
- * Parse current .htaccess to detect which options are enabled
- * 
- * @param string $content Current .htaccess content
+ * Pull just the block this plugin wrote out of a full .htaccess file.
+ *
+ * Detection below is a set of substring tests, and it must only ever see
+ * directives CCM itself wrote. Handed the whole file it reads other plugins'
+ * work as its own: a cache plugin writing a `wordpress_logged_in` cookie
+ * condition and a security plugin writing a `/wp-json/` rule are both
+ * completely ordinary, and together they used to make the High-risk "Block
+ * REST API for logged-out users" option report as Applied and pre-tick. One
+ * click on Update then wrote CCM's own version of that rule and took the REST
+ * API away from logged-out visitors, which breaks the block editor, Contact
+ * Form 7 and most front-end plugin AJAX. `hsts_basic` pre-ticked the same way,
+ * adopting a one-year browser commitment nobody chose.
+ *
+ * Returns '' when there is no complete, well-formed block. That is the safe
+ * direction: nothing pre-ticks, so nothing is adopted by accident.
+ *
+ * @param string $content Full .htaccess content.
+ * @return string The CCM block, both markers included, or '' if there is none.
+ */
+function ccm_tools_htaccess_extract_block(string $content): string {
+    // Match on the marker stems, so a block written with or without the
+    // "- DO NOT CHANGE!" tail is found either way. This is the same test
+    // ccm_tools_display_htaccess() and ccm_tools_update_htaccess() use.
+    $begin_marker = '# BEGIN CCM Optimise';
+    $end_marker   = '# END CCM Optimise';
+
+    $start = strpos($content, $begin_marker);
+    if ($start === false) {
+        return '';
+    }
+
+    $end = strpos($content, $end_marker, $start);
+    if ($end === false) {
+        // A BEGIN with no END is a damaged block. Reading on to the end of the
+        // file here would sweep in every other plugin's rules, which is the
+        // exact fault this function exists to prevent.
+        return '';
+    }
+
+    return substr($content, $start, ($end - $start) + strlen($end_marker));
+}
+
+/**
+ * Parse the CCM .htaccess block to detect which options are enabled.
+ *
+ * Pass the CCM block alone, not the whole file — see
+ * ccm_tools_htaccess_extract_block() for why. An empty string is the correct
+ * input when the file has no CCM block in it, and yields all-false.
+ *
+ * @param string $content The CCM block only.
  * @return array Detected options
  */
 function ccm_tools_detect_htaccess_options(string $content): array {
@@ -549,7 +596,13 @@ function ccm_tools_display_htaccess(): string {
     }
 
     $has_optimizations = $current_content !== '' && strpos($current_content, '# BEGIN CCM Optimise') !== false;
-    $current_options   = ccm_tools_detect_htaccess_options($current_content);
+
+    // Detect against the CCM block alone, never the whole file. Another
+    // plugin's cache or security rules are not ours to read back as settings,
+    // and doing so pre-ticked options nobody chose. No block means detect
+    // against an empty string, which reports everything as not applied.
+    $ccm_block         = ccm_tools_htaccess_extract_block($current_content);
+    $current_options   = ccm_tools_detect_htaccess_options($ccm_block);
     $available_options = ccm_tools_get_htaccess_options();
 
     // Tally directives across all three groups.
@@ -570,20 +623,11 @@ function ccm_tools_display_htaccess(): string {
     $is_apache_compatible = (stripos($server_software, 'apache') !== false) || (stripos($server_software, 'litespeed') !== false);
     $server_label = $server_software !== '' ? $server_software : __('not reported by PHP', 'ccm-tools');
 
-    // Most recent backup, if any. Filenames are gmdate('Ymd-His'), so a
-    // plain sort() gives oldest-first and the last element is the newest.
-    $last_backup_label = __('None yet', 'ccm-tools');
-    $backup_files = glob(dirname($htaccess_file) . '/.htaccess.ccm-backup-*');
-    if (is_array($backup_files) && $backup_files) {
-        sort($backup_files);
-        $newest = end($backup_files);
-        if ($newest !== false && preg_match('/\.ccm-backup-(\d{8}-\d{6})$/', (string) $newest, $m)) {
-            $backup_time = DateTime::createFromFormat('Ymd-His', $m[1], new DateTimeZone('UTC'));
-            if ($backup_time !== false) {
-                $last_backup_label = $backup_time->format('j M Y, H:i') . ' UTC';
-            }
-        }
-    }
+    // Most recent backup, if any. This is also what the restore control below
+    // offers to put back, so both read the same file through the same helper.
+    $latest_backup     = ccm_tools_htaccess_latest_backup();
+    $latest_backup_at  = ccm_tools_htaccess_backup_time_label($latest_backup);
+    $last_backup_label = $latest_backup_at !== '' ? $latest_backup_at : __('None yet', 'ccm-tools');
 
     // Mark the CCM block in the raw preview by wrapping the already-escaped
     // marker text — never insert unescaped file content into the page.
@@ -661,6 +705,19 @@ function ccm_tools_display_htaccess(): string {
             <div class="ccm-stat-tile__value"><?php echo esc_html($last_backup_label); ?></div>
             <div class="ccm-stat-tile__label"><?php _e('Last backup', 'ccm-tools'); ?></div>
             <div class="ccm-stat-tile__sub"><?php _e('Taken automatically before every write, 5 kept', 'ccm-tools'); ?></div>
+            <?php if ($latest_backup !== '') : ?>
+                <div class="ccm-stat-tile__sub" style="flex-wrap: wrap; gap: var(--ccm-space-sm);">
+                    <button type="button" id="htrestore" class="ccm-button ccm-button-secondary ccm-button-small">
+                        <?php _e('Restore the last backup', 'ccm-tools'); ?>
+                    </button>
+                    <span style="font-size: var(--ccm-text-xs);"><?php echo esc_html($latest_backup_at !== ''
+                        ? $latest_backup_at
+                        : __('timestamp unreadable', 'ccm-tools')); ?></span>
+                </div>
+                <div class="ccm-stat-tile__sub" style="font-size: var(--ccm-text-xs);">
+                    <?php _e('Restoring writes that file back over .htaccess, backing up the current one first. Note that removing the CCM block also removes the rule that stops Apache serving these backups, so do not leave them sitting in the site root without it.', 'ccm-tools'); ?>
+                </div>
+            <?php endif; ?>
         </div>
         <div class="ccm-stat-tile">
             <div class="ccm-stat-tile__value"><?php echo $writable ? esc_html__('Yes', 'ccm-tools') : esc_html__('No', 'ccm-tools'); ?></div>
@@ -795,29 +852,210 @@ function ccm_tools_cleanup_htaccess_content(string $content): string {
  * Back up .htaccess to a timestamped copy before writing to it, and prune
  * old backups so only the 5 most recent are kept.
  *
+ * The path is handed back so the caller can roll the write back to it, so a
+ * backup that did not land completely reports as no backup at all — copying a
+ * half-written file over .htaccess is the very outage this guards against.
+ *
  * @param string $htaccess_file Absolute path to .htaccess
- * @return void
+ * @return string Absolute path of the backup just taken, or '' if none was.
  */
-function ccm_tools_backup_htaccess(string $htaccess_file): void {
+function ccm_tools_backup_htaccess(string $htaccess_file): string {
     $current_content = @file_get_contents($htaccess_file);
     if ($current_content === false) {
-        return; // Nothing readable to back up — don't block the write over it.
+        return ''; // Nothing readable to back up — don't block the write over it.
     }
 
     $dir = dirname($htaccess_file);
-    $backup_file = $dir . '/.htaccess.ccm-backup-' . gmdate('Ymd-His');
-    @file_put_contents($backup_file, $current_content, LOCK_EX);
 
-    // Prune to the 5 most recent backups (filenames sort lexically by
-    // timestamp, so a plain sort() gives oldest-first).
+    // gmdate() on its own is only good to the second, so two writes inside the
+    // same second wrote the same filename and the second destroyed the only
+    // copy of the first. The random tail makes every backup its own file.
+    $unique = substr(md5(uniqid((string) mt_rand(), true)), 0, 8);
+    $backup_file = $dir . '/.htaccess.ccm-backup-' . gmdate('Ymd-His') . '-' . $unique;
+
+    $written = @file_put_contents($backup_file, $current_content, LOCK_EX);
+    if ($written === false || $written !== strlen($current_content)) {
+        if (file_exists($backup_file)) {
+            @unlink($backup_file);
+        }
+        $backup_file = '';
+    }
+
+    // Prune to the 5 most recent backups. The timestamp is fixed width and
+    // leads the name, so a plain sort() still gives oldest-first and the
+    // backup just taken is always last.
     $backups = glob($dir . '/.htaccess.ccm-backup-*');
     if (is_array($backups) && count($backups) > 5) {
         sort($backups);
         $to_remove = array_slice($backups, 0, count($backups) - 5);
         foreach ($to_remove as $old_backup) {
-            @unlink($old_backup);
+            if ($old_backup !== $backup_file) {
+                @unlink($old_backup);
+            }
         }
     }
+
+    return $backup_file;
+}
+
+/**
+ * Absolute path of the newest .htaccess backup this plugin has taken.
+ *
+ * Backup names are '.htaccess.ccm-backup-<Ymd-His>-<random>'. The timestamp is
+ * fixed width and leads the name, so a plain sort() gives oldest-first and the
+ * last element is the newest.
+ *
+ * @return string Absolute path, or '' when there is no backup.
+ */
+function ccm_tools_htaccess_latest_backup(): string {
+    if (!defined('ABSPATH')) {
+        return '';
+    }
+
+    $backups = glob(ABSPATH . '.htaccess.ccm-backup-*');
+    if (!is_array($backups) || !$backups) {
+        return '';
+    }
+
+    sort($backups);
+    $newest = end($backups);
+
+    return (is_string($newest) && is_file($newest)) ? $newest : '';
+}
+
+/**
+ * Readable timestamp for one backup filename.
+ *
+ * Tolerates both the old name (timestamp only) and the current one (timestamp
+ * plus a random tail), so backups taken before that change still read.
+ *
+ * @param string $path Backup path.
+ * @return string e.g. "25 Sep 2026, 03:14 UTC", or '' when it cannot be read.
+ */
+function ccm_tools_htaccess_backup_time_label(string $path): string {
+    if ($path === '' || !preg_match('/\.ccm-backup-(\d{8}-\d{6})(?:-[A-Za-z0-9]+)?$/', $path, $m)) {
+        return '';
+    }
+
+    $taken_at = DateTime::createFromFormat('Ymd-His', $m[1], new DateTimeZone('UTC'));
+    if ($taken_at === false) {
+        return '';
+    }
+
+    return $taken_at->format('j M Y, H:i') . ' UTC';
+}
+
+/**
+ * Restore one of this plugin's own .htaccess backups over the live file.
+ *
+ * This is what the "Restore the last backup" button is for: the tool takes a
+ * backup before every write, and until now nothing could put one back, so a
+ * write that took the site down could not be undone from a wp-admin that was
+ * itself down.
+ *
+ * The path is validated hard before anything is copied over .htaccess. It has
+ * to be a real, readable file sitting directly in the site root, carrying a
+ * name this plugin writes. Anything else is refused. The copy goes through
+ * ccm_tools_write_htaccess_safely(), so the current file is itself backed up
+ * first, the write is atomic, and the site is checked afterwards.
+ *
+ * @param string $path Absolute path to the backup to restore.
+ * @return array{success: bool, message: string}
+ */
+function ccm_tools_htaccess_restore_backup($path): array {
+    if (!current_user_can('manage_options')) {
+        return array(
+            'success' => false,
+            'message' => __('You do not have permission to perform this action.', 'ccm-tools')
+        );
+    }
+
+    if (!is_string($path) || $path === '') {
+        return array(
+            'success' => false,
+            'message' => __('No backup was named, so nothing was restored.', 'ccm-tools')
+        );
+    }
+
+    // realpath() resolves any ../ and symlinks before the checks below, so the
+    // directory comparison cannot be walked around.
+    $real = realpath($path);
+    if ($real === false || !is_file($real) || !is_readable($real)) {
+        return array(
+            'success' => false,
+            'message' => __('That backup no longer exists, or cannot be read. Nothing was changed.', 'ccm-tools')
+        );
+    }
+
+    $root = realpath(ABSPATH);
+    if ($root === false) {
+        return array(
+            'success' => false,
+            'message' => __('Could not resolve the site root, so the backup was not restored.', 'ccm-tools')
+        );
+    }
+
+    if (dirname($real) !== $root || strpos(basename($real), '.htaccess.ccm-backup-') !== 0) {
+        return array(
+            'success' => false,
+            'message' => __('That file is not one of the .htaccess backups this plugin takes, so it was not restored.', 'ccm-tools')
+        );
+    }
+
+    $backup_content = @file_get_contents($real);
+    if ($backup_content === false) {
+        return array(
+            'success' => false,
+            'message' => __('Could not read the backup, so nothing was changed.', 'ccm-tools')
+        );
+    }
+
+    if (trim($backup_content) === '') {
+        return array(
+            'success' => false,
+            'message' => __('That backup is empty. Writing it would strip the whole file, so it was not restored.', 'ccm-tools')
+        );
+    }
+
+    $htaccess_file    = ABSPATH . '.htaccess';
+    $original_content = '';
+
+    if (file_exists($htaccess_file)) {
+        if (!is_writable($htaccess_file)) {
+            return array(
+                'success' => false,
+                'message' => __('.htaccess file is not writable.', 'ccm-tools')
+            );
+        }
+
+        $raw = @file_get_contents($htaccess_file);
+        if ($raw === false) {
+            return array(
+                'success' => false,
+                'message' => __('Failed to read .htaccess file.', 'ccm-tools')
+            );
+        }
+        $original_content = $raw;
+    }
+
+    // Written back byte for byte. A restore is not the place to tidy anything.
+    $write_result = ccm_tools_write_htaccess_safely($htaccess_file, $backup_content, $original_content);
+    if (!$write_result['success']) {
+        return $write_result;
+    }
+
+    $label = ccm_tools_htaccess_backup_time_label($real);
+
+    return array(
+        'success' => true,
+        'message' => $label !== ''
+            ? sprintf(
+                /* translators: %s: when the restored backup was taken */
+                __('.htaccess restored from the backup taken %s.', 'ccm-tools'),
+                $label
+            )
+            : __('.htaccess restored from the last backup.', 'ccm-tools')
+    );
 }
 
 /**
@@ -865,9 +1103,12 @@ function ccm_tools_write_htaccess_safely(string $htaccess_file, string $new_cont
         }
     }
 
-    // Back up the current file before we touch it.
-    if (file_exists($htaccess_file)) {
-        ccm_tools_backup_htaccess($htaccess_file);
+    // Back up the current file before we touch it, and hold on to where that
+    // backup landed — it is what the post-write check below rolls back to.
+    $had_file    = file_exists($htaccess_file);
+    $backup_file = '';
+    if ($had_file) {
+        $backup_file = ccm_tools_backup_htaccess($htaccess_file);
     }
 
     // Atomic write: write to a temp file in the same directory, verify the
@@ -902,6 +1143,67 @@ function ccm_tools_write_htaccess_safely(string $htaccess_file, string $new_cont
             'success' => false,
             'message' => __('Failed to write .htaccess: could not replace the live file.', 'ccm-tools')
         );
+    }
+
+    // The new file is live. Ask the site whether it still answers.
+    //
+    // Two directives this page can emit sit outside any <IfModule>:
+    // `Options -Indexes` and `FileETag None`, both on by default. On a host
+    // whose AllowOverride leaves out Options or FileInfo, Apache answers 500
+    // to every request — the front end and /wp-admin/ alike — so the tool
+    // that caused it can no longer be reached to undo it. One loopback
+    // request catches that while there is still a page to report it on.
+    if (function_exists('wp_remote_get') && function_exists('home_url')) {
+        $response = wp_remote_get(home_url('/'), array(
+            'timeout'     => 10,
+            'sslverify'   => false,
+            'redirection' => 0,
+        ));
+
+        // Only a definite 5xx rolls anything back. A WP_Error means the
+        // loopback request itself never completed, which plenty of hosts
+        // arrange deliberately, and says nothing at all about what a real
+        // visitor would get. Treating that as a fault would roll back good
+        // writes on every such host, so it is left strictly alone.
+        $status = 0;
+        $failed_to_connect = function_exists('is_wp_error') && is_wp_error($response);
+        if (!$failed_to_connect && function_exists('wp_remote_retrieve_response_code')) {
+            $status = (int) wp_remote_retrieve_response_code($response);
+        }
+
+        if ($status >= 500) {
+            $rolled_back = false;
+
+            if ($backup_file !== '' && is_readable($backup_file)) {
+                $rolled_back = @copy($backup_file, $htaccess_file);
+            } elseif (!$had_file) {
+                // There was no .htaccess before this write, so there is no
+                // backup to put back. Removing the file we just created
+                // returns the site to exactly the state it was in.
+                $rolled_back = @unlink($htaccess_file);
+            }
+
+            if ($rolled_back) {
+                return array(
+                    'success' => false,
+                    'message' => sprintf(
+                        /* translators: %d: the HTTP status the site returned */
+                        __('The site returned an error (HTTP %d) immediately after the write, so the change was rolled back and the previous .htaccess is live again. The usual cause is a directive this host does not allow in .htaccess.', 'ccm-tools'),
+                        $status
+                    )
+                );
+            }
+
+            return array(
+                'success' => false,
+                'message' => sprintf(
+                    /* translators: 1: the HTTP status the site returned, 2: path to the backup, or a description of where to look */
+                    __('The site returned an error (HTTP %1$d) immediately after the write and the rollback failed, so the new .htaccess is still live. Restore it by hand from %2$s.', 'ccm-tools'),
+                    $status,
+                    $backup_file !== '' ? $backup_file : __('the most recent .htaccess.ccm-backup- file in the site root', 'ccm-tools')
+                )
+            );
+        }
     }
 
     return array('success' => true, 'message' => '');
