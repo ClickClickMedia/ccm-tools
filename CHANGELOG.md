@@ -1,5 +1,39 @@
 # CCM Tools — Changelog
 
+## v8.7.0 — Fields line up
+
+Every field in a settings card now sits in one grid, so the column edge is a
+single straight line down the whole card.
+
+It was not. One card could hold three different layout mechanisms at once: a
+two-column grid for the first pair of fields, a flex row with a 2:1 ratio for
+the second, and full-width fields under both. Every row therefore chose its own
+split point from its own content, the boundary moved by tens of pixels between
+one row and the next, and it was obvious the moment you looked down the page.
+
+- **The Redis connection fields are three tidy rows** — connection type and
+  database, host and port, password and username — instead of four ragged ones
+  with two of them full width for no reason.
+- **The wrappers the page uses to swap TCP for a Unix socket no longer form a
+  box of their own.** They pass their fields through to the card's grid, so
+  Host and Port line up with everything above and below them.
+- **Timeouts, serializer, compression and the WooCommerce values** share the
+  same two tracks, so the Advanced card reads as one block rather than two.
+- One gap value throughout, matching the gap between cards.
+
+### Redis connect timeout could hang every request
+
+The read timeout was clamped to a tenth of a second but the connect timeout was
+not, and phpredis reads a connect timeout of zero as "wait indefinitely". A
+Redis that was down, or a firewall quietly dropping the port, would have hung
+every single request until PHP's own limit killed it — the whole site, not just
+the cache. The field accepted zero. Both are now floored at 0.1 seconds.
+
+The default of 1 second is right and unchanged: a local Redis connects in well
+under a millisecond, and a long timeout is the dangerous direction, because it
+is how long every page waits before giving up and using the database.
+
+
 ## v8.6.2 — Two database sweeps that reached past their own scope
 
 Both of these were found in the v8.5.0 review and missed when the rest were

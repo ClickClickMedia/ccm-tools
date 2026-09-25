@@ -386,7 +386,14 @@ class CCM_Redis_Object_Cache {
 
         $host         = defined('WP_REDIS_HOST') ? WP_REDIS_HOST : '127.0.0.1';
         $port         = defined('WP_REDIS_PORT') ? (int) WP_REDIS_PORT : 6379;
-        $timeout      = defined('WP_REDIS_TIMEOUT') ? (float) WP_REDIS_TIMEOUT : 1.0;
+        /*
+         * Clamped, like the read timeout above. phpredis reads a connect
+         * timeout of 0 as "wait indefinitely", so a Redis that is down or a
+         * firewall that blackholes the port would hang every single request
+         * until PHP's own max_execution_time killed it — the whole site, not
+         * just the cache. The read timeout was already guarded; this was not.
+         */
+        $timeout      = defined('WP_REDIS_TIMEOUT') ? max(0.1, (float) WP_REDIS_TIMEOUT) : 1.0;
         $read_timeout = $this->read_timeout;
         $password     = defined('WP_REDIS_PASSWORD') ? WP_REDIS_PASSWORD : '';
         $username     = defined('WP_REDIS_USERNAME') ? WP_REDIS_USERNAME : '';

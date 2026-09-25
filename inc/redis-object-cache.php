@@ -2105,62 +2105,66 @@ function ccm_tools_render_redis_page() {
                     <div class="ccm-optgroup__body">
                         <?php
                         /*
-                         * The stack's own gap spaces these fields, so the
-                         * margin-top each one used to carry is gone. Adding it
-                         * back would double up against the gap.
+                         * One grid for every field in this card, so the column
+                         * edge is a single straight line rather than moving
+                         * between one row and the next. The grid's own gap does
+                         * the spacing; nothing carries a margin.
                          */
                         ?>
-                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md);">
-                            <div class="ccm-grid-2">
-                                <div class="ccm-optfield">
-                                    <label for="redis-scheme"><?php _e('Connection type', 'ccm-tools'); ?></label>
-                                    <select id="redis-scheme" name="scheme" class="ccm-input">
-                                        <option value="tcp" <?php selected($settings['scheme'], 'tcp'); ?>><?php _e('TCP/IP', 'ccm-tools'); ?></option>
-                                        <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix socket', 'ccm-tools'); ?></option>
-                                        <option value="tls" <?php selected($settings['scheme'], 'tls'); ?>><?php _e('TLS/SSL', 'ccm-tools'); ?></option>
-                                    </select>
-                                </div>
-                                <div class="ccm-optfield" id="redis-database-field">
-                                    <label for="redis-database"><?php _e('Database index', 'ccm-tools'); ?></label>
-                                    <input type="number" id="redis-database" name="database" class="ccm-input" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
-                                    <span class="ccm-optfield__hint"><?php _e('0–15', 'ccm-tools'); ?></span>
-                                </div>
+                        <div class="ccm-fieldgrid" style="padding: var(--ccm-space-md);">
+                            <div class="ccm-optfield">
+                                <label for="redis-scheme"><?php _e('Connection type', 'ccm-tools'); ?></label>
+                                <select id="redis-scheme" name="scheme" class="ccm-input">
+                                    <option value="tcp" <?php selected($settings['scheme'], 'tcp'); ?>><?php _e('TCP/IP', 'ccm-tools'); ?></option>
+                                    <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix socket', 'ccm-tools'); ?></option>
+                                    <option value="tls" <?php selected($settings['scheme'], 'tls'); ?>><?php _e('TLS/SSL', 'ccm-tools'); ?></option>
+                                </select>
+                            </div>
+                            <div class="ccm-optfield" id="redis-database-field">
+                                <label for="redis-database"><?php _e('Database index', 'ccm-tools'); ?></label>
+                                <input type="number" id="redis-database" name="database" class="ccm-input" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
+                                <span class="ccm-optfield__hint"><?php _e('0–15', 'ccm-tools'); ?></span>
                             </div>
 
                             <?php
                             /*
-                             * js/main.js flips these two by id with an inline
-                             * style.display (flex for the TCP row, block for the
-                             * socket path), so whichever starts hidden must do it
-                             * with an inline display: none. .ccm-hide is
-                             * `display: none !important` and an inline style
-                             * cannot beat it, so the field would never appear.
+                             * These two wrappers exist only so js/main.js can flip
+                             * between them by id. They carry .ccm-fieldgrid__passthrough,
+                             * which is `display: contents`, so the fields inside land in
+                             * the grid above rather than forming a row with its own
+                             * column widths — which is what used to make the column edge
+                             * shift between one row and the next.
+                             *
+                             * Whichever starts hidden must do so with an inline
+                             * display: none. .ccm-hide is `display: none !important` and
+                             * the script reveals with an inline style, which cannot beat
+                             * it, so the field would never come back.
                              */
                             ?>
-                            <div class="ccm-row" id="tcp-settings" style="align-items: flex-start;<?php echo $is_unix ? ' display: none;' : ''; ?>">
-                                <div class="ccm-optfield" style="flex: 2 1 16rem;">
+                            <div class="ccm-fieldgrid__passthrough" id="tcp-settings"<?php echo $is_unix ? ' style="display: none;"' : ''; ?>>
+                                <div class="ccm-optfield">
                                     <label for="redis-host"><?php _e('Host', 'ccm-tools'); ?></label>
                                     <input type="text" id="redis-host" name="host" class="ccm-input" value="<?php echo esc_attr($settings['host']); ?>" placeholder="127.0.0.1">
                                 </div>
-                                <div class="ccm-optfield" style="flex: 1 1 8rem;">
+                                <div class="ccm-optfield">
                                     <label for="redis-port"><?php _e('Port', 'ccm-tools'); ?></label>
                                     <input type="number" id="redis-port" name="port" class="ccm-input" value="<?php echo esc_attr($settings['port']); ?>" placeholder="6379" min="1" max="65535">
                                 </div>
                             </div>
 
-                            <div id="unix-settings"<?php echo $is_unix ? '' : ' style="display: none;"'; ?>>
-                                <div class="ccm-optfield" style="max-width: none;">
+                            <div class="ccm-fieldgrid__passthrough" id="unix-settings"<?php echo $is_unix ? '' : ' style="display: none;"'; ?>>
+                                <div class="ccm-optfield ccm-fieldgrid__wide">
                                     <label for="redis-path"><?php _e('Socket path', 'ccm-tools'); ?></label>
                                     <input type="text" id="redis-path" name="path" class="ccm-input" value="<?php echo esc_attr($settings['path']); ?>" placeholder="/var/run/redis/redis.sock">
                                 </div>
                             </div>
 
-                            <div class="ccm-optfield" style="max-width: none;">
+                            <div class="ccm-optfield">
                                 <label for="redis-password"><?php _e('Password', 'ccm-tools'); ?></label>
                                 <input type="password" id="redis-password" name="password" class="ccm-input" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>" autocomplete="new-password">
                             </div>
 
-                            <div class="ccm-optfield" style="max-width: none;">
+                            <div class="ccm-optfield">
                                 <label for="redis-username"><?php _e('Username (Redis 6.0+ ACL)', 'ccm-tools'); ?></label>
                                 <input type="text" id="redis-username" name="username" class="ccm-input" value="<?php echo esc_attr($settings['username'] ?? ''); ?>" placeholder="<?php esc_attr_e('Leave empty for the default user', 'ccm-tools'); ?>">
                                 <span class="ccm-optfield__hint"><?php _e('Only needed if the Redis server uses ACL authentication.', 'ccm-tools'); ?></span>
@@ -2178,8 +2182,8 @@ function ccm_tools_render_redis_page() {
                         <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_cache), count($constants_cache)); ?></span>
                     </header>
                     <div class="ccm-optgroup__body">
-                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
-                            <div class="ccm-optfield" style="max-width: none;">
+                        <div class="ccm-fieldgrid" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
+                            <div class="ccm-optfield ccm-fieldgrid__wide">
                                 <label for="redis-key-salt"><?php _e('Key prefix', 'ccm-tools'); ?></label>
                                 <span class="ccm-row" style="flex-wrap: nowrap;">
                                     <input type="text" id="redis-key-salt" name="key_salt" class="ccm-input ccm-mono" style="flex: 1;" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST) . '_'); ?>">
@@ -2227,7 +2231,7 @@ function ccm_tools_render_redis_page() {
                     </header>
                     <div class="ccm-optgroup__body">
                         <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
-                            <div class="ccm-grid-2">
+                            <div class="ccm-fieldgrid">
                                 <div class="ccm-optfield">
                                     <label for="wc-product-cache-ttl"><?php _e('Product cache TTL', 'ccm-tools'); ?></label>
                                     <span class="ccm-optfield__inline">
@@ -2297,7 +2301,7 @@ function ccm_tools_render_redis_page() {
                     </header>
                     <div class="ccm-optgroup__body">
                         <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
-                            <div class="ccm-grid-2">
+                            <div class="ccm-fieldgrid">
                                 <div class="ccm-optfield">
                                     <label for="redis-timeout"><?php _e('Connection timeout', 'ccm-tools'); ?></label>
                                     <span class="ccm-optfield__inline">
@@ -2314,7 +2318,7 @@ function ccm_tools_render_redis_page() {
                                 </div>
                             </div>
 
-                            <div class="ccm-grid-2">
+                            <div class="ccm-fieldgrid">
                                 <div class="ccm-optfield">
                                     <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
                                     <?php

@@ -4225,6 +4225,44 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
    quietly reintroduce the bug. */
 .ccm-tools [hidden] { display: none !important; }
 
+/* ── Field grid ────────────────────────────────────────────────
+   One grid for every field in a settings card, so the column edge is a single
+   straight line down the whole card.
+
+   Before this, one card could hold three different layout mechanisms: a
+   two-column grid for the first pair, a flex row with a 2:1 ratio for the
+   second, and full-width fields under both. Every row therefore chose its own
+   split point, the boundary moved by tens of pixels between rows, and the eye
+   caught it immediately.
+
+   The columns are fixed at two and equal. They do not auto-fit, because
+   auto-fit lets content decide the count and that is the drift being removed.
+   Below the breakpoint everything becomes one column at the same gap. */
+.ccm-fieldgrid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--ccm-space-md);
+    align-items: start;
+}
+
+@media screen and (min-width: 700px) {
+    .ccm-fieldgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* A field that genuinely needs the whole width says so, rather than being
+   left outside the grid to find its own edge. */
+.ccm-fieldgrid > .ccm-fieldgrid__wide { grid-column: 1 / -1; }
+
+/* A wrapper the page shows and hides, whose children should still sit in the
+   grid above it rather than forming a row of their own. js/main.js toggles
+   these between `contents` and `none`. */
+.ccm-fieldgrid > .ccm-fieldgrid__passthrough { display: contents; }
+
+/* Inside a field grid a field fills its column; the 46rem cap is for a field
+   standing on its own in open space. */
+.ccm-fieldgrid > .ccm-optfield,
+.ccm-fieldgrid__passthrough > .ccm-optfield { max-width: none; }
+
 .ccm-optfield { display: grid; gap: 0.3rem; max-width: 46rem; }
 .ccm-optfield > label { font-size: var(--ccm-text-xs); font-weight: 600; color: var(--ccm-text-muted); }
 .ccm-optfield__hint { font-size: var(--ccm-text-xs); color: var(--ccm-text-muted); }

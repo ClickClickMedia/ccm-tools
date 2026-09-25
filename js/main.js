@@ -4246,8 +4246,17 @@
             
             const updateSchemeVisibility = () => {
                 const scheme = schemeSelect.value;
-                if (tcpSettings) tcpSettings.style.display = scheme === 'unix' ? 'none' : 'flex';
-                if (unixSettings) unixSettings.style.display = scheme === 'unix' ? 'block' : 'none';
+                /*
+                 * 'contents', not 'flex' or 'block'. These two wrappers exist
+                 * only so this function can flip between them; their fields
+                 * belong to the card's own field grid, so the wrapper must
+                 * disappear from layout rather than become a box of its own.
+                 * Setting flex here made Host and Port a flex row inside one
+                 * grid cell, which is why their column edge did not line up
+                 * with the rows above and below.
+                 */
+                if (tcpSettings) tcpSettings.style.display = scheme === 'unix' ? 'none' : 'contents';
+                if (unixSettings) unixSettings.style.display = scheme === 'unix' ? 'contents' : 'none';
             };
             
             schemeSelect.addEventListener('change', updateSchemeVisibility);

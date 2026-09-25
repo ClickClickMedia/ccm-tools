@@ -3420,14 +3420,16 @@ function ccm_tools_ajax_redis_save_settings(): void {
     if (isset($_POST['timeout'])) {
         $timeout = floatval($_POST['timeout']);
         // Reasonable timeout range: 0.1 to 30 seconds
-        if ($timeout >= 0 && $timeout <= 30) {
+        // Zero means "wait forever" to phpredis, so the floor is 0.1s.
+        if ($timeout >= 0.1 && $timeout <= 30) {
             $settings['timeout'] = $timeout;
         }
     }
     if (isset($_POST['read_timeout'])) {
         $read_timeout = floatval($_POST['read_timeout']);
         // Reasonable timeout range: 0.1 to 30 seconds
-        if ($read_timeout >= 0 && $read_timeout <= 30) {
+        // Zero means "wait forever" to phpredis, so the floor is 0.1s.
+        if ($read_timeout >= 0.1 && $read_timeout <= 30) {
             $settings['read_timeout'] = $read_timeout;
         }
     }
