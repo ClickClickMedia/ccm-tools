@@ -1,5 +1,24 @@
 # CCM Tools — Changelog
 
+## v8.6.1 — The Database page's figures now match what the buttons do
+
+Three small corrections, all the same shape: the number shown before a
+destructive click did not describe the click.
+
+- **The transient count was measuring something else.** It counted
+  `%_transient_%`, with wildcards at both ends and an unescaped underscore,
+  which SQL treats as a single-character wildcard. That matched keys like
+  `my_plugin_transients_list` that Clear Transients never removes. It now uses
+  the same anchored patterns the delete uses, so the figure is the figure.
+- **Preview and action disagreed about the date** on a site not running in UTC.
+  The cut-offs for spam, trash and old revisions were worked out with the local
+  clock in one place and UTC in the other, so a run could touch a different set
+  of rows than the one it had just counted.
+- **Backup filenames carry microseconds**, so two `.htaccess` writes in the same
+  second no longer sort arbitrarily. "Restore the last backup" and the
+  keep-five prune both pick by name, so that ordering has to be real.
+
+
 ## v8.6.0 — The rest of the review findings
 
 Everything outstanding from the v8.5.0 review, fixed.

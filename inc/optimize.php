@@ -1665,8 +1665,21 @@ function ccm_tools_get_optimization_stats() {
     $stats = array();
     
     // Transients count
+    /*
+     * Count exactly what Clear Transients deletes, which is the anchored
+     * `_transient_%` and `_site_transient_%` prefixes. This counted
+     * `%_transient_%` instead: wildcards at both ends, and an unescaped
+     * underscore, which SQL LIKE reads as a single-character wildcard. It
+     * matched keys like `my_plugin_transients_list` that the button never
+     * touches, so the figure shown before the click overstated it.
+     */
     $stats['transients'] = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE '%_transient_%'"
+        $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->options}"
+            . " WHERE option_name LIKE %s ESCAPE '\\' OR option_name LIKE %s ESCAPE '\\'",
+            '\_transient\_%',
+            '\_site_transient\_%'
+        )
     );
     
     // Spam comments
@@ -1678,7 +1691,7 @@ function ccm_tools_get_optimization_stats() {
     $stats['trashed_comments'] = (int) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
-            date('Y-m-d H:i:s', strtotime('-30 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
     
@@ -1686,7 +1699,7 @@ function ccm_tools_get_optimization_stats() {
     $stats['trashed_posts'] = (int) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'trash' AND post_modified < %s",
-            date('Y-m-d H:i:s', strtotime('-30 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
     
@@ -1694,7 +1707,7 @@ function ccm_tools_get_optimization_stats() {
     $stats['auto_drafts'] = (int) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'auto-draft' AND post_modified < %s",
-            date('Y-m-d H:i:s', strtotime('-7 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-7 days'))
         )
     );
     

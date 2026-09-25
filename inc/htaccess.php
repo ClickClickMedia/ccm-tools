@@ -869,9 +869,14 @@ function ccm_tools_backup_htaccess(string $htaccess_file): string {
 
     // gmdate() on its own is only good to the second, so two writes inside the
     // same second wrote the same filename and the second destroyed the only
-    // copy of the first. The random tail makes every backup its own file.
+    // copy of the first. Microseconds separate them and keep the name sorting
+    // in the order the backups were actually taken, which is what "the newest
+    // backup" below relies on; the random tail then makes a collision
+    // impossible even between two processes writing at the same instant.
+    $now = microtime(true);
+    $micros = sprintf('%06d', (int) floor(($now - floor($now)) * 1000000));
     $unique = substr(md5(uniqid((string) mt_rand(), true)), 0, 8);
-    $backup_file = $dir . '/.htaccess.ccm-backup-' . gmdate('Ymd-His') . '-' . $unique;
+    $backup_file = $dir . '/.htaccess.ccm-backup-' . gmdate('Ymd-His', (int) $now) . '-' . $micros . '-' . $unique;
 
     $written = @file_put_contents($backup_file, $current_content, LOCK_EX);
     if ($written === false || $written !== strlen($current_content)) {
@@ -927,13 +932,14 @@ function ccm_tools_htaccess_latest_backup(): string {
  * Readable timestamp for one backup filename.
  *
  * Tolerates both the old name (timestamp only) and the current one (timestamp
- * plus a random tail), so backups taken before that change still read.
+ * plus microseconds plus a random tail), so backups taken before that change
+ * still read.
  *
  * @param string $path Backup path.
  * @return string e.g. "25 Sep 2026, 03:14 UTC", or '' when it cannot be read.
  */
 function ccm_tools_htaccess_backup_time_label(string $path): string {
-    if ($path === '' || !preg_match('/\.ccm-backup-(\d{8}-\d{6})(?:-[A-Za-z0-9]+)?$/', $path, $m)) {
+    if ($path === '' || !preg_match('/\.ccm-backup-(\d{8}-\d{6})(?:-[0-9A-Za-z-]+)?$/', $path, $m)) {
         return '';
     }
 
