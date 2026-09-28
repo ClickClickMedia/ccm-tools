@@ -4534,3 +4534,202 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 }
 .ccm-extension-item.ccm-error .ccm-icon,
 .ccm-extension-item.ccm-error strong { color: var(--ccm-error); }
+
+/* ── Action bar ────────────────────────────────────────────────
+   The save bar's sibling, for a page whose primary control is an action
+   rather than a save. Same chrome deliberately: one floating dock is one
+   idea, and a second visual language for "the button that matters" would
+   just be noise. It reports what is selected and proxies the click to the
+   page's own button, so like the save bar it never holds a second opinion
+   about what the action does. */
+
+.ccm-savebar--action .ccm-savebar__dot { background: var(--ccm-brand-raw); }
+
+.ccm-savebar--action.is-armed {
+    border-color: var(--ccm-brand-raw);
+    box-shadow: 0 0 0 1px var(--ccm-brand-raw), var(--ccm-shadow-lg);
+}
+.ccm-savebar--action.is-armed .ccm-savebar__msg { color: var(--ccm-text); }
+.ccm-savebar--action.is-armed .ccm-savebar__dot { display: block; }
+
+/* Nothing selected: the run button is visibly inert and Clear is pointless. */
+.ccm-savebar--action:not(.is-armed) [data-actionbar-run] {
+    opacity: 0.6;
+    pointer-events: none;
+}
+.ccm-savebar--action:not(.is-armed) [data-actionbar-none] { display: none; }
+
+/* Mid-run the dock stays put but stops accepting clicks: the run panel owns
+   the interaction from that point until it is dismissed. */
+.ccm-savebar--action.is-running [data-actionbar-run],
+.ccm-savebar--action.is-running [data-actionbar-none] {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* ── Run panel ─────────────────────────────────────────────────
+   A batch action used to render its progress into a box at the foot of the
+   page, which on the database screen sat below twenty rows of checkboxes and
+   a Run button that lived up in the hero. You clicked Run and nothing you
+   could see changed. This takes the run out of the page flow entirely: the
+   thing you started is the thing in front of you, from first task to summary. */
+
+.ccm-runpanel {
+    display: flex;
+    flex-direction: column;
+    width: min(680px, 92vw);
+    max-height: min(80vh, 46rem);
+    background: var(--ccm-surface);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-lg);
+    box-shadow: var(--ccm-shadow-lg);
+    transform: scale(0.96);
+    transition: transform 0.2s var(--ccm-ease-settle, ease);
+    overflow: hidden;
+}
+
+.ccm-modal-overlay.ccm-modal-show .ccm-runpanel { transform: scale(1); }
+
+.ccm-runpanel__head {
+    padding: var(--ccm-space-lg) var(--ccm-space-lg) var(--ccm-space-md);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--ccm-space-md);
+    flex-wrap: wrap;
+}
+
+.ccm-runpanel__title {
+    margin: 0;
+    font-size: var(--ccm-text-lg, 1.05rem);
+    font-weight: 650;
+    color: var(--ccm-text);
+    padding: 0;
+}
+
+.ccm-runpanel__sub {
+    margin: 0;
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ccm-runpanel__meter {
+    height: 4px;
+    background: var(--ccm-border);
+    overflow: hidden;
+    flex: 0 0 auto;
+}
+.ccm-runpanel__meter > i {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--ccm-brand-raw);
+    transition: width 0.25s var(--ccm-ease-settle, ease);
+}
+.ccm-runpanel.is-done .ccm-runpanel__meter > i { background: var(--ccm-success); }
+.ccm-runpanel.is-done.has-failures .ccm-runpanel__meter > i { background: var(--ccm-warning); }
+
+/* The list is the only thing that scrolls, so the title and the summary stay
+   put while a long run works through its tasks. */
+.ccm-runpanel__body {
+    overflow-y: auto;
+    padding: var(--ccm-space-sm) var(--ccm-space-lg);
+    flex: 1 1 auto;
+}
+
+.ccm-runlist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.ccm-runrow {
+    display: grid;
+    grid-template-columns: 1.25rem 1fr auto;
+    align-items: center;
+    gap: var(--ccm-space-sm);
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--ccm-border);
+    font-size: var(--ccm-text-sm);
+}
+.ccm-runrow:last-child { border-bottom: 0; }
+
+.ccm-runrow__icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    display: grid;
+    place-items: center;
+    font-size: 0.85rem;
+    line-height: 1;
+}
+
+.ccm-runrow__label {
+    color: var(--ccm-text);
+    font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.ccm-runrow__meta {
+    color: var(--ccm-text-muted);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* A task that has not started yet recedes; the one running is the only row
+   drawing attention to itself. */
+.ccm-runrow.is-pending .ccm-runrow__label,
+.ccm-runrow.is-pending .ccm-runrow__meta { color: var(--ccm-text-muted); }
+.ccm-runrow.is-pending .ccm-runrow__icon::before {
+    content: "";
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 50%;
+    background: var(--ccm-border);
+}
+
+.ccm-runrow.is-running { background: color-mix(in srgb, var(--ccm-brand-raw) 7%, transparent); }
+.ccm-runrow.is-running .ccm-runrow__meta { color: var(--ccm-text); }
+
+.ccm-runrow.is-ok .ccm-runrow__icon { color: var(--ccm-success); }
+.ccm-runrow.is-fail .ccm-runrow__icon { color: var(--ccm-error); }
+.ccm-runrow.is-fail .ccm-runrow__meta { color: var(--ccm-error); }
+.ccm-runrow.is-skip .ccm-runrow__icon,
+.ccm-runrow.is-skip .ccm-runrow__label,
+.ccm-runrow.is-skip .ccm-runrow__meta { color: var(--ccm-text-muted); }
+
+.ccm-runpanel__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ccm-space-md);
+    padding: var(--ccm-space-md) var(--ccm-space-lg);
+    background: var(--ccm-bg);
+    border-top: 1px solid var(--ccm-border);
+    flex-wrap: wrap;
+}
+
+.ccm-runpanel__summary {
+    font-size: var(--ccm-text-sm);
+    font-weight: 600;
+    color: var(--ccm-text-muted);
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.ccm-runpanel.is-done .ccm-runpanel__summary { color: var(--ccm-text); }
+
+/* Close only exists once there is nothing left in flight. */
+.ccm-runpanel:not(.is-done) [data-runpanel-close] { display: none; }
+
+@media (max-width: 600px) {
+    .ccm-runpanel { width: 94vw; max-height: 86vh; }
+    .ccm-runpanel__head,
+    .ccm-runpanel__body,
+    .ccm-runpanel__foot { padding-left: var(--ccm-space-md); padding-right: var(--ccm-space-md); }
+    .ccm-runpanel__foot [data-runpanel-close] { width: 100%; }
+}

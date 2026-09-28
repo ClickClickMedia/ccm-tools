@@ -156,7 +156,7 @@
      * @param {string} confirmText - Text for confirm button (default: 'Confirm')
      * @param {string} cancelText - Text for cancel button (default: 'Cancel')
      */
-    function showConfirmModal(message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel') {
+    function showConfirmModal(message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel', onCancel = null) {
         // Remove any existing modal
         const existingModal = $('.ccm-modal-overlay');
         if (existingModal) existingModal.remove();
@@ -190,9 +190,21 @@
             setTimeout(() => modal.remove(), 200);
         };
 
+        /*
+         * Every dismissal path reports the cancel, not just the Cancel button,
+         * so an awaited confirm resolves however it was dismissed rather than
+         * leaving its caller hanging on a promise that never settles.
+         */
+        const dismiss = () => {
+            closeModal();
+            if (typeof onCancel === 'function') {
+                onCancel();
+            }
+        };
+
         // Cancel button
         const cancelBtn = $('.ccm-modal-cancel', modal);
-        cancelBtn.addEventListener('click', closeModal);
+        cancelBtn.addEventListener('click', dismiss);
 
         // Confirm button
         const confirmBtn = $('.ccm-modal-confirm', modal);
@@ -205,16 +217,43 @@
 
         // Close on overlay click
         modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal();
+            if (e.target === modal) dismiss();
         });
 
         // Close on Escape key
         const handleEscape = (e) => {
             if (e.key === 'Escape') {
-                closeModal();
+                dismiss();
             }
         };
         document.addEventListener('keydown', handleEscape);
+    }
+
+    /**
+     * Reveal a panel the user has just triggered, and bring it to them.
+     *
+     * Several actions here render into a box further down the page than the
+     * button that starts them, so the click produced no visible change and the
+     * only way to tell anything had happened was to go looking for it.
+     * Un-hiding the box is not enough on its own: it has to come into view.
+     *
+     * @param {Element|null} el
+     */
+    function revealPanel(el) {
+        if (!el) return;
+
+        // .ccm-hide is display:none !important, so it beats the inline style
+        // and has to come off as well.
+        el.classList.remove('ccm-hide');
+        el.style.display = 'block';
+
+        // Already on screen: leave the scroll position where the user put it.
+        const box = el.getBoundingClientRect();
+        if (box.top >= 0 && box.bottom <= window.innerHeight) return;
+
+        const reduce = window.matchMedia
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
     }
 
     /**
@@ -591,164 +630,141 @@
     }
     
     /**
-     * Run selected optimization tasks progressively (one at a time with live updates)
+     * showConfirmModal() as a promise, so an async routine can await a
+     * decision without inverting itself into callbacks.
+     * @param {string} message
+     * @param {string} confirmText
+     * @returns {Promise<boolean>}
+     */
+    function confirmAction(message, confirmText = 'Confirm') {
+        return new Promise((resolve) => {
+            showConfirmModal(
+                message,
+                () => resolve(true),
+                confirmText,
+                'Cancel',
+                () => resolve(false)
+            );
+        });
+    }
+
+    /**
+     * Run the selected optimization tasks, one at a time, inside the run panel.
+     *
+     * The panel opens before the first request goes out, so the click and the
+     * visible response are the same event. What this replaces rendered its
+     * progress into a box at the foot of the page while the button that
+     * started it sat up in the hero, so the normal journey — tick boxes at the
+     * bottom, scroll up, click — ended with no visible change at all, and the
+     * only way to tell it was working was to scroll back down and find it.
      */
     async function runSelectedOptimizations() {
         const optionsContainer = $('#optimization-options');
         const resultsBox = $('#optimization-results');
         const runButton = $('#run-optimizations');
-        
-        if (!optionsContainer || !resultsBox) return;
-        
-        // Get selected options with their labels
+
+        if (!optionsContainer) return;
+
+        // Selected options with their labels
         const selected = [];
         optionsContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
             const label = optionsContainer.querySelector(`label[for="${cb.id}"]`);
             selected.push({
                 key: cb.value,
-                label: label ? label.textContent : cb.value.replace(/_/g, ' ')
+                label: label ? label.textContent.trim() : cb.value.replace(/_/g, ' ')
             });
         });
-        
+
         if (selected.length === 0) {
-            showNotification('Please select at least one optimization option', 'warning');
+            showNotification('Pick at least one task first', 'warning');
             return;
         }
-        
-        // Check for high-risk options and confirm
-        const highRiskSelected = selected.filter(opt => {
+
+        /*
+         * High-risk tasks get the plugin's own confirm rather than the
+         * browser's. The native dialog looked nothing like the rest of the
+         * screen and, on a page whose whole point is being careful about
+         * irreversible deletes, the one dialog that matters should not be the
+         * one that looks bolted on.
+         */
+        const highRisk = selected.filter(opt => {
             const checkbox = optionsContainer.querySelector(`#opt-${opt.key}`);
             return checkbox && checkbox.closest('.ccm-optgroup[data-group="high"]');
         });
-        
-        if (highRiskSelected.length > 0) {
-            const highRiskNames = highRiskSelected.map(o => o.label).join('\n• ');
-            if (!confirm('⚠️ You have selected high-risk operations that cannot be undone. Are you sure you want to continue?\n\nSelected high-risk options:\n• ' + highRiskNames)) {
-                return;
-            }
+
+        if (highRisk.length > 0) {
+            const names = highRisk.map(o => o.label).join(', ');
+            const proceed = await confirmAction(
+                `${names} ${highRisk.length === 1 ? 'deletes rows that cannot' : 'delete rows that cannot'} be recovered from here. Run anyway?`,
+                'Run anyway'
+            );
+            if (!proceed) return;
         }
-        
-        // Disable UI during processing
+
+        // Lock the page's own controls; the panel owns the screen from here.
         if (runButton) runButton.disabled = true;
         optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = true);
-        
-        // Identify table-intensive tasks that need per-table progressive processing
+        document.dispatchEvent(new CustomEvent('ccm:run-start'));
+
+        const panel = window.ccmRunPanel.open({
+            title: 'Database optimisation',
+            tasks: selected,
+            unit: 'rows'
+        });
+
+        // Table work is driven table by table so the panel can name the one it
+        // is on; everything else is a single request per task.
         const TABLE_TASKS = new Set(['optimize_tables', 'update_collation', 'convert_innodb']);
         const tableTasks = selected.filter(t => TABLE_TASKS.has(t.key));
         const regularTasks = selected.filter(t => !TABLE_TASKS.has(t.key));
-        
-        // Build initial results table
-        resultsBox.style.display = 'block';
-        let tableHtml = `
-            <div class="ccm-optimization-progress">
-                <p><span class="ccm-icon ccm-info">⏳</span> <strong>Running optimizations...</strong> <span id="opt-progress-text">0/${selected.length} completed</span></p>
-                <div class="ccm-progress-bar"><div class="ccm-progress-fill" id="opt-progress-bar" style="width: 0%"></div></div>
-            </div>
-            <table class="ccm-table"><thead><tr><th>Task</th><th>Status</th><th>Result</th><th>Items</th></tr></thead><tbody id="opt-results-body">
-        `;
-        
-        // Add pending rows for each task
-        for (const task of selected) {
-            tableHtml += `
-                <tr id="opt-row-${task.key}">
-                    <td>${escapeHtml(task.label)}</td>
-                    <td><span class="ccm-status-pending">⏳ Pending</span></td>
-                    <td>-</td>
-                    <td>-</td>
-                </tr>
-            `;
-        }
-        
-        tableHtml += '</tbody></table>';
-        resultsBox.innerHTML = tableHtml;
-        
-        // Process tasks one by one
-        let completed = 0;
+
+        const record = [];
         let successCount = 0;
         let totalItems = 0;
-        
-        // Helper: process a regular (non-table) task
-        async function processRegularTask(task) {
-            const row = $(`#opt-row-${task.key}`);
-            if (row) {
-                row.innerHTML = `
-                    <td>${escapeHtml(task.label)}</td>
-                    <td><span class="ccm-status-running"><div class="ccm-spinner ccm-spinner-small"></div> Running</span></td>
-                    <td>-</td>
-                    <td>-</td>
-                `;
+
+        function log(task, ok, message, count) {
+            record.push({ label: task.label, ok: ok, message: message, count: count });
+            if (ok) {
+                successCount++;
+                if (typeof count === 'number') totalItems += count;
             }
-            
-            try {
-                const response = await ajax('ccm_tools_run_single_optimization', { task: task.key }, { timeout: 120000 });
-                
-                completed++;
-                const result = response?.data || {};
-                const success = result.success;
-                const message = result.message || (success ? 'Completed' : 'Failed');
-                const count = result.count !== undefined ? result.count : '-';
-                
-                if (success) {
-                    successCount++;
-                    if (typeof count === 'number') {
-                        totalItems += count;
-                    }
-                }
-                
-                if (row) {
-                    const statusIcon = success ? '✓' : '✗';
-                    const statusClass = success ? 'success' : 'error';
-                    row.innerHTML = `
-                        <td>${escapeHtml(task.label)}</td>
-                        <td><span class="ccm-status-${statusClass}"><span class="ccm-icon ccm-${statusClass}">${statusIcon}</span> ${success ? 'Done' : 'Failed'}</span></td>
-                        <td>${escapeHtml(message)}</td>
-                        <td>${count}</td>
-                    `;
-                }
-                
-            } catch (error) {
-                completed++;
-                
-                if (row) {
-                    row.innerHTML = `
-                        <td>${escapeHtml(task.label)}</td>
-                        <td><span class="ccm-status-error"><span class="ccm-icon ccm-error">✗</span> Error</span></td>
-                        <td>${escapeHtml(error.message)}</td>
-                        <td>-</td>
-                    `;
-                }
-            }
-            
-            // Update progress bar
-            const progressPercent = Math.round((completed / selected.length) * 100);
-            const progressBar = $('#opt-progress-bar');
-            const progressText = $('#opt-progress-text');
-            if (progressBar) progressBar.style.width = `${progressPercent}%`;
-            if (progressText) progressText.textContent = `${completed}/${selected.length} completed`;
+            panel.finish(task.key, {
+                ok: ok,
+                message: message,
+                count: ok && typeof count === 'number' ? count : undefined
+            });
         }
-        
-        // Helper: process table-intensive tasks progressively (table by table)
+
+        async function processRegularTask(task) {
+            panel.start(task.key);
+            try {
+                const response = await ajax(
+                    'ccm_tools_run_single_optimization',
+                    { task: task.key },
+                    { timeout: 120000 }
+                );
+                const result = response?.data || {};
+                const ok = !!result.success;
+                log(
+                    task,
+                    ok,
+                    result.message || (ok ? 'Done' : 'Failed'),
+                    typeof result.count === 'number' ? result.count : undefined
+                );
+            } catch (error) {
+                log(task, false, error.message || 'Request failed');
+            }
+        }
+
         async function processTableTasks(tasks) {
             if (tasks.length === 0) return;
-            
+
             const doOptimize = tasks.some(t => t.key === 'optimize_tables');
             const doCollation = tasks.some(t => t.key === 'update_collation');
             const doEngine = tasks.some(t => t.key === 'convert_innodb');
-            
-            // Mark all table tasks as running
-            for (const task of tasks) {
-                const row = $(`#opt-row-${task.key}`);
-                if (row) {
-                    row.innerHTML = `
-                        <td>${escapeHtml(task.label)}</td>
-                        <td><span class="ccm-status-running"><div class="ccm-spinner ccm-spinner-small"></div> Running</span></td>
-                        <td>-</td>
-                        <td>-</td>
-                    `;
-                }
-            }
-            
-            // Get table list
+
+            tasks.forEach(t => panel.start(t.key, 'Listing tables…'));
+
             let tables = [];
             try {
                 const tablesResponse = await ajax('ccm_tools_get_tables_to_optimize', {
@@ -758,65 +774,27 @@
                 }, { timeout: 30000 });
                 tables = tablesResponse?.data?.tables || [];
             } catch (e) {
-                for (const task of tasks) {
-                    completed++;
-                    const row = $(`#opt-row-${task.key}`);
-                    if (row) {
-                        row.innerHTML = `
-                            <td>${escapeHtml(task.label)}</td>
-                            <td><span class="ccm-status-error"><span class="ccm-icon ccm-error">✗</span> Error</span></td>
-                            <td>Could not retrieve tables list</td>
-                            <td>-</td>
-                        `;
-                    }
-                }
+                tasks.forEach(t => log(t, false, 'Could not read the table list'));
                 return;
             }
-            
+
             if (tables.length === 0) {
-                for (const task of tasks) {
-                    completed++;
-                    successCount++;
-                    const row = $(`#opt-row-${task.key}`);
-                    if (row) {
-                        row.innerHTML = `
-                            <td>${escapeHtml(task.label)}</td>
-                            <td><span class="ccm-status-success"><span class="ccm-icon ccm-success">✓</span> Done</span></td>
-                            <td>No tables found</td>
-                            <td>0</td>
-                        `;
-                    }
-                }
+                tasks.forEach(t => log(t, true, 'No tables needed it', 0));
                 return;
             }
-            
-            // Insert a sub-progress row after the first table task row
-            const firstRow = $(`#opt-row-${tasks[0].key}`);
-            const subProgressId = 'opt-table-progress';
-            if (firstRow) {
-                firstRow.insertAdjacentHTML('afterend', `
-                    <tr id="${subProgressId}">
-                        <td colspan="4" class="ccm-subtask-progress">
-                            <div class="ccm-subtask-info">
-                                <span id="opt-table-current">Preparing...</span>
-                                <span id="opt-table-counter">0/${tables.length}</span>
-                            </div>
-                            <div class="ccm-progress-bar ccm-progress-bar-sm"><div class="ccm-progress-fill" id="opt-table-bar" style="width: 0%"></div></div>
-                        </td>
-                    </tr>
-                `);
-            }
-            
-            // Process each table
+
             let tablesDone = 0;
             let tablesSuccess = 0;
             let tablesFailed = 0;
-            
+
             for (const tableName of tables) {
-                // Update current table display
-                const currentEl = $(`#opt-table-current`);
-                if (currentEl) currentEl.textContent = tableName;
-                
+                // Name the table being worked on, on every table task row, so a
+                // long run reads as progress rather than as a stall.
+                tasks.forEach(t => panel.note(
+                    t.key,
+                    `${tablesDone + 1} of ${tables.length} · ${tableName}`
+                ));
+
                 try {
                     const resp = await ajax('ccm_tools_optimize_table_task', {
                         table_name: tableName,
@@ -824,9 +802,8 @@
                         collation: doCollation ? '1' : '',
                         engine: doEngine ? '1' : ''
                     }, { timeout: 60000 });
-                    
-                    const r = resp?.data || {};
-                    if (r.success) {
+
+                    if (resp?.data?.success) {
                         tablesSuccess++;
                     } else {
                         tablesFailed++;
@@ -834,92 +811,85 @@
                 } catch (e) {
                     tablesFailed++;
                 }
-                
+
                 tablesDone++;
-                const pct = Math.round((tablesDone / tables.length) * 100);
-                const counterEl = $(`#opt-table-counter`);
-                const barEl = $(`#opt-table-bar`);
-                if (counterEl) counterEl.textContent = `${tablesDone}/${tables.length}`;
-                if (barEl) barEl.style.width = `${pct}%`;
             }
-            
-            // Remove sub-progress row
-            const subRow = $(`#${subProgressId}`);
-            if (subRow) subRow.remove();
-            
-            // Mark table tasks as complete
+
             for (const task of tasks) {
-                completed++;
-                const row = $(`#opt-row-${task.key}`);
                 const allOk = tablesFailed === 0;
-                
-                if (allOk) successCount++;
-                if (task.key === 'optimize_tables' && doOptimize) {
-                    totalItems += tablesSuccess;
-                }
-                
-                const statusIcon = allOk ? '✓' : '⚠';
-                const statusClass = allOk ? 'success' : 'warning';
                 let msg;
                 if (task.key === 'optimize_tables') {
-                    msg = `${tablesSuccess} tables optimized` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                    msg = `${tablesSuccess} tables optimised`;
                 } else if (task.key === 'convert_innodb') {
-                    msg = `${tablesSuccess} tables converted to InnoDB` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                    msg = `${tablesSuccess} converted to InnoDB`;
                 } else {
-                    msg = `${tablesSuccess} tables processed` + (tablesFailed > 0 ? `, ${tablesFailed} failed` : '');
+                    msg = `${tablesSuccess} tables processed`;
                 }
-                
-                if (row) {
-                    row.innerHTML = `
-                        <td>${escapeHtml(task.label)}</td>
-                        <td><span class="ccm-status-${statusClass}"><span class="ccm-icon ccm-${statusClass}">${statusIcon}</span> Done</span></td>
-                        <td>${escapeHtml(msg)}</td>
-                        <td>${tablesSuccess}</td>
-                    `;
+                if (tablesFailed > 0) {
+                    msg += `, ${tablesFailed} failed`;
                 }
-                
-                // Update main progress
-                const progressPercent = Math.round((completed / selected.length) * 100);
-                const progressBar = $('#opt-progress-bar');
-                const progressText = $('#opt-progress-text');
-                if (progressBar) progressBar.style.width = `${progressPercent}%`;
-                if (progressText) progressText.textContent = `${completed}/${selected.length} completed`;
+                // Only optimize_tables contributes to the row/table tally, or
+                // three selected table tasks would count the same tables thrice.
+                log(task, allOk, msg, task.key === 'optimize_tables' ? tablesSuccess : undefined);
             }
         }
-        
-        // Run regular tasks first, then table tasks
-        for (const task of regularTasks) {
-            await processRegularTask(task);
-        }
-        
-        // Run table-intensive tasks progressively
-        if (tableTasks.length > 0) {
+
+        /*
+         * Whatever happens, the panel gets closed out and the page unlocked.
+         * A run that throws half way leaves the panel open showing exactly how
+         * far it got, which is the honest thing to show.
+         */
+        try {
+            for (const task of regularTasks) {
+                await processRegularTask(task);
+            }
             await processTableTasks(tableTasks);
+        } finally {
+            panel.done();
+            document.dispatchEvent(new CustomEvent('ccm:run-end'));
+            if (runButton) runButton.disabled = false;
+            optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
         }
-        
-        // Update header with final status
-        const progressDiv = $('.ccm-optimization-progress');
-        if (progressDiv) {
-            const allSuccess = successCount === selected.length;
-            const icon = allSuccess ? '✓' : '⚠';
-            const iconClass = allSuccess ? 'success' : 'warning';
-            progressDiv.innerHTML = `
-                <p><span class="ccm-icon ccm-${iconClass}">${icon}</span> <strong>Optimization Complete:</strong> ${successCount}/${selected.length} tasks successful, ${totalItems} items processed</p>
-                <div class="ccm-progress-bar"><div class="ccm-progress-fill ccm-progress-${iconClass}" style="width: 100%"></div></div>
-            `;
+
+        // The record, left under the hero for when the panel is dismissed.
+        if (resultsBox) {
+            const failures = record.filter(r => !r.ok);
+            const tone = failures.length === 0 ? 'good' : 'warn';
+            const dot = failures.length === 0 ? 'ok' : 'warn';
+            const when = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            let html = `<div class="ccm-alert ccm-alert--${tone}">
+                <span class="ccm-dot ccm-dot-${dot}"></span>
+                <div><strong>Last run at ${escapeHtml(when)}: ${successCount} of ${record.length} tasks succeeded.</strong>`;
+            if (totalItems > 0) {
+                html += ` ${totalItems.toLocaleString()} rows affected.`;
+            }
+            if (failures.length > 0) {
+                html += `<br>Did not complete: ` + failures
+                    .map(f => `${escapeHtml(f.label)} (${escapeHtml(f.message)})`)
+                    .join('; ');
+            }
+            html += '</div></div>';
+
+            resultsBox.innerHTML = html;
+            resultsBox.style.display = 'block';
         }
-        
-        showNotification(`Database optimization completed! ${successCount}/${selected.length} tasks successful.`, successCount === selected.length ? 'success' : 'warning');
-        
-        // Re-enable UI
-        if (runButton) runButton.disabled = false;
-        optionsContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
-        
-        // Refresh stats after a short delay. Use loadOptimizationOptions(), not
-        // initOptimizationOptions() — the latter would rebind the run/select
-        // buttons on top of their existing listeners, so a second click would
-        // start two concurrent runs, a third click three, and so on.
-        setTimeout(() => loadOptimizationOptions(), 1000);
+
+        showNotification(
+            `${successCount} of ${record.length} tasks completed`,
+            successCount === record.length ? 'success' : 'warning'
+        );
+
+        /*
+         * Refresh the counts once the panel is dismissed, not on a timer.
+         * Re-rendering the list underneath a panel the user is still reading
+         * throws away the selection they can still see.
+         *
+         * loadOptimizationOptions(), not initOptimizationOptions() — the latter
+         * would rebind the run/select buttons on top of their existing
+         * listeners, so a second click would start two concurrent runs.
+         */
+        panel.onClose(() => loadOptimizationOptions());
     }
 
     /**
@@ -1409,6 +1379,7 @@
                     
                     if (resultBox) {
                         resultBox.innerHTML = `<p class="ccm-success"><span class="ccm-icon">✓</span>${escapeHtml(response.data.message)}</p>`;
+                        revealPanel(resultBox);
                     }
                     
                     showNotification(response.data.message, 'success');
@@ -1416,6 +1387,7 @@
                 } catch (error) {
                     if (resultBox) {
                         resultBox.innerHTML = `<p class="ccm-error"><span class="ccm-icon">✗</span>${ccmToolsData.i18n.wooToggleFailed || 'Failed to update setting'}</p>`;
+                        revealPanel(resultBox);
                     }
                     showNotification(error.message, 'error');
                     toggleAdminPayment.disabled = false;
@@ -2126,7 +2098,7 @@
             stopBtn.disabled = false;
             stopBtn.textContent = ccmToolsData.i18n?.stopConversion || 'Stop Conversion';
         }
-        if (progressDiv) progressDiv.style.display = 'block';
+        revealPanel(progressDiv);
         if (logBox) logBox.innerHTML = '';
         
         const batchSize = 5;

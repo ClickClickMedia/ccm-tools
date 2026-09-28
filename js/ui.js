@@ -331,15 +331,333 @@
         refresh();
     }
 
+    // ── Run panel ───────────────────────────────────────────────
+    //
+    // Owns a batch action from the first task to the summary.
+    //
+    // The pattern it replaces rendered progress into a box at the foot of the
+    // page. On the database screen that box sat below twenty rows of
+    // checkboxes, while the Run button lived up in the hero, so the normal
+    // journey was: tick things at the bottom, scroll to the top, click, and
+    // watch nothing happen. The work was running the whole time, just off
+    // screen. Anything that takes more than an instant has to show itself.
+    //
+    // The caller drives it and owns the actual work:
+    //
+    //   var run = ccmRunPanel.open({ title: 'Database optimisation',
+    //                                tasks: [{ key: 'x', label: 'Clear transients' }] });
+    //   run.start('x');
+    //   run.finish('x', { ok: true, message: 'Removed', count: 412 });
+    //   run.done();
+    //
+    // done() is what turns the panel from "in flight" to dismissable, so a
+    // caller that throws leaves the panel open and honest rather than quietly
+    // closing on a half-finished job.
+
+    var ccmRunPanel = (function () {
+
+        function el(tag, className, text) {
+            var node = document.createElement(tag);
+            if (className) { node.className = className; }
+            if (text !== undefined && text !== null) { node.textContent = String(text); }
+            return node;
+        }
+
+        function open(options) {
+            options = options || {};
+            var tasks = options.tasks || [];
+            var total = tasks.length;
+
+            var overlay = el('div', 'ccm-modal-overlay');
+            var panel = el('div', 'ccm-runpanel');
+            panel.setAttribute('role', 'dialog');
+            panel.setAttribute('aria-modal', 'true');
+
+            var head = el('div', 'ccm-runpanel__head');
+            var titleId = 'ccm-runpanel-title-' + Date.now();
+            var title = el('h2', 'ccm-runpanel__title', options.title || 'Running');
+            title.id = titleId;
+            panel.setAttribute('aria-labelledby', titleId);
+            var sub = el('p', 'ccm-runpanel__sub', '0 of ' + total + ' completed');
+            sub.setAttribute('aria-live', 'polite');
+            sub.setAttribute('aria-atomic', 'true');
+            head.appendChild(title);
+            head.appendChild(sub);
+
+            var meter = el('div', 'ccm-runpanel__meter');
+            var fill = el('i');
+            meter.appendChild(fill);
+
+            var body = el('div', 'ccm-runpanel__body');
+            var list = el('ol', 'ccm-runlist');
+            var rows = {};
+
+            tasks.forEach(function (task) {
+                var row = el('li', 'ccm-runrow is-pending');
+                var icon = el('span', 'ccm-runrow__icon');
+                var label = el('span', 'ccm-runrow__label', task.label || task.key);
+                var meta = el('span', 'ccm-runrow__meta', 'Waiting');
+                row.appendChild(icon);
+                row.appendChild(label);
+                row.appendChild(meta);
+                list.appendChild(row);
+                rows[task.key] = { row: row, icon: icon, meta: meta };
+            });
+
+            body.appendChild(list);
+
+            var foot = el('div', 'ccm-runpanel__foot');
+            var summary = el('span', 'ccm-runpanel__summary', 'Working…');
+            summary.setAttribute('aria-live', 'polite');
+            summary.setAttribute('aria-atomic', 'true');
+            var closeBtn = el('button', 'ccm-button ccm-button-primary', 'Close');
+            closeBtn.setAttribute('type', 'button');
+            closeBtn.setAttribute('data-runpanel-close', '');
+            foot.appendChild(summary);
+            foot.appendChild(closeBtn);
+
+            panel.appendChild(head);
+            panel.appendChild(meter);
+            panel.appendChild(body);
+            panel.appendChild(foot);
+            overlay.appendChild(panel);
+            document.body.appendChild(overlay);
+
+            window.requestAnimationFrame(function () {
+                overlay.classList.add('ccm-modal-show');
+            });
+
+            var finished = 0;
+            var failed = 0;
+            var items = 0;
+            var isDone = false;
+            var closeHandlers = [];
+
+            function progress() {
+                sub.textContent = finished + ' of ' + total + ' completed';
+                fill.style.width = total ? Math.round((finished / total) * 100) + '%' : '100%';
+            }
+
+            function close() {
+                if (!isDone) { return; }
+                overlay.classList.remove('ccm-modal-show');
+                document.removeEventListener('keydown', onKey);
+                window.setTimeout(function () {
+                    if (overlay.parentNode) { overlay.parentNode.removeChild(overlay); }
+                }, 200);
+                closeHandlers.forEach(function (fn) {
+                    try { fn(); } catch (e) { /* a bad handler must not trap the panel */ }
+                });
+                closeHandlers = [];
+            }
+
+            /*
+             * Escape and a click on the backdrop are both live only once the
+             * run has finished. Mid-flight they do nothing: the work carries
+             * on server-side whatever the page does, so letting someone
+             * dismiss the panel would hide a running job rather than stop it.
+             */
+            function onKey(e) {
+                if (e.key === 'Escape' && isDone) { close(); }
+            }
+            document.addEventListener('keydown', onKey);
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay && isDone) { close(); }
+            });
+            closeBtn.addEventListener('click', close);
+
+            function scrollRowIntoView(row) {
+                if (!row) { return; }
+                var top = row.offsetTop;
+                var h = body.clientHeight;
+                if (top < body.scrollTop || top + row.offsetHeight > body.scrollTop + h) {
+                    body.scrollTop = Math.max(0, top - (h / 2) + (row.offsetHeight / 2));
+                }
+            }
+
+            return {
+                /** Mark a task as in flight. */
+                start: function (key, note) {
+                    var entry = rows[key];
+                    if (!entry) { return; }
+                    entry.row.className = 'ccm-runrow is-running';
+                    entry.icon.textContent = '';
+                    entry.icon.appendChild(el('div', 'ccm-spinner ccm-spinner-small'));
+                    entry.meta.textContent = note || 'Running…';
+                    scrollRowIntoView(entry.row);
+                },
+
+                /** Update the note on a task that is still running. */
+                note: function (key, text) {
+                    var entry = rows[key];
+                    if (entry) { entry.meta.textContent = text; }
+                },
+
+                /**
+                 * Record a finished task.
+                 * @param {string} key
+                 * @param {object} result {ok, message, count, skipped}
+                 */
+                finish: function (key, result) {
+                    var entry = rows[key];
+                    result = result || {};
+                    finished++;
+                    if (!result.ok && !result.skipped) { failed++; }
+                    if (typeof result.count === 'number') { items += result.count; }
+
+                    if (entry) {
+                        var state = result.skipped ? 'is-skip' : (result.ok ? 'is-ok' : 'is-fail');
+                        entry.row.className = 'ccm-runrow ' + state;
+                        entry.icon.textContent = result.skipped ? '–' : (result.ok ? '✓' : '✗');
+                        var text = result.message || (result.ok ? 'Done' : 'Failed');
+                        if (typeof result.count === 'number' && result.count > 0) {
+                            text += ' · ' + result.count.toLocaleString();
+                        }
+                        entry.meta.textContent = text;
+                    }
+                    progress();
+                },
+
+                /** Close out the run and let the panel be dismissed. */
+                done: function (text) {
+                    isDone = true;
+                    panel.classList.add('is-done');
+                    if (failed > 0) { panel.classList.add('has-failures'); }
+                    fill.style.width = '100%';
+                    sub.textContent = finished + ' of ' + total + ' completed';
+
+                    if (text) {
+                        summary.textContent = text;
+                    } else {
+                        var parts = [];
+                        parts.push(failed > 0
+                            ? (total - failed) + ' of ' + total + ' succeeded'
+                            : 'All ' + total + ' completed');
+                        if (items > 0) {
+                            parts.push(items.toLocaleString() + ' ' + (options.unit || 'items') + ' affected');
+                        }
+                        summary.textContent = parts.join(' · ');
+                    }
+                    closeBtn.focus();
+                },
+
+                /** Run a callback once the panel is dismissed. */
+                onClose: function (fn) {
+                    if (typeof fn === 'function') { closeHandlers.push(fn); }
+                },
+
+                close: close,
+                failures: function () { return failed; },
+                affected: function () { return items; }
+            };
+        }
+
+        return { open: open };
+    })();
+
+    // ── Action bar ──────────────────────────────────────────────
+    //
+    // The save bar's sibling, for a page whose primary control runs something
+    // rather than saving something. A page opts in with one element:
+    //
+    //   <div class="ccm-savebar ccm-savebar--action" data-ccm-actionbar
+    //        data-actionbar-target="#run-optimizations"
+    //        data-actionbar-watch="#optimization-options">
+    //
+    // It counts the ticked boxes inside the watched container, says so, and
+    // proxies its Run button to the page's real one. Like the save bar it
+    // deliberately does not know how to run anything: that stays where it
+    // already lives, so the two can never disagree about what the action is.
+
+    function initActionBar() {
+        var bar = document.querySelector('[data-ccm-actionbar]');
+        if (!bar) { return; }
+
+        var target = document.querySelector(bar.getAttribute('data-actionbar-target') || '');
+        var watch = document.querySelector(bar.getAttribute('data-actionbar-watch') || '');
+        if (!target || !watch) { return; }
+
+        var wrap = document.querySelector('.ccm-tools');
+        if (wrap) { wrap.classList.add('has-savebar'); }
+
+        var msg = bar.querySelector('.ccm-savebar__msg');
+        var runBtn = bar.querySelector('[data-actionbar-run]');
+        var noneBtn = bar.querySelector('[data-actionbar-none]');
+        var noun = bar.getAttribute('data-actionbar-noun') || 'task';
+
+        function selectedCount() {
+            return watch.querySelectorAll('input[type="checkbox"]:checked').length;
+        }
+
+        function refresh() {
+            var n = selectedCount();
+            bar.classList.toggle('is-armed', n > 0);
+            if (!msg) { return; }
+            if (n === 0) {
+                msg.textContent = 'No ' + noun + 's selected';
+                return;
+            }
+            msg.textContent = n === 1 ? '1 ' + noun + ' selected' : n + ' ' + noun + 's selected';
+        }
+
+        /*
+         * The watched list is rendered by JavaScript once its counts come
+         * back, and re-rendered after every run, so the checkboxes this bar
+         * reports on do not exist yet when it is wired up. Delegate the change
+         * event and observe the container rather than binding to the boxes.
+         */
+        watch.addEventListener('change', function (e) {
+            if (e.target && e.target.type === 'checkbox') { refresh(); }
+        });
+
+        if (window.MutationObserver) {
+            new window.MutationObserver(refresh).observe(watch, { childList: true, subtree: true });
+        }
+
+        if (runBtn) {
+            runBtn.addEventListener('click', function () {
+                if (!bar.classList.contains('is-armed')) { return; }
+                target.click();
+            });
+        }
+
+        if (noneBtn) {
+            noneBtn.addEventListener('click', function () {
+                Array.prototype.forEach.call(
+                    watch.querySelectorAll('input[type="checkbox"]'),
+                    function (cb) { cb.checked = false; }
+                );
+                refresh();
+            });
+        }
+
+        /*
+         * The page says when a run starts and stops. The bar does not try to
+         * infer either from the target button's disabled attribute, which is
+         * the mistake the save bar had to be corrected for: every run routine
+         * re-enables its button in a finally block, so a failed run looks
+         * exactly like a successful one from the outside.
+         */
+        document.addEventListener('ccm:run-start', function () { bar.classList.add('is-running'); });
+        document.addEventListener('ccm:run-end', function () {
+            bar.classList.remove('is-running');
+            refresh();
+        });
+
+        refresh();
+    }
+
     // ── Boot ────────────────────────────────────────────────────
 
     function init() {
         initThemeToggle();
         initSaveBar();
+        initActionBar();
         upgradeAll(document);
         watchForSpinners();
     }
 
+    window.ccmRunPanel = ccmRunPanel;
     window.ccmSpinner = ccmSpinner;
     window.ccmSpinnerEl = ccmSpinnerEl;
 

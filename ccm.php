@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.7.0
+ * Version: 8.8.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.7.0');
+    define('CCM_HELPER_VERSION', '8.8.0');
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -1517,6 +1517,17 @@ class CCMSettings {
                     </div>
                 </div>
 
+                <?php
+                /*
+                 * The record of the last run, directly under the hero rather
+                 * than at the foot of the page. The live progress belongs to
+                 * the run panel; this is what is left to read afterwards, and
+                 * it needs to be where the eye already is when the panel
+                 * closes, not twenty rows of checkboxes further down.
+                 */
+                ?>
+                <div id="optimization-results" class="ccm-result-box" style="display: none;"></div>
+
                 <div class="ccm-alert" style="margin-bottom: var(--ccm-space-lg);">
                     <span class="ccm-dot ccm-dot-ok"></span>
                     <div><strong><?php _e('Take a backup first.', 'ccm-tools'); ?></strong>
@@ -1566,7 +1577,29 @@ class CCMSettings {
                     </div>
                 </div>
 
-                <div id="optimization-results" class="ccm-result-box" style="display: none;"></div>
+                <?php
+                /*
+                 * Run is in the hero, and the list below it is long enough that
+                 * the button is off screen by the time you have finished
+                 * ticking. This dock keeps the action with the selection. It
+                 * proxies the hero button rather than duplicating the run
+                 * logic, so the two cannot disagree.
+                 */
+                ?>
+                <div class="ccm-savebar ccm-savebar--action"
+                     data-ccm-actionbar
+                     data-actionbar-target="#run-optimizations"
+                     data-actionbar-watch="#optimization-options"
+                     data-actionbar-noun="task">
+                    <span class="ccm-savebar__dot" aria-hidden="true"></span>
+                    <span class="ccm-savebar__msg"><?php _e('No tasks selected', 'ccm-tools'); ?></span>
+                    <button type="button" class="ccm-button ccm-button-secondary ccm-button-small" data-actionbar-none>
+                        <?php _e('Clear', 'ccm-tools'); ?>
+                    </button>
+                    <button type="button" class="ccm-button ccm-button-primary ccm-button-small" data-actionbar-run>
+                        <?php _e('Run selected', 'ccm-tools'); ?>
+                    </button>
+                </div>
 
             </div>
         </div>

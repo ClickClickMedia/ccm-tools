@@ -1,5 +1,36 @@
 # CCM Tools — Changelog
 
+## v8.8.0 — You can see what you started
+
+Running the database optimiser used to be three places for one job. You ticked
+tasks at the bottom of a long list, scrolled back to the top for the Run button
+in the hero, clicked it, and nothing you could see changed. The run had started
+and was working the whole time; its progress was rendering into a box at the
+foot of the page, below everything you had just scrolled past.
+
+- **A run panel now owns the run.** It opens the moment you click, names every
+  task, and fills in each one as it lands. The click and the visible response
+  are the same event.
+- **Long table work names the table it is on** rather than sitting on a spinner,
+  so a slow run reads as progress instead of a stall.
+- **Escape and a click on the backdrop do nothing while it is running.** The
+  work carries on server-side whatever the page does, so dismissing the panel
+  would only hide a running job, not stop it. Both work once it has finished.
+- **A floating action bar keeps Run with the selection.** Same dock as the save
+  bar. It reports what is ticked and proxies the page's own button, so the two
+  cannot disagree about what running means.
+- **The record of the last run sits under the hero**, where the eye already is
+  when the panel closes, and names anything that did not complete.
+- **The confirm for irreversible tasks is the plugin's own**, not the browser's.
+  On a screen whose whole point is being careful about permanent deletes, the
+  one dialog that matters should not be the one that looks bolted on.
+- **The WooCommerce result box is no longer written to while invisible.** It was
+  rendered `display:none`, filled in on both the success and failure paths, and
+  never shown.
+- **Bulk WebP conversion scrolls its progress into view.** That job can run for
+  a long time and has a Stop button, so it gets the progress brought to it
+  rather than a panel taking the screen away.
+
 ## v8.7.0 — Fields line up
 
 Every field in a settings card now sits in one grid, so the column edge is a
