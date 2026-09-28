@@ -1,6 +1,6 @@
 # CCM Tools UI brief
 
-How a page in this plugin is built, as of v8.7.0. Follow it exactly so the
+How a page in this plugin is built, as of v8.8.0. Follow it exactly so the
 eight screens read as one product rather than eight people's work.
 
 Two pages are already rebuilt and are the reference. Read them before you
@@ -95,6 +95,71 @@ Any page with settings ends with this, immediately before the closing
 what changed, proxies its button to the real one, and warns on leaving with
 unsaved work. The real save button stays on the page (usually in the hero) and
 keeps its id, because `js/main.js` binds to it.
+
+## Actions, and showing them
+
+A page whose primary control *runs* something rather than *saves* something
+gets the action bar instead of the save bar. Same dock, same chrome; one
+floating thing on screen is one idea.
+
+```php
+<div class="ccm-savebar ccm-savebar--action"
+     data-ccm-actionbar
+     data-actionbar-target="#your-real-run-button-id"
+     data-actionbar-watch="#the-container-holding-the-checkboxes"
+     data-actionbar-noun="task">
+    <span class="ccm-savebar__dot" aria-hidden="true"></span>
+    <span class="ccm-savebar__msg"><?php _e('No tasks selected', 'ccm-tools'); ?></span>
+    <button type="button" class="ccm-button ccm-button-secondary ccm-button-small" data-actionbar-none>
+        <?php _e('Clear', 'ccm-tools'); ?>
+    </button>
+    <button type="button" class="ccm-button ccm-button-primary ccm-button-small" data-actionbar-run>
+        <?php _e('Run selected', 'ccm-tools'); ?>
+    </button>
+</div>
+```
+
+It counts the ticked boxes inside the watched container, reports the number,
+and proxies the page's real button. It watches with a `MutationObserver`,
+because these lists are rendered by JavaScript after their counts come back and
+do not exist when the bar is wired up. Tell it when work starts and stops by
+dispatching `ccm:run-start` and `ccm:run-end` on `document`; it must never
+infer either from the target button's `disabled` attribute, which is the
+mistake the save bar had to be corrected for.
+
+**Starting something must show you the thing you started.** Which mechanism
+depends on the job:
+
+*Bounded work, seconds to a couple of minutes* — use the run panel. It takes
+the screen, so nothing about it can be missed or scrolled away from.
+
+```js
+var run = window.ccmRunPanel.open({
+    title: 'Database optimisation',
+    tasks: [{ key: 'clear_transients', label: 'Clear expired transients' }],
+    unit: 'rows'
+});
+run.start(key);                 // -> running, with a spinner
+run.note(key, 'wp_postmeta');   // name what it is on, so a slow step reads as progress
+run.finish(key, { ok: true, message: 'Removed', count: 412 });
+run.done();                     // summary; only now can it be dismissed
+run.onClose(function () { /* refresh counts here, not on a timer */ });
+```
+
+`done()` is what makes it dismissable, so a caller that throws leaves the panel
+open showing how far it got. Escape and backdrop clicks are inert until then:
+the work carries on server-side whatever the page does, so dismissing would
+hide a running job rather than stop it. Drive it from a `try/finally` and call
+`done()` in the `finally`.
+
+*Long work, or work with a Stop button* — do **not** use the panel; taking the
+screen away for twenty minutes is worse than the problem. Call
+`revealPanel(el)` from `js/main.js`, which un-hides the block and scrolls it
+into view, and leave the user free to go elsewhere.
+
+Either way, never write into a box that is still `display:none`. That is what
+`#woocommerce-result` did for several versions: filled in on both the success
+and failure paths, and never once shown.
 
 ## Verifying
 
