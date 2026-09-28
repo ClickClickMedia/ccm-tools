@@ -1574,10 +1574,13 @@ function ccm_tools_render_webp_page() {
                                     <label class="ccm-opt__label" for="webp-quality"><?php _e('Quality', 'ccm-tools'); ?></label>
                                     <p class="ccm-opt__desc"><?php _e('85 is the default and is close to lossless. Push it past 90 and the file barely shrinks for the extra size.', 'ccm-tools'); ?></p>
                                 </div>
-                                <span class="ccm-optfield__inline">
-                                    <input type="number" name="quality" id="webp-quality" class="ccm-input"
-                                           min="1" max="100" value="<?php echo esc_attr($settings['quality']); ?>">
-                                    <span class="ccm-optfield__suffix"><?php _e('/ 100', 'ccm-tools'); ?></span>
+                                <span class="ccm-slider">
+                                    <input type="range" name="quality" id="webp-quality" class="ccm-slider__range"
+                                           min="1" max="100" step="1"
+                                           value="<?php echo esc_attr($settings['quality']); ?>"
+                                           data-slider-output="#webp-quality-value">
+                                    <output class="ccm-slider__value" id="webp-quality-value"
+                                            for="webp-quality"><?php echo esc_html($settings['quality']); ?></output>
                                 </span>
                             </div>
                         </div>

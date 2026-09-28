@@ -57,7 +57,7 @@ function ccm_tools_filter_payment_gateways_for_admin($gateways) {
     }
     
     // Check if user is admin
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         // Remove COD and BACS for non-admin users
         if (isset($gateways['cod'])) {
             unset($gateways['cod']);

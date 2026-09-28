@@ -251,7 +251,7 @@ function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
  */
 function ccm_tools_ajax_get_error_log() {
     // Check permissions and nonce
-    if (!current_user_can('manage_options') || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
+    if (!ccm_tools_user_is_admin() || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -342,7 +342,7 @@ add_action('wp_ajax_ccm_tools_get_error_log', 'ccm_tools_ajax_get_error_log');
  */
 function ccm_tools_ajax_clear_error_log() {
     // Check permissions and nonce
-    if (!current_user_can('manage_options') || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
+    if (!ccm_tools_user_is_admin() || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -383,7 +383,7 @@ add_action('wp_ajax_ccm_tools_clear_error_log', 'ccm_tools_ajax_clear_error_log'
  */
 function ccm_tools_ajax_download_error_log() {
     // Check permissions and nonce
-    if (!current_user_can('manage_options') || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
+    if (!ccm_tools_user_is_admin() || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -431,7 +431,7 @@ add_action('wp_ajax_ccm_tools_download_error_log', 'ccm_tools_ajax_download_erro
  * Securely streams a zipped error log to the browser.
  */
 function ccm_tools_ajax_download_error_log_file() {
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have permission to perform this action.', 'ccm-tools'), __('Permission denied', 'ccm-tools'), array('response' => 403));
     }
 
@@ -798,7 +798,7 @@ function ccm_tools_error_log_relative_path($path) {
  * Render the error log viewer page
  */
 function ccm_tools_render_error_log_page() {
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
     }
 

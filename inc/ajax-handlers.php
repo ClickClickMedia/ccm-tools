@@ -122,7 +122,7 @@ function ccm_tools_wp_config_constant_state($constant, $config_content) {
 add_action('wp_ajax_ccm_tools_get_tables_to_convert', 'ccm_tools_ajax_get_tables_to_convert');
 function ccm_tools_ajax_get_tables_to_convert(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     $tables_info = ccm_tools_get_tables_to_convert();
@@ -133,7 +133,7 @@ function ccm_tools_ajax_get_tables_to_convert(): void {
 add_action('wp_ajax_ccm_tools_convert_single_table', 'ccm_tools_ajax_convert_single_table');
 function ccm_tools_ajax_convert_single_table(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     
@@ -154,7 +154,7 @@ function ccm_tools_ajax_convert_single_table(): void {
 add_action('wp_ajax_ccm_tools_get_tables_to_optimize', 'ccm_tools_ajax_get_tables_to_optimize');
 function ccm_tools_ajax_get_tables_to_optimize(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     
@@ -184,7 +184,7 @@ function ccm_tools_ajax_get_tables_to_optimize(): void {
 add_action('wp_ajax_ccm_tools_optimize_initial_setup', 'ccm_tools_ajax_optimize_initial_setup');
 function ccm_tools_ajax_optimize_initial_setup(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     $result = ccm_tools_optimize_initial_setup();
@@ -195,7 +195,7 @@ function ccm_tools_ajax_optimize_initial_setup(): void {
 add_action('wp_ajax_ccm_tools_get_optimization_options', 'ccm_tools_ajax_get_optimization_options');
 function ccm_tools_ajax_get_optimization_options(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -215,7 +215,7 @@ function ccm_tools_ajax_get_optimization_options(): void {
 add_action('wp_ajax_ccm_tools_run_single_optimization', 'ccm_tools_ajax_run_single_optimization');
 function ccm_tools_ajax_run_single_optimization(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -248,7 +248,7 @@ function ccm_tools_ajax_run_single_optimization(): void {
 add_action('wp_ajax_ccm_tools_optimize_single_table', 'ccm_tools_ajax_optimize_single_table');
 function ccm_tools_ajax_optimize_single_table(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     
@@ -272,7 +272,7 @@ function ccm_tools_ajax_optimize_single_table(): void {
 add_action('wp_ajax_ccm_tools_optimize_table_task', 'ccm_tools_ajax_optimize_table_task');
 function ccm_tools_ajax_optimize_table_task(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
 
@@ -406,7 +406,7 @@ function ccm_tools_parse_htaccess_options(): array {
 add_action('wp_ajax_ccm_tools_add_htaccess', 'ccm_tools_ajax_add_htaccess');
 function ccm_tools_ajax_add_htaccess(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     // Prevent double execution
@@ -430,7 +430,7 @@ function ccm_tools_ajax_add_htaccess(): void {
 add_action('wp_ajax_ccm_tools_update_htaccess', 'ccm_tools_ajax_update_htaccess');
 function ccm_tools_ajax_update_htaccess(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     
@@ -449,7 +449,7 @@ function ccm_tools_ajax_update_htaccess(): void {
 add_action('wp_ajax_ccm_tools_remove_htaccess', 'ccm_tools_ajax_remove_htaccess');
 function ccm_tools_ajax_remove_htaccess(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
     // Prevent double execution
@@ -483,7 +483,7 @@ add_action('wp_ajax_ccm_tools_restore_htaccess', 'ccm_tools_ajax_restore_htacces
  */
 function ccm_tools_ajax_restore_htaccess(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error('<p class="ccm-error">' . esc_html__('You do not have permission to perform this action.', 'ccm-tools') . '</p>');
     }
 
@@ -515,7 +515,7 @@ function ccm_tools_ajax_restore_htaccess(): void {
 add_action('wp_ajax_ccm_tools_update_debug_mode', 'ccm_tools_ajax_update_debug_mode');
 function ccm_tools_ajax_update_debug_mode(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
 
@@ -632,7 +632,7 @@ function ccm_tools_ajax_update_debug_mode(): void {
 add_action('wp_ajax_ccm_tools_update_debug_display', 'ccm_tools_ajax_update_debug_display');
 function ccm_tools_ajax_update_debug_display(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
 
@@ -712,7 +712,7 @@ function ccm_tools_ajax_update_debug_display(): void {
 add_action('wp_ajax_ccm_tools_update_debug_log', 'ccm_tools_ajax_update_debug_log');
 function ccm_tools_ajax_update_debug_log(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
 
@@ -791,7 +791,7 @@ function ccm_tools_ajax_update_debug_log(): void {
 add_action('wp_ajax_ccm_tools_update_memory_limit', 'ccm_tools_ajax_update_memory_limit');
 function ccm_tools_ajax_update_memory_limit(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
 
@@ -1006,7 +1006,7 @@ function ccm_tools_ajax_update_memory_limit(): void {
 add_action('wp_ajax_ccm_tools_configure_redis', 'ccm_tools_ajax_configure_redis');
 function ccm_tools_ajax_configure_redis(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
 
@@ -1038,7 +1038,7 @@ function ccm_tools_ajax_configure_redis(): void {
 add_action('wp_ajax_ccm_tools_install_redis_plugin', 'ccm_tools_ajax_install_redis_plugin');
 function ccm_tools_ajax_install_redis_plugin(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -1132,7 +1132,7 @@ function ccm_tools_ajax_install_redis_plugin(): void {
 add_action('wp_ajax_ccm_tools_enable_redis_cache', 'ccm_tools_ajax_enable_redis_cache');
 function ccm_tools_ajax_enable_redis_cache(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -1248,7 +1248,7 @@ function ccm_tools_ajax_enable_redis_cache(): void {
 add_action('wp_ajax_ccm_tools_disable_redis_cache', 'ccm_tools_ajax_disable_redis_cache');
 function ccm_tools_ajax_disable_redis_cache(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -1336,7 +1336,7 @@ function ccm_tools_ajax_disable_redis_cache(): void {
 add_action('wp_ajax_ccm_tools_measure_ttfb', 'ccm_tools_ajax_measure_ttfb');
 function ccm_tools_ajax_measure_ttfb(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -1412,7 +1412,7 @@ function ccm_tools_ajax_measure_ttfb(): void {
 add_action('wp_ajax_ccm_tools_toggle_admin_payment', 'ccm_tools_ajax_toggle_admin_payment');
 function ccm_tools_ajax_toggle_admin_payment(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
 
@@ -1446,7 +1446,7 @@ function ccm_tools_ajax_toggle_admin_payment(): void {
 add_action('wp_ajax_ccm_tools_save_webp_settings', 'ccm_tools_ajax_save_webp_settings');
 function ccm_tools_ajax_save_webp_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1496,7 +1496,7 @@ function ccm_tools_ajax_save_webp_settings(): void {
 add_action('wp_ajax_ccm_tools_get_webp_stats', 'ccm_tools_ajax_get_webp_stats');
 function ccm_tools_ajax_get_webp_stats(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1511,7 +1511,7 @@ add_action('wp_ajax_ccm_tools_export_webp_settings', 'ccm_tools_ajax_export_webp
 function ccm_tools_ajax_export_webp_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1537,7 +1537,7 @@ add_action('wp_ajax_ccm_tools_import_webp_settings', 'ccm_tools_ajax_import_webp
 function ccm_tools_ajax_import_webp_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1619,7 +1619,7 @@ function ccm_tools_ajax_import_webp_settings(): void {
 add_action('wp_ajax_ccm_tools_get_unconverted_images', 'ccm_tools_ajax_get_unconverted_images');
 function ccm_tools_ajax_get_unconverted_images(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1673,7 +1673,7 @@ function ccm_tools_ajax_get_unconverted_images(): void {
 add_action('wp_ajax_ccm_tools_convert_single_image', 'ccm_tools_ajax_convert_single_image');
 function ccm_tools_ajax_convert_single_image(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1768,7 +1768,7 @@ function ccm_tools_ajax_convert_single_image(): void {
 add_action('wp_ajax_ccm_tools_test_webp_conversion', 'ccm_tools_ajax_test_webp_conversion');
 function ccm_tools_ajax_test_webp_conversion(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1845,7 +1845,7 @@ function ccm_tools_ajax_test_webp_conversion(): void {
 add_action('wp_ajax_ccm_tools_reset_webp_conversions', 'ccm_tools_ajax_reset_webp_conversions');
 function ccm_tools_ajax_reset_webp_conversions(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -1935,7 +1935,7 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
 add_action('wp_ajax_ccm_tools_process_webp_queue', 'ccm_tools_ajax_process_webp_queue');
 function ccm_tools_ajax_process_webp_queue(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
     
@@ -2046,7 +2046,7 @@ add_action('wp_ajax_ccm_tools_save_perf_settings', 'ccm_tools_ajax_save_perf_set
 function ccm_tools_ajax_save_perf_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -2151,7 +2151,7 @@ add_action('wp_ajax_ccm_tools_export_perf_settings', 'ccm_tools_ajax_export_perf
 function ccm_tools_ajax_export_perf_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -2176,7 +2176,7 @@ add_action('wp_ajax_ccm_tools_import_perf_settings', 'ccm_tools_ajax_import_perf
 function ccm_tools_ajax_import_perf_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -2380,7 +2380,7 @@ add_action('wp_ajax_ccm_tools_detect_scripts', 'ccm_tools_ajax_detect_scripts');
 function ccm_tools_ajax_detect_scripts(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -2629,7 +2629,7 @@ add_action('wp_ajax_ccm_tools_detect_external_origins', 'ccm_tools_ajax_detect_e
 function ccm_tools_ajax_detect_external_origins(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -2767,7 +2767,7 @@ function ccm_tools_ajax_detect_external_origins(): void {
 add_action('wp_ajax_ccm_tools_check_zip_available', 'ccm_tools_ajax_check_zip_available');
 function ccm_tools_ajax_check_zip_available(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -2845,7 +2845,7 @@ function ccm_tools_get_directory_stats($path, $max_time = 10) {
 add_action('wp_ajax_ccm_tools_start_uploads_backup', 'ccm_tools_ajax_start_uploads_backup');
 function ccm_tools_ajax_start_uploads_backup(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -2956,7 +2956,7 @@ function ccm_tools_ajax_start_uploads_backup(): void {
 add_action('wp_ajax_ccm_tools_process_backup_batch', 'ccm_tools_ajax_process_backup_batch');
 function ccm_tools_ajax_process_backup_batch(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -3062,7 +3062,7 @@ function ccm_tools_ajax_process_backup_batch(): void {
 add_action('wp_ajax_ccm_tools_get_backup_status', 'ccm_tools_ajax_get_backup_status');
 function ccm_tools_ajax_get_backup_status(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -3098,7 +3098,7 @@ function ccm_tools_ajax_get_backup_status(): void {
 add_action('wp_ajax_ccm_tools_download_backup', 'ccm_tools_ajax_download_backup');
 function ccm_tools_ajax_download_backup(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3148,7 +3148,7 @@ function ccm_tools_ajax_download_backup(): void {
 add_action('wp_ajax_ccm_tools_cancel_backup', 'ccm_tools_ajax_cancel_backup');
 function ccm_tools_ajax_cancel_backup(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
@@ -3203,7 +3203,7 @@ function ccm_tools_cleanup_old_backups($backup_dir, $max_age_hours = 24) {
 add_action('wp_ajax_ccm_tools_redis_enable', 'ccm_tools_ajax_redis_enable');
 function ccm_tools_ajax_redis_enable(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3238,7 +3238,7 @@ function ccm_tools_ajax_redis_enable(): void {
 add_action('wp_ajax_ccm_tools_redis_disable', 'ccm_tools_ajax_redis_disable');
 function ccm_tools_ajax_redis_disable(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3271,7 +3271,7 @@ function ccm_tools_ajax_redis_disable(): void {
 add_action('wp_ajax_ccm_tools_redis_flush', 'ccm_tools_ajax_redis_flush');
 function ccm_tools_ajax_redis_flush(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3305,7 +3305,7 @@ function ccm_tools_ajax_redis_flush(): void {
 add_action('wp_ajax_ccm_tools_redis_test', 'ccm_tools_ajax_redis_test');
 function ccm_tools_ajax_redis_test(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3344,7 +3344,7 @@ function ccm_tools_ajax_redis_test(): void {
 add_action('wp_ajax_ccm_tools_redis_save_settings', 'ccm_tools_ajax_redis_save_settings');
 function ccm_tools_ajax_redis_save_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3620,7 +3620,7 @@ function ccm_tools_ajax_redis_save_settings(): void {
 add_action('wp_ajax_ccm_tools_redis_add_config', 'ccm_tools_ajax_redis_add_config');
 function ccm_tools_ajax_redis_add_config(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3710,7 +3710,7 @@ function ccm_tools_ajax_redis_add_config(): void {
 add_action('wp_ajax_ccm_tools_redis_get_stats', 'ccm_tools_ajax_redis_get_stats');
 function ccm_tools_ajax_redis_get_stats(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
     
@@ -3741,7 +3741,7 @@ function ccm_tools_ajax_redis_get_stats(): void {
 add_action('wp_ajax_ccm_tools_cf_connect', 'ccm_tools_ajax_cf_connect');
 function ccm_tools_ajax_cf_connect(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -3807,7 +3807,7 @@ function ccm_tools_ajax_cf_connect(): void {
 add_action('wp_ajax_ccm_tools_cf_disconnect', 'ccm_tools_ajax_cf_disconnect');
 function ccm_tools_ajax_cf_disconnect(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -3820,7 +3820,7 @@ function ccm_tools_ajax_cf_disconnect(): void {
 add_action('wp_ajax_ccm_tools_cf_get_status', 'ccm_tools_ajax_cf_get_status');
 function ccm_tools_ajax_cf_get_status(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -3835,7 +3835,7 @@ function ccm_tools_ajax_cf_get_status(): void {
 add_action('wp_ajax_ccm_tools_cf_purge_all', 'ccm_tools_ajax_cf_purge_all');
 function ccm_tools_ajax_cf_purge_all(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -3850,7 +3850,7 @@ function ccm_tools_ajax_cf_purge_all(): void {
 add_action('wp_ajax_ccm_tools_cf_purge_urls', 'ccm_tools_ajax_cf_purge_urls');
 function ccm_tools_ajax_cf_purge_urls(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -3881,7 +3881,7 @@ function ccm_tools_ajax_cf_purge_urls(): void {
 add_action('wp_ajax_ccm_tools_cf_dev_mode', 'ccm_tools_ajax_cf_dev_mode');
 function ccm_tools_ajax_cf_dev_mode(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -3905,7 +3905,7 @@ function ccm_tools_ajax_cf_dev_mode(): void {
 add_action('wp_ajax_ccm_tools_cf_update_setting', 'ccm_tools_ajax_cf_update_setting');
 function ccm_tools_ajax_cf_update_setting(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -3994,7 +3994,7 @@ function ccm_tools_ajax_cf_update_setting(): void {
 add_action('wp_ajax_ccm_tools_cf_apply_recommended', 'ccm_tools_ajax_cf_apply_recommended');
 function ccm_tools_ajax_cf_apply_recommended(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -4020,7 +4020,7 @@ function ccm_tools_ajax_cf_apply_recommended(): void {
 add_action('wp_ajax_ccm_tools_cf_auto_purge', 'ccm_tools_ajax_cf_auto_purge');
 function ccm_tools_ajax_cf_auto_purge(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -4043,7 +4043,7 @@ function ccm_tools_ajax_cf_auto_purge(): void {
 add_action('wp_ajax_ccm_tools_cf_analytics', 'ccm_tools_ajax_cf_analytics');
 function ccm_tools_ajax_cf_analytics(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 
@@ -4066,7 +4066,7 @@ function ccm_tools_ajax_cf_analytics(): void {
 add_action('wp_ajax_ccm_tools_cf_dns_records', 'ccm_tools_ajax_cf_dns_records');
 function ccm_tools_ajax_cf_dns_records(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
     }
 

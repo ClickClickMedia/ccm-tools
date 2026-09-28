@@ -90,7 +90,16 @@ foreach ($registered as $action => $meta) {
     $nonce = strpos($body, 'check_ajax_referer') !== false
         || strpos($body, 'wp_verify_nonce') !== false
         || strpos($body, 'check_admin_referer') !== false;
-    $cap = strpos($body, 'current_user_can') !== false;
+    /*
+     * Since 8.9.0 the gate is ccm_tools_user_is_admin(), which requires the
+     * administrator role and not merely the manage_options capability. A bare
+     * current_user_can() still counts as a check here, because a handler may
+     * legitimately test some other capability, but nothing in this plugin
+     * should be reachable on manage_options alone.
+     */
+    $cap = strpos($body, 'ccm_tools_user_is_admin') !== false
+        || strpos($body, 'current_user_can') !== false;
+    $weak = strpos($body, "current_user_can('manage_options')") !== false;
 
     if ($meta['nopriv']) {
         // Nothing in this plugin should be reachable by a logged-out visitor.
@@ -101,6 +110,8 @@ foreach ($registered as $action => $meta) {
         $problems[] = array($action, $meta['fn'], 'no nonce check, so it is open to CSRF');
     } elseif (!$cap) {
         $problems[] = array($action, $meta['fn'], 'no capability check, so any logged-in user can call it');
+    } elseif ($weak) {
+        $problems[] = array($action, $meta['fn'], "gated on manage_options alone; use ccm_tools_user_is_admin()");
     }
 }
 

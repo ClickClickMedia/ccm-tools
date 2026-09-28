@@ -561,7 +561,7 @@ add_action('wp_ajax_ccm_tools_sh_save_key', 'ccm_tools_ajax_sh_save_key');
  */
 function ccm_tools_ajax_sh_save_key(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
 
@@ -598,7 +598,7 @@ add_action('wp_ajax_ccm_tools_sh_run_test', 'ccm_tools_ajax_sh_run_test');
  */
 function ccm_tools_ajax_sh_run_test(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
 
@@ -624,7 +624,7 @@ add_action('wp_ajax_ccm_tools_sh_clear_history', 'ccm_tools_ajax_sh_clear_histor
  */
 function ccm_tools_ajax_sh_clear_history(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     delete_option('ccm_tools_site_health_history');
@@ -755,7 +755,7 @@ function ccm_tools_sh_trend(string $label, array $points): string {
  * @return void
  */
 function ccm_tools_render_site_health_page(): void {
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
     }
 

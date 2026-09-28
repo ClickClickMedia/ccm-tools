@@ -195,7 +195,7 @@ function ccm_tools_perf_init() {
     
     // Safety: Skip for logged-in administrators so they can always fix issues
     // Unless ?ccm_test_perf=1 is in the URL (allows admin testing)
-    if (current_user_can('manage_options') && empty($_GET['ccm_test_perf'])) {
+    if (ccm_tools_user_is_admin() && empty($_GET['ccm_test_perf'])) {
         return;
     }
     
@@ -2646,7 +2646,7 @@ function ccm_tools_perf_render_option(array $item, array $settings): void {
  * @return void
  */
 function ccm_tools_render_perf_page() {
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
     }
 

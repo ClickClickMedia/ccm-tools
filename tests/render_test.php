@@ -83,6 +83,27 @@ foreach ($void as $fn) {
     }
 }
 
+/*
+ * ccm_tools_user_is_admin() inspects the current user's roles, not just the
+ * manage_options capability, so the harness needs a real user object. Give it
+ * an administrator: the tests exercise what an administrator can do.
+ * is_multisite() is stubbed falsy below, so the super-admin branch is skipped.
+ */
+if (!function_exists('wp_get_current_user')) {
+    function wp_get_current_user() {
+        static $user = null;
+        if ($user === null) {
+            $user = new stdClass();
+            $user->ID = 1;
+            $user->roles = array('administrator');
+        }
+        return $user;
+    }
+}
+if (!function_exists('is_super_admin')) {
+    function is_super_admin($user_id = false) { return true; }
+}
+
 $truthy = array('is_admin', 'is_plugin_active', 'current_user_can', 'wp_doing_cron');
 foreach ($truthy as $fn) {
     if (!function_exists($fn)) {

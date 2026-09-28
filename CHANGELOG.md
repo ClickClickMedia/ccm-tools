@@ -1,5 +1,42 @@
 # CCM Tools — Changelog
 
+## v8.9.0 — Administrators only, and the last of the rails
+
+**Only an administrator can see or use CCM Tools now.** The gate was the
+`manage_options` capability, which sounds like "is an administrator" and is
+not. Shop manager roles, client roles built by membership plugins and several
+page builders' "site manager" roles are all handed that capability on real
+sites. This plugin rewrites wp-config.php and .htaccess, installs an object
+cache drop-in and permanently deletes database rows, so the capability on its
+own was the wrong thing to trust.
+
+- Every one of the 83 permission checks across the plugin now goes through one
+  gate that requires the administrator role, not just the capability. The menu,
+  the submenus and the Settings link on the Plugins screen are not registered
+  at all for anyone else.
+- Multisite super admins still pass, because a super admin often holds no role
+  on a given subsite and would otherwise be locked out of their own site.
+- `tests/admin_gate_test.php` drives eleven kinds of user through the gate,
+  including a shop manager holding `manage_options`, and fails if anything in
+  the plugin goes back to checking the capability on its own.
+
+**WebP quality is a slider.** It was a number box with a "/ 100" hanging off
+the end, taller than every toggle around it and the one control in the card
+that did not line up. All six controls in that card now sit on the same right
+edge, and the track shows you where 82 sits between the two ends instead of
+making you already know.
+
+**The last left accent rails are gone.** Nine of them in the stylesheet and one
+built in JavaScript on the Site Health status banner, which is why it survived
+the previous sweep of the CSS. Severity is carried by the tinted ground and the
+coloured dot, the same as every other notice. Four of the nine belonged to
+classes nothing had used for versions; those rules are deleted rather than
+patched.
+
+Also in here: `css/style.css`, `ccm.php` and `inc/redis-object-cache.php` had
+picked up mixed line endings. Each file is now internally consistent, which
+changes nothing in the repository but stops editing tools guessing wrong.
+
 ## v8.8.0 — You can see what you started
 
 Running the database optimiser used to be three places for one job. You ticked

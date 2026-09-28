@@ -96,10 +96,20 @@
         var el = $('#sh-status');
         if (!el) { return; }
         if (!html) { el.innerHTML = ''; return; }
-        var accent = kind === 'error' ? 'var(--ccm-error)'
-            : kind === 'success' ? 'var(--ccm-success)' : 'var(--ccm-info)';
-        el.innerHTML = '<div class="ccm-toolbar" style="margin-bottom: var(--ccm-space-lg);' +
-            'border-left: 3px solid ' + accent + ';">' + html + '</div>';
+        /*
+         * The house .ccm-alert, not a toolbar with an inline accent rail.
+         * The stripe down the left of this banner was the last one left in
+         * the plugin and it was built here in JavaScript, which is why it
+         * survived a sweep of the stylesheet. Severity is carried by the
+         * tinted ground and the dot, the same as every other notice.
+         */
+        var variant = kind === 'error' ? ' ccm-alert--bad'
+            : kind === 'success' ? ' ccm-alert--good' : '';
+        var dot = kind === 'error' ? ' ccm-dot-bad'
+            : kind === 'success' ? ' ccm-dot-ok' : '';
+        el.innerHTML = '<div class="ccm-alert' + variant + '" style="margin-bottom: var(--ccm-space-lg);">' +
+            '<span class="ccm-dot' + dot + '" aria-hidden="true"></span>' +
+            '<div>' + html + '</div></div>';
     }
 
     function spinner(size) {

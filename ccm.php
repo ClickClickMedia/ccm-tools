@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.8.0
+ * Version: 8.9.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,43 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.8.0');
+    define('CCM_HELPER_VERSION', '8.9.0');
+}
+
+/**
+ * Whether the current user may see and use CCM Tools at all.
+ *
+ * `manage_options` on its own is not a good enough gate here. Plenty of live
+ * sites hand that capability to something other than an administrator: a shop
+ * manager role, a client role built by a membership plugin, a "site manager"
+ * invented by a page builder. This plugin rewrites wp-config.php, .htaccess
+ * and the object cache drop-in, and can permanently delete rows from the
+ * database. Being able to open it is an administrator's business.
+ *
+ * Multisite super admins pass regardless of their role on the current site,
+ * because a super admin frequently has no role on a subsite at all and would
+ * otherwise be locked out of a site they own.
+ *
+ * @since 8.9.0
+ * @return bool
+ */
+function ccm_tools_user_is_admin(): bool {
+    // A super admin may hold no role on this particular site, so this has to
+    // come first, before any role inspection.
+    if (is_multisite() && is_super_admin()) {
+        return true;
+    }
+
+    if (!current_user_can('manage_options')) {
+        return false;
+    }
+
+    $user = wp_get_current_user();
+    if (!$user || empty($user->ID)) {
+        return false;
+    }
+
+    return in_array('administrator', (array) $user->roles, true);
 }
 
 // Better duplicate detection mechanism that only checks active plugins
@@ -309,7 +345,7 @@ function ccm_tools_cleanup_removed_modules() {
     // bumped if a future cleanup pass needs to run again.
     $cleanup_marker = 'premium-ai-hub-removal-1';
 
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         return;
     }
     if (get_option('ccm_tools_cleanup_version') === $cleanup_marker) {
@@ -505,6 +541,19 @@ class CCMSettings {
     }
     
     public function add_plugin_page(): void {
+        /*
+         * Nothing is registered at all for anyone who is not an administrator.
+         * The `manage_options` capability passed to each add_*_page() call
+         * below stays, because WordPress checks it again when the screen is
+         * requested, but it is not the gate on its own: a site that has handed
+         * that capability to a shop manager or a client role would otherwise
+         * put a menu item in front of them for a tool that rewrites
+         * wp-config.php and deletes database rows.
+         */
+        if (!ccm_tools_user_is_admin()) {
+            return;
+        }
+
         // Main menu
         add_menu_page(
             'CCM Tools',
@@ -726,6 +775,10 @@ class CCMSettings {
     }
     
     public function add_action_links($links): array {
+        // No Settings link for someone who cannot open the screen it points at.
+        if (!ccm_tools_user_is_admin()) {
+            return $links;
+        }
         $settings_link = '<a href="' . esc_url(admin_url('admin.php?page=ccm-tools')) . '">' . __('Settings', 'ccm-tools') . '</a>';
         array_unshift($links, $settings_link);
         return $links;
@@ -913,7 +966,7 @@ class CCMSettings {
      * Dashboard page callback
      */
     public function create_dashboard_page(): void {
-        if (!current_user_can('manage_options')) {
+        if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
         
@@ -1478,7 +1531,7 @@ class CCMSettings {
      * Database tools page callback
      */
     public function create_database_page(): void {
-        if (!current_user_can('manage_options')) {
+        if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
 
@@ -1610,7 +1663,7 @@ class CCMSettings {
      * .htaccess tools page callback
      */
     public function create_htaccess_page(): void {
-        if (!current_user_can('manage_options')) {
+        if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
         ?>
@@ -1639,7 +1692,7 @@ class CCMSettings {
      * WooCommerce tools page callback
      */
     public function create_woocommerce_page(): void {
-        if (!current_user_can('manage_options')) {
+        if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
 
@@ -1829,7 +1882,7 @@ class CCMSettings {
      * Debug page callback
      */
     public function create_debug_page(): void {
-        if (!current_user_can('manage_options')) {
+        if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
         }
         

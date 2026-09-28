@@ -1760,7 +1760,7 @@ function ccm_tools_redis_format_uptime($seconds) {
  * Render the Redis admin page
  */
 function ccm_tools_render_redis_page() {
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
     }
 
@@ -2884,7 +2884,7 @@ function ccm_tools_redis_site_health_eviction() {
  * Show admin notice when the Redis drop-in needs an update.
  */
 function ccm_tools_redis_dropin_update_notice() {
-    if (!current_user_can('manage_options')) return;
+    if (!ccm_tools_user_is_admin()) return;
 
     $dropin = ccm_tools_redis_dropin_status();
     if (!$dropin['is_ccm']) return;

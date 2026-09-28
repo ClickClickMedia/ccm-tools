@@ -576,7 +576,7 @@ function ccm_tools_htaccess_render_option(string $risk_key, string $key, array $
  */
 function ccm_tools_display_htaccess(): string {
     // Check user capabilities
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         return '';
     }
 
@@ -969,7 +969,7 @@ function ccm_tools_htaccess_backup_time_label(string $path): string {
  * @return array{success: bool, message: string}
  */
 function ccm_tools_htaccess_restore_backup($path): array {
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         return array(
             'success' => false,
             'message' => __('You do not have permission to perform this action.', 'ccm-tools')
@@ -1224,7 +1224,7 @@ function ccm_tools_write_htaccess_safely(string $htaccess_file, string $new_cont
  */
 function ccm_tools_update_htaccess(string $action, $options = array()): array {
     // Check user capabilities
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         return array(
             'success' => false,
             'message' => __('You do not have permission to perform this action.', 'ccm-tools')

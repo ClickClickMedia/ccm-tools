@@ -244,7 +244,7 @@
         controls.forEach(function (el) {
             el.addEventListener('change', refresh);
             if (el.tagName === 'TEXTAREA' || el.type === 'text' || el.type === 'url' ||
-                el.type === 'number' || el.type === 'password') {
+                el.type === 'number' || el.type === 'password' || el.type === 'range') {
                 el.addEventListener('input', refresh);
             }
         });
@@ -647,10 +647,50 @@
         refresh();
     }
 
+    // ── Sliders ─────────────────────────────────────────────────
+    //
+    // A range input cannot draw its own filled portion in WebKit, so the
+    // percentage is handed to CSS as --ccm-slider-pos and the track is painted
+    // with a gradient. Firefox has ::-moz-range-progress and ignores all this.
+    //
+    // The readout is an <output>, not a second input, so there is exactly one
+    // form control named for the setting and nothing can disagree about its
+    // value.
+
+    function initSliders(scope) {
+        var ranges = (scope || document).querySelectorAll('.ccm-slider__range');
+
+        Array.prototype.forEach.call(ranges, function (range) {
+            var sel = range.getAttribute('data-slider-output');
+            var out = sel ? document.querySelector(sel) : null;
+            if (!out && range.parentNode) {
+                out = range.parentNode.querySelector('.ccm-slider__value');
+            }
+
+            function paint() {
+                var min = parseFloat(range.min);
+                var max = parseFloat(range.max);
+                if (!isFinite(min)) { min = 0; }
+                if (!isFinite(max)) { max = 100; }
+
+                var span = max - min;
+                var pos = span > 0 ? ((parseFloat(range.value) - min) / span) * 100 : 0;
+                if (!isFinite(pos)) { pos = 0; }
+
+                range.style.setProperty('--ccm-slider-pos', pos.toFixed(2) + '%');
+                if (out) { out.textContent = range.value; }
+            }
+
+            range.addEventListener('input', paint);
+            paint();
+        });
+    }
+
     // ── Boot ────────────────────────────────────────────────────
 
     function init() {
         initThemeToggle();
+        initSliders(document);
         initSaveBar();
         initActionBar();
         upgradeAll(document);
