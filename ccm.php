@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.9.0
+ * Version: 8.10.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.9.0');
+    define('CCM_HELPER_VERSION', '8.10.0');
 }
 
 /**
@@ -331,6 +331,10 @@ if (!defined('CCM_HELPER_ROOT_URL')) {
     define('CCM_HELPER_ROOT_URL', plugin_dir_url(__FILE__));
 }
 
+if (!defined('CCM_HELPER_BASENAME')) {
+    define('CCM_HELPER_BASENAME', plugin_basename(__FILE__));
+}
+
 /* ────────────────────────────────────────────────────────────────
  *  One-time cleanup: dead data left behind by the Premium and AI
  *  Performance Hub modules (inc/premium.php, inc/ai-hub.php), both
@@ -394,6 +398,17 @@ register_deactivation_hook(__FILE__, 'ccm_tools_on_deactivate');
  * dance leaving a stale or missing drop-in.
  */
 function ccm_tools_on_activate() {
+    /*
+     * Register the domain straight away rather than waiting for the first
+     * scheduled update check, so a new install appears in the register the
+     * moment it is switched on. It cannot fail in a way that matters: the
+     * check swallows every error and the plugin carries on regardless.
+     */
+    require_once CCM_HELPER_ROOT_DIR . 'inc/registry.php';
+    if (function_exists('ccm_tools_registry_on_activate')) {
+        ccm_tools_registry_on_activate();
+    }
+
     require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php';
     if (!function_exists('ccm_tools_redis_get_settings') || !function_exists('ccm_tools_redis_refresh_dropin')) {
         return;
@@ -421,6 +436,9 @@ function ccm_tools_on_deactivate() {
 }
 
 // IMPORTANT: Load text domain only on init hook to avoid "too early" warnings
+add_action('admin_notices', 'ccm_tools_registry_admin_notice');
+add_filter('plugin_row_meta', 'ccm_tools_registry_plugin_row_meta', 10, 2);
+
 add_action('init', 'ccmtools_load_textdomain');
 
 /**
@@ -458,7 +476,8 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/tableconverter.php';
     require_once CCM_HELPER_ROOT_DIR . 'inc/ajax-handlers.php';
     require_once CCM_HELPER_ROOT_DIR . 'inc/error-log.php'; // Add the new error log file
-    require_once CCM_HELPER_ROOT_DIR . 'inc/update.php';  // Add GitHub update functionality
+    require_once CCM_HELPER_ROOT_DIR . 'inc/registry.php'; // Site register + update entitlement
+    require_once CCM_HELPER_ROOT_DIR . 'inc/update.php';  // Update channel
     require_once CCM_HELPER_ROOT_DIR . 'inc/woocommerce-tools.php'; // Add WooCommerce tools
     require_once CCM_HELPER_ROOT_DIR . 'inc/webp-converter.php'; // Add WebP image converter
     require_once CCM_HELPER_ROOT_DIR . 'inc/performance-catalogue.php'; // setting definitions

@@ -95,5 +95,5 @@ echo "top-level entries in the archive (must be exactly ccm-tools/):"
 unzip -Z1 ccm-tools.zip | cut -d/ -f1 | sort -u | sed 's/^/  /'
 echo
 echo "to publish:"
-echo "  gh release create v$VERSION ccm-tools.zip \"archive/ccm-tools-$VERSION.zip\" ccm-tools.zip.sha256 \\"
-echo "     --title \"v$VERSION\" --notes-file <(sed -n '/^## v$VERSION/,/^## v7/p' CHANGELOG.md | head -n -1)"
+echo "  ./release.sh $VERSION            # stage it on the update service"
+echo "  ./release.sh $VERSION --publish  # stage it and turn it on for the fleet"

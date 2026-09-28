@@ -1,5 +1,46 @@
 # CCM Tools — Changelog
 
+## v8.10.0 — Updates come from us now
+
+CCM Tools updates no longer come from GitHub. They come from the Click Click
+Media update service, and they are part of what you get while you have an
+active service with us.
+
+**What this changes for a site that is a current customer: nothing.** Updates
+arrive the same way, in the same place, on the same schedule.
+
+**What it changes for a site that is not:** the plugin keeps working exactly as
+it is — every .htaccess rule, the Redis drop-in, the converted images, every
+optimiser filter, all untouched and all still running — and it stops being
+offered new versions. wp-admin says so plainly, on our own screens and on the
+Plugins page, and nowhere else. A security release is served to every site
+regardless, because a plugin with our name on it being exploitable is our
+problem whoever is paying.
+
+- **The site registers itself on activation** and checks in every twelve hours.
+  It sends its URL, name, WordPress version, PHP version and the plugin
+  version. Nothing else, and nothing secret.
+- **The check fails open, in every direction.** A timeout, a 500, a captive
+  portal, truncated JSON, the service switched off entirely — all of them leave
+  the site exactly as it was. Entitlement is only ever withdrawn by an explicit
+  answer saying so, and the last good answer is kept, so an outage cannot put a
+  notice in front of every customer at once.
+- **No credential lives on a client site.** The old updater could authenticate
+  to a private repo with a GitHub token in `wp-config.php`, which would have
+  meant a token with access to the organisation's repositories readable on
+  every server we do not own. The service authorises by domain instead.
+- **The integrity gate got simpler and stronger.** The checksum now arrives
+  with the release rather than from a second URL that could fail on its own,
+  and the download link is re-issued at the moment of download, so an update
+  can no longer go stale between the check and the click. It still fails
+  closed. Where a release is signed and the host has libsodium, the signature
+  is verified as well as the digest.
+- **`?force-check=1` actually re-checks again.** It was clearing WordPress's
+  transient and then reading our own cached answer straight back, so it
+  reported the same version it already had and looked broken.
+- Removed the dead GitHub API client, the unused repo properties and a fallback
+  download path that could never fire.
+
 ## v8.9.0 — Administrators only, and the last of the rails
 
 **Only an administrator can see or use CCM Tools now.** The gate was the

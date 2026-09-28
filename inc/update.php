@@ -1,9 +1,9 @@
 <?php
 /**
- * GitHub-based plugin updates
+ * Plugin updates, from the CCM update service
  * 
  * Based on the well-tested pattern used by many WordPress plugins
- * that update from GitHub repositories.
+ * that update from the CCM update service at updates.clickclick.media.
  *
  * @package CCM Tools
  */
@@ -14,20 +14,18 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * CCM GitHub Updater
+ * CCM Tools Updater
  * 
  * A streamlined updater class that follows WordPress conventions
- * and properly handles GitHub releases.
+ * and handles releases served by the update service.
  */
-class CCM_GitHub_Updater {
+class CCM_Tools_Updater {
     private $file;             // Plugin file path
     private $plugin;           // Plugin basename
     private $basename;         // Plugin directory name
     private $active;           // Whether the plugin is active
-    private $username;         // GitHub username
-    private $repository;       // GitHub repository name
-    private $authorize_token;  // GitHub API token
-    private $github_response;  // Cached GitHub API response
+    private $authorize_token;  // always empty; see add_auth_to_request()
+    private $release_response; // Cached release record from the update service
     
     /**
      * Class constructor
@@ -53,13 +51,9 @@ class CCM_GitHub_Updater {
         $this->basename = dirname($this->plugin);
         $this->active = is_plugin_active($this->plugin);
         
-        // Set GitHub information
-        $this->username = 'ClickClickMedia';
-        $this->repository = 'ccm-tools';
-        // Token is OPTIONAL for public repositories
-        // For private repos, define CCM_GITHUB_TOKEN in wp-config.php: define('CCM_GITHUB_TOKEN', 'your_token');
-        // Authenticated requests get higher API rate limits (5000/hr vs 60/hr)
-        $this->authorize_token = defined('CCM_GITHUB_TOKEN') ? CCM_GITHUB_TOKEN : '';
+        // Releases come from the CCM update service, which authorises by
+        // domain. Nothing secret is stored on the site.
+        $this->authorize_token = '';
         
         // Add required hooks with higher priority to ensure they run early
         add_filter('pre_set_site_transient_update_plugins', array($this, 'modify_transient'), 5, 1);
@@ -117,29 +111,29 @@ class CCM_GitHub_Updater {
             $transient->checked[$this->plugin] = $plugin_data['Version'];
         }
 
-        // Get release information from GitHub
+        // Load whatever release this site is being offered
         $this->get_repository_info();
 
         // Check if we have a valid response
-        if (empty($this->github_response) || !is_object($this->github_response)) {
+        if (empty($this->release_response) || !is_object($this->release_response)) {
             return $transient;
         }
 
         // IMPORTANT: Ensure plugin version is being compared correctly
-        // Get latest plugin version from GitHub
-        $github_version = $this->get_github_version();
+        // Version on offer
+        $release_version = $this->get_release_version();
 
         // Get current plugin version - try multiple approaches to ensure we get it
         $plugin_data = get_plugin_data($this->file);
         $current_version = $plugin_data['Version'];
 
         // Compare versions and add update information if newer
-        if (version_compare($github_version, $current_version, '>')) {
+        if (version_compare($release_version, $current_version, '>')) {
             // Force plugin into the response section for immediate update
-            $transient->response[$this->plugin] = $this->build_update_object($github_version);
+            $transient->response[$this->plugin] = $this->build_update_object($release_version);
         } else {
             // No update needed, but provide info for the 'View details' screen
-            $transient->no_update[$this->plugin] = $this->build_update_object($github_version);
+            $transient->no_update[$this->plugin] = $this->build_update_object($release_version);
         }
 
         return $transient;
@@ -168,21 +162,21 @@ class CCM_GitHub_Updater {
 
         // Don't recompute if we've already added our plugin to the response
         if (!isset($transient->response[$this->plugin])) {
-            // Get release information from GitHub
+            // Load whatever release this site is being offered
             $this->get_repository_info();
 
-            if (!empty($this->github_response) && is_object($this->github_response)) {
-                $github_version   = $this->get_github_version();
+            if (!empty($this->release_response) && is_object($this->release_response)) {
+                $release_version   = $this->get_release_version();
                 $plugin_data      = get_plugin_data($this->file);
                 $current_version  = $plugin_data['Version'];
 
                 // Compare versions
-                if (version_compare($github_version, $current_version, '>')) {
+                if (version_compare($release_version, $current_version, '>')) {
                     if (!isset($transient->response)) {
                         $transient->response = array();
                     }
 
-                    $transient->response[$this->plugin] = $this->build_update_object($github_version);
+                    $transient->response[$this->plugin] = $this->build_update_object($release_version);
                 }
             }
         }
@@ -232,15 +226,15 @@ class CCM_GitHub_Updater {
      * Build the stdClass WordPress expects in the update transient's
      * response/no_update maps for this plugin.
      *
-     * @param string $github_version
+     * @param string $release_version
      * @return stdClass
      */
-    private function build_update_object($github_version) {
+    private function build_update_object($release_version) {
         $obj              = new stdClass();
         $obj->slug        = $this->basename;
         $obj->plugin      = $this->plugin;
-        $obj->new_version = $github_version;
-        $obj->url         = $this->github_response->html_url;
+        $obj->new_version = $release_version;
+        $obj->url         = $this->release_response->html_url;
         $obj->package     = $this->get_download_url();
         $obj->tested      = $this->get_current_wp_version();
         $obj->icons       = $this->get_icons();
@@ -248,54 +242,91 @@ class CCM_GitHub_Updater {
     }
 
     /**
-     * Get release information from GitHub
-     * 
-     * @return bool True if successful, false otherwise
+     * Load the release this site is currently being offered, if any.
+     *
+     * The answer comes from the update service, which is also what decides
+     * whether this site is entitled to one at all. Caching lives there (twelve
+     * hours on a good answer), so there is deliberately no second cache here:
+     * the previous arrangement had this method's one-hour transient and
+     * WordPress's twelve-hour update transient disagreeing about the package
+     * URL, which the integrity gate then had to make excuses for.
+     *
+     * @return bool True when a release is on offer.
      */
     private function get_repository_info() {
-        // Check for cached response
-        if (!empty($this->github_response)) {
+        if (!empty($this->release_response)) {
             return true;
         }
-        
-        // Check if we have a cached response that's still valid
-        $transient_key = 'ccm_github_' . md5($this->basename);
-        $cached_response = get_transient($transient_key);
-        
-        if ($cached_response && is_object($cached_response)) {
-            $this->github_response = $cached_response;
-            return true;
-        }
-        
-        // Make API request to GitHub
-        $url = "https://api.github.com/repos/{$this->username}/{$this->repository}/releases/latest";
-        
-        $response = $this->api_request($url);
-        
-        // Check for valid response
-        if (empty($response)) {
+
+        if (!function_exists('ccm_tools_registry_update_info')) {
             return false;
         }
-        
-        // Cache response with shorter duration to catch updates faster
-        $this->github_response = $response;
-        set_transient($transient_key, $response, HOUR_IN_SECONDS); // 1 hour cache
-        
+
+        $update = ccm_tools_registry_update_info();
+        if (!is_array($update) || empty($update['version']) || empty($update['package'])) {
+            return false;
+        }
+
+        $this->release_response = $this->build_release_record($update);
         return true;
+    }
+
+    /**
+     * Shape one answer from the service into the record the rest of this class
+     * reads.
+     *
+     * The shape is GitHub's release payload, because that is what it used to
+     * be and the details modal, the changelog and the icons all still read it.
+     * The single asset is the package URL issued for this site: short lived,
+     * and bound to this domain and this version.
+     *
+     * @param array $update
+     * @return stdClass
+     */
+    private function build_release_record(array $update) {
+        $record = new stdClass();
+        $record->tag_name     = (string) $update['version'];
+        $record->html_url     = 'https://clickclickmedia.com.au/';
+        $record->body         = isset($update['notes']) ? (string) $update['notes'] : '';
+        $record->published_at = gmdate('c');
+        $record->sha256       = isset($update['sha256']) ? strtolower((string) $update['sha256']) : '';
+        $record->signature    = isset($update['signature']) ? (string) $update['signature'] : '';
+        $record->is_security  = !empty($update['security']);
+        $record->tested_wp    = isset($update['tested']) ? (string) $update['tested'] : '';
+
+        $asset = new stdClass();
+        $asset->name = 'ccm-tools.zip';
+        $asset->browser_download_url = (string) $update['package'];
+        $record->assets = array($asset);
+
+        return $record;
+    }
+
+    /**
+     * Host the update service answers on. Anything downloaded from anywhere
+     * else is not ours and this class leaves it alone.
+     *
+     * @return string
+     */
+    private function service_host() {
+        $base = function_exists('ccm_tools_registry_endpoint')
+            ? ccm_tools_registry_endpoint()
+            : 'https://updates.clickclick.media';
+        return strtolower((string) wp_parse_url($base, PHP_URL_HOST));
     }
     
     /**
-     * Get the version number from GitHub
+     * Version number of the release on offer
      * 
      * @return string Version number
      */
-    private function get_github_version() {
-        if (empty($this->github_response)) {
+    private function get_release_version() {
+        if (empty($this->release_response)) {
             return '0.0.0'; // Return a default version
         }
         
         // Remove 'v' prefix if present and ensure it's a clean version number
-        $version = ltrim($this->github_response->tag_name, 'v');
+        $version = ltrim($this->release_response->tag_name, 'v');
         
         // Ensure it's a valid version format 
         if (strpos($version, '.') === false) {
@@ -311,12 +342,12 @@ class CCM_GitHub_Updater {
      * @return string Download URL
      */
     private function get_download_url() {
-        if (empty($this->github_response)) {
+        if (empty($this->release_response)) {
             return '';
         }
 
         // First check for assets (preferred way)
-        if (!empty($this->github_response->assets) && is_array($this->github_response->assets)) {
+        if (!empty($this->release_response->assets) && is_array($this->release_response->assets)) {
             /*
              * Prefer the canonical name. A release carries two zips, and
              * get_checksum_url() pairs the checksum by filename, so picking
@@ -325,198 +356,185 @@ class CCM_GitHub_Updater {
              * closed, a release uploaded in the other order would block every
              * site's update rather than quietly skip the check.
              */
-            foreach ($this->github_response->assets as $asset) {
+            foreach ($this->release_response->assets as $asset) {
                 if (isset($asset->browser_download_url, $asset->name) && $asset->name === 'ccm-tools.zip') {
                     return $asset->browser_download_url;
                 }
             }
 
-            // Match the .zip suffix specifically (not just "contains .zip
-            // anywhere"), so the "ccm-tools.zip.sha256" checksum asset
-            // published alongside it (see get_checksum_url() below) is
-            // never mistaken for the actual download package.
-            foreach ($this->github_response->assets as $asset) {
+            // Match the .zip suffix specifically rather than "contains .zip
+            // anywhere". The service issues one asset, but this stays honest
+            // if that ever changes.
+            foreach ($this->release_response->assets as $asset) {
                 if (isset($asset->browser_download_url, $asset->name) && substr($asset->name, -4) === '.zip') {
                     return $asset->browser_download_url;
                 }
             }
         }
 
-        // Fallback to zipball URL (auto-generated GitHub archive)
-        if (isset($this->github_response->zipball_url)) {
-            return $this->github_response->zipball_url;
-        }
-
         return '';
     }
 
     /**
-     * Find the "<zip-name>.sha256" checksum asset published alongside the
-     * release zip, if any.
+     * The SHA-256 the service published for this release.
      *
-     * @return string Asset download URL, or '' if no checksum asset was published.
+     * It arrives with the release record rather than being fetched from a
+     * second URL. One request fewer is one failure mode fewer, and the gate
+     * below fails closed, so a checksum that could not be fetched used to mean
+     * a refused update for the whole fleet.
+     *
+     * @return string Lowercase 64-char hex digest, or '' if there isn't one.
      */
-    private function get_checksum_url() {
-        if (empty($this->github_response) || empty($this->github_response->assets) || !is_array($this->github_response->assets)) {
+    private function get_expected_checksum() {
+        if (empty($this->release_response) || empty($this->release_response->sha256)) {
             return '';
         }
 
-        /*
-         * The checksum must belong to the zip we are actually downloading, not
-         * merely be the first asset ending .sha256. A release carries two zips
-         * (ccm-tools.zip and the versioned archive copy), so "first match" was
-         * only ever correct because build-zip.sh makes the second a byte-for-
-         * byte copy of the first. Tie them together by name instead.
-         */
-        $package = $this->get_download_url();
-        $want = $package !== '' ? basename((string) wp_parse_url($package, PHP_URL_PATH)) . '.sha256' : '';
-
-        if ($want !== '') {
-            foreach ($this->github_response->assets as $asset) {
-                if (isset($asset->browser_download_url, $asset->name) && $asset->name === $want) {
-                    return $asset->browser_download_url;
-                }
-            }
-        }
-
-        return '';
+        $digest = strtolower(trim((string) $this->release_response->sha256));
+        return preg_match('/^[a-f0-9]{64}$/', $digest) ? $digest : '';
     }
 
     /**
-     * Fetch and parse the expected SHA-256 digest from a checksum asset URL.
+     * Verify a detached Ed25519 signature over the downloaded package.
      *
-     * Accepts either a bare hex digest, or the common `sha256sum` output
-     * format ("<hex>  <filename>").
+     * Optional, and only as good as the key: a release without a signature is
+     * still gated on its SHA-256. It exists because the digest and the zip
+     * travel the same channel, so anyone who could serve a bad zip could serve
+     * a matching digest with it. The signing key never touches the service.
      *
-     * @param string $checksum_url
-     * @return string Lowercase 64-char hex digest, or '' if it couldn't be read/parsed.
+     * @param string $file      Path to the downloaded package.
+     * @param string $signature Base64 detached signature.
+     * @return bool|null true verified, false rejected, null could not check.
      */
-    private function fetch_expected_checksum($checksum_url) {
-        $response = wp_remote_get($checksum_url, array(
-            'timeout'   => 15,
-            'sslverify' => true,
-        ));
-
-        if (is_wp_error($response) || 200 !== wp_remote_retrieve_response_code($response)) {
-            return '';
+    private function verify_signature($file, $signature) {
+        if ($signature === '' || !defined('CCM_TOOLS_RELEASE_PUBKEY') || CCM_TOOLS_RELEASE_PUBKEY === '') {
+            return null;
+        }
+        if (!function_exists('sodium_crypto_sign_verify_detached')) {
+            return null; // host has no libsodium; the digest gate still applies
         }
 
-        $body  = trim(wp_remote_retrieve_body($response));
-        $parts = preg_split('/\s+/', $body);
-        $hash  = isset($parts[0]) ? strtolower($parts[0]) : '';
+        $key = base64_decode(CCM_TOOLS_RELEASE_PUBKEY, true);
+        $sig = base64_decode($signature, true);
+        if ($key === false || $sig === false
+            || strlen($key) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES
+            || strlen($sig) !== SODIUM_CRYPTO_SIGN_BYTES) {
+            return null;
+        }
 
-        return preg_match('/^[a-f0-9]{64}$/', $hash) ? $hash : '';
+        $bytes = @file_get_contents($file);
+        if ($bytes === false) {
+            return null;
+        }
+
+        try {
+            return sodium_crypto_sign_verify_detached($sig, $bytes, $key) ? true : false;
+        } catch (Exception $e) {
+            return null;
+        } catch (Error $e) {
+            return null;
+        }
     }
 
     /**
-     * Verify the downloaded release package's integrity against a published
-     * "ccm-tools.zip.sha256" checksum asset, before WordPress trusts it.
+     * Download our own package and verify it before WordPress installs it.
      *
-     * Hooked to `upgrader_pre_download` rather than `upgrader_source_selection`
-     * or `upgrader_post_install`: by the time either of those filters fires,
-     * WP_Upgrader::unpack_package() has already extracted AND DELETED the
-     * downloaded zip (see wp-admin/includes/class-wp-upgrader.php), so the
-     * raw package bytes are no longer available to hash at that point.
-     * Intercepting the download itself is the only reliable place to check
-     * the actual downloaded file before it's ever extracted or installed.
+     * This gate fails CLOSED. It used to return $reply whenever it could not
+     * verify, so WordPress installed the package unverified with nothing in
+     * the admin to say the check had been skipped: anyone who could make one
+     * HTTPS GET fail turned integrity checking off for the entire fleet, and
+     * cutting a release without the checksum asset did the same by accident.
+     * Refusing an update is recoverable, because the site stays on the version
+     * it is running and the administrator is told why. Installing an
+     * unverified package is not.
      *
-     * RELEASE PROCESS NOTE: publish a `ccm-tools.zip.sha256` asset alongside
-     * the plugin zip on every GitHub release, containing just the lowercase
-     * hex SHA-256 digest of that zip (a `sha256sum ccm-tools.zip` style line
-     * is also accepted). If the asset is missing, this gate logs a warning
-     * and lets the existing unverified download proceed, so this rolls out
-     * without breaking updates from releases published before it existed.
+     * The package URL is re-issued here rather than taken from $package. The
+     * URL WordPress holds comes out of a transient that lives for twelve hours
+     * while the URLs this service issues are short lived and bound to one
+     * domain, so by the time somebody clicks Update the cached one is usually
+     * expired. Asking again costs one request and removes the whole class of
+     * "the update link went stale" failures.
      *
-     * @param bool|WP_Error|string $reply    Short-circuit value; false means "let WP download normally".
-     * @param string               $package  URL of the package being downloaded.
-     * @param WP_Upgrader          $upgrader Unused; part of the filter signature.
+     * @param bool|WP_Error|string $reply
+     * @param string               $package
+     * @param object               $upgrader
      * @return bool|WP_Error|string
      */
     public function verify_package_checksum($reply, $package, $upgrader) {
-        // Something upstream already made a decision, or this isn't a
-        // package URL we recognise as belonging to us — don't interfere.
+        // Something upstream already decided, or there is nothing to check.
         if (false !== $reply || empty($package)) {
             return $reply;
         }
 
-        $this->get_repository_info();
+        // Only ever interfere with our own package.
+        $host = strtolower((string) wp_parse_url($package, PHP_URL_HOST));
+        if ($host === '' || $host !== $this->service_host()) {
+            return $reply;
+        }
 
-        /*
-         * This gate fails CLOSED.
-         *
-         * It used to return $reply whenever it could not verify — no checksum
-         * asset on the release, the fetch failing, or the stored package URL
-         * not matching the freshly-fetched one. WordPress then downloaded and
-         * installed the package unverified, with nothing in the admin to say
-         * the check had been skipped. Anyone who could make one HTTPS GET fail
-         * turned the integrity check off for the whole fleet, and cutting one
-         * release without the asset did the same by accident.
-         *
-         * Refusing an update is recoverable: the site stays on the version it
-         * is running and the admin sees why. Installing an unverified package
-         * is not.
-         */
+        // Ask again so the URL and the digest are both current and belong to
+        // each other.
+        $this->release_response = null;
+        if (function_exists('ccm_tools_registry_check')) {
+            ccm_tools_registry_check(true);
+        }
 
-        /*
-         * The package URL comes from the 12-hour update_plugins transient while
-         * get_download_url() comes from our own 1-hour one, so they can
-         * legitimately disagree just after a release. Only treat a mismatch as
-         * "not ours" when the host is not ours either; if it IS our repo and
-         * the URL still differs, that is exactly the case worth refusing.
-         */
-        $ours = $this->get_download_url();
-        if ($package !== $ours) {
-            $host = strtolower((string) wp_parse_url($package, PHP_URL_HOST));
-            $is_github = ($host === 'github.com' || substr($host, -20) === 'githubusercontent.com');
-
-            if (!$is_github) {
-                return $reply;
-            }
-
+        if (!$this->get_repository_info()) {
             return new WP_Error(
-                'ccm_package_url_mismatch',
-                __('The CCM Tools update package does not match the release this site checked against, so it has not been installed. Try again in an hour, once the update cache has refreshed.', 'ccm-tools')
+                'ccm_release_unavailable',
+                __('CCM Tools could not confirm which release this site should install, so nothing has been installed. Please try again shortly.', 'ccm-tools')
             );
         }
 
-        $checksum_url = $this->get_checksum_url();
-        if (empty($checksum_url)) {
+        $expected = $this->get_expected_checksum();
+        if ($expected === '') {
             return new WP_Error(
                 'ccm_checksum_missing',
                 __('This CCM Tools release did not publish a checksum, so the download could not be verified and has not been installed.', 'ccm-tools')
             );
         }
 
-        $expected = $this->fetch_expected_checksum($checksum_url);
-        if (empty($expected)) {
+        $fresh = $this->get_download_url();
+        if ($fresh === '') {
             return new WP_Error(
-                'ccm_checksum_unreadable',
-                __('The published checksum for this CCM Tools release could not be read, so the download could not be verified and has not been installed.', 'ccm-tools')
+                'ccm_package_unavailable',
+                __('CCM Tools could not obtain a download link for this release, so nothing has been installed.', 'ccm-tools')
             );
         }
 
-        $tmp_file = download_url($package);
+        $tmp_file = download_url($fresh);
         if (is_wp_error($tmp_file)) {
             return $tmp_file;
         }
 
         $actual = hash_file('sha256', $tmp_file);
-
         if (!is_string($actual) || !hash_equals($expected, strtolower($actual))) {
             @unlink($tmp_file);
             return new WP_Error(
                 'ccm_checksum_mismatch',
-                __('CCM Tools update package failed its integrity check (SHA-256 mismatch against the published checksum). The update has been blocked to protect this site. Please try again later, or download the release manually.', 'ccm-tools')
+                __('CCM Tools update package failed its integrity check (SHA-256 mismatch against the published checksum). The update has been blocked to protect this site.', 'ccm-tools')
+            );
+        }
+
+        // A signature, where one is published and this host can check it, is
+        // the stronger statement: the digest travels the same channel as the
+        // zip, a signature does not.
+        $signed = $this->verify_signature($tmp_file, (string) $this->release_response->signature);
+        if ($signed === false) {
+            @unlink($tmp_file);
+            return new WP_Error(
+                'ccm_signature_invalid',
+                __('CCM Tools update package failed its signature check. The update has been blocked to protect this site.', 'ccm-tools')
             );
         }
 
         // Hand WordPress the file we already downloaded and verified so it
-        // doesn't fetch the package a second time.
+        // does not fetch the package a second time.
         return $tmp_file;
     }
     
     /**
-     * Override the plugin info popup with GitHub details
+     * Override the plugin info popup with our own release details
      * 
      * @param object $result The result object
      * @param string $action The API action being performed
@@ -535,7 +553,7 @@ class CCM_GitHub_Updater {
         $this->get_repository_info();
         
         // Return early if we don't have information
-        if (empty($this->github_response)) {
+        if (empty($this->release_response)) {
             return $result;
         }
         
@@ -546,17 +564,17 @@ class CCM_GitHub_Updater {
         $plugin_info = new stdClass();
         $plugin_info->name = $plugin_data['Name'];
         $plugin_info->slug = $this->basename;
-        $plugin_info->version = $this->get_github_version();
+        $plugin_info->version = $this->get_release_version();
         $plugin_info->author = $plugin_data['Author'];
         $plugin_info->author_profile = $plugin_data['AuthorURI'];
-        $plugin_info->homepage = $plugin_data['PluginURI'] ?: $this->github_response->html_url;
+        $plugin_info->homepage = $plugin_data['PluginURI'] ?: $this->release_response->html_url;
         $plugin_info->requires = $plugin_data['RequiresWP'] ?: '5.0';
         $plugin_info->requires_php = $plugin_data['RequiresPHP'] ?: '7.0';
         $plugin_info->tested = $this->get_current_wp_version();  // Use current WordPress version
         
         // Format timestamps
-        $plugin_info->last_updated = isset($this->github_response->published_at) 
-                                   ? date('Y-m-d', strtotime($this->github_response->published_at)) 
+        $plugin_info->last_updated = isset($this->release_response->published_at) 
+                                   ? date('Y-m-d', strtotime($this->release_response->published_at)) 
                                    : date('Y-m-d');
         
         // Set sections
@@ -616,17 +634,17 @@ class CCM_GitHub_Updater {
     }
     
     /**
-     * Format the changelog from GitHub release body
+     * Format the changelog from the release notes
      * 
      * @return string Formatted changelog
      */
     private function get_changelog() {
-        if (empty($this->github_response) || empty($this->github_response->body)) {
+        if (empty($this->release_response) || empty($this->release_response->body)) {
             return 'No changelog provided';
         }
         
         // Simple markdown to HTML conversion — escape raw HTML first
-        $changelog = esc_html($this->github_response->body);
+        $changelog = esc_html($this->release_response->body);
         $changelog = preg_replace('/\r\n|\r/', "\n", $changelog);
         $changelog = preg_replace('/###(.*?)\n/', '<h3>$1</h3>', $changelog);
         $changelog = preg_replace('/##(.*?)\n/', '<h2>$1</h2>', $changelog);
@@ -716,90 +734,38 @@ class CCM_GitHub_Updater {
     }
     
     /**
-     * Add authentication to GitHub API requests
-     * 
-     * @param array $args Request arguments
-     * @param string $url URL being requested
-     * @return array Modified request arguments
+     * Identify ourselves to the update service.
+     *
+     * Deliberately carries no credential. The previous version supported a
+     * GitHub personal access token via a CCM_GITHUB_TOKEN constant in
+     * wp-config.php, which would have meant a token with access to the
+     * organisation's repositories sitting readable on every client server.
+     * The service authorises by domain instead, so a site holds nothing worth
+     * stealing.
+     *
+     * @param array  $args
+     * @param string $url
+     * @return array
      */
     public function add_auth_to_request($args, $url) {
-        // Only add token to GitHub URLs
-        $host = wp_parse_url($url, PHP_URL_HOST);
-        if ($host !== 'github.com' && $host !== 'api.github.com') {
+        $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+        if ($host === '' || $host !== $this->service_host()) {
             return $args;
         }
-        
-        // Add token if available
-        if (!empty($this->authorize_token)) {
-            if (!isset($args['headers'])) {
-                $args['headers'] = array();
-            }
-            
-            $args['headers']['Authorization'] = 'Bearer ' . $this->authorize_token;
-            $args['headers']['Accept'] = 'application/vnd.github+json';
-            $args['headers']['X-GitHub-Api-Version'] = '2022-11-28';
-            
-            // Add user agent if not set
-            if (!isset($args['headers']['User-Agent'])) {
-                $args['headers']['User-Agent'] = 'WordPress/' . get_bloginfo('version');
-            }
+
+        if (!isset($args['headers']) || !is_array($args['headers'])) {
+            $args['headers'] = array();
         }
-        
+        if (!isset($args['headers']['User-Agent'])) {
+            $args['headers']['User-Agent'] = 'CCM-Tools/'
+                . (defined('CCM_HELPER_VERSION') ? CCM_HELPER_VERSION : '0')
+                . '; ' . home_url();
+        }
+
         return $args;
     }
     
-    /**
-     * Make an API request to GitHub
-     * 
-     * Works with both public repos (no token needed) and private repos (token required).
-     * For public repositories, GitHub's API allows unauthenticated requests with lower rate limits.
-     * 
-     * @param string $url API URL
-     * @return object|bool Response object or false on failure
-     */
-    private function api_request($url) {
-        // Build headers - token is optional for public repos
-        $headers = array(
-            'Accept' => 'application/vnd.github+json',
-            'X-GitHub-Api-Version' => '2022-11-28',
-            'User-Agent' => 'WordPress/' . get_bloginfo('version') . '; ' . home_url()
-        );
-        
-        // Only add Authorization header if token is available (for private repos or higher rate limits)
-        if (!empty($this->authorize_token)) {
-            $headers['Authorization'] = 'Bearer ' . $this->authorize_token;
-        }
-        
-        $response = wp_remote_get($url, array(
-            'headers' => $headers,
-            'timeout' => 20,
-            'sslverify' => true, // Ensure SSL verification is enabled for security
-            'redirection' => 5 // Follow up to 5 redirects (important for repository renames)
-        ));
-        
-        // Check for errors
-        if (is_wp_error($response)) {
-            return false;
-        }
-        
-        // Check response code
-        $response_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        
-        if ($response_code !== 200) {
-            return false;
-        }
-        
-        // Parse JSON response
-        $data = json_decode($body);
-        
-        if (empty($data)) {
-            return false;
-        }
-        
-        return $data;
-    }
-    
+     
     /**
      * Force plugin icons with CSS if they're not displaying properly
      */
@@ -879,13 +845,23 @@ class CCM_GitHub_Updater {
             return;
         }
 
-        // Clear ALL caches to force fresh data
-        $transient_key = 'ccm_github_' . md5($this->basename);
-        delete_transient($transient_key);
+        // Clear ALL caches to force fresh data. The legacy ccm_github_*
+        // transient is still deleted so an upgraded site sheds the row.
+        delete_transient('ccm_github_' . md5($this->basename));
         delete_transient('ccm_last_force_check');
-        
+
         // Clear our internal cache
-        $this->github_response = null;
+        $this->release_response = null;
+
+        /*
+         * Re-ask the update service. Without this a force check only cleared
+         * WordPress's transient and then read our own twelve-hour answer
+         * straight back, so "Check again" reported the same version it had a
+         * moment ago and looked broken.
+         */
+        if (function_exists('ccm_tools_registry_check')) {
+            ccm_tools_registry_check(true);
+        }
         
         // Clear the plugin updates transient to force WordPress to re-check
         delete_site_transient('update_plugins');
@@ -903,7 +879,7 @@ function ccm_initialize_updater() {
         return;
     }
 
-    if (!class_exists('CCM_GitHub_Updater')) {
+    if (!class_exists('CCM_Tools_Updater')) {
         return;
     }
 
@@ -934,7 +910,7 @@ function ccm_initialize_updater() {
     }
     
     $ccm_updater_bootstrapped = true;
-    new CCM_GitHub_Updater($plugin_file);
+    new CCM_Tools_Updater($plugin_file);
 }
 
 // Initialize on multiple hooks to ensure we catch updates
@@ -947,9 +923,10 @@ add_action('admin_init', 'ccm_initialize_updater');
 // just plugins.php/update-core.php — so without a capability + nonce check
 // any logged-in user who can load any wp-admin page at all (a Subscriber, a
 // WooCommerce customer on their account screen, etc.) could hit
-// wp-admin/profile.php?force-check=1 in a loop, bypass the hourly GitHub
-// API cache every time, and burn the shared 60-requests/hour unauthenticated
-// rate limit for every CCM site sharing that egress IP. Gated the same way
+// wp-admin/profile.php?force-check=1 in a loop, bypass the hourly update
+// cache every time. That used to burn the shared 60-requests/hour
+// unauthenticated GitHub budget for every CCM site on that egress IP.
+// Gated the same way
 // as the properly-scoped twin, force_update_check_on_plugins_page() above.
 add_action('admin_init', function () {
     if (!isset($_GET['force-check']) || '1' !== $_GET['force-check']) {
@@ -971,5 +948,11 @@ add_action('admin_init', function () {
     $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '%_site_transient_update_plugins%'");
     delete_site_transient('update_plugins');
     wp_clean_plugins_cache(true);
+
+    // And ask the update service again, or the rebuilt transient is filled
+    // from the answer we already had.
+    if (function_exists('ccm_tools_registry_check')) {
+        ccm_tools_registry_check(true);
+    }
 }, 1);
 
