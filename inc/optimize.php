@@ -21,38 +21,420 @@ function ccm_tools_get_safe_index_length() {
 }
 
 /**
- * Validate that a table name exists in the current database
- * Security: Prevents SQL injection by validating against actual database tables
- * 
+ * Validate that a table name exists in the current database.
+ *
+ * Thin wrapper around the canonical ccm_tools_validate_table_name() in
+ * tableconverter.php (both files are loaded together by ccm.php, so it's
+ * always available by call time). Kept under this name — rather than
+ * deleted and replaced — because ajax-handlers.php and other code in this
+ * file already call it directly; renaming would be a breaking change for
+ * callers this agent doesn't own.
+ *
  * @param string $table_name The table name to validate
  * @return bool True if valid, false otherwise
  */
 function ccm_tools_validate_table_name_optimize($table_name) {
-    global $wpdb;
-    
-    if (empty($table_name) || !is_string($table_name)) {
-        return false;
-    }
-    
-    // Get all tables in the database
-    $tables = $wpdb->get_col("SHOW TABLES");
-    
-    // Check if the provided table name exists in the database
-    return in_array($table_name, $tables, true);
+    return ccm_tools_validate_table_name($table_name);
 }
 
 /**
  * Get appropriate collation for WordPress databases.
  *
- * Always returns utf8mb4_unicode_520_ci to match WordPress core default.
- * Using utf8mb4_0900_ai_ci on MySQL 8.0+ would cause "Illegal mix of collations"
- * errors when JOINing with tables created by WordPress/plugins using 520_ci.
+ * Thin wrapper around the canonical ccm_tools_get_appropriate_collation()
+ * in tableconverter.php — see ccm_tools_validate_table_name_optimize()
+ * above for why the wrapper exists rather than a straight delete.
  *
  * @param string $version_string MySQL/MariaDB version (accepted for backward compat, ignored)
  * @return string Always 'utf8mb4_unicode_520_ci'
  */
 function ccm_tools_get_appropriate_collation_optimize($version_string = '') {
-    return 'utf8mb4_unicode_520_ci';
+    return ccm_tools_get_appropriate_collation($version_string);
+}
+
+/**
+ * =====================================================
+ * SHARED SAFETY HELPERS
+ * =====================================================
+ */
+
+/**
+ * How many posts the trash and auto-draft sweeps delete per call.
+ *
+ * wp_delete_post() is far slower than a raw DELETE because it runs the whole
+ * deletion path — attachments, child posts, revisions, comments, commentmeta,
+ * term relationships and every hook other plugins hang off. That cost is the
+ * point of using it, but it does mean a site with tens of thousands of trashed
+ * rows cannot be cleared inside one PHP request. The sweeps therefore take a
+ * bounded batch and report what is left, so they can simply be run again.
+ *
+ * @return int
+ */
+function ccm_tools_get_post_delete_batch_size() {
+    $size = (int) apply_filters('ccm_tools_post_delete_batch_size', 200);
+
+    return $size > 0 ? $size : 200;
+}
+
+/**
+ * Reject anything that is not a bare SQL identifier.
+ *
+ * Table, column and index names cannot be parameterised, so the only safe
+ * source for them is $wpdb or the SHOW TABLES whitelist. This is a
+ * belt-and-braces check on top of that, never a substitute for it.
+ *
+ * @param string $identifier
+ * @return bool
+ */
+function ccm_tools_is_safe_sql_identifier($identifier) {
+    return is_string($identifier) && $identifier !== '' && preg_match('/^[A-Za-z0-9_]+$/', $identifier) === 1;
+}
+
+/**
+ * Group a SHOW INDEX result set by index name.
+ *
+ * SHOW INDEX returns ONE ROW PER INDEX PART, not one row per index. A
+ * composite index on (meta_key, meta_value(191), post_id) comes back as three
+ * rows that share a Key_name, and a query narrowed to
+ * "WHERE Column_name = 'meta_key'" shows only the first of the three — which
+ * looks exactly like a dedicated single-column index and is not one. Grouping
+ * is the only way to tell the two apart.
+ *
+ * @param array $rows Rows from SHOW INDEX.
+ * @return array Map of Key_name => array of its part rows.
+ */
+function ccm_tools_group_index_rows($rows) {
+    $grouped = array();
+
+    foreach ((array) $rows as $row) {
+        if (!is_object($row) || !isset($row->Key_name)) {
+            continue;
+        }
+        $key_name = (string) $row->Key_name;
+        if (!isset($grouped[$key_name])) {
+            $grouped[$key_name] = array();
+        }
+        $grouped[$key_name][] = $row;
+    }
+
+    return $grouped;
+}
+
+/**
+ * True only when an index has exactly one part and that part is $column.
+ *
+ * @param array  $parts  Part rows for a single index, from ccm_tools_group_index_rows().
+ * @param string $column Column the index is expected to cover on its own.
+ * @return bool
+ */
+function ccm_tools_index_is_single_column($parts, $column) {
+    if (!is_array($parts) || count($parts) !== 1) {
+        return false;
+    }
+
+    $part = reset($parts);
+
+    return is_object($part)
+        && isset($part->Column_name)
+        && (string) $part->Column_name === (string) $column;
+}
+
+/**
+ * Work out which indexes may be dropped in favour of the one we maintain.
+ *
+ * An index is a candidate ONLY when it has exactly one part and that part is
+ * the column being indexed. Everything else is left where it is:
+ *
+ *  - PRIMARY is never dropped.
+ *  - A composite index that merely contains this column is never dropped.
+ *    Dropping on the strength of a SHOW INDEX row is how "Add postmeta index"
+ *    used to silently destroy the composite index that "Add postmeta composite
+ *    index" had just spent twenty minutes building on the same page, along
+ *    with any index a performance plugin or a DBA had added, with no record
+ *    and no undo.
+ *
+ * @param array  $rows       Rows from an unfiltered SHOW INDEX FROM `table`.
+ * @param string $column     The column being indexed.
+ * @param array  $keep_names Index names to preserve regardless.
+ * @return array List of index names that are safe to drop.
+ */
+function ccm_tools_find_droppable_indexes($rows, $column, $keep_names = array()) {
+    $keep = array();
+    foreach ((array) $keep_names as $name) {
+        $keep[] = (string) $name;
+    }
+
+    $droppable = array();
+
+    foreach (ccm_tools_group_index_rows($rows) as $key_name => $parts) {
+        if ($key_name === 'PRIMARY' || in_array($key_name, $keep, true)) {
+            continue;
+        }
+        if (!ccm_tools_index_is_single_column($parts, $column)) {
+            continue;
+        }
+        $droppable[] = $key_name;
+    }
+
+    return $droppable;
+}
+
+/**
+ * Delete rows by id in bounded chunks, and report what actually went.
+ *
+ * One DELETE ... WHERE id IN (...) built from an unbounded set is not a
+ * deletion, it is a gamble. A site with 400,000 revisions builds a statement
+ * of roughly 3MB and shared hosts commonly cap max_allowed_packet at 4MB.
+ * MySQL rejects the statement, $wpdb->query() returns false, and a caller that
+ * counted the ids rather than the affected rows reports a purge that never
+ * happened.
+ *
+ * @param string $table      Table name — from $wpdb, never from input.
+ * @param string $column     Column holding the id.
+ * @param array  $ids        Ids to delete.
+ * @param int    $chunk_size Ids per statement.
+ * @return array array('affected' => int, 'failed' => int) where affected is
+ *               real affected rows and failed counts ids in rejected chunks.
+ */
+function ccm_tools_delete_ids_in_chunks($table, $column, $ids, $chunk_size = 500) {
+    global $wpdb;
+
+    $report = array('affected' => 0, 'failed' => 0);
+
+    $ids = array_values(array_unique(array_map('intval', (array) $ids)));
+
+    if (empty($ids)) {
+        return $report;
+    }
+
+    if (!ccm_tools_is_safe_sql_identifier($table) || !ccm_tools_is_safe_sql_identifier($column)) {
+        $report['failed'] = count($ids);
+        return $report;
+    }
+
+    $chunk_size = (int) $chunk_size;
+    if ($chunk_size < 1) {
+        $chunk_size = 500;
+    }
+
+    foreach (array_chunk($ids, $chunk_size) as $chunk) {
+        $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+        $result = $wpdb->query(
+            $wpdb->prepare("DELETE FROM `{$table}` WHERE `{$column}` IN ({$placeholders})", $chunk)
+        );
+
+        if ($result === false) {
+            ccm_tools_log_db_error("Chunked delete from {$table}");
+            $report['failed'] += count($chunk);
+        } else {
+            $report['affected'] += (int) $result;
+        }
+    }
+
+    return $report;
+}
+
+/**
+ * Delete a bounded batch of posts through wp_delete_post().
+ *
+ * A raw DELETE against wp_posts leaves wreckage that nothing ever clears up:
+ * attachments and child posts keep a post_parent pointing at a row that is
+ * gone (an attachment is post_status 'inherit', so it never matches a
+ * post_status = 'trash' sweep in the first place), commentmeta is orphaned,
+ * and because no hook fires, WooCommerce keeps its order items, order itemmeta
+ * and product meta lookup rows for ever while search index plugins never learn
+ * the post has gone. wp_delete_post() is the only thing that tells the rest of
+ * the stack.
+ *
+ * @param string $post_status         Status to purge, e.g. 'trash'.
+ * @param string $modified_before_gmt GMT cut-off compared against post_modified.
+ * @param int    $batch_size          Maximum posts this call may delete.
+ * @return array array('matched' => int, 'deleted' => int, 'failed' => int, 'remaining' => int)
+ */
+function ccm_tools_delete_posts_by_status_batch($post_status, $modified_before_gmt, $batch_size = 0) {
+    global $wpdb;
+
+    $batch_size = (int) $batch_size;
+    if ($batch_size < 1) {
+        $batch_size = ccm_tools_get_post_delete_batch_size();
+    }
+
+    $report = array('matched' => 0, 'deleted' => 0, 'failed' => 0, 'remaining' => 0);
+
+    $report['matched'] = (int) $wpdb->get_var(
+        $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = %s AND post_modified < %s",
+            $post_status,
+            $modified_before_gmt
+        )
+    );
+
+    if ($report['matched'] < 1) {
+        return $report;
+    }
+
+    if (!function_exists('wp_delete_post')) {
+        // There is no sane fallback: a raw DELETE is the very bug this
+        // function exists to remove, so report the work as undone.
+        $report['failed'] = $report['matched'];
+        $report['remaining'] = $report['matched'];
+        return $report;
+    }
+
+    $post_ids = $wpdb->get_col(
+        $wpdb->prepare(
+            "SELECT ID FROM {$wpdb->posts} WHERE post_status = %s AND post_modified < %s ORDER BY ID ASC LIMIT %d",
+            $post_status,
+            $modified_before_gmt,
+            $batch_size
+        )
+    );
+
+    // Defer the recounts across the batch, then switch back. It is switching
+    // BACK to false that runs the deferred update — calling false on its own,
+    // as this code used to, counts nothing and leaves every affected category
+    // and tag overstated.
+    $defer_terms = function_exists('wp_defer_term_counting');
+    $defer_comments = function_exists('wp_defer_comment_counting');
+    if ($defer_terms) {
+        wp_defer_term_counting(true);
+    }
+    if ($defer_comments) {
+        wp_defer_comment_counting(true);
+    }
+
+    foreach ((array) $post_ids as $post_id) {
+        // force_delete = true: these rows are being purged, not re-trashed.
+        if (wp_delete_post((int) $post_id, true)) {
+            $report['deleted']++;
+        } else {
+            $report['failed']++;
+        }
+    }
+
+    if ($defer_terms) {
+        wp_defer_term_counting(false);
+    }
+    if ($defer_comments) {
+        wp_defer_comment_counting(false);
+    }
+
+    $report['remaining'] = max(0, $report['matched'] - $report['deleted']);
+
+    return $report;
+}
+
+/**
+ * Bring the ccm_meta_key index on wp_postmeta to its target shape.
+ *
+ * Shared by the two whole-database routines so the composite-safe drop rule
+ * lives in exactly one place.
+ *
+ * @return array List of array('ok' => bool, 'message' => string) steps.
+ */
+function ccm_tools_ensure_postmeta_meta_key_index() {
+    global $wpdb;
+
+    $steps = array();
+    $index_name = 'ccm_meta_key';
+    $column = 'meta_key';
+    $index_length = (int) ccm_tools_get_safe_index_length();
+    $table = $wpdb->postmeta;
+
+    // Read EVERY index part on the table, not just the rows that mention this
+    // column, so composites can be recognised and left alone.
+    $index_rows = $wpdb->get_results("SHOW INDEX FROM {$table}");
+    $grouped = ccm_tools_group_index_rows($index_rows);
+
+    $ours = isset($grouped[$index_name]) ? $grouped[$index_name] : array();
+    $ours_exists = !empty($ours);
+    $ours_is_ours = $ours_exists && ccm_tools_index_is_single_column($ours, $column);
+    $ours_correct = false;
+
+    if ($ours_is_ours) {
+        $part = reset($ours);
+        $ours_correct = ((int) $part->Sub_part === $index_length);
+    }
+
+    if ($ours_exists && !$ours_is_ours) {
+        // Something other than this plugin owns that name and it covers more
+        // than meta_key. Dropping it is exactly the mistake this code was
+        // fixed to stop making.
+        $steps[] = array(
+            'ok' => false,
+            'message' => sprintf(
+                __('An index named %1$s already exists on %2$s covering more than %3$s — left untouched', 'ccm-tools'),
+                $index_name,
+                $table,
+                $column
+            ),
+        );
+        return $steps;
+    }
+
+    // Redundant single-column indexes on meta_key only. This is what clears
+    // out the core meta_key index and the legacy ccm_index; a composite is
+    // never a candidate, whatever column it happens to start with.
+    $droppable = ccm_tools_find_droppable_indexes($index_rows, $column, array($index_name));
+
+    if ($ours_exists && !$ours_correct) {
+        $droppable[] = $index_name;
+    }
+
+    foreach ($droppable as $drop_name) {
+        if (!ccm_tools_is_safe_sql_identifier($drop_name)) {
+            continue;
+        }
+        $dropped = $wpdb->query("ALTER TABLE {$table} DROP INDEX `{$drop_name}`");
+        if ($dropped === false) {
+            $error_msg = ccm_tools_log_db_error("Drop index {$drop_name} from {$table}");
+            $steps[] = array(
+                'ok' => false,
+                'message' => sprintf(__('Failed to remove index %1$s from %2$s', 'ccm-tools'), $drop_name, $table)
+                    . ($error_msg ? ': ' . $error_msg : ''),
+            );
+        } else {
+            $steps[] = array(
+                'ok' => true,
+                'message' => sprintf(__('Existing single-column index %1$s removed from %2$s', 'ccm-tools'), $drop_name, $table),
+            );
+        }
+    }
+
+    if ($ours_correct) {
+        $steps[] = array(
+            'ok' => true,
+            'message' => sprintf(
+                __('Index %1$s already exists on %2$s with the correct size of %3$d', 'ccm-tools'),
+                $index_name,
+                $table,
+                $index_length
+            ),
+        );
+        return $steps;
+    }
+
+    $added = $wpdb->query("ALTER TABLE {$table} ADD INDEX `{$index_name}` (`{$column}`({$index_length}))");
+
+    if ($added === false) {
+        $error_msg = ccm_tools_log_db_error("Add {$index_name} index on {$table}");
+        $steps[] = array(
+            'ok' => false,
+            'message' => sprintf(__('Failed to add index %1$s on %2$s', 'ccm-tools'), $index_name, $table)
+                . ($error_msg ? ': ' . $error_msg : ''),
+        );
+    } else {
+        $steps[] = array(
+            'ok' => true,
+            'message' => sprintf(
+                __('Index %1$s added on %2$s with size %3$d', 'ccm-tools'),
+                $index_name,
+                $table,
+                $index_length
+            ),
+        );
+    }
+
+    return $steps;
 }
 
 /**
@@ -121,8 +503,7 @@ function ccm_tools_get_optimization_options() {
             'label' => __('Add postmeta composite index', 'ccm-tools'),
             'description' => __('Speed up custom field and metadata lookups with a high-performance covering index — especially effective on sites using ACF or WooCommerce', 'ccm-tools'),
             'default' => false,
-            'risk' => 'moderate',
-            'premium' => true
+            'risk' => 'moderate'
         ),
         'add_usermeta_index' => array(
             'label' => __('Add usermeta index', 'ccm-tools'),
@@ -405,58 +786,19 @@ function ccm_tools_optimize_initial_setup() {
     $results = [];
     
     try {
-        // Check and update index on postmeta
-        $postmeta_index = $wpdb->get_results("SHOW INDEX FROM {$wpdb->postmeta} WHERE KEY_NAME = 'meta_key' OR KEY_NAME = 'ccm_index'");
-
-        if (!empty($postmeta_index)) {
-            // Check if 'meta_key' index exists and remove it
-            foreach ($postmeta_index as $index) {
-                if ($index->Key_name === 'meta_key') {
-                    $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `meta_key`");
-                    $results[] = 'Existing \'meta_key\' index removed from ' . $wpdb->postmeta;
-                }
+        // Bring the meta_key index up to shape. The helper groups the
+        // SHOW INDEX rows by Key_name so a composite index that merely
+        // contains meta_key is never mistaken for a redundant single-column
+        // index and dropped.
+        $index_failed = false;
+        foreach (ccm_tools_ensure_postmeta_meta_key_index() as $step) {
+            $results[] = $step['message'];
+            if (empty($step['ok'])) {
+                $index_failed = true;
             }
         }
-
-        // Check and update index on postmeta
-        $postmeta_indexes = $wpdb->get_results("SHOW INDEX FROM {$wpdb->postmeta} WHERE Column_name = 'meta_key'");
-        $ccm_index_exists = false;
-        $ccm_index_correct_size = false;
-        $other_indexes_exist = false;
-
-        foreach ($postmeta_indexes as $index) {
-            if ($index->Key_name === 'ccm_meta_key' || $index->Key_name === 'ccm_index') {
-                $ccm_index_exists = true;
-                if ($index->Sub_part == 191) {
-                    $ccm_index_correct_size = true;
-                }
-            } else {
-                $other_indexes_exist = true;
-            }
-        }
-
-        // Drop any existing index on meta_key that isn't ccm_meta_key
-        if ($other_indexes_exist) {
-            foreach ($postmeta_indexes as $index) {
-                if ($index->Key_name !== 'ccm_meta_key' && $index->Key_name !== 'ccm_index') {
-                    $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `{$index->Key_name}`");
-                    $results[] = 'Existing index \'' . $index->Key_name . '\' removed from ' . $wpdb->postmeta;
-                }
-            }
-        }
-
-        // Migrate legacy ccm_index to ccm_meta_key with correct size
-        if ($ccm_index_exists) {
-            // Drop any legacy ccm_index
-            $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
-        }
-
-        // Add or update 'ccm_meta_key' if it doesn't exist or has incorrect size
-        if (!$ccm_index_exists || !$ccm_index_correct_size) {
-            $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_meta_key` (`meta_key`(191))");
-            $results[] = 'Index \'ccm_meta_key\' added on ' . $wpdb->postmeta . ' with size 191';
-        } else {
-            $results[] = 'Index \'ccm_meta_key\' already exists on ' . $wpdb->postmeta . ' with correct size of 191';
+        if ($index_failed) {
+            $results[] = 'Warning: Some index changes could not be applied';
         }
 
         // Delete transients
@@ -484,87 +826,68 @@ function ccm_tools_optimize_initial_setup() {
 function ccm_tools_optimize_database() {
     global $wpdb;
     $result = '';
+    $errors = array();
 
     // Check MySQL/MariaDB version and determine appropriate collation
     $mysql_version = $wpdb->get_var("SELECT VERSION()");
     $collation = ccm_tools_get_appropriate_collation_optimize($mysql_version);
 
-    // Check and update index on postmeta
-    $postmeta_index = $wpdb->get_results("SHOW INDEX FROM {$wpdb->postmeta} WHERE KEY_NAME = 'meta_key' OR KEY_NAME = 'ccm_index'");
-
-    if (!empty($postmeta_index)) {
-        // Check if 'meta_key' index exists and remove it
-        foreach ($postmeta_index as $index) {
-            if ($index->Key_name === 'meta_key') {
-                $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `meta_key`");
-                $result .= '<p><span class="ccm-icon ccm-info">i</span>Existing \'meta_key\' index removed from ' . $wpdb->postmeta . '</p>';
-            }
-        }
-    }
-
-    // Check and update index on postmeta
-    $postmeta_indexes = $wpdb->get_results("SHOW INDEX FROM {$wpdb->postmeta} WHERE Column_name = 'meta_key'");
-    $ccm_index_exists = false;
-    $ccm_index_correct_size = false;
-    $other_indexes_exist = false;
-
-    foreach ($postmeta_indexes as $index) {
-        if ($index->Key_name === 'ccm_meta_key' || $index->Key_name === 'ccm_index') {
-            $ccm_index_exists = true;
-            if ($index->Sub_part == 191) {
-                $ccm_index_correct_size = true;
-            }
+    // Bring the meta_key index up to shape. The helper groups the SHOW INDEX
+    // rows by Key_name so a composite index that merely contains meta_key is
+    // never mistaken for a redundant single-column index and dropped.
+    foreach (ccm_tools_ensure_postmeta_meta_key_index() as $step) {
+        if (empty($step['ok'])) {
+            $errors[] = $step['message'];
+            $result .= '<p><span class="ccm-icon ccm-error">✗</span>' . esc_html($step['message']) . '</p>';
         } else {
-            $other_indexes_exist = true;
+            $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . esc_html($step['message']) . '</p>';
         }
-    }
-
-    // Drop any existing index on meta_key that isn't ccm_meta_key
-    if ($other_indexes_exist) {
-        foreach ($postmeta_indexes as $index) {
-            if ($index->Key_name !== 'ccm_meta_key' && $index->Key_name !== 'ccm_index') {
-                $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `{$index->Key_name}`");
-                $result .= '<p><span class="ccm-icon ccm-info">i</span>Existing index \'' . $index->Key_name . '\' removed from ' . $wpdb->postmeta . '</p>';
-            }
-        }
-    }
-
-    // Migrate legacy ccm_index to ccm_meta_key with correct size
-    if ($ccm_index_exists) {
-        $wpdb->query("ALTER TABLE {$wpdb->postmeta} DROP INDEX `ccm_index`");
-    }
-
-    // Add or update 'ccm_meta_key' if it doesn't exist or has incorrect size
-    if (!$ccm_index_exists || !$ccm_index_correct_size) {
-        $wpdb->query("ALTER TABLE {$wpdb->postmeta} ADD INDEX `ccm_meta_key` (`meta_key`(191))");
-        $result .= '<p><span class="ccm-icon ccm-success">✓</span>Index \'ccm_meta_key\' added on ' . $wpdb->postmeta . ' with size 191</p>';
-    } else {
-        $result .= '<p><span class="ccm-icon ccm-info">i</span>Index \'ccm_meta_key\' already exists on ' . $wpdb->postmeta . ' with correct size of 191</p>';
     }
 
     // Delete transients
     $transient_report = ccm_tools_clear_all_transients();
     foreach ($transient_report['details'] as $detail) {
         $icon_class = stripos($detail, 'Failed') !== false || stripos($detail, 'Warning') !== false ? 'ccm-warning' : 'ccm-info';
-        $result .= '<p><span class="ccm-icon ' . $icon_class . '">i</span>' . $detail . '</p>';
+        $result .= '<p><span class="ccm-icon ' . $icon_class . '">i</span>' . esc_html($detail) . '</p>';
     }
     if (!$transient_report['success']) {
         $result .= '<p><span class="ccm-icon ccm-warning">!</span>Some transient entries could not be removed</p>';
+        $errors[] = 'Some transient entries could not be removed';
     }
 
     // Optimize tables
     $tables = $wpdb->get_results("SHOW TABLES", 'ARRAY_N');
-    
+
     // Get database name for INFORMATION_SCHEMA queries
     $database_name = $wpdb->dbname;
     if (empty($database_name)) {
         $database_name = defined('DB_NAME') ? DB_NAME : '';
     }
-    
+
+    $tables_optimized = 0;
+    $tables_failed = 0;
+
     foreach ($tables as $table) {
         $table_name = $table[0];
-        $wpdb->query("OPTIMIZE TABLE `{$table_name}`");
-        $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . $table_name . ' optimized</p>';
+
+        // SECURITY: Validate table name exists in database to prevent SQL injection
+        if (!ccm_tools_validate_table_name_optimize($table_name)) {
+            $errors[] = "{$table_name}: Invalid table name — skipped for safety";
+            $result .= '<p><span class="ccm-icon ccm-warning">!</span>' . esc_html($table_name) . ' skipped (invalid table name)</p>';
+            $tables_failed++;
+            continue;
+        }
+
+        $optimize_result = $wpdb->query("OPTIMIZE TABLE `{$table_name}`");
+        if ($optimize_result === false) {
+            $error_msg = ccm_tools_log_db_error("Optimize table {$table_name}");
+            $errors[] = "{$table_name}: OPTIMIZE TABLE failed" . ($error_msg ? ': ' . $error_msg : '');
+            $result .= '<p><span class="ccm-icon ccm-error">✗</span>' . esc_html($table_name) . ' optimize failed' . ($error_msg ? ': ' . esc_html($error_msg) : '') . '</p>';
+            $tables_failed++;
+        } else {
+            $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . esc_html($table_name) . ' optimized</p>';
+            $tables_optimized++;
+        }
 
         // Update table collation if necessary - use INFORMATION_SCHEMA for MariaDB compatibility
         if (!empty($database_name)) {
@@ -572,12 +895,27 @@ function ccm_tools_optimize_database() {
                 $wpdb->prepare("SELECT TABLE_COLLATION as Collation FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s", $database_name, $table_name),
                 'OBJECT'
             );
-            
+
             if ($table_status && $table_status->Collation !== $collation) {
-                $wpdb->query("ALTER TABLE `{$table_name}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$collation}");
-                $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . $table_name . ' collation updated to ' . $collation . '</p>';
+                $collation_result = $wpdb->query("ALTER TABLE `{$table_name}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$collation}");
+                if ($collation_result === false) {
+                    $error_msg = ccm_tools_log_db_error("Collation update for table {$table_name}");
+                    $errors[] = "{$table_name}: collation update failed" . ($error_msg ? ': ' . $error_msg : '');
+                    $result .= '<p><span class="ccm-icon ccm-error">✗</span>' . esc_html($table_name) . ' collation update failed' . ($error_msg ? ': ' . esc_html($error_msg) : '') . '</p>';
+                } else {
+                    $result .= '<p><span class="ccm-icon ccm-success">✓</span>' . esc_html($table_name) . ' collation updated to ' . esc_html($collation) . '</p>';
+                }
             }
         }
+    }
+
+    if (!empty($errors)) {
+        $error_list = '<div class="ccm-alert ccm-alert-error" style="margin-bottom: 1rem;"><strong>' . count($errors) . ' ' . __('error(s) occurred:', 'ccm-tools') . '</strong><ul>';
+        foreach ($errors as $error) {
+            $error_list .= '<li>' . esc_html($error) . '</li>';
+        }
+        $error_list .= '</ul></div>';
+        $result = $error_list . $result;
     }
 
     return $result;
@@ -783,18 +1121,39 @@ function ccm_tools_optimization_update_collation() {
  */
 function ccm_tools_optimization_clean_spam_comments() {
     global $wpdb;
-    
-    $count = $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
-    
-    // Clean orphaned commentmeta for deleted comments
-    if ($count > 0) {
-        $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+
+    /*
+     * Collect the ids first, then delete their meta by id.
+     *
+     * This used to finish with a site-wide
+     * "DELETE FROM commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM comments)",
+     * which removes every orphaned row on the site, not just the ones belonging
+     * to the comments it had removed. That is offered separately as its own
+     * option, graded moderate and off by default — so a safe, default-on
+     * cleanup was quietly doing the work of a riskier one nobody had ticked.
+     */
+    $ids = $wpdb->get_col("SELECT comment_ID FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
+
+    if (empty($ids)) {
+        return array(
+            'success' => true,
+            'message' => __('No spam comments to delete', 'ccm-tools'),
+            'count'   => 0,
+        );
     }
-    
+
+    // Meta first: once the comment row is gone the ids are harder to justify.
+    ccm_tools_delete_ids_in_chunks($wpdb->commentmeta, 'comment_id', $ids);
+    $report = ccm_tools_delete_ids_in_chunks($wpdb->comments, 'comment_ID', $ids);
+
     return array(
-        'success' => $count !== false,
-        'message' => sprintf(__('%d spam comments deleted', 'ccm-tools'), $count ?: 0),
-        'count' => $count ?: 0
+        'success' => empty($report['failed']),
+        'message' => sprintf(
+            /* translators: %d: number of comments actually deleted */
+            __('%d spam comments deleted', 'ccm-tools'),
+            (int) $report['affected']
+        ),
+        'count'   => (int) $report['affected'],
     );
 }
 
@@ -804,93 +1163,107 @@ function ccm_tools_optimization_clean_spam_comments() {
 function ccm_tools_optimization_clean_trashed_comments() {
     global $wpdb;
     
-    $count = $wpdb->query(
+    /*
+     * Same rule as the spam sweep: take these rows' meta by id, never the
+     * site-wide orphan purge, which is a separate option graded moderate and
+     * off by default.
+     */
+    $ids = $wpdb->get_col(
         $wpdb->prepare(
-            "DELETE FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
+            "SELECT comment_ID FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
             gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
-    
-    // Clean orphaned commentmeta
-    if ($count > 0) {
-        $wpdb->query("DELETE FROM {$wpdb->commentmeta} WHERE comment_id NOT IN (SELECT comment_ID FROM {$wpdb->comments})");
+
+    if (empty($ids)) {
+        return array(
+            'success' => true,
+            'message' => __('No trashed comments older than 30 days', 'ccm-tools'),
+            'count'   => 0,
+        );
     }
-    
+
+    ccm_tools_delete_ids_in_chunks($wpdb->commentmeta, 'comment_id', $ids);
+    $report = ccm_tools_delete_ids_in_chunks($wpdb->comments, 'comment_ID', $ids);
+
     return array(
-        'success' => $count !== false,
-        'message' => sprintf(__('%d trashed comments deleted (>30 days old)', 'ccm-tools'), $count ?: 0),
-        'count' => $count ?: 0
+        'success' => empty($report['failed']),
+        'message' => sprintf(
+            /* translators: %d: number of comments actually deleted */
+            __('%d trashed comments deleted (>30 days old)', 'ccm-tools'),
+            (int) $report['affected']
+        ),
+        'count'   => (int) $report['affected'],
     );
 }
 
 /**
- * Delete trashed posts older than 30 days
+ * Build the result array shared by the batched post sweeps.
+ *
+ * Keeps the same shape every other optimisation returns — success, message,
+ * count — so the AJAX handler and the JS carry on working, and adds
+ * 'remaining' for anything that wants to drive a second pass.
+ *
+ * @param array  $report        Report from ccm_tools_delete_posts_by_status_batch().
+ * @param string $deleted_label Already-translated "%d x deleted" sentence.
+ * @return array
+ */
+function ccm_tools_format_post_sweep_result($report, $deleted_label) {
+    $message = $deleted_label;
+
+    if ($report['failed'] > 0) {
+        $message .= sprintf(__(', %d could not be deleted', 'ccm-tools'), $report['failed']);
+    }
+
+    if ($report['remaining'] > 0) {
+        $message .= sprintf(__(', %d still to go — run this again', 'ccm-tools'), $report['remaining']);
+    }
+
+    return array(
+        // Real deletions only. This used to report the number of rows found
+        // and claim success even when every DELETE had failed.
+        'success' => $report['failed'] === 0,
+        'message' => $message,
+        'count' => $report['deleted'],
+        'remaining' => $report['remaining'],
+    );
+}
+
+/**
+ * Delete trashed posts older than 30 days.
+ *
+ * Deletes in bounded batches through wp_delete_post() and reports how many are
+ * left, so it is safe — and expected — to run repeatedly until 'remaining'
+ * reaches zero.
  */
 function ccm_tools_optimization_clean_trashed_posts() {
-    global $wpdb;
-    
-    // Get IDs of posts to delete for cleanup
-    $post_ids = $wpdb->get_col(
-        $wpdb->prepare(
-            "SELECT ID FROM {$wpdb->posts} WHERE post_status = 'trash' AND post_modified < %s",
-            gmdate('Y-m-d H:i:s', strtotime('-30 days'))
-        )
+    $report = ccm_tools_delete_posts_by_status_batch(
+        'trash',
+        gmdate('Y-m-d H:i:s', strtotime('-30 days'))
     );
-    
-    $count = count($post_ids);
-    
-    if ($count > 0) {
-        $ids_placeholder = implode(',', array_map('intval', $post_ids));
-        
-        // Delete the posts
-        $wpdb->query("DELETE FROM {$wpdb->posts} WHERE ID IN ({$ids_placeholder})");
-        
-        // Clean up postmeta
-        $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE post_id IN ({$ids_placeholder})");
-        
-        // Clean up term relationships
-        $wpdb->query("DELETE FROM {$wpdb->term_relationships} WHERE object_id IN ({$ids_placeholder})");
-        
-        // Clean up comments
-        $wpdb->query("DELETE FROM {$wpdb->comments} WHERE comment_post_ID IN ({$ids_placeholder})");
-        
-        // Update term counts after removing posts
-        wp_defer_term_counting(false);
-    }
-    
-    return array(
-        'success' => true,
-        'message' => sprintf(__('%d trashed posts deleted (>30 days old)', 'ccm-tools'), $count),
-        'count' => $count
+
+    return ccm_tools_format_post_sweep_result(
+        $report,
+        sprintf(__('%d trashed posts deleted (>30 days old)', 'ccm-tools'), $report['deleted'])
     );
 }
 
 /**
- * Delete auto-drafts older than 7 days
+ * Delete auto-drafts older than 7 days.
+ *
+ * Same batched treatment as the trash sweep, and for the same reason: media
+ * uploaded into a new post before its first save is parented to the auto-draft,
+ * so a raw DELETE strands the attachment rows and leaves their files on disk.
  */
 function ccm_tools_optimization_clean_auto_drafts() {
-    global $wpdb;
-    
-    $post_ids = $wpdb->get_col(
-        $wpdb->prepare(
-            "SELECT ID FROM {$wpdb->posts} WHERE post_status = 'auto-draft' AND post_modified < %s",
-            gmdate('Y-m-d H:i:s', strtotime('-7 days'))
-        )
+    $report = ccm_tools_delete_posts_by_status_batch(
+        'auto-draft',
+        gmdate('Y-m-d H:i:s', strtotime('-7 days'))
     );
-    
-    $count = count($post_ids);
-    
-    if ($count > 0) {
-        $ids_placeholder = implode(',', array_map('intval', $post_ids));
-        
-        $wpdb->query("DELETE FROM {$wpdb->posts} WHERE ID IN ({$ids_placeholder})");
-        $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE post_id IN ({$ids_placeholder})");
-    }
-    
-    return array(
-        'success' => true,
-        'message' => sprintf(__('%d auto-drafts deleted (>7 days old)', 'ccm-tools'), $count),
-        'count' => $count
+
+    return ccm_tools_format_post_sweep_result(
+        $report,
+        sprintf(__('%d auto-drafts deleted (>7 days old)', 'ccm-tools'), $report['deleted'])
     );
 }
 
@@ -944,7 +1317,7 @@ function ccm_tools_optimization_add_termmeta_index() {
 
 /**
  * Add composite index to postmeta table (meta_key, meta_value, post_id)
- * Premium feature — massive performance improvement for meta queries, especially WooCommerce
+ * Massive performance improvement for meta queries, especially WooCommerce
  */
 function ccm_tools_optimization_add_postmeta_composite_index() {
     global $wpdb;
@@ -985,13 +1358,35 @@ function ccm_tools_optimization_add_postmeta_composite_index() {
 }
 
 /**
- * Helper function to add an index to a meta table
+ * Helper function to add an index to a meta table.
+ *
+ * The drop step here is the dangerous one. SHOW INDEX returns one row per
+ * index PART, so the old "SHOW INDEX ... WHERE Column_name = 'meta_key'" read
+ * listed a composite index on (meta_key, meta_value(191), post_id) as a single
+ * row indistinguishable from a dedicated single-column index — and then
+ * dropped it. Ticking "Add postmeta composite index", waiting twenty minutes
+ * for it to build, then ticking "Add postmeta index" silently destroyed it,
+ * along with anything a performance plugin or a DBA had added.
  */
 function ccm_tools_add_meta_index($table, $column, $index_name, $index_length) {
     global $wpdb;
-    
-    // Check if table exists
-    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$table}'");
+
+    $index_length = (int) $index_length;
+
+    // The column and index names are interpolated, so they must be bare
+    // identifiers. Every caller passes a literal, and this keeps it that way.
+    if (!ccm_tools_is_safe_sql_identifier($column)
+        || !ccm_tools_is_safe_sql_identifier($index_name)
+        || $index_length < 1) {
+        return array(
+            'success' => false,
+            'message' => __('Invalid index definition', 'ccm-tools'),
+            'count' => 0
+        );
+    }
+
+    // Check if table exists. The name comes from $wpdb, never from input.
+    $table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
     if (!$table_exists) {
         return array(
             'success' => false,
@@ -999,51 +1394,99 @@ function ccm_tools_add_meta_index($table, $column, $index_name, $index_length) {
             'count' => 0
         );
     }
-    
-    // Check existing indexes
-    $indexes = $wpdb->get_results("SHOW INDEX FROM `{$table}` WHERE Column_name = '{$column}'");
-    
-    $ccm_index_exists = false;
-    $ccm_index_correct = false;
-    
-    foreach ($indexes as $index) {
-        if ($index->Key_name === $index_name) {
-            $ccm_index_exists = true;
-            if ($index->Sub_part == $index_length) {
-                $ccm_index_correct = true;
-            }
-        }
+
+    // Read every index part on the table, then group by Key_name. Only a
+    // grouped view can tell a single-column index from a composite.
+    $index_rows = $wpdb->get_results("SHOW INDEX FROM `{$table}`");
+    $grouped = ccm_tools_group_index_rows($index_rows);
+
+    $ours = isset($grouped[$index_name]) ? $grouped[$index_name] : array();
+    $ours_exists = !empty($ours);
+    $ours_is_ours = $ours_exists && ccm_tools_index_is_single_column($ours, $column);
+    $ours_correct = false;
+
+    if ($ours_is_ours) {
+        $part = reset($ours);
+        $ours_correct = ((int) $part->Sub_part === $index_length);
     }
-    
-    if ($ccm_index_correct) {
+
+    if ($ours_exists && !$ours_is_ours) {
+        // The name is taken by an index covering more than this column. Leave
+        // it alone rather than drop a composite someone else depends on.
+        return array(
+            'success' => false,
+            'message' => sprintf(
+                __('An index named %1$s already exists on %2$s covering more than %3$s — left untouched', 'ccm-tools'),
+                $index_name,
+                $table,
+                $column
+            ),
+            'count' => 0
+        );
+    }
+
+    if ($ours_correct) {
         return array(
             'success' => true,
             'message' => sprintf(__('Index already exists on %s with correct size (%d)', 'ccm-tools'), $table, $index_length),
             'count' => 0
         );
     }
-    
-    // Drop old ccm index if exists with wrong size
-    if ($ccm_index_exists) {
-        $wpdb->query("ALTER TABLE `{$table}` DROP INDEX `{$index_name}`");
+
+    // Only single-part indexes on this exact column are candidates. PRIMARY is
+    // excluded, and so is every composite, whatever column it starts with.
+    $droppable = ccm_tools_find_droppable_indexes($index_rows, $column, array($index_name));
+
+    // Ours exists but at the wrong size — replace it.
+    if ($ours_exists) {
+        $droppable[] = $index_name;
     }
-    
-    // Drop any other meta_key indexes (except PRIMARY)
-    foreach ($indexes as $index) {
-        if ($index->Key_name !== $index_name && $index->Key_name !== 'PRIMARY') {
-            $wpdb->query("ALTER TABLE `{$table}` DROP INDEX `{$index->Key_name}`");
+
+    $drop_failed = 0;
+    $dropped_names = array();
+
+    foreach ($droppable as $drop_name) {
+        if (!ccm_tools_is_safe_sql_identifier($drop_name)) {
+            continue;
+        }
+        $dropped = $wpdb->query("ALTER TABLE `{$table}` DROP INDEX `{$drop_name}`");
+        if ($dropped === false) {
+            ccm_tools_log_db_error("Drop index {$drop_name} from {$table}");
+            $drop_failed++;
+        } else {
+            $dropped_names[] = $drop_name;
         }
     }
-    
-    // Add new index
+
     $result = $wpdb->query("ALTER TABLE `{$table}` ADD INDEX `{$index_name}` (`{$column}`({$index_length}))");
-    
+
+    if ($result === false) {
+        ccm_tools_log_db_error("Add {$index_name} index on {$table}");
+
+        return array(
+            'success' => false,
+            'message' => sprintf(__('Failed to add index to %s', 'ccm-tools'), $table),
+            'count' => 0
+        );
+    }
+
+    $message = sprintf(__('Index added to %s (%d chars)', 'ccm-tools'), $table, $index_length);
+
+    if (!empty($dropped_names)) {
+        $message .= sprintf(
+            __(', replaced redundant single-column index: %s', 'ccm-tools'),
+            implode(', ', $dropped_names)
+        );
+    }
+
+    if ($drop_failed > 0) {
+        $message .= sprintf(__(', %d redundant index could not be dropped', 'ccm-tools'), $drop_failed);
+    }
+
     return array(
-        'success' => $result !== false,
-        'message' => $result !== false 
-            ? sprintf(__('Index added to %s (%d chars)', 'ccm-tools'), $table, $index_length)
-            : sprintf(__('Failed to add index to %s', 'ccm-tools'), $table),
-        'count' => $result !== false ? 1 : 0
+        'success' => $drop_failed === 0,
+        'message' => $message,
+        'count' => 1
     );
 }
 
@@ -1086,15 +1529,21 @@ function ccm_tools_optimization_clean_orphaned_commentmeta() {
 }
 
 /**
- * Clear oEmbed cache from postmeta
+ * Clear oEmbed cache from postmeta.
+ *
+ * Anchored to the start of the key. WordPress writes its own oEmbed cache as
+ * _oembed_{hash} and _oembed_time_{hash}, and it regenerates on demand. The
+ * leading wildcard this used to carry also matched _elementor_oembed_data,
+ * wpb_oembed_cache and _yoast_oembed_x — other plugins' data, which does not
+ * come back.
  */
 function ccm_tools_optimization_clean_oembed_cache() {
     global $wpdb;
-    
+
     $count = $wpdb->query(
         $wpdb->prepare(
             "DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE %s",
-            '%' . $wpdb->esc_like('_oembed_') . '%'
+            $wpdb->esc_like('_oembed_') . '%'
         )
     );
     
@@ -1112,72 +1561,96 @@ function ccm_tools_optimization_limit_revisions() {
     global $wpdb;
     
     $keep_count = 5;
-    $deleted = 0;
-    
+
     // Get all parent posts that have revisions
     $parents = $wpdb->get_col(
-        "SELECT DISTINCT post_parent FROM {$wpdb->posts} 
+        "SELECT DISTINCT post_parent FROM {$wpdb->posts}
         WHERE post_type = 'revision' AND post_parent > 0"
     );
-    
+
+    $to_delete = array();
+
     foreach ($parents as $parent_id) {
         // Get revisions for this post, ordered by date (newest first)
         $revisions = $wpdb->get_col(
             $wpdb->prepare(
-                "SELECT ID FROM {$wpdb->posts} 
-                WHERE post_type = 'revision' AND post_parent = %d 
+                "SELECT ID FROM {$wpdb->posts}
+                WHERE post_type = 'revision' AND post_parent = %d
                 ORDER BY post_modified DESC",
                 $parent_id
             )
         );
-        
+
         // Skip if we have 5 or fewer
         if (count($revisions) <= $keep_count) {
             continue;
         }
-        
-        // Get IDs to delete (everything after the first 5)
-        $to_delete = array_slice($revisions, $keep_count);
-        
-        if (!empty($to_delete)) {
-            $ids_placeholder = implode(',', array_map('intval', $to_delete));
-            $wpdb->query("DELETE FROM {$wpdb->posts} WHERE ID IN ({$ids_placeholder})");
-            $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE post_id IN ({$ids_placeholder})");
-            $deleted += count($to_delete);
+
+        // Everything after the first 5 goes
+        foreach (array_slice($revisions, $keep_count) as $revision_id) {
+            $to_delete[] = (int) $revision_id;
         }
     }
-    
+
+    // Collected across every parent, then deleted in chunks. One IN() list
+    // holding every excess revision on a busy site is large enough to be
+    // rejected outright, and a rejected statement deletes nothing.
+    $posts_report = ccm_tools_delete_ids_in_chunks($wpdb->posts, 'ID', $to_delete);
+    $meta_report = ccm_tools_delete_ids_in_chunks($wpdb->postmeta, 'post_id', $to_delete);
+
+    $deleted = $posts_report['affected'];
+    $failed = $posts_report['failed'] + $meta_report['failed'];
+
+    $message = sprintf(__('%d excess revisions deleted (kept %d per post)', 'ccm-tools'), $deleted, $keep_count);
+    if ($failed > 0) {
+        $message .= sprintf(__(', %d rows could not be deleted', 'ccm-tools'), $failed);
+    }
+
     return array(
-        'success' => true,
-        'message' => sprintf(__('%d excess revisions deleted (kept %d per post)', 'ccm-tools'), $deleted, $keep_count),
+        // Based on rows the database says it actually removed, not on how
+        // many ids were handed to it.
+        'success' => $failed === 0,
+        'message' => $message,
         'count' => $deleted
     );
 }
 
 /**
- * Delete ALL post revisions
+ * Delete ALL post revisions.
+ *
+ * Chunked. A site with 400,000 revisions used to build a single DELETE of
+ * roughly 3MB; shared hosts commonly cap max_allowed_packet at 4MB, so MySQL
+ * rejected the statement, $wpdb->query() returned false, and the tool reported
+ * "400000 revisions permanently deleted" having deleted nothing at all.
  */
 function ccm_tools_optimization_delete_all_revisions() {
     global $wpdb;
-    
+
     // Get all revision IDs
     $revision_ids = $wpdb->get_col(
         "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'revision'"
     );
-    
-    $count = count($revision_ids);
-    
-    if ($count > 0) {
-        $ids_placeholder = implode(',', array_map('intval', $revision_ids));
-        
-        $wpdb->query("DELETE FROM {$wpdb->posts} WHERE ID IN ({$ids_placeholder})");
-        $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE post_id IN ({$ids_placeholder})");
+
+    $found = count($revision_ids);
+
+    $posts_report = ccm_tools_delete_ids_in_chunks($wpdb->posts, 'ID', $revision_ids);
+    $meta_report = ccm_tools_delete_ids_in_chunks($wpdb->postmeta, 'post_id', $revision_ids);
+
+    $deleted = $posts_report['affected'];
+    $failed = $posts_report['failed'] + $meta_report['failed'];
+
+    $message = sprintf(__('%d revisions permanently deleted', 'ccm-tools'), $deleted);
+    if ($failed > 0) {
+        $message .= sprintf(__(', %d rows could not be deleted', 'ccm-tools'), $failed);
+    } elseif ($deleted < $found) {
+        $message .= sprintf(__(' (%d were found)', 'ccm-tools'), $found);
     }
-    
+
     return array(
-        'success' => true,
-        'message' => sprintf(__('%d revisions permanently deleted', 'ccm-tools'), $count),
-        'count' => $count
+        // Real affected rows, reported by the database itself.
+        'success' => $failed === 0,
+        'message' => $message,
+        'count' => $deleted
     );
 }
 
@@ -1206,16 +1679,56 @@ function ccm_tools_optimization_clean_orphaned_termmeta() {
 function ccm_tools_optimization_clean_orphaned_relationships() {
     global $wpdb;
     
+    /*
+     * object_id is not always a post id.
+     *
+     * term_relationships stores whichever object type the taxonomy was
+     * registered against. WordPress core's own link_category taxonomy keeps
+     * wp_links.link_id there; BuddyPress member and group types keep user and
+     * group ids; any "user taxonomy" plugin does the same. Joining
+     * term_relationships to wp_posts and deleting every row that does not
+     * match therefore wiped every one of those assignments in a single
+     * statement, on a screen that describes itself as removing relationships
+     * for deleted posts.
+     *
+     * Restricting to taxonomies actually registered against a post type makes
+     * the query do what the label says. It also means the sweep only ever
+     * considers taxonomies the running site has registered, so a plugin that
+     * is deactivated at the time is left alone rather than having its data
+     * treated as orphaned.
+     */
+    $taxonomies = function_exists('get_object_taxonomies') && function_exists('get_post_types')
+        ? get_object_taxonomies(get_post_types(array(), 'names'), 'names')
+        : array();
+
+    if (empty($taxonomies)) {
+        return array(
+            'success' => true,
+            'message' => __('No post taxonomies are registered, so nothing was removed', 'ccm-tools'),
+            'count'   => 0,
+        );
+    }
+
+    $placeholders = implode(', ', array_fill(0, count($taxonomies), '%s'));
+
     $count = $wpdb->query(
-        "DELETE tr FROM {$wpdb->term_relationships} tr 
-        LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID 
-        WHERE p.ID IS NULL"
+        $wpdb->prepare(
+            "DELETE tr FROM {$wpdb->term_relationships} tr"
+            . " INNER JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id"
+            . " LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID"
+            . " WHERE p.ID IS NULL AND tt.taxonomy IN ({$placeholders})",
+            array_values($taxonomies)
+        )
     );
-    
+
     return array(
         'success' => $count !== false,
-        'message' => sprintf(__('%d orphaned term relationships deleted', 'ccm-tools'), $count ?: 0),
-        'count' => $count ?: 0
+        'message' => sprintf(
+            /* translators: %d: number of relationships deleted */
+            __('%d orphaned term relationships deleted', 'ccm-tools'),
+            (int) ($count ?: 0)
+        ),
+        'count'   => (int) ($count ?: 0),
     );
 }
 
@@ -1228,8 +1741,21 @@ function ccm_tools_get_optimization_stats() {
     $stats = array();
     
     // Transients count
+    /*
+     * Count exactly what Clear Transients deletes, which is the anchored
+     * `_transient_%` and `_site_transient_%` prefixes. This counted
+     * `%_transient_%` instead: wildcards at both ends, and an unescaped
+     * underscore, which SQL LIKE reads as a single-character wildcard. It
+     * matched keys like `my_plugin_transients_list` that the button never
+     * touches, so the figure shown before the click overstated it.
+     */
     $stats['transients'] = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE '%_transient_%'"
+        $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->options}"
+            . " WHERE option_name LIKE %s ESCAPE '\\' OR option_name LIKE %s ESCAPE '\\'",
+            '\_transient\_%',
+            '\_site_transient\_%'
+        )
     );
     
     // Spam comments
@@ -1241,7 +1767,7 @@ function ccm_tools_get_optimization_stats() {
     $stats['trashed_comments'] = (int) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
-            date('Y-m-d H:i:s', strtotime('-30 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
     
@@ -1249,7 +1775,7 @@ function ccm_tools_get_optimization_stats() {
     $stats['trashed_posts'] = (int) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'trash' AND post_modified < %s",
-            date('Y-m-d H:i:s', strtotime('-30 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-30 days'))
         )
     );
     
@@ -1257,7 +1783,7 @@ function ccm_tools_get_optimization_stats() {
     $stats['auto_drafts'] = (int) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_status = 'auto-draft' AND post_modified < %s",
-            date('Y-m-d H:i:s', strtotime('-7 days'))
+            gmdate('Y-m-d H:i:s', strtotime('-7 days'))
         )
     );
     
@@ -1275,9 +1801,14 @@ function ccm_tools_get_optimization_stats() {
         WHERE c.comment_ID IS NULL"
     );
     
-    // oEmbed cache entries
+    // oEmbed cache entries. Must match ccm_tools_optimization_clean_oembed_cache()
+    // exactly, or the number shown before the click is not the number the
+    // click will delete.
     $stats['oembed_cache'] = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key LIKE '%_oembed_%'"
+        $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key LIKE %s",
+            $wpdb->esc_like('_oembed_') . '%'
+        )
     );
     
     // Total revisions
@@ -1304,12 +1835,26 @@ function ccm_tools_get_optimization_stats() {
         WHERE t.term_id IS NULL"
     );
     
-    // Orphaned term relationships
-    $stats['orphaned_relationships'] = (int) $wpdb->get_var(
-        "SELECT COUNT(*) FROM {$wpdb->term_relationships} tr 
-        LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID 
-        WHERE p.ID IS NULL"
-    );
+    // Orphaned term relationships. Counted with the same post-taxonomy
+    // restriction the sweep applies, so the figure describes the click.
+    $rel_taxonomies = function_exists('get_object_taxonomies') && function_exists('get_post_types')
+        ? get_object_taxonomies(get_post_types(array(), 'names'), 'names')
+        : array();
+
+    if (empty($rel_taxonomies)) {
+        $stats['orphaned_relationships'] = 0;
+    } else {
+        $rel_placeholders = implode(', ', array_fill(0, count($rel_taxonomies), '%s'));
+        $stats['orphaned_relationships'] = (int) $wpdb->get_var(
+            $wpdb->prepare(
+                "SELECT COUNT(*) FROM {$wpdb->term_relationships} tr"
+                . " INNER JOIN {$wpdb->term_taxonomy} tt ON tr.term_taxonomy_id = tt.term_taxonomy_id"
+                . " LEFT JOIN {$wpdb->posts} p ON tr.object_id = p.ID"
+                . " WHERE p.ID IS NULL AND tt.taxonomy IN ({$rel_placeholders})",
+                array_values($rel_taxonomies)
+            )
+        );
+    }
     
     // Table count
     $stats['table_count'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()");

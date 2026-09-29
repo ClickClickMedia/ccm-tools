@@ -251,8 +251,28 @@ function ccm_tools_redis_get_settings() {
 }
 
 /**
+ * Generate a per-site Redis cache key salt.
+ *
+ * The stored default is empty, and the settings-page field only shows the
+ * hostname as a greyed-out placeholder — placeholders are never submitted,
+ * so WP_CACHE_KEY_SALT was typically never written. Combined with the
+ * default host/port/database, two WordPress installs sharing one Redis
+ * daemon then produce identical keys and silently read/write each other's
+ * options, sessions and WooCommerce cart data. Host-only would still
+ * collide for two installs sharing one hostname (e.g. subdirectory
+ * multisite on shared hosting), so this always adds a random suffix too.
+ *
+ * @return string A non-empty salt suitable for WP_CACHE_KEY_SALT.
+ */
+function ccm_tools_redis_generate_key_salt() {
+    $host = parse_url(site_url(), PHP_URL_HOST);
+    $host = $host ? sanitize_text_field($host) : 'wp';
+    return $host . '_' . wp_generate_password(8, false, false) . '_';
+}
+
+/**
  * Save Redis settings to database
- * 
+ *
  * @param array $settings Settings to save
  * @return bool Success
  */
@@ -347,7 +367,16 @@ function ccm_tools_redis_save_settings($settings) {
     
     // Merge with existing settings (new values override existing)
     $merged = array_merge($existing, $sanitized);
-    
+
+    // A shared Redis daemon with an empty (or never-explicitly-set) salt
+    // means two WordPress installs can silently read/write each other's
+    // options, sessions and WooCommerce cart data. Preserve any salt an
+    // admin already set; only generate + persist a new one when there still
+    // isn't one, so the field value round-trips on the next page load.
+    if (empty($merged['key_salt'])) {
+        $merged['key_salt'] = ccm_tools_redis_generate_key_salt();
+    }
+
     return update_option('ccm_tools_redis_settings', $merged);
 }
 
@@ -379,8 +408,9 @@ function ccm_tools_redis_dropin_status() {
         if (strpos($content, 'CCM Tools Redis Object Cache') !== false) {
             $status['is_ccm'] = true;
             
-            // Extract version
-            if (preg_match('/Version:\s*([0-9.]+)/i', $content, $matches)) {
+            // Extract version — the drop-in header uses "@version X.Y.Z" (no
+            // colon after "Version"), matching ccm_tools_redis_dropin_version_check().
+            if (preg_match('/@version\s+([0-9.]+)/i', $content, $matches)) {
                 $status['version'] = $matches[1];
             }
         } 
@@ -433,7 +463,25 @@ function ccm_tools_redis_install_dropin($force = false) {
         $result['message'] = __('Cannot connect to Redis server: ', 'ccm-tools') . $connection['error'];
         return $result;
     }
-    
+
+    // A shared Redis daemon needs a non-empty per-site key salt, or two
+    // installs on the same daemon can silently read/write each other's
+    // cache. Ensure one exists and is persisted before touching any files.
+    // ccm_tools_redis_save_settings() auto-generates one when empty, so this
+    // should always succeed — the second check is a hard refusal in case it
+    // somehow doesn't.
+    $salt_settings = ccm_tools_redis_get_settings();
+    if (empty($salt_settings['key_salt'])) {
+        ccm_tools_redis_save_settings(array_merge($salt_settings, array(
+            'key_salt' => ccm_tools_redis_generate_key_salt(),
+        )));
+        $salt_settings = ccm_tools_redis_get_settings();
+    }
+    if (empty($salt_settings['key_salt'])) {
+        $result['message'] = __('Could not establish a Redis cache key salt; refusing to enable Redis object caching.', 'ccm-tools');
+        return $result;
+    }
+
     $dropin_status = ccm_tools_redis_dropin_status();
     
     // Check if another plugin's drop-in exists
@@ -691,6 +739,235 @@ function ccm_tools_redis_prune_backups($dir, $glob_suffix, $keep = 5) {
 }
 
 /**
+ * Atomically replace the contents of $path with $content.
+ *
+ * A direct @file_put_contents($path, $content) is NOT safe for a file like
+ * wp-config.php that PHP parses on every request: a worker killed mid-write,
+ * a full disk, or an execution timeout can leave a truncated file, which is
+ * a hard parse error on the very next request with no way into wp-admin to
+ * recover. Note file_put_contents() returns the BYTE COUNT on a partial
+ * write, not false, so a naive `=== false` check does not catch a full disk
+ * — the byte count must be compared against strlen($content).
+ *
+ * We instead write to "<path>.tmp-<random>" in the same directory, verify
+ * every byte landed, then rename() into place. rename() on the same
+ * filesystem is atomic, so a concurrent reader always sees either the old
+ * file or the new one whole, never a half-written one. Mirrors the pattern
+ * ccm_tools_redis_refresh_dropin() already used for the drop-in file; this
+ * is the shared helper so wp-config writes get the same guarantee.
+ *
+ * @param string $path    Absolute path of the file to replace.
+ * @param string $content New file content.
+ * @return bool True on a verified, complete, atomic write.
+ */
+function ccm_tools_redis_atomic_write_file($path, $content) {
+    $tmp = $path . '.tmp-' . wp_generate_password(6, false, false);
+
+    $written = @file_put_contents($tmp, $content);
+    if ($written === false || $written !== strlen($content)) {
+        @unlink($tmp);
+        return false;
+    }
+
+    if (!@rename($tmp, $path)) {
+        @unlink($tmp);
+        return false;
+    }
+
+    if (function_exists('opcache_invalidate')) {
+        @opcache_invalidate($path, true);
+    }
+
+    return true;
+}
+
+/**
+ * Directory used to store wp-config.php backups.
+ *
+ * wp-config.php backups embed the site's Redis credentials (and everything
+ * else in wp-config.php) in plaintext, so they must never live under the web
+ * root where a misconfigured server could serve them as a static download.
+ * This stores them under wp-content/uploads instead. The primary protection
+ * is now encryption of the backup body itself (see
+ * ccm_tools_redis_encrypt_backup()) — the .htaccess deny-all and empty
+ * index.php below are defence in depth only, because nginx never reads
+ * .htaccess, so on an nginx-fronted site they do nothing at all and a full
+ * plaintext wp-config.php would otherwise sit at a predictable path
+ * protected only by an unguessable filename.
+ *
+ * @return string Absolute path to the private backup directory, with a trailing slash.
+ */
+function ccm_tools_redis_private_backup_dir() {
+    $dir = trailingslashit(wp_upload_dir()['basedir']) . 'ccm-private/';
+
+    if (!file_exists($dir)) {
+        wp_mkdir_p($dir);
+    }
+
+    $htaccess = $dir . '.htaccess';
+    if (!file_exists($htaccess)) {
+        $htaccess_content = "<IfModule mod_authz_core.c>\n"
+            . "Require all denied\n"
+            . "</IfModule>\n"
+            . "<IfModule !mod_authz_core.c>\n"
+            . "Order allow,deny\n"
+            . "Deny from all\n"
+            . "</IfModule>\n";
+        @file_put_contents($htaccess, $htaccess_content);
+    }
+
+    $index = $dir . 'index.php';
+    if (!file_exists($index)) {
+        @file_put_contents($index, "<?php\n// Silence is golden.\n");
+    }
+
+    return $dir;
+}
+
+/**
+ * Derive the encryption and HMAC keys used for wp-config.php backups from
+ * the site's own AUTH_KEY/SECURE_AUTH_KEY. These are already secret,
+ * already unique per site, and already rotate with the site's salts, so
+ * there is no new key material to generate or store anywhere.
+ *
+ * @return array{enc:string,mac:string}|false Two 32-byte binary keys, or
+ *                                             false if no usable secret
+ *                                             material is defined.
+ */
+function ccm_tools_redis_backup_key() {
+    $secret = (defined('AUTH_KEY') ? AUTH_KEY : '') . (defined('SECURE_AUTH_KEY') ? SECURE_AUTH_KEY : '');
+    if ($secret === '' || strlen($secret) < 16) {
+        return false;
+    }
+    return array(
+        'enc' => hash_hmac('sha256', 'ccm-tools-redis-wpconfig-backup-enc', $secret, true),
+        'mac' => hash_hmac('sha256', 'ccm-tools-redis-wpconfig-backup-mac', $secret, true),
+    );
+}
+
+/**
+ * Encrypt a wp-config.php backup body: AES-256-CBC then HMAC-SHA256 over the
+ * ciphertext (encrypt-then-MAC), with the IV and MAC stored alongside the
+ * ciphertext so ccm_tools_redis_decrypt_backup() is self-contained.
+ *
+ * This is defence in depth against a *static file* leak (nginx not honouring
+ * .htaccess, a misconfigured backup tool, a misdirected symlink) — not
+ * against an attacker who already has PHP execution or DB access on the
+ * site, since the key is derived from that same site's own secrets.
+ *
+ * @param string $plaintext Raw wp-config.php content to protect.
+ * @return string|false Encrypted blob, or false if OpenSSL (or usable key
+ *                       material) is unavailable — callers must treat that
+ *                       as "refuse to write an unencrypted backup", never
+ *                       fall back to writing $plaintext as-is.
+ */
+function ccm_tools_redis_encrypt_backup($plaintext) {
+    if (!function_exists('openssl_encrypt') || !in_array('aes-256-cbc', array_map('strtolower', openssl_get_cipher_methods()), true)) {
+        return false;
+    }
+    $keys = ccm_tools_redis_backup_key();
+    if ($keys === false) {
+        return false;
+    }
+
+    $iv = random_bytes(16);
+    $ciphertext = openssl_encrypt($plaintext, 'aes-256-cbc', $keys['enc'], OPENSSL_RAW_DATA, $iv);
+    if ($ciphertext === false) {
+        return false;
+    }
+
+    $mac = hash_hmac('sha256', $iv . $ciphertext, $keys['mac'], true);
+
+    // Magic header so decrypt() can recognise our format (and so a legacy
+    // plaintext backup from before this change is never mistaken for one).
+    return 'CCMENCB1' . $iv . $mac . $ciphertext;
+}
+
+/**
+ * Decrypt a blob produced by ccm_tools_redis_encrypt_backup(), verifying the
+ * HMAC before attempting to decrypt (encrypt-then-MAC: verify first).
+ *
+ * No restore UI wires this up yet — wp-config.php backups here are written
+ * for a human with shell/SFTP access to recover from, and this is the
+ * supported way to get the plaintext back out instead of reading raw
+ * ciphertext off disk. A future "Restore backup" action should call this.
+ *
+ * @param string $blob Encrypted backup file content.
+ * @return string|false Decrypted wp-config.php content, or false if the
+ *                       blob is not one of ours, is truncated, or the HMAC
+ *                       does not verify (tampered, or wrong/rotated key).
+ */
+function ccm_tools_redis_decrypt_backup($blob) {
+    if (!function_exists('openssl_decrypt')) {
+        return false;
+    }
+    $magic = 'CCMENCB1';
+    if (strncmp((string) $blob, $magic, strlen($magic)) !== 0) {
+        return false;
+    }
+    $keys = ccm_tools_redis_backup_key();
+    if ($keys === false) {
+        return false;
+    }
+
+    $offset = strlen($magic);
+    $iv = substr($blob, $offset, 16);
+    $offset += 16;
+    $mac = substr($blob, $offset, 32);
+    $offset += 32;
+    $ciphertext = substr($blob, $offset);
+
+    if (strlen($iv) !== 16 || strlen($mac) !== 32 || $ciphertext === '') {
+        return false;
+    }
+
+    $expected_mac = hash_hmac('sha256', $iv . $ciphertext, $keys['mac'], true);
+    if (!hash_equals($expected_mac, $mac)) {
+        return false;
+    }
+
+    $plaintext = openssl_decrypt($ciphertext, 'aes-256-cbc', $keys['enc'], OPENSSL_RAW_DATA, $iv);
+    return $plaintext === false ? false : $plaintext;
+}
+
+/**
+ * Encrypt $plaintext and write it to $backup_path as a wp-config.php backup.
+ * Refuses to write anything if encryption isn't possible, rather than ever
+ * falling back to a plaintext credentials dump on disk.
+ *
+ * @param string $backup_path Absolute destination path.
+ * @param string $plaintext   Raw wp-config.php content to back up.
+ * @return bool True if an encrypted backup was written and verified.
+ */
+function ccm_tools_redis_write_encrypted_backup($backup_path, $plaintext) {
+    $encrypted = ccm_tools_redis_encrypt_backup($plaintext);
+    if ($encrypted === false) {
+        return false;
+    }
+    $written = @file_put_contents($backup_path, $encrypted);
+    return $written !== false && $written === strlen($encrypted);
+}
+
+/**
+ * Read and decrypt a wp-config.php backup written by
+ * ccm_tools_redis_write_encrypted_backup(). See ccm_tools_redis_decrypt_backup()
+ * for the format and failure cases.
+ *
+ * @param string $backup_path Absolute path to a backup file.
+ * @return string|false Decrypted wp-config.php content, or false.
+ */
+function ccm_tools_redis_read_backup($backup_path) {
+    if (!file_exists($backup_path)) {
+        return false;
+    }
+    $blob = file_get_contents($backup_path);
+    if ($blob === false) {
+        return false;
+    }
+    return ccm_tools_redis_decrypt_backup($blob);
+}
+
+/**
  * Bring the deployed wp-content/object-cache.php into line with the bundled
  * drop-in, WITHOUT requiring a live Redis connection.
  *
@@ -749,39 +1026,58 @@ function ccm_tools_redis_refresh_dropin($install_if_missing = false) {
         @copy($dest, WP_CONTENT_DIR . '/object-cache-backup-' . date('Y-m-d-His') . '.php');
     }
 
-    // Write atomically: copy to a temp file, then rename over the live drop-in.
-    // A plain copy() truncates-then-writes, so a concurrent request could read a
-    // half-written object-cache.php and fatal. rename() on the same filesystem
-    // is atomic, so readers always see either the old or the new file whole.
-    $tmp = $dest . '.tmp-' . wp_generate_password(6, false, false);
-    if (!@copy($source, $tmp)) {
-        @unlink($tmp);
-        $result['message'] = 'copy failed (check permissions)';
+    // Write atomically via the shared helper (tmp file in the same dir,
+    // byte-count verified, then rename() into place) — see
+    // ccm_tools_redis_atomic_write_file() for why a plain copy()/
+    // file_put_contents() isn't safe here: a concurrent request could read a
+    // half-written object-cache.php and fatal.
+    $source_content = @file_get_contents($source);
+    if ($source_content === false) {
+        $result['message'] = 'could not read bundled drop-in';
         return $result;
     }
-    if (!@rename($tmp, $dest)) {
-        @unlink($tmp);
-        $result['message'] = 'atomic replace failed (check permissions)';
+    if (!ccm_tools_redis_atomic_write_file($dest, $source_content)) {
+        $result['message'] = 'atomic replace failed (check permissions or disk space)';
         return $result;
-    }
-
-    if (function_exists('opcache_invalidate')) {
-        @opcache_invalidate($dest, true);
     }
 
     ccm_tools_redis_prune_backups(WP_CONTENT_DIR, 'object-cache-backup-*.php', 5);
 
     $result['changed'] = true;
     $result['message'] = 'drop-in refreshed';
+
+    // Keep wp-config.php in lockstep whenever the drop-in itself changes —
+    // this runs on plugin update, (re)activation, and the admin_init
+    // self-heal, any of which can happen well after the original Enable, so
+    // wp-config could otherwise drift from what a newer bundled version
+    // expects. Routed through the single shared builder (same as Enable /
+    // Save / "Add to wp-config") so the constant list can never diverge
+    // between paths. Only when Redis is actually flagged enabled, mirroring
+    // the "ours but not enabled" branch in ccm_tools_redis_maybe_autosync_dropin()
+    // — we shouldn't start writing new wp-config constants for a site that
+    // isn't opted in.
+    $sync_settings = function_exists('ccm_tools_redis_get_settings') ? ccm_tools_redis_get_settings() : array();
+    if (!empty($sync_settings['enabled'])
+        && function_exists('ccm_tools_redis_build_config_array')
+        && function_exists('ccm_tools_redis_add_config')
+    ) {
+        ccm_tools_redis_add_config(ccm_tools_redis_build_config_array($sync_settings));
+    }
+
     return $result;
 }
 
 /**
  * Remove the managed Redis configuration from wp-config.php.
  *
- * Strips the "CCM Tools Redis Configuration" block and any stray managed
- * defines (WP_REDIS_* and WP_CACHE_KEY_SALT), backing the file up first and
- * verifying the write. Used on disable / plugin deactivation.
+ * Strips the "CCM Tools Redis Configuration" block, any stray managed
+ * defines (WP_REDIS_* and WP_CACHE_KEY_SALT) left outside it, and the
+ * unterminated "/* Redis configuration *\/" header the old (now-removed)
+ * ccm_tools_add_redis_configuration() writer in system-info.php used to
+ * leave behind (it had no matching end marker, so the block-strip above
+ * never matched it). ccm_tools_redis_add_config() is now the only writer of
+ * Redis constants into wp-config.php. Backs the file up (encrypted) first
+ * and verifies the write. Used on disable / plugin deactivation.
  *
  * @return array { success: bool, message: string, backup_path?: string }
  */
@@ -817,7 +1113,9 @@ function ccm_tools_redis_remove_config() {
         "\n",
         $config_content
     );
-    // Strip any stray managed constants left elsewhere in the file.
+    // Strip any stray managed constants left elsewhere in the file — this
+    // also cleans up defines the old system-info.php writer left loose in
+    // the file (it shared the same WP_REDIS_* constant names).
     foreach (ccm_tools_redis_managed_constants() as $cname) {
         $config_content = preg_replace(
             '/^[ \t]*define\s*\(\s*[\'"]' . preg_quote($cname, '/') . '[\'"].*?\);\s*\n?/mi',
@@ -825,6 +1123,10 @@ function ccm_tools_redis_remove_config() {
             $config_content
         );
     }
+    // Remove the old writer's unterminated "/* Redis configuration */"
+    // header comment (no matching end marker, so it never matched the
+    // block-strip above and was left behind on every prior "Disable").
+    $config_content = preg_replace('/^[ \t]*\/\*\s*Redis\s+configuration\s*\*\/\s*\n?/mi', '', $config_content);
     $config_content = preg_replace('/\n{4,}/', "\n\n\n", $config_content);
 
     if ($config_content === $original) {
@@ -833,22 +1135,24 @@ function ccm_tools_redis_remove_config() {
         return $result;
     }
 
+    // Back up outside the web root, encrypted — wp-config.php holds the
+    // Redis credentials (and everything else) in plaintext, and .htaccess
+    // alone does not protect this directory on an nginx-fronted site. Refuse
+    // to proceed rather than fall back to an unencrypted backup.
+    $backup_dir      = ccm_tools_redis_private_backup_dir();
     $backup_filename = 'wp-config-backup-' . wp_generate_password(8, false, false) . '-' . date('Y-m-d-His') . '.php';
-    $backup_path     = dirname($real_config_path) . DIRECTORY_SEPARATOR . $backup_filename;
+    $backup_path     = $backup_dir . $backup_filename;
 
-    if (!@copy($real_config_path, $backup_path)) {
-        $result['message'] = __('Could not create backup of wp-config.php.', 'ccm-tools');
+    if (!ccm_tools_redis_write_encrypted_backup($backup_path, $original)) {
+        $result['message'] = __('Could not create an encrypted backup of wp-config.php.', 'ccm-tools');
         return $result;
     }
-    if (@file_put_contents($real_config_path, $config_content) === false) {
+    if (!ccm_tools_redis_atomic_write_file($real_config_path, $config_content)) {
         $result['message'] = __('Could not write to wp-config.php file.', 'ccm-tools');
         return $result;
     }
-    if (function_exists('opcache_invalidate')) {
-        @opcache_invalidate($real_config_path, true);
-    }
 
-    ccm_tools_redis_prune_backups(dirname($real_config_path), 'wp-config-backup-*.php', 5);
+    ccm_tools_redis_prune_backups($backup_dir, 'wp-config-backup-*.php', 5);
 
     $result['success']     = true;
     $result['message']     = __('Redis configuration removed from wp-config.php.', 'ccm-tools');
@@ -902,6 +1206,21 @@ function ccm_tools_redis_maybe_autosync_dropin() {
     $status   = ccm_tools_redis_dropin_status();
 
     if (!empty($settings['enabled'])) {
+        // Sites enabled before the auto-salt fix shipped may still be
+        // running with an empty WP_CACHE_KEY_SALT and won't necessarily
+        // ever hit Enable or Save again. Heal them here too, since this
+        // path already runs for every already-enabled site. The drop-in
+        // only ever reads the wp-config.php constant (never the DB option),
+        // so persisting the salt alone isn't enough — push it into
+        // wp-config.php too, through the same shared builder as every other
+        // path, not just the DB option.
+        if (empty($settings['key_salt']) && function_exists('ccm_tools_redis_generate_key_salt')) {
+            $settings['key_salt'] = ccm_tools_redis_generate_key_salt();
+            ccm_tools_redis_save_settings($settings);
+            if (function_exists('ccm_tools_redis_build_config_array') && function_exists('ccm_tools_redis_add_config')) {
+                ccm_tools_redis_add_config(ccm_tools_redis_build_config_array($settings));
+            }
+        }
         // Enabled: ensure a current CCM drop-in is in place (install if missing).
         ccm_tools_redis_refresh_dropin(true);
     } elseif ($status['is_ccm']) {
@@ -1201,8 +1520,23 @@ function ccm_tools_redis_format_bytes($bytes) {
 }
 
 /**
+ * Build a single wp-config define() line with an injection-proof value
+ * literal. Using var_export() (rather than string interpolation) means the
+ * value can contain quotes, backslashes, or anything else and it will always
+ * be emitted as one safe PHP literal — no way to break out of the string and
+ * inject additional statements into wp-config.php.
+ *
+ * @param string $constant Constant name (already validated/whitelisted by caller).
+ * @param mixed  $value    Constant value (bool, int, float, or string).
+ * @return string A complete "define('CONST', <literal>);" line.
+ */
+function ccm_tools_redis_config_line(string $constant, $value): string {
+    return "define('" . $constant . "', " . var_export($value, true) . ");";
+}
+
+/**
  * Add Redis configuration to wp-config.php
- * 
+ *
  * @param array $config Configuration values to add
  * @return array Result with success status and message
  */
@@ -1279,26 +1613,26 @@ function ccm_tools_redis_add_config($config = array()) {
         'WP_REDIS_DISABLE_COMMENT' => true,
     );
     
-    // Add site-specific salt
-    $site_url = parse_url(site_url(), PHP_URL_HOST);
-    if (!empty($site_url)) {
-        $defaults['WP_CACHE_KEY_SALT'] = $site_url . '_';
+    // Fallback salt if the caller's $config didn't already supply one (e.g.
+    // ccm_tools_redis_build_config_array() only adds WP_CACHE_KEY_SALT when
+    // the stored setting is non-empty). Host-only would still collide for
+    // two installs sharing one hostname (e.g. subdirectory multisite on
+    // shared hosting), so this always includes a random suffix too — same
+    // generator ccm_tools_redis_save_settings() uses to persist a salt.
+    if (function_exists('ccm_tools_redis_generate_key_salt')) {
+        $defaults['WP_CACHE_KEY_SALT'] = ccm_tools_redis_generate_key_salt();
     }
-    
+
     $config = array_merge($defaults, $config);
     
     // Build configuration lines
     $config_lines = array("\n/* CCM Tools Redis Configuration */");
     
     foreach ($config as $constant => $value) {
-        if (is_bool($value)) {
-            $value_str = $value ? 'true' : 'false';
-            $config_lines[] = "define('{$constant}', {$value_str});";
-        } elseif (is_int($value) || is_float($value)) {
-            $config_lines[] = "define('{$constant}', {$value});";
-        } else {
-            $config_lines[] = "define('{$constant}', '{$value}');";
-        }
+        // Route every value type through var_export() so nothing — booleans,
+        // numbers, or attacker-influenced strings (e.g. a Redis password) —
+        // can ever break out of the define() literal.
+        $config_lines[] = ccm_tools_redis_config_line($constant, $value);
     }
     
     // Only proceed if we have new constants to add
@@ -1318,15 +1652,32 @@ function ccm_tools_redis_add_config($config = array()) {
         '/(if\s*\(\s*!\s*defined\s*\(\s*[\'"]ABSPATH[\'"]\s*\))/i',
     );
     
+    /*
+     * Insert at an offset, never through preg_replace.
+     *
+     * $config_text carries the Redis password, and a preg_replace replacement
+     * string is parsed for backreferences: $1, ${1} and  are all substituted.
+     * The password validator rejects quotes, backslashes and control characters
+     * but not `$`, which is an ordinary character in a generated password. So a
+     * password like Xk$1vQ9z had capture group 1 spliced into the middle of it.
+     * Group 1 is the "That's all, stop editing!" comment, which contains an
+     * apostrophe, so the define() became a hard parse error and wp-config.php
+     * took the whole site down, front end and wp-admin both, recoverable only
+     * over SFTP. Every other safety net here passed, because the file was
+     * written completely and atomically. It was simply wrong.
+     *
+     * preg_match with PREG_OFFSET_CAPTURE plus substr_replace does no
+     * replacement parsing at all, so no character in a credential can ever
+     * be meaningful to the insert again.
+     */
     $inserted = false;
     foreach ($patterns as $pattern) {
-        if (preg_match($pattern, $config_content)) {
-            $new_content = preg_replace($pattern, $config_text . "\n$1", $config_content, 1, $count);
-            if ($count > 0) {
-                $config_content = $new_content;
-                $inserted = true;
-                break;
-            }
+        if (preg_match($pattern, $config_content, $match, PREG_OFFSET_CAPTURE)
+            && isset($match[1][1]) && $match[1][1] >= 0) {
+            $config_content = substr_replace($config_content, $config_text . "
+", $match[1][1], 0);
+            $inserted = true;
+            break;
         }
     }
     
@@ -1344,27 +1695,29 @@ function ccm_tools_redis_add_config($config = array()) {
         return $result;
     }
 
-    // Create backup with secure filename
+    // Create backup with secure filename, stored outside the web root and
+    // encrypted — wp-config.php holds the Redis credentials (and everything
+    // else) in plaintext, and .htaccess alone does not protect this
+    // directory on an nginx-fronted site. Refuse to proceed rather than
+    // fall back to an unencrypted backup.
+    $backup_dir      = ccm_tools_redis_private_backup_dir();
     $backup_filename = 'wp-config-backup-' . wp_generate_password(8, false, false) . '-' . date('Y-m-d-His') . '.php';
-    $backup_path = dirname($real_config_path) . DIRECTORY_SEPARATOR . $backup_filename;
+    $backup_path     = $backup_dir . $backup_filename;
 
-    if (!@copy($real_config_path, $backup_path)) {
-        $result['message'] = __('Could not create backup of wp-config.php.', 'ccm-tools');
+    if (!ccm_tools_redis_write_encrypted_backup($backup_path, $original_content)) {
+        $result['message'] = __('Could not create an encrypted backup of wp-config.php.', 'ccm-tools');
         return $result;
     }
 
-    // Write the new content
-    if (@file_put_contents($real_config_path, $config_content) === false) {
+    // Write the new content atomically (tmp file + rename, byte-count
+    // verified) so a worker kill, full disk, or timeout mid-write can never
+    // leave a truncated wp-config.php.
+    if (!ccm_tools_redis_atomic_write_file($real_config_path, $config_content)) {
         $result['message'] = __('Could not write to wp-config.php file.', 'ccm-tools');
         return $result;
     }
 
-    // Clear opcode cache
-    if (function_exists('opcache_invalidate')) {
-        opcache_invalidate($real_config_path, true);
-    }
-
-    ccm_tools_redis_prune_backups(dirname($real_config_path), 'wp-config-backup-*.php', 5);
+    ccm_tools_redis_prune_backups($backup_dir, 'wp-config-backup-*.php', 5);
 
     $result['success'] = true;
     $result['message'] = __('Redis configuration saved to wp-config.php successfully.', 'ccm-tools');
@@ -1407,603 +1760,744 @@ function ccm_tools_redis_format_uptime($seconds) {
  * Render the Redis admin page
  */
 function ccm_tools_render_redis_page() {
-    if (!current_user_can('manage_options')) {
+    if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
     }
-    
+
     $extension_available = ccm_tools_redis_extension_available();
+
+    // Round-trip time: timed around the connect + AUTH + SELECT + INFO
+    // handshake ccm_tools_redis_check_connection() already performs, rather
+    // than opening a second connection just to measure latency.
+    $rtt_start  = microtime(true);
     $connection = ccm_tools_redis_check_connection();
-    $settings = ccm_tools_redis_get_settings();
-    $dropin_status = ccm_tools_redis_dropin_status();
-    $stats = ccm_tools_redis_get_stats();
-    
+    $rtt_ms     = $connection['connected'] ? round((microtime(true) - $rtt_start) * 1000, 1) : null;
+
+    $settings        = ccm_tools_redis_get_settings();
+    $dropin_status   = ccm_tools_redis_dropin_status();
+    $version_check   = ccm_tools_redis_dropin_version_check();
+    $has_woocommerce = class_exists('WooCommerce');
+    $is_unix         = $settings['scheme'] === 'unix';
+
+    $stats = ($extension_available && $connection['connected']) ? ccm_tools_redis_get_stats() : null;
+
+    // Live values from the running drop-in — only meaningful when it is ours,
+    // connected, and WordPress has actually booted an object cache.
+    $runtime = null;
+    if ($connection['connected'] && $dropin_status['is_ccm'] && function_exists('wp_cache_get')) {
+        global $wp_object_cache;
+        if (is_object($wp_object_cache) && method_exists($wp_object_cache, 'info')) {
+            $runtime = $wp_object_cache->info();
+        }
+    }
+
+    // Which wp-config constants belong to which configuration group, so the
+    // group eyebrows and the Status panel can say how many are locked there.
+    $constants_connection  = array('WP_REDIS_HOST', 'WP_REDIS_PORT', 'WP_REDIS_PATH', 'WP_REDIS_SCHEME', 'WP_REDIS_DATABASE', 'WP_REDIS_USERNAME', 'WP_REDIS_PASSWORD');
+    $constants_cache       = array('WP_REDIS_MAXTTL', 'WP_CACHE_KEY_SALT', 'WP_REDIS_SELECTIVE_FLUSH');
+    $constants_advanced    = array('WP_REDIS_TIMEOUT', 'WP_REDIS_READ_TIMEOUT', 'WP_REDIS_RETRY_INTERVAL', 'WP_REDIS_SERIALIZER', 'WP_REDIS_COMPRESSION', 'WP_REDIS_ASYNC_FLUSH', 'WP_REDIS_DISABLE_COMMENT');
+    $all_managed_constants = ccm_tools_redis_managed_constants();
+    $locked_constants       = array_filter($all_managed_constants, 'defined');
+    $count_locked           = function (array $list) {
+        return count(array_filter($list, 'defined'));
+    };
+
+    $has_lzf  = defined('Redis::COMPRESSION_LZF');
+    $has_lz4  = defined('Redis::COMPRESSION_LZ4');
+    $has_zstd = defined('Redis::COMPRESSION_ZSTD');
     ?>
     <div class="wrap ccm-tools">
-        <?php 
+        <?php
         if (function_exists('ccm_tools_render_header_nav')) {
             ccm_tools_render_header_nav('ccm-tools-redis');
         }
         ?>
-        
+
         <div class="ccm-content">
-            <!-- Status Overview Card -->
-            <div class="ccm-card">
-                <h2><?php _e('Redis Status', 'ccm-tools'); ?></h2>
-                
-                <table class="ccm-table">
-                    <tr>
-                        <th><?php _e('PHP Extension', 'ccm-tools'); ?></th>
-                        <td>
-                            <?php if ($extension_available): ?>
-                                <span class="ccm-success"><?php _e('Installed', 'ccm-tools'); ?></span>
-                            <?php else: ?>
-                                <span class="ccm-error"><?php _e('Not Installed', 'ccm-tools'); ?></span>
-                                <p class="ccm-note"><?php _e('The Redis PHP extension is required. Contact your hosting provider to install it.', 'ccm-tools'); ?></p>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    
-                    <?php if ($extension_available): ?>
-                    <tr>
-                        <th><?php _e('Server Connection', 'ccm-tools'); ?></th>
-                        <td>
-                            <?php if ($connection['connected']): ?>
-                                <span class="ccm-success"><?php _e('Connected', 'ccm-tools'); ?></span>
-                                <span class="ccm-note">
-                                    (<?php echo esc_html($connection['host']); ?><?php echo $connection['port'] ? ':' . esc_html($connection['port']) : ''; ?>)
-                                </span>
-                            <?php else: ?>
-                                <span class="ccm-error"><?php _e('Not Connected', 'ccm-tools'); ?></span>
-                                <?php if (!empty($connection['error'])): ?>
-                                    <p class="ccm-note ccm-error"><?php echo esc_html($connection['error']); ?></p>
-                                <?php endif; ?>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    
-                    <?php if ($connection['connected']): ?>
-                    <tr>
-                        <th><?php _e('Redis Version', 'ccm-tools'); ?></th>
-                        <td><?php echo esc_html($connection['version']); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php _e('Uptime', 'ccm-tools'); ?></th>
-                        <td><?php echo esc_html(ccm_tools_redis_format_uptime($connection['uptime'])); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php _e('Memory Used', 'ccm-tools'); ?></th>
-                        <td><?php echo esc_html($connection['memory_used']); ?></td>
-                    </tr>
-                    <tr>
-                        <th><?php _e('Object Cache', 'ccm-tools'); ?></th>
-                        <td>
-                            <?php if ($dropin_status['is_ccm']): ?>
-                                <span class="ccm-success"><?php _e('Enabled', 'ccm-tools'); ?></span>
-                                <?php if (!empty($dropin_status['version'])): ?>
-                                    <span class="ccm-note">(v<?php echo esc_html($dropin_status['version']); ?>)</span>
-                                <?php endif; ?>
-                                <?php
-                                $version_check = ccm_tools_redis_dropin_version_check();
-                                if ($version_check['needs_update']): ?>
-                                    <span class="ccm-warning" style="margin-left: 8px;">
-                                        <?php printf(__('Update available: v%s', 'ccm-tools'), esc_html($version_check['bundled'])); ?>
-                                    </span>
-                                    <button type="button" id="redis-update-dropin" class="ccm-button ccm-button-small" style="margin-left: 8px;">
-                                        <?php _e('Update Drop-In', 'ccm-tools'); ?>
-                                    </button>
-                                <?php endif; ?>
-                            <?php elseif ($dropin_status['is_other']): ?>
-                                <span class="ccm-warning"><?php _e('Other Plugin Active', 'ccm-tools'); ?></span>
-                                <span class="ccm-note">(<?php echo esc_html($dropin_status['other_plugin']); ?>)</span>
-                            <?php else: ?>
-                                <span class="ccm-warning"><?php _e('Disabled', 'ccm-tools'); ?></span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                    <?php endif; ?>
-                </table>
-                
-                <?php
-                // Runtime Diagnostics — query the live $wp_object_cache instance (Premium)
-                if (ccm_tools_has_premium_feature('advanced_redis') && $connection['connected'] && $dropin_status['is_ccm'] && function_exists('wp_cache_get')):
-                    global $wp_object_cache;
-                    $runtime = (is_object($wp_object_cache) && method_exists($wp_object_cache, 'info'))
-                        ? $wp_object_cache->info()
-                        : null;
-                    if ($runtime):
-                ?>
-                <div style="margin-top: var(--ccm-space-md);">
-                    <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Drop-In Runtime', 'ccm-tools'); ?></h3>
-                    <p class="ccm-note"><?php _e('Live values from the active object-cache.php drop-in for this page load.', 'ccm-tools'); ?></p>
-                    <table class="ccm-table" style="margin-top: var(--ccm-space-sm);">
-                        <tr>
-                            <th><?php _e('Status', 'ccm-tools'); ?></th>
-                            <td>
-                                <?php if (!empty($runtime['status']) && $runtime['status'] === 'connected'): ?>
-                                    <span class="ccm-success"><?php _e('Connected', 'ccm-tools'); ?></span>
-                                <?php else: ?>
-                                    <span class="ccm-error"><?php echo esc_html($runtime['status'] ?? 'unknown'); ?></span>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
-                        <tr>
-                            <th><?php _e('Serializer', 'ccm-tools'); ?></th>
-                            <td><code><?php echo esc_html($runtime['serializer'] ?? 'php'); ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Compression', 'ccm-tools'); ?></th>
-                            <td><code><?php echo esc_html($runtime['compression'] ?? 'none'); ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Async Flush (UNLINK)', 'ccm-tools'); ?></th>
-                            <td><code><?php echo !empty($runtime['async_flush']) ? 'true' : 'false'; ?></code></td>
-                        </tr>
+
+            <!-- Hero -->
+            <div class="ccm-hero">
+                <div class="ccm-hero__text">
+                    <h1><?php _e('Redis Object Cache', 'ccm-tools'); ?></h1>
+                    <div class="ccm-hero__meta">
+                        <?php if (!$extension_available) : ?>
+                            <span><?php _e('PHP extension not installed', 'ccm-tools'); ?></span>
+                        <?php elseif (!$connection['connected']) : ?>
+                            <span><?php _e('Not connected', 'ccm-tools'); ?></span>
+                        <?php else : ?>
+                            <span><?php _e('Connected', 'ccm-tools'); ?></span>
+                            <span><?php printf(esc_html__('Redis %s', 'ccm-tools'), esc_html($connection['version'])); ?></span>
                         <?php endif; ?>
-                        <tr>
-                            <th><?php _e('Selective Flush', 'ccm-tools'); ?></th>
-                            <td><code><?php echo !empty($runtime['selective_flush']) ? 'true' : 'false'; ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Max TTL', 'ccm-tools'); ?></th>
-                            <td><code><?php echo intval($runtime['max_ttl'] ?? 0); ?>s</code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('KEEPTTL Support', 'ccm-tools'); ?></th>
-                            <td><code><?php echo !empty($runtime['supports_keepttl']) ? 'true' : 'false'; ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Key Prefix', 'ccm-tools'); ?></th>
-                            <td><code><?php echo esc_html($runtime['key_salt'] ?? ''); ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Global Groups', 'ccm-tools'); ?></th>
-                            <td><code><?php echo esc_html(implode(', ', array_keys($runtime['global_groups'] ?? []))); ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Page Hits / Misses', 'ccm-tools'); ?></th>
-                            <td>
-                                <code><?php echo intval($runtime['hits'] ?? 0); ?></code> / <code><?php echo intval($runtime['misses'] ?? 0); ?></code>
-                                <?php
-                                $h = intval($runtime['hits'] ?? 0);
-                                $m = intval($runtime['misses'] ?? 0);
-                                $total = $h + $m;
-                                if ($total > 0):
-                                    $ratio = round(($h / $total) * 100, 1);
-                                ?>
-                                    <span class="ccm-note">(<?php echo $ratio; ?>% hit ratio)</span>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Redis Calls', 'ccm-tools'); ?></th>
-                            <td><code><?php echo intval($runtime['redis_calls'] ?? 0); ?></code></td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Redis Time', 'ccm-tools'); ?></th>
-                            <td><code><?php echo round(floatval($runtime['redis_time'] ?? 0) * 1000, 2); ?>ms</code></td>
-                        </tr>
-                    </table>
+                        <?php if ($dropin_status['is_ccm']) : ?>
+                            <span><?php printf(
+                                esc_html__('Drop-in v%s', 'ccm-tools'),
+                                esc_html($dropin_status['version'] !== '' ? $dropin_status['version'] : '?')
+                            ); ?></span>
+                        <?php elseif ($dropin_status['is_other']) : ?>
+                            <span><?php printf(esc_html__('Drop-in: %s', 'ccm-tools'), esc_html($dropin_status['other_plugin'])); ?></span>
+                        <?php else : ?>
+                            <span><?php _e('Drop-in not installed', 'ccm-tools'); ?></span>
+                        <?php endif; ?>
+                    </div>
                 </div>
-                <?php endif; endif; ?>
-                
-                <?php if ($extension_available): ?>
-                <div class="ccm-button-group" style="margin-top: var(--ccm-space-md);">
-                    <?php if ($connection['connected']): ?>
-                        <?php if (!$dropin_status['is_ccm']): ?>
-                            <button type="button" id="redis-enable" class="ccm-button ccm-button-primary" <?php echo $dropin_status['is_other'] ? 'data-force="true"' : ''; ?>>
-                                <?php echo $dropin_status['is_other'] ? __('Replace & Enable', 'ccm-tools') : __('Enable Object Cache', 'ccm-tools'); ?>
-                            </button>
-                        <?php else: ?>
+                <div class="ccm-hero__actions">
+                    <?php if ($extension_available && $connection['connected']) : ?>
+                        <button type="button" id="redis-flush" class="ccm-button ccm-button-secondary">
+                            <?php _e('Flush Cache', 'ccm-tools'); ?>
+                        </button>
+                        <?php if ($dropin_status['is_ccm']) : ?>
                             <button type="button" id="redis-disable" class="ccm-button ccm-button-danger">
                                 <?php _e('Disable Object Cache', 'ccm-tools'); ?>
                             </button>
+                        <?php else : ?>
+                            <button type="button" id="redis-enable" class="ccm-button ccm-button-primary" <?php echo $dropin_status['is_other'] ? 'data-force="true"' : ''; ?>>
+                                <?php echo $dropin_status['is_other'] ? esc_html__('Replace & Enable', 'ccm-tools') : esc_html__('Enable Object Cache', 'ccm-tools'); ?>
+                            </button>
                         <?php endif; ?>
-                        
-                        <button type="button" id="redis-flush" class="ccm-button">
-                            <?php _e('Flush Cache', 'ccm-tools'); ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- At a glance -->
+            <?php if ($extension_available && $connection['connected']) :
+                $hits        = intval($connection['hits']);
+                $misses      = intval($connection['misses']);
+                $has_traffic = ($hits + $misses) > 0;
+                $hit_ratio   = $connection['hit_ratio'];
+                // Bands below are a judgement call, not a Redis-published
+                // standard: north of 80% the cache is clearly earning its
+                // keep, under 50% it is barely being used yet.
+                $hit_dot = !$has_traffic ? '' : ($hit_ratio >= 80 ? 'ccm-dot-ok' : ($hit_ratio >= 50 ? 'ccm-dot-warn' : 'ccm-dot-bad'));
+                $mem_dot = $stats['memory_bytes'] > 536870912 ? 'ccm-dot-warn' : 'ccm-dot-ok'; // >512MB for one site is worth a look
+                $keys_dot = $stats['keys'] > 0 ? 'ccm-dot-ok' : 'ccm-dot-warn';
+                $rtt_dot = $rtt_ms === null ? '' : ($rtt_ms <= 15 ? 'ccm-dot-ok' : ($rtt_ms <= 50 ? 'ccm-dot-warn' : 'ccm-dot-bad'));
+                ?>
+                <div class="ccm-stat-grid">
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value">
+                            <?php echo $has_traffic ? esc_html(number_format_i18n($hit_ratio, 1)) . '<small>%</small>' : '—'; ?>
+                        </div>
+                        <div class="ccm-stat-tile__label"><?php _e('Hit rate', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo esc_attr($hit_dot); ?>"></span>
+                            <?php if ($has_traffic) : ?>
+                                <?php printf(esc_html__('%s hits, whole server since restart', 'ccm-tools'), esc_html(number_format_i18n($hits))); ?>
+                            <?php else : ?>
+                                <?php _e('No traffic recorded yet', 'ccm-tools'); ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value" id="redis-stat-memory"><?php echo esc_html($stats['memory_used']); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Memory used', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo esc_attr($mem_dot); ?>"></span>
+                            <?php _e('This site only', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value" id="redis-stat-keys"><?php echo esc_html(number_format_i18n($stats['keys'])); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Keys for this site', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo esc_attr($keys_dot); ?>"></span>
+                            <?php echo $stats['keys'] > 0 ? esc_html__('Prefix is scoped and populated', 'ccm-tools') : esc_html__('Nothing cached yet', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value">
+                            <?php echo $rtt_ms !== null ? esc_html(number_format_i18n($rtt_ms, 1)) . '<small>ms</small>' : '—'; ?>
+                        </div>
+                        <div class="ccm-stat-tile__label"><?php _e('Round-trip time', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo esc_attr($rtt_dot); ?>"></span>
+                            <?php _e('Connect and INFO, this page load', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin-top: calc(-1 * var(--ccm-space-md)); margin-bottom: var(--ccm-space-lg);">
+                    <?php printf(
+                        /* translators: 1: key prefix, 2: cache group count, 3: average TTL */
+                        esc_html__('Scoped to keys prefixed %1$s — %2$s cache groups, average TTL %3$s', 'ccm-tools'),
+                        '<code>' . esc_html($stats['key_prefix']) . '</code>',
+                        '<span id="redis-stat-groups">' . esc_html(number_format_i18n($stats['groups'])) . '</span>',
+                        '<span id="redis-stat-ttl">' . esc_html($stats['avg_ttl']) . '</span>'
+                    ); ?>
+                </p>
+            <?php elseif ($extension_available) : ?>
+                <div class="ccm-empty">
+                    <span class="ccm-empty__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 11-7 7 5 5 0 017-7zm0 0L15 8m0 0l3 3 3-3-3-3"/></svg>
+                    </span>
+                    <h3><?php _e('Redis is not reachable', 'ccm-tools'); ?></h3>
+                    <p>
+                        <?php if (!empty($connection['error'])) : ?>
+                            <?php echo esc_html($connection['error']); ?>
+                        <?php else : ?>
+                            <?php _e('The PHP extension is installed but the server did not answer.', 'ccm-tools'); ?>
+                        <?php endif; ?>
+                        <?php _e('Check the host, port and password in Connection below, or confirm the Redis server itself is running.', 'ccm-tools'); ?>
+                    </p>
+                </div>
+            <?php else : ?>
+                <div class="ccm-empty">
+                    <span class="ccm-empty__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 11-7 7 5 5 0 017-7zm0 0L15 8m0 0l3 3 3-3-3-3"/></svg>
+                    </span>
+                    <h3><?php _e('The Redis PHP extension is not installed', 'ccm-tools'); ?></h3>
+                    <p><?php _e('Object caching needs the PHP redis extension on the server. Ask your host to enable it, then come back to this page.', 'ccm-tools'); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <?php
+            /*
+             * Status and the drop-in's live readings sit side by side. Both are
+             * read rather than set — nothing in either panel is a decision — so
+             * pairing them stops a long page spending two full-width blocks on
+             * reference detail. .ccm-grid-2 collapses to one column on a phone,
+             * and when the drop-in is not running the Status panel simply takes
+             * the whole width on its own.
+             */
+            ?>
+            <div class="ccm-grid-2">
+
+            <!-- Status -->
+            <div class="ccm-panel">
+                <div class="ccm-panel__head">
+                    <span><?php _e('Status', 'ccm-tools'); ?></span>
+                    <?php if ($extension_available) : ?>
+                        <button type="button" id="redis-test" class="ccm-button ccm-button-secondary ccm-button-small">
+                            <?php _e('Test Connection', 'ccm-tools'); ?>
                         </button>
                     <?php endif; ?>
-                    
-                    <button type="button" id="redis-test" class="ccm-button">
-                        <?php _e('Test Connection', 'ccm-tools'); ?>
-                    </button>
                 </div>
-                <?php endif; ?>
+                <div class="ccm-kv">
+                    <div>
+                        <span class="ccm-kv__k"><?php _e('PHP extension', 'ccm-tools'); ?></span>
+                        <span class="ccm-kv__v">
+                            <?php if ($extension_available) : ?>
+                                <span class="ccm-chip ccm-chip--good"><?php _e('Installed', 'ccm-tools'); ?></span>
+                            <?php else : ?>
+                                <span class="ccm-chip ccm-chip--bad"><?php _e('Not installed', 'ccm-tools'); ?></span>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                    <?php if ($extension_available) : ?>
+                    <div>
+                        <span class="ccm-kv__k"><?php _e('Server connection', 'ccm-tools'); ?></span>
+                        <span class="ccm-kv__v">
+                            <?php if ($connection['connected']) : ?>
+                                <span class="ccm-chip ccm-chip--good"><?php _e('Connected', 'ccm-tools'); ?></span>
+                                <?php echo esc_html($connection['host']); ?><?php echo $connection['port'] ? ':' . esc_html($connection['port']) : ''; ?>
+                            <?php else : ?>
+                                <span class="ccm-chip ccm-chip--bad"><?php _e('Not connected', 'ccm-tools'); ?></span>
+                                <?php if (!empty($connection['error'])) : ?>
+                                    <small><?php echo esc_html($connection['error']); ?></small>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                    <div>
+                        <span class="ccm-kv__k"><?php _e('wp-config constants', 'ccm-tools'); ?></span>
+                        <span class="ccm-kv__v">
+                            <?php if ($locked_constants) : ?>
+                                <?php printf(
+                                    /* translators: 1: number locked, 2: number of settings that can be locked */
+                                    esc_html__('%1$d of %2$d settings locked there', 'ccm-tools'),
+                                    count($locked_constants),
+                                    count($all_managed_constants)
+                                ); ?>
+                                <small><?php echo esc_html(implode(', ', $locked_constants)); ?></small>
+                            <?php else : ?>
+                                <?php _e('None — everything below is stored in the database', 'ccm-tools'); ?>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                    <div>
+                        <span class="ccm-kv__k"><?php _e('Drop-in', 'ccm-tools'); ?></span>
+                        <span class="ccm-kv__v">
+                            <?php if ($dropin_status['is_ccm']) : ?>
+                                <span class="ccm-chip ccm-chip--good"><?php _e('Enabled', 'ccm-tools'); ?></span>
+                                <?php if ($dropin_status['version'] !== '') : ?>
+                                    v<?php echo esc_html($dropin_status['version']); ?>
+                                <?php endif; ?>
+                                <?php if ($version_check['needs_update']) : ?>
+                                    <span class="ccm-chip ccm-chip--warn"><?php printf(esc_html__('Update to v%s available', 'ccm-tools'), esc_html($version_check['bundled'])); ?></span>
+                                    <button type="button" id="redis-update-dropin" class="ccm-button ccm-button-secondary ccm-button-small">
+                                        <?php _e('Update Drop-In', 'ccm-tools'); ?>
+                                    </button>
+                                <?php endif; ?>
+                            <?php elseif ($dropin_status['is_other']) : ?>
+                                <span class="ccm-chip ccm-chip--warn"><?php _e('Other plugin active', 'ccm-tools'); ?></span>
+                                <?php echo esc_html($dropin_status['other_plugin']); ?>
+                            <?php else : ?>
+                                <span class="ccm-chip"><?php _e('Not installed', 'ccm-tools'); ?></span>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                    <div>
+                        <span class="ccm-kv__k"><?php _e('Options group', 'ccm-tools'); ?></span>
+                        <span class="ccm-kv__v">
+                            <?php if (defined('WP_REDIS_PERSIST_OPTIONS') && WP_REDIS_PERSIST_OPTIONS) : ?>
+                                <?php _e('Persisted to Redis — WP_REDIS_PERSIST_OPTIONS overrides the default skip.', 'ccm-tools'); ?>
+                            <?php else : ?>
+                                <?php _e('Skipped, deliberately: alloptions is read on almost every request, so caching it in Redis risks an out-of-memory crash across the whole site if that one copy is ever corrupt.', 'ccm-tools'); ?>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                    <?php endif; ?>
+                </div>
             </div>
-            
-            <?php if ($extension_available && $connection['connected']): ?>
-            <!-- Statistics Card (only when connected) -->
-            <div class="ccm-card">
-                <h2><?php _e('Site Cache Statistics', 'ccm-tools'); ?></h2>
-                <p class="ccm-note"><?php printf(__('Showing statistics for keys prefixed with: %s', 'ccm-tools'), '<code>' . esc_html($stats['key_prefix']) . '</code>'); ?></p>
-                
-                <div class="ccm-stats-grid">
-                    <div class="ccm-stat-box">
-                        <div class="ccm-stat-value" id="redis-stat-keys"><?php echo number_format_i18n($stats['keys']); ?></div>
-                        <div class="ccm-stat-label"><?php _e('Cached Keys', 'ccm-tools'); ?></div>
+
+            <?php if ($runtime) : ?>
+            <!-- Drop-in runtime -->
+            <div class="ccm-panel">
+                <div class="ccm-panel__head">
+                    <span><?php _e('Drop-in runtime', 'ccm-tools'); ?></span>
+                    <span class="ccm-chip ccm-chip--info"><?php _e('Live values from the running drop-in', 'ccm-tools'); ?></span>
+                </div>
+                <div class="ccm-kv">
+                    <div><span class="ccm-kv__k"><?php _e('Serializer', 'ccm-tools'); ?></span><span class="ccm-kv__v"><code><?php echo esc_html($runtime['serializer'] ?? 'php'); ?></code></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('Compression', 'ccm-tools'); ?></span><span class="ccm-kv__v"><code><?php echo esc_html($runtime['compression'] ?? 'none'); ?></code></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('Async flush', 'ccm-tools'); ?></span><span class="ccm-kv__v"><?php echo !empty($runtime['async_flush']) ? esc_html__('On — UNLINK', 'ccm-tools') : esc_html__('Off', 'ccm-tools'); ?></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('Selective flush', 'ccm-tools'); ?></span><span class="ccm-kv__v"><?php echo !empty($runtime['selective_flush']) ? esc_html__('On', 'ccm-tools') : esc_html__('Off', 'ccm-tools'); ?></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('Max TTL', 'ccm-tools'); ?></span><span class="ccm-kv__v"><?php echo intval($runtime['max_ttl'] ?? 0); ?>s<?php echo intval($runtime['max_ttl'] ?? 0) === 0 ? ' (' . esc_html__('no limit', 'ccm-tools') . ')' : ''; ?></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('KEEPTTL support', 'ccm-tools'); ?></span><span class="ccm-kv__v"><?php echo !empty($runtime['supports_keepttl']) ? esc_html__('Yes', 'ccm-tools') : esc_html__('No', 'ccm-tools'); ?></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('Key prefix', 'ccm-tools'); ?></span><span class="ccm-kv__v"><code><?php echo esc_html($runtime['key_salt'] ?? ''); ?></code></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('Global groups', 'ccm-tools'); ?></span><span class="ccm-kv__v"><?php echo esc_html(implode(', ', array_keys($runtime['global_groups'] ?? array()))); ?></span></div>
+                    <div>
+                        <span class="ccm-kv__k"><?php _e('Hits / misses', 'ccm-tools'); ?></span>
+                        <span class="ccm-kv__v">
+                            <?php
+                            $rt_hits   = intval($runtime['hits'] ?? 0);
+                            $rt_misses = intval($runtime['misses'] ?? 0);
+                            $rt_total  = $rt_hits + $rt_misses;
+                            echo esc_html(number_format_i18n($rt_hits)) . ' / ' . esc_html(number_format_i18n($rt_misses));
+                            if ($rt_total > 0) :
+                            ?>
+                                <small><?php printf(esc_html__('%s%% this page load', 'ccm-tools'), round(($rt_hits / $rt_total) * 100, 1)); ?></small>
+                            <?php endif; ?>
+                        </span>
                     </div>
-                    <div class="ccm-stat-box">
-                        <div class="ccm-stat-value" id="redis-stat-memory"><?php echo esc_html($stats['memory_used']); ?></div>
-                        <div class="ccm-stat-label"><?php _e('Estimated Memory', 'ccm-tools'); ?></div>
-                    </div>
-                    <div class="ccm-stat-box">
-                        <div class="ccm-stat-value" id="redis-stat-groups"><?php echo number_format_i18n($stats['groups']); ?></div>
-                        <div class="ccm-stat-label"><?php _e('Cache Groups', 'ccm-tools'); ?></div>
-                    </div>
-                    <div class="ccm-stat-box">
-                        <div class="ccm-stat-value" id="redis-stat-ttl"><?php echo esc_html($stats['avg_ttl']); ?></div>
-                        <div class="ccm-stat-label"><?php _e('Avg. TTL', 'ccm-tools'); ?></div>
-                    </div>
+                    <div><span class="ccm-kv__k"><?php _e('Redis calls', 'ccm-tools'); ?></span><span class="ccm-kv__v"><?php echo intval($runtime['redis_calls'] ?? 0); ?></span></div>
+                    <div><span class="ccm-kv__k"><?php _e('Redis time', 'ccm-tools'); ?></span><span class="ccm-kv__v"><?php echo esc_html(round(floatval($runtime['redis_time'] ?? 0) * 1000, 2)); ?>ms</span></div>
                 </div>
             </div>
             <?php endif; ?>
-            
-            <?php if ($extension_available): ?>
-            <!-- Configuration Card (always visible when extension available) -->
-            <div class="ccm-card">
-                <h2><?php _e('Configuration', 'ccm-tools'); ?></h2>
-                
-                <form id="redis-settings-form" class="ccm-form">
-                    <div class="ccm-form-section">
-                        <h3><?php _e('Connection Settings', 'ccm-tools'); ?></h3>
-                        <p class="ccm-note"><?php _e('These settings can also be defined as constants in wp-config.php. Constants take precedence over these settings.', 'ccm-tools'); ?></p>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field">
-                                <label for="redis-scheme"><?php _e('Connection Type', 'ccm-tools'); ?></label>
-                                <select id="redis-scheme" name="scheme">
+
+            </div><!-- /.ccm-grid-2 -->
+
+            <?php if ($extension_available) : ?>
+
+            <form id="redis-settings-form">
+
+                <section class="ccm-optgroup" data-group="connection">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Connection', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Where Redis is and how to reach it. Anything defined as a constant in wp-config.php always wins over what is saved here.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_connection), count($constants_connection)); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <?php
+                        /*
+                         * One grid for every field in this card, so the column
+                         * edge is a single straight line rather than moving
+                         * between one row and the next. The grid's own gap does
+                         * the spacing; nothing carries a margin.
+                         */
+                        ?>
+                        <div class="ccm-fieldgrid" style="padding: var(--ccm-space-md);">
+                            <div class="ccm-optfield">
+                                <label for="redis-scheme"><?php _e('Connection type', 'ccm-tools'); ?></label>
+                                <select id="redis-scheme" name="scheme" class="ccm-input">
                                     <option value="tcp" <?php selected($settings['scheme'], 'tcp'); ?>><?php _e('TCP/IP', 'ccm-tools'); ?></option>
-                                    <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix Socket', 'ccm-tools'); ?></option>
+                                    <option value="unix" <?php selected($settings['scheme'], 'unix'); ?>><?php _e('Unix socket', 'ccm-tools'); ?></option>
                                     <option value="tls" <?php selected($settings['scheme'], 'tls'); ?>><?php _e('TLS/SSL', 'ccm-tools'); ?></option>
                                 </select>
                             </div>
-                            
-                            <div class="ccm-form-field" id="redis-database-field">
-                                <label for="redis-database"><?php _e('Database Index', 'ccm-tools'); ?></label>
-                                <input type="number" id="redis-database" name="database" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
-                                <span class="ccm-field-hint"><?php _e('0-15', 'ccm-tools'); ?></span>
+                            <div class="ccm-optfield" id="redis-database-field">
+                                <label for="redis-database"><?php _e('Database index', 'ccm-tools'); ?></label>
+                                <input type="number" id="redis-database" name="database" class="ccm-input" value="<?php echo esc_attr($settings['database']); ?>" min="0" max="15">
+                                <span class="ccm-optfield__hint"><?php _e('0–15', 'ccm-tools'); ?></span>
                             </div>
-                        </div>
-                        
-                        <div class="ccm-form-grid" id="tcp-settings">
-                            <div class="ccm-form-field ccm-form-field-wide">
-                                <label for="redis-host"><?php _e('Host', 'ccm-tools'); ?></label>
-                                <input type="text" id="redis-host" name="host" value="<?php echo esc_attr($settings['host']); ?>" placeholder="127.0.0.1">
+
+                            <?php
+                            /*
+                             * These two wrappers exist only so js/main.js can flip
+                             * between them by id. They carry .ccm-fieldgrid__passthrough,
+                             * which is `display: contents`, so the fields inside land in
+                             * the grid above rather than forming a row with its own
+                             * column widths — which is what used to make the column edge
+                             * shift between one row and the next.
+                             *
+                             * Whichever starts hidden must do so with an inline
+                             * display: none. .ccm-hide is `display: none !important` and
+                             * the script reveals with an inline style, which cannot beat
+                             * it, so the field would never come back.
+                             */
+                            ?>
+                            <div class="ccm-fieldgrid__passthrough" id="tcp-settings"<?php echo $is_unix ? ' style="display: none;"' : ''; ?>>
+                                <div class="ccm-optfield">
+                                    <label for="redis-host"><?php _e('Host', 'ccm-tools'); ?></label>
+                                    <input type="text" id="redis-host" name="host" class="ccm-input" value="<?php echo esc_attr($settings['host']); ?>" placeholder="127.0.0.1">
+                                </div>
+                                <div class="ccm-optfield">
+                                    <label for="redis-port"><?php _e('Port', 'ccm-tools'); ?></label>
+                                    <input type="number" id="redis-port" name="port" class="ccm-input" value="<?php echo esc_attr($settings['port']); ?>" placeholder="6379" min="1" max="65535">
+                                </div>
                             </div>
-                            <div class="ccm-form-field">
-                                <label for="redis-port"><?php _e('Port', 'ccm-tools'); ?></label>
-                                <input type="number" id="redis-port" name="port" value="<?php echo esc_attr($settings['port']); ?>" placeholder="6379" min="1" max="65535">
+
+                            <div class="ccm-fieldgrid__passthrough" id="unix-settings"<?php echo $is_unix ? '' : ' style="display: none;"'; ?>>
+                                <div class="ccm-optfield ccm-fieldgrid__wide">
+                                    <label for="redis-path"><?php _e('Socket path', 'ccm-tools'); ?></label>
+                                    <input type="text" id="redis-path" name="path" class="ccm-input" value="<?php echo esc_attr($settings['path']); ?>" placeholder="/var/run/redis/redis.sock">
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="ccm-form-grid" id="unix-settings" style="display: none;">
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <label for="redis-path"><?php _e('Socket Path', 'ccm-tools'); ?></label>
-                                <input type="text" id="redis-path" name="path" value="<?php echo esc_attr($settings['path']); ?>" placeholder="/var/run/redis/redis.sock">
-                            </div>
-                        </div>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-full">
+
+                            <div class="ccm-optfield">
                                 <label for="redis-password"><?php _e('Password', 'ccm-tools'); ?></label>
-                                <input type="password" id="redis-password" name="password" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>" autocomplete="new-password">
+                                <input type="password" id="redis-password" name="password" class="ccm-input" value="<?php echo esc_attr($settings['password']); ?>" placeholder="<?php esc_attr_e('Leave empty if not required', 'ccm-tools'); ?>" autocomplete="new-password">
                             </div>
-                        </div>
-                    </div>
-                    
-                    <div class="ccm-form-section">
-                        <h3><?php _e('Cache Settings', 'ccm-tools'); ?></h3>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-wide">
-                                <label for="redis-key-salt"><?php _e('Key Prefix/Salt', 'ccm-tools'); ?></label>
-                                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                    <input type="text" id="redis-key-salt" name="key_salt" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST)); ?>_" style="flex: 1;">
-                                    <button type="button" id="redis-generate-salt" class="ccm-button ccm-button-small ccm-button-secondary"><?php _e('Generate', 'ccm-tools'); ?></button>
-                                </div>
-                                <span class="ccm-field-hint"><?php _e('Unique prefix for cache keys (essential for multisite)', 'ccm-tools'); ?></span>
-                            </div>
-                            <div class="ccm-form-field">
-                                <label for="redis-max-ttl"><?php _e('Max TTL (seconds)', 'ccm-tools'); ?></label>
-                                <input type="number" id="redis-max-ttl" name="max_ttl" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0" placeholder="604800">
-                                <span class="ccm-field-hint"><?php _e('0 = no limit', 'ccm-tools'); ?></span>
-                            </div>
-                        </div>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <label class="ccm-checkbox-label">
-                                    <input type="checkbox" name="selective_flush" <?php checked($settings['selective_flush']); ?>>
-                                    <span class="ccm-checkbox-text">
-                                        <strong><?php _e('Selective Flush', 'ccm-tools'); ?></strong>
-                                        <span class="ccm-field-hint"><?php _e('Only flush keys for this site when clearing cache (recommended for shared Redis)', 'ccm-tools'); ?></span>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <?php if (class_exists('WooCommerce')): ?>
-                    <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
-                    <div class="ccm-form-section ccm-form-section-woocommerce">
-                        <h3><span class="dashicons dashicons-cart" style="margin-right: 8px;"></span><?php _e('WooCommerce Optimization', 'ccm-tools'); ?></h3>
-                        <p class="ccm-note"><?php _e('WooCommerce detected! These settings optimize Redis caching for e-commerce performance.', 'ccm-tools'); ?></p>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <label class="ccm-checkbox-label">
-                                    <input type="checkbox" name="wc_cache_cart_fragments" <?php checked(!empty($settings['wc_cache_cart_fragments'])); ?>>
-                                    <span class="ccm-checkbox-text">
-                                        <strong><?php _e('Cache Cart Fragments', 'ccm-tools'); ?></strong>
-                                        <span class="ccm-field-hint"><?php _e('Cache cart fragments for faster AJAX cart updates (reduces database queries)', 'ccm-tools'); ?></span>
-                                    </span>
-                                </label>
-                            </div>
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <label class="ccm-checkbox-label">
-                                    <input type="checkbox" name="wc_persistent_cart" <?php checked(!empty($settings['wc_persistent_cart'])); ?>>
-                                    <span class="ccm-checkbox-text">
-                                        <strong><?php _e('Persistent Cart in Redis', 'ccm-tools'); ?></strong>
-                                        <span class="ccm-field-hint"><?php _e('Store persistent cart data in Redis instead of user meta (faster checkout for logged-in users)', 'ccm-tools'); ?></span>
-                                    </span>
-                                </label>
-                            </div>
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <label class="ccm-checkbox-label">
-                                    <input type="checkbox" name="wc_session_cache" <?php checked(empty($settings['wc_session_cache']) || $settings['wc_session_cache']); ?>>
-                                    <span class="ccm-checkbox-text">
-                                        <strong><?php _e('Session Data Caching', 'ccm-tools'); ?></strong>
-                                        <span class="ccm-field-hint"><?php _e('Cache WooCommerce session data for faster page loads (enabled by default)', 'ccm-tools'); ?></span>
-                                    </span>
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field">
-                                <label for="wc-product-cache-ttl"><?php _e('Product Cache TTL', 'ccm-tools'); ?></label>
-                                <div class="ccm-input-with-suffix">
-                                    <input type="number" id="wc-product-cache-ttl" name="wc_product_cache_ttl" value="<?php echo esc_attr(!empty($settings['wc_product_cache_ttl']) ? $settings['wc_product_cache_ttl'] : 3600); ?>" min="0">
-                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                                </div>
-                                <span class="ccm-field-hint"><?php _e('Cache duration for product data (3600 = 1 hour)', 'ccm-tools'); ?></span>
-                            </div>
-                            <div class="ccm-form-field">
-                                <label for="wc-session-cache-ttl"><?php _e('Session Cache TTL', 'ccm-tools'); ?></label>
-                                <div class="ccm-input-with-suffix">
-                                    <input type="number" id="wc-session-cache-ttl" name="wc_session_cache_ttl" value="<?php echo esc_attr(!empty($settings['wc_session_cache_ttl']) ? $settings['wc_session_cache_ttl'] : 172800); ?>" min="0">
-                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                                </div>
-                                <span class="ccm-field-hint"><?php _e('Session data TTL (172800 = 48 hours, matches WC default)', 'ccm-tools'); ?></span>
-                            </div>
-                        </div>
-                        
-                        <div class="ccm-wc-info">
-                            <p><strong><?php _e('How Redis improves WooCommerce:', 'ccm-tools'); ?></strong></p>
-                            <ul>
-                                <li><?php _e('Product data caching reduces database queries by 50-80%', 'ccm-tools'); ?></li>
-                                <li><?php _e('Session caching speeds up cart/checkout by avoiding database reads', 'ccm-tools'); ?></li>
-                                <li><?php _e('Cart fragment caching reduces AJAX response times', 'ccm-tools'); ?></li>
-                                <li><?php _e('Persistent cart in Redis provides faster access than user meta', 'ccm-tools'); ?></li>
-                            </ul>
-                        </div>
-                    </div>
-                    <?php else: ?>
-                    <div class="ccm-form-section ccm-form-section-woocommerce">
-                        <h3><span class="dashicons dashicons-cart" style="margin-right: 8px;"></span><?php _e('WooCommerce Optimization', 'ccm-tools'); ?> <span class="ccm-premium-badge ccm-premium-badge-pro" style="font-size: 0.75rem;">Premium</span></h3>
-                        <?php ccm_tools_render_premium_upsell('advanced_redis', true); ?>
-                    </div>
-                    <?php endif; // premium ?>
-                    <?php endif; // WooCommerce ?>
-                    
-                    <?php if (ccm_tools_has_premium_feature('advanced_redis')): ?>
-                    <div class="ccm-form-section">
-                        <h3><?php _e('Advanced Settings', 'ccm-tools'); ?></h3>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field">
-                                <label for="redis-timeout"><?php _e('Connection Timeout', 'ccm-tools'); ?></label>
-                                <div class="ccm-input-with-suffix">
-                                    <input type="number" id="redis-timeout" name="timeout" value="<?php echo esc_attr($settings['timeout']); ?>" min="0" step="0.1">
-                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                                </div>
-                            </div>
-                            <div class="ccm-form-field">
-                                <label for="redis-read-timeout"><?php _e('Read Timeout', 'ccm-tools'); ?></label>
-                                <div class="ccm-input-with-suffix">
-                                    <input type="number" id="redis-read-timeout" name="read_timeout" value="<?php echo esc_attr($settings['read_timeout']); ?>" min="0" step="0.1">
-                                    <span class="ccm-input-suffix"><?php _e('sec', 'ccm-tools'); ?></span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-full">
+
+                            <div class="ccm-optfield">
                                 <label for="redis-username"><?php _e('Username (Redis 6.0+ ACL)', 'ccm-tools'); ?></label>
-                                <input type="text" id="redis-username" name="username" value="<?php echo esc_attr($settings['username'] ?? ''); ?>" placeholder="<?php esc_attr_e('Leave empty for default user', 'ccm-tools'); ?>">
-                                <span class="ccm-field-hint"><?php _e('Only required if your Redis server uses ACL authentication (Redis 6.0+)', 'ccm-tools'); ?></span>
+                                <input type="text" id="redis-username" name="username" class="ccm-input" value="<?php echo esc_attr($settings['username'] ?? ''); ?>" placeholder="<?php esc_attr_e('Leave empty for the default user', 'ccm-tools'); ?>">
+                                <span class="ccm-optfield__hint"><?php _e('Only needed if the Redis server uses ACL authentication.', 'ccm-tools'); ?></span>
                             </div>
                         </div>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field">
-                                <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
-                                <select id="redis-serializer" name="serializer">
-                                    <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP', 'ccm-tools'); ?><?php echo extension_loaded('igbinary') ? ' (' . __('fallback', 'ccm-tools') . ')' : ' (' . __('default', 'ccm-tools') . ')'; ?></option>
-                                    <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary')); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('default — faster, smaller', 'ccm-tools') . ')'; ?></option>
-                                    <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack')); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
-                                </select>
-                                <span class="ccm-field-hint"><?php _e('igbinary uses less memory; changing serializer requires a cache flush', 'ccm-tools'); ?></span>
+                    </div>
+                </section>
+
+                <section class="ccm-optgroup" data-group="cache">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Cache behaviour', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('How long entries live, and how this site keeps its cache separate from anyone else on the same Redis server.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_cache), count($constants_cache)); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-fieldgrid" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
+                            <div class="ccm-optfield ccm-fieldgrid__wide">
+                                <label for="redis-key-salt"><?php _e('Key prefix', 'ccm-tools'); ?></label>
+                                <span class="ccm-row" style="flex-wrap: nowrap;">
+                                    <input type="text" id="redis-key-salt" name="key_salt" class="ccm-input ccm-mono" style="flex: 1;" value="<?php echo esc_attr($settings['key_salt']); ?>" placeholder="<?php echo esc_attr(parse_url(site_url(), PHP_URL_HOST) . '_'); ?>">
+                                    <button type="button" id="redis-generate-salt" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Generate', 'ccm-tools'); ?></button>
+                                </span>
+                                <span class="ccm-optfield__hint"><?php _e('Generated automatically so this site never reads or writes another site\'s cache when several installs share one Redis server — an empty prefix is exactly how that collision happens. Only change it to deliberately share cache with another install.', 'ccm-tools'); ?></span>
                             </div>
-                            <div class="ccm-form-field">
-                                <label for="redis-compression"><?php _e('Compression', 'ccm-tools'); ?></label>
-                                <select id="redis-compression" name="compression">
-                                    <option value="none" <?php selected($settings['compression'], 'none'); ?>><?php _e('None (default)', 'ccm-tools'); ?></option>
+
+                            <div class="ccm-optfield">
+                                <label for="redis-max-ttl"><?php _e('Max TTL', 'ccm-tools'); ?></label>
+                                <span class="ccm-optfield__inline">
+                                    <input type="number" id="redis-max-ttl" name="max_ttl" class="ccm-input" value="<?php echo esc_attr($settings['max_ttl']); ?>" min="0" placeholder="604800">
+                                    <span class="ccm-optfield__suffix"><?php _e('sec (0 = no limit)', 'ccm-tools'); ?></span>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo $settings['selective_flush'] ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Selective flush', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Flush Cache clears only this site\'s own keys, never the whole Redis database. Turn this off only if you deliberately want a flush here to clear every site sharing this server.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="selective_flush" <?php checked($settings['selective_flush']); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <?php if ($has_woocommerce) :
+                    $wc_on = (int) !empty($settings['wc_cache_cart_fragments'])
+                           + (int) !empty($settings['wc_persistent_cart'])
+                           + (int) (empty($settings['wc_session_cache']) || $settings['wc_session_cache']);
+                    ?>
+                <section class="ccm-optgroup" data-group="woocommerce">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('WooCommerce', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Cart, session and product data are the highest-traffic reads on a store, so caching them in Redis is what cuts database load at checkout.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d on', 'ccm-tools'), $wc_on, 3); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
+                            <div class="ccm-fieldgrid">
+                                <div class="ccm-optfield">
+                                    <label for="wc-product-cache-ttl"><?php _e('Product cache TTL', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="wc-product-cache-ttl" name="wc_product_cache_ttl" class="ccm-input" value="<?php echo esc_attr(!empty($settings['wc_product_cache_ttl']) ? $settings['wc_product_cache_ttl'] : 3600); ?>" min="0">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                    <span class="ccm-optfield__hint"><?php _e('3600 = one hour.', 'ccm-tools'); ?></span>
+                                </div>
+                                <div class="ccm-optfield">
+                                    <label for="wc-session-cache-ttl"><?php _e('Session cache TTL', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="wc-session-cache-ttl" name="wc_session_cache_ttl" class="ccm-input" value="<?php echo esc_attr(!empty($settings['wc_session_cache_ttl']) ? $settings['wc_session_cache_ttl'] : 172800); ?>" min="0">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                    <span class="ccm-optfield__hint"><?php _e('172800 = 48 hours, matching WooCommerce\'s own default.', 'ccm-tools'); ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['wc_cache_cart_fragments']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Cache cart fragments', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Speeds up the AJAX cart update fired on every add-to-cart click.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="wc_cache_cart_fragments" <?php checked(!empty($settings['wc_cache_cart_fragments'])); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="ccm-opt<?php echo !empty($settings['wc_persistent_cart']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Persistent cart in Redis', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Stores a logged-in shopper\'s cart in Redis instead of user meta, for a faster checkout.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="wc_persistent_cart" <?php checked(!empty($settings['wc_persistent_cart'])); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="ccm-opt<?php echo (empty($settings['wc_session_cache']) || $settings['wc_session_cache']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Session data caching', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('On by default. Caches WooCommerce session data in Redis rather than the database.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="wc_session_cache" <?php checked(empty($settings['wc_session_cache']) || $settings['wc_session_cache']); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <?php endif; // WooCommerce ?>
+
+                <section class="ccm-optgroup" data-group="advanced">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Advanced', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('Timeouts and encoding — including the one combination that has taken down production sites before.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php printf(esc_html__('%1$d of %2$d locked in wp-config.php', 'ccm-tools'), $count_locked($constants_advanced), count($constants_advanced)); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-stack ccm-stack--sm" style="padding: var(--ccm-space-md); border-bottom: 1px solid var(--ccm-border);">
+                            <div class="ccm-fieldgrid">
+                                <div class="ccm-optfield">
+                                    <label for="redis-timeout"><?php _e('Connection timeout', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="redis-timeout" name="timeout" class="ccm-input" value="<?php echo esc_attr($settings['timeout']); ?>" min="0" step="0.1">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                </div>
+                                <div class="ccm-optfield">
+                                    <label for="redis-read-timeout"><?php _e('Read timeout', 'ccm-tools'); ?></label>
+                                    <span class="ccm-optfield__inline">
+                                        <input type="number" id="redis-read-timeout" name="read_timeout" class="ccm-input" value="<?php echo esc_attr($settings['read_timeout']); ?>" min="0" step="0.1">
+                                        <span class="ccm-optfield__suffix"><?php _e('sec', 'ccm-tools'); ?></span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="ccm-fieldgrid">
+                                <div class="ccm-optfield">
+                                    <label for="redis-serializer"><?php _e('Serializer', 'ccm-tools'); ?></label>
                                     <?php
-                                    $has_lzf  = defined('Redis::COMPRESSION_LZF');
-                                    $has_lz4  = defined('Redis::COMPRESSION_LZ4');
-                                    $has_zstd = defined('Redis::COMPRESSION_ZSTD');
+                                    /*
+                                     * An option is never disabled while it is
+                                     * the stored value. A disabled option that
+                                     * is also the selected one renders the
+                                     * control blank on Windows Chrome, so the
+                                     * field shows nothing at all and there is
+                                     * no way to see what the site is set to.
+                                     */
                                     ?>
-                                    <option value="lzf" <?php selected($settings['compression'], 'lzf'); ?> <?php disabled(!$has_lzf); ?>><?php _e('LZF', 'ccm-tools'); ?><?php echo !$has_lzf ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('fast', 'ccm-tools') . ')'; ?></option>
-                                    <option value="lz4" <?php selected($settings['compression'], 'lz4'); ?> <?php disabled(!$has_lz4); ?>><?php _e('LZ4', 'ccm-tools'); ?><?php echo !$has_lz4 ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('very fast', 'ccm-tools') . ')'; ?></option>
-                                    <option value="zstd" <?php selected($settings['compression'], 'zstd'); ?> <?php disabled(!$has_zstd); ?>><?php _e('Zstandard', 'ccm-tools'); ?><?php echo !$has_zstd ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('best ratio', 'ccm-tools') . ')'; ?></option>
-                                </select>
-                                <span class="ccm-field-hint"><?php _e('Reduces memory usage at the cost of CPU; changing compression requires a cache flush', 'ccm-tools'); ?></span>
+                                    <select id="redis-serializer" name="serializer" class="ccm-input">
+                                        <option value="php" <?php selected($settings['serializer'], 'php'); ?>><?php _e('PHP', 'ccm-tools'); ?><?php echo extension_loaded('igbinary') ? ' (' . __('fallback', 'ccm-tools') . ')' : ' (' . __('default', 'ccm-tools') . ')'; ?></option>
+                                        <option value="igbinary" <?php selected($settings['serializer'], 'igbinary'); ?> <?php disabled(!extension_loaded('igbinary') && $settings['serializer'] !== 'igbinary'); ?>><?php _e('igbinary', 'ccm-tools'); ?><?php echo !extension_loaded('igbinary') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('default — faster, smaller', 'ccm-tools') . ')'; ?></option>
+                                        <option value="msgpack" <?php selected($settings['serializer'], 'msgpack'); ?> <?php disabled(!extension_loaded('msgpack') && $settings['serializer'] !== 'msgpack'); ?>><?php _e('msgpack', 'ccm-tools'); ?><?php echo !extension_loaded('msgpack') ? ' (' . __('not installed', 'ccm-tools') . ')' : ' (' . __('compact binary', 'ccm-tools') . ')'; ?></option>
+                                    </select>
+                                    <span class="ccm-optfield__hint"><?php _e('Changing this flushes the cache once, automatically, so nothing tries to decode a value with the wrong serializer.', 'ccm-tools'); ?></span>
+                                </div>
+                                <div class="ccm-optfield">
+                                    <label for="redis-compression"><?php _e('Compression', 'ccm-tools'); ?></label>
+                                    <select id="redis-compression" name="compression" class="ccm-input">
+                                        <option value="none" <?php selected($settings['compression'], 'none'); ?>><?php _e('None (default)', 'ccm-tools'); ?></option>
+                                        <option value="lzf" <?php selected($settings['compression'], 'lzf'); ?> <?php disabled(!$has_lzf && $settings['compression'] !== 'lzf'); ?>><?php _e('LZF', 'ccm-tools'); ?><?php echo !$has_lzf ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('fast', 'ccm-tools') . ')'; ?></option>
+                                        <option value="lz4" <?php selected($settings['compression'], 'lz4'); ?> <?php disabled(!$has_lz4 && $settings['compression'] !== 'lz4'); ?>><?php _e('LZ4', 'ccm-tools'); ?><?php echo !$has_lz4 ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('very fast — see warning', 'ccm-tools') . ')'; ?></option>
+                                        <option value="zstd" <?php selected($settings['compression'], 'zstd'); ?> <?php disabled(!$has_zstd && $settings['compression'] !== 'zstd'); ?>><?php _e('Zstandard', 'ccm-tools'); ?><?php echo !$has_zstd ? ' (' . __('not available', 'ccm-tools') . ')' : ' (' . __('best ratio', 'ccm-tools') . ')'; ?></option>
+                                    </select>
+                                    <span class="ccm-optfield__hint"><?php _e('LZ4 with the igbinary serializer has caused production sites to hit "Allowed memory size exhausted" fatals when a compressed value failed to round-trip. Leave this on None with igbinary unless LZ4 or Zstandard has been tested on staging first.', 'ccm-tools'); ?></span>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <p class="ccm-note" style="border-left:3px solid #d98300;padding-left:10px;background:#fff8ec;">
-                                    <strong><?php _e('⚠ LZ4 + igbinary advisory', 'ccm-tools'); ?></strong><br>
-                                    <?php _e('This combination has caused production “Allowed memory size exhausted (4&nbsp;GB)” fatals when a compressed value fails to round-trip. The recommended setup is <strong>igbinary with no compression</strong>. If you enable both, test on staging first.', 'ccm-tools'); ?>
-                                </p>
-                                <p class="ccm-note">
-                                    <strong><?php _e('Skip caching for: options, site-options', 'ccm-tools'); ?></strong><br>
-                                    <?php _e('Since v7.41.4 the object-cache drop-in never persists the WordPress options/site-options groups to Redis. The <code>alloptions</code> blob is read on almost every request, so a single corrupt copy would take the whole site down — and WordPress already keeps it in per-request memory, so the Redis copy saved only one indexed query. To persist it anyway (not recommended), add <code>define(&#39;WP_REDIS_PERSIST_OPTIONS&#39;, true);</code> to wp-config.php.', 'ccm-tools'); ?>
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <label class="ccm-checkbox-label">
+                        <div class="ccm-opt<?php echo !empty($settings['async_flush']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Async flush', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Uses non-blocking UNLINK and FLUSHDB ASYNC (Redis 4.0+) so a flush does not stall other requests while it runs.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
                                     <input type="checkbox" name="async_flush" <?php checked(!empty($settings['async_flush'])); ?>>
-                                    <span class="ccm-checkbox-text">
-                                        <strong><?php _e('Async Flush (UNLINK)', 'ccm-tools'); ?></strong>
-                                        <span class="ccm-field-hint"><?php _e('Use non-blocking UNLINK and FLUSHDB ASYNC commands for cache operations (Redis 4.0+)', 'ccm-tools'); ?></span>
-                                    </span>
+                                    <span class="ccm-toggle-slider"></span>
                                 </label>
                             </div>
                         </div>
-                        
-                        <div class="ccm-form-grid">
-                            <div class="ccm-form-field ccm-form-field-full">
-                                <label class="ccm-checkbox-label">
+                        <div class="ccm-opt<?php echo empty($settings['disable_comment']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('HTML footnote', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Appends an HTML comment with cache hit/miss counts and Redis timing to page output, for debugging.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
                                     <input type="checkbox" name="disable_comment" <?php checked(empty($settings['disable_comment'])); ?>>
-                                    <span class="ccm-checkbox-text">
-                                        <strong><?php _e('HTML Footnote', 'ccm-tools'); ?></strong>
-                                        <span class="ccm-field-hint"><?php _e('Append an HTML comment with cache hit/miss stats and Redis timing to page output (useful for debugging)', 'ccm-tools'); ?></span>
-                                    </span>
+                                    <span class="ccm-toggle-slider"></span>
                                 </label>
                             </div>
                         </div>
                     </div>
-                    <?php else: ?>
-                    <div class="ccm-form-section">
-                        <h3><?php _e('Advanced Settings', 'ccm-tools'); ?> <span class="ccm-premium-badge ccm-premium-badge-pro" style="font-size: 0.75rem;">Premium</span></h3>
-                        <?php ccm_tools_render_premium_upsell('advanced_redis', true); ?>
-                    </div>
-                    <?php endif; ?>
-                    
-                    <div class="ccm-form-actions">
-                        <button type="submit" class="ccm-button ccm-button-primary"><?php _e('Save Settings', 'ccm-tools'); ?></button>
-                        <button type="button" id="add-to-wp-config" class="ccm-button"><?php _e('Add to wp-config.php', 'ccm-tools'); ?></button>
-                    </div>
-                </form>
-            </div>
-            
-            <!-- Current Configuration Card -->
-            <div class="ccm-card">
-                <h2><?php _e('Active Configuration', 'ccm-tools'); ?></h2>
-                <p class="ccm-note"><?php _e('These are the currently active settings, including any constants defined in wp-config.php.', 'ccm-tools'); ?></p>
-                
-                <table class="ccm-table ccm-table-striped" id="redis-active-config-table">
-                    <thead>
-                        <tr>
-                            <th><?php _e('Setting', 'ccm-tools'); ?></th>
-                            <th><?php _e('Value', 'ccm-tools'); ?></th>
-                            <th><?php _e('Source', 'ccm-tools'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php
-                        $config_items = array(
-                            'WP_REDIS_HOST' => array('value' => $settings['host'], 'defined' => defined('WP_REDIS_HOST')),
-                            'WP_REDIS_PORT' => array('value' => $settings['port'], 'defined' => defined('WP_REDIS_PORT')),
-                            'WP_REDIS_PATH' => array('value' => $settings['path'], 'defined' => defined('WP_REDIS_PATH')),
-                            'WP_REDIS_SCHEME' => array('value' => $settings['scheme'], 'defined' => defined('WP_REDIS_SCHEME')),
-                            'WP_REDIS_DATABASE' => array('value' => $settings['database'], 'defined' => defined('WP_REDIS_DATABASE')),
-                            'WP_REDIS_USERNAME' => array('value' => !empty($settings['username']) ? $settings['username'] : '', 'defined' => defined('WP_REDIS_USERNAME')),
-                            'WP_REDIS_PASSWORD' => array('value' => !empty($settings['password']) ? '******' : '', 'defined' => defined('WP_REDIS_PASSWORD')),
-                            'WP_REDIS_TIMEOUT' => array('value' => $settings['timeout'], 'defined' => defined('WP_REDIS_TIMEOUT')),
-                            'WP_REDIS_MAXTTL' => array('value' => $settings['max_ttl'], 'defined' => defined('WP_REDIS_MAXTTL')),
-                            'WP_CACHE_KEY_SALT' => array('value' => $settings['key_salt'], 'defined' => defined('WP_CACHE_KEY_SALT')),
-                            'WP_REDIS_SELECTIVE_FLUSH' => array('value' => $settings['selective_flush'] ? 'true' : 'false', 'defined' => defined('WP_REDIS_SELECTIVE_FLUSH')),
-                        );
+                </section>
 
-                        // Premium-only settings: only show if defined in wp-config.php or premium is active
-                        if (ccm_tools_has_premium_feature('advanced_redis')) {
-                            $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => defined('WP_REDIS_SERIALIZER'));
-                            $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => defined('WP_REDIS_COMPRESSION'));
-                            $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => defined('WP_REDIS_ASYNC_FLUSH'));
-                        } else {
-                            // Still show if explicitly defined in wp-config.php
-                            if (defined('WP_REDIS_SERIALIZER')) {
-                                $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => true);
-                            }
-                            if (defined('WP_REDIS_COMPRESSION')) {
-                                $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => true);
-                            }
-                            if (defined('WP_REDIS_ASYNC_FLUSH')) {
-                                $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => true);
-                            }
-                        }
-                        
-                        foreach ($config_items as $constant => $item):
-                            if (empty($item['value']) && !$item['defined']) continue;
-                        ?>
-                        <tr>
-                            <td><code><?php echo esc_html($constant); ?></code></td>
-                            <td><?php echo esc_html($item['value']); ?></td>
-                            <td>
-                                <?php if ($item['defined']): ?>
-                                    <span class="ccm-badge ccm-badge-info"><?php _e('wp-config.php', 'ccm-tools'); ?></span>
-                                <?php else: ?>
-                                    <span class="ccm-badge"><?php _e('Plugin Settings', 'ccm-tools'); ?></span>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <?php endif; ?>
-            
-            <?php if (!$extension_available): ?>
-            <!-- Installation Help Card -->
-            <div class="ccm-card">
-                <h2><?php _e('Installing Redis', 'ccm-tools'); ?></h2>
-                
-                <div class="ccm-alert ccm-alert-info">
-                    <span class="ccm-icon">ℹ</span>
-                    <div>
-                        <strong><?php _e('Redis PHP Extension Required', 'ccm-tools'); ?></strong>
-                        <p><?php _e('To use Redis object caching, the Redis PHP extension must be installed on your server.', 'ccm-tools'); ?></p>
+                <div class="ccm-row" style="margin-top: var(--ccm-space-xl);">
+                    <button type="submit" id="redis-save-settings" class="ccm-button ccm-button-primary"><?php _e('Save Settings', 'ccm-tools'); ?></button>
+                    <button type="button" id="add-to-wp-config" class="ccm-button ccm-button-secondary"><?php _e('Add to wp-config.php', 'ccm-tools'); ?></button>
+                </div>
+
+            </form>
+
+            <?php
+            $config_items = array(
+                'WP_REDIS_HOST' => array('value' => $settings['host'], 'defined' => defined('WP_REDIS_HOST')),
+                'WP_REDIS_PORT' => array('value' => $settings['port'], 'defined' => defined('WP_REDIS_PORT')),
+                'WP_REDIS_PATH' => array('value' => $settings['path'], 'defined' => defined('WP_REDIS_PATH')),
+                'WP_REDIS_SCHEME' => array('value' => $settings['scheme'], 'defined' => defined('WP_REDIS_SCHEME')),
+                'WP_REDIS_DATABASE' => array('value' => $settings['database'], 'defined' => defined('WP_REDIS_DATABASE')),
+                'WP_REDIS_USERNAME' => array('value' => !empty($settings['username']) ? $settings['username'] : '', 'defined' => defined('WP_REDIS_USERNAME')),
+                'WP_REDIS_PASSWORD' => array('value' => !empty($settings['password']) ? '******' : '', 'defined' => defined('WP_REDIS_PASSWORD')),
+                'WP_REDIS_TIMEOUT' => array('value' => $settings['timeout'], 'defined' => defined('WP_REDIS_TIMEOUT')),
+                'WP_REDIS_MAXTTL' => array('value' => $settings['max_ttl'], 'defined' => defined('WP_REDIS_MAXTTL')),
+                'WP_CACHE_KEY_SALT' => array('value' => $settings['key_salt'], 'defined' => defined('WP_CACHE_KEY_SALT')),
+                'WP_REDIS_SELECTIVE_FLUSH' => array('value' => $settings['selective_flush'] ? 'true' : 'false', 'defined' => defined('WP_REDIS_SELECTIVE_FLUSH')),
+            );
+
+            // Standard for everyone now.
+            $config_items['WP_REDIS_SERIALIZER'] = array('value' => $settings['serializer'], 'defined' => defined('WP_REDIS_SERIALIZER'));
+            $config_items['WP_REDIS_COMPRESSION'] = array('value' => $settings['compression'], 'defined' => defined('WP_REDIS_COMPRESSION'));
+            $config_items['WP_REDIS_ASYNC_FLUSH'] = array('value' => !empty($settings['async_flush']) ? 'true' : 'false', 'defined' => defined('WP_REDIS_ASYNC_FLUSH'));
+            ?>
+
+            <details class="ccm-disclose" style="margin-top: var(--ccm-space-lg);">
+                <summary><?php _e('Active configuration', 'ccm-tools'); ?></summary>
+                <div class="ccm-disclose__body ccm-panel__body--flush">
+                    <div class="ccm-table-wrap">
+                        <table class="ccm-table" id="redis-active-config-table">
+                            <thead>
+                                <tr>
+                                    <th><?php _e('Setting', 'ccm-tools'); ?></th>
+                                    <th><?php _e('Value', 'ccm-tools'); ?></th>
+                                    <th><?php _e('Source', 'ccm-tools'); ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($config_items as $constant => $item) :
+                                    if (empty($item['value']) && !$item['defined']) { continue; }
+                                ?>
+                                <tr>
+                                    <td><code><?php echo esc_html($constant); ?></code></td>
+                                    <td><?php echo esc_html($item['value']); ?></td>
+                                    <td>
+                                        <?php if ($item['defined']) : ?>
+                                            <span class="ccm-badge ccm-badge-info"><?php _e('wp-config.php', 'ccm-tools'); ?></span>
+                                        <?php else : ?>
+                                            <span class="ccm-badge"><?php _e('Plugin settings', 'ccm-tools'); ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-                
-                <h3><?php _e('Installation Methods', 'ccm-tools'); ?></h3>
-                
-                <div class="ccm-tabs-content">
-                    <h4><?php _e('Ubuntu/Debian', 'ccm-tools'); ?></h4>
-                    <pre class="ccm-code-block">sudo apt-get install php-redis
-sudo systemctl restart php-fpm</pre>
-                    
-                    <h4><?php _e('CentOS/RHEL', 'ccm-tools'); ?></h4>
-                    <pre class="ccm-code-block">sudo yum install php-pecl-redis
-sudo systemctl restart php-fpm</pre>
-                    
-                    <h4><?php _e('cPanel/WHM', 'ccm-tools'); ?></h4>
-                    <p><?php _e('Go to WHM → Software → Module Installers → PHP PECL → Install "redis"', 'ccm-tools'); ?></p>
-                    
-                    <h4><?php _e('Managed Hosting', 'ccm-tools'); ?></h4>
-                    <p><?php _e('Contact your hosting provider to enable the Redis PHP extension.', 'ccm-tools'); ?></p>
-                </div>
+            </details>
+
+            <div class="ccm-savebar" data-ccm-savebar data-savebar-target="#redis-save-settings">
+                <span class="ccm-savebar__dot" aria-hidden="true"></span>
+                <span class="ccm-savebar__msg"><?php _e('No unsaved changes', 'ccm-tools'); ?></span>
+                <button type="button" class="ccm-button ccm-button-secondary ccm-button-small" data-savebar-discard>
+                    <?php _e('Discard', 'ccm-tools'); ?>
+                </button>
+                <button type="button" class="ccm-button ccm-button-primary" data-savebar-save>
+                    <?php _e('Save Settings', 'ccm-tools'); ?>
+                </button>
             </div>
+
+            <?php endif; // $extension_available (Configuration) ?>
+
+            <?php if (!$extension_available || !$connection['connected']) : ?>
+            <!-- Installing Redis -->
+            <details class="ccm-disclose" style="margin-top: var(--ccm-space-lg);">
+                <summary><?php _e('Installing Redis', 'ccm-tools'); ?></summary>
+                <div class="ccm-disclose__body">
+                    <?php if (!$extension_available) : ?>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-sm);">
+                            <?php _e('The Redis PHP extension has to be installed on the server before object caching can be used here.', 'ccm-tools'); ?>
+                        </p>
+                        <div class="ccm-stack ccm-stack--sm">
+                            <?php
+                            /*
+                             * Two command blocks, one per distribution family.
+                             * Only one of them is ever the reader's, so they
+                             * read as alternatives rather than steps — side by
+                             * side says that better than one above the other,
+                             * and neither is longer than two short lines.
+                             */
+                            ?>
+                            <div class="ccm-grid-2">
+                                <div>
+                                    <strong style="font-size: var(--ccm-text-sm);"><?php _e('Ubuntu/Debian', 'ccm-tools'); ?></strong>
+                                    <pre class="ccm-mono" style="margin: 0.3rem 0 0; padding: var(--ccm-space-sm); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); overflow-x: auto;">sudo apt-get install php-redis
+sudo systemctl restart php-fpm</pre>
+                                </div>
+                                <div>
+                                    <strong style="font-size: var(--ccm-text-sm);"><?php _e('CentOS/RHEL', 'ccm-tools'); ?></strong>
+                                    <pre class="ccm-mono" style="margin: 0.3rem 0 0; padding: var(--ccm-space-sm); background: var(--ccm-bg-secondary); border-radius: var(--ccm-radius); overflow-x: auto;">sudo yum install php-pecl-redis
+sudo systemctl restart php-fpm</pre>
+                                </div>
+                            </div>
+                            <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0;">
+                                <?php _e('cPanel/WHM: WHM → Software → Module Installers → PHP PECL → install "redis". On managed hosting, ask the host to enable the Redis PHP extension.', 'ccm-tools'); ?>
+                            </p>
+                        </div>
+                    <?php else : ?>
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0;">
+                            <?php echo !empty($connection['error']) ? esc_html($connection['error']) . ' ' : ''; ?>
+                            <?php _e('The extension is installed, but no Redis server answered at the address configured above. Check the host and port are correct and that the Redis service is running.', 'ccm-tools'); ?>
+                        </p>
+                    <?php endif; ?>
+                </div>
+            </details>
             <?php endif; ?>
+
         </div>
     </div>
     <?php
@@ -2390,7 +2884,7 @@ function ccm_tools_redis_site_health_eviction() {
  * Show admin notice when the Redis drop-in needs an update.
  */
 function ccm_tools_redis_dropin_update_notice() {
-    if (!current_user_can('manage_options')) return;
+    if (!ccm_tools_user_is_admin()) return;
 
     $dropin = ccm_tools_redis_dropin_status();
     if (!$dropin['is_ccm']) return;

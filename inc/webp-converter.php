@@ -91,12 +91,14 @@ function ccm_tools_webp_get_best_extension() {
 }
 
 /**
- * Get WebP converter settings
- * 
- * @return array Settings array
+ * Canonical defaults for WebP converter settings. Shared by the getter and
+ * the save-time sanitiser below so there is exactly one place that defines
+ * what a setting is and what its default is.
+ *
+ * @return array Defaults, keyed by setting name
  */
-function ccm_tools_webp_get_settings() {
-    $defaults = array(
+function ccm_tools_webp_get_default_settings() {
+    return array(
         'enabled' => false,
         'quality' => 85, // Default to 85 for near-lossless quality
         'convert_on_upload' => true,
@@ -108,19 +110,168 @@ function ccm_tools_webp_get_settings() {
         'exclude_sizes' => array(),
         'preferred_extension' => 'auto'
     );
-    
+}
+
+/**
+ * Get WebP converter settings
+ *
+ * @return array Settings array
+ */
+function ccm_tools_webp_get_settings() {
+    $defaults = ccm_tools_webp_get_default_settings();
+
     $settings = get_option('ccm_tools_webp_settings', array());
     return wp_parse_args($settings, $defaults);
 }
 
 /**
  * Save WebP converter settings
- * 
+ *
+ * Settings are whitelist-sanitised against the defaults array before
+ * saving: unknown keys are dropped, booleans are cast, and quality is
+ * clamped to 1-100, so a malformed payload can't smuggle arbitrary data
+ * into the ccm_tools_webp_settings option.
+ *
  * @param array $settings Settings to save
  * @return bool Success
  */
 function ccm_tools_webp_save_settings($settings) {
+    $settings = ccm_tools_webp_sanitize_settings($settings);
     return update_option('ccm_tools_webp_settings', $settings);
+}
+
+/**
+ * Whitelist-sanitise WebP settings against the canonical defaults: only
+ * known keys survive, booleans are cast, quality is clamped to 1-100, and
+ * preferred_extension is restricted to a known value.
+ *
+ * @param array $settings Raw settings (e.g. from an AJAX request or import)
+ * @return array Sanitised settings containing only known keys
+ */
+function ccm_tools_webp_sanitize_settings($settings) {
+    $defaults = ccm_tools_webp_get_default_settings();
+
+    if (!is_array($settings)) {
+        $settings = array();
+    }
+
+    $clean = array();
+
+    foreach ($defaults as $key => $default_value) {
+        if (!array_key_exists($key, $settings)) {
+            $clean[$key] = $default_value;
+            continue;
+        }
+
+        $value = $settings[$key];
+
+        if (is_bool($default_value)) {
+            $clean[$key] = is_scalar($value) ? filter_var($value, FILTER_VALIDATE_BOOLEAN) : false;
+        } elseif ($key === 'quality') {
+            $clean[$key] = max(1, min(100, intval($value)));
+        } elseif ($key === 'exclude_sizes') {
+            $clean[$key] = is_array($value) ? array_map('sanitize_text_field', $value) : array();
+        } elseif ($key === 'preferred_extension') {
+            $allowed = array('auto', 'gd', 'imagick');
+            $clean[$key] = in_array($value, $allowed, true) ? $value : 'auto';
+        } else {
+            $clean[$key] = is_string($value) ? sanitize_text_field($value) : $value;
+        }
+    }
+
+    return $clean;
+}
+
+/**
+ * Convert an image URL to a filesystem path inside the uploads directory,
+ * with containment enforced via realpath().
+ *
+ * Security: prevents path traversal. Without this, a URL such as
+ * /wp-content/uploads/../../../../etc/passwd.jpg would resolve (via naive
+ * str_replace/regex path building) to a path outside the uploads tree,
+ * giving an anonymous visitor a file read (source) or file write
+ * (destination) anywhere the webserver user can reach — including other
+ * customer accounts on shared hosting. EVERY URL-to-path conversion in this
+ * file must go through this function instead of building paths by hand.
+ *
+ * @param string $url        The image URL (absolute or a /wp-content/uploads/ relative path)
+ * @param array  $upload_dir wp_upload_dir() result
+ * @param bool   $must_exist Whether the resolved path is expected to already exist on
+ *                            disk (e.g. a source image being read). When true, realpath()
+ *                            must succeed. When false (e.g. a .webp destination that is
+ *                            about to be created), the parent directory is resolved and
+ *                            validated instead, and the leaf filename is rebuilt on top of it.
+ * @return string|false Absolute, contained filesystem path, or false if unsafe/invalid.
+ */
+function ccm_tools_webp_url_to_safe_path($url, $upload_dir, $must_exist = false) {
+    $url = trim($url);
+    if ($url === '') {
+        return false;
+    }
+
+    // Only allow the image types this file actually handles.
+    if (!preg_match('/\.(jpe?g|png|gif|webp)$/i', $url)) {
+        return false;
+    }
+
+    // Build the raw candidate path the same way the original code did.
+    $raw_path = '';
+    if (strpos($url, $upload_dir['baseurl']) !== false) {
+        $raw_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $url);
+    } elseif (strpos($url, '/wp-content/uploads/') !== false) {
+        if (preg_match('#/wp-content/uploads/(.+)$#', $url, $m)) {
+            $raw_path = $upload_dir['basedir'] . '/' . $m[1];
+        }
+    }
+
+    if ($raw_path === '') {
+        return false;
+    }
+
+    // Strip any query string / fragment that hitched a ride on the URL.
+    $raw_path = preg_replace('/[?#].*$/', '', $raw_path);
+
+    // Resolve the uploads basedir itself first — if THIS fails there is no
+    // safe boundary to check against, so refuse everything.
+    $real_basedir = realpath($upload_dir['basedir']);
+    if ($real_basedir === false) {
+        return false;
+    }
+    $real_basedir_prefix = rtrim($real_basedir, '/\\') . DIRECTORY_SEPARATOR;
+
+    if ($must_exist) {
+        // realpath() resolves any ../ traversal AND requires the target to
+        // exist, so a traversal attempt that escapes basedir and a path that
+        // simply doesn't exist both come back false here.
+        $real_path = realpath($raw_path);
+        if ($real_path === false) {
+            return false;
+        }
+        if (strpos($real_path . DIRECTORY_SEPARATOR, $real_basedir_prefix) !== 0) {
+            return false;
+        }
+        return $real_path;
+    }
+
+    // The path may not exist yet (e.g. a .webp destination we're about to
+    // write). realpath() can't validate a nonexistent leaf, so resolve and
+    // validate the parent directory instead, then rebuild the leaf on top.
+    $dir = dirname($raw_path);
+    $basename = basename($raw_path);
+
+    if ($basename === '' || $basename === '.' || $basename === '..' || strpos($basename, '/') !== false || strpos($basename, '\\') !== false) {
+        return false;
+    }
+
+    $real_dir = realpath($dir);
+    if ($real_dir === false) {
+        return false;
+    }
+    if (strpos($real_dir . DIRECTORY_SEPARATOR, $real_basedir_prefix) !== 0) {
+        return false;
+    }
+
+    return $real_dir . DIRECTORY_SEPARATOR . $basename;
 }
 
 /**
@@ -217,9 +368,86 @@ function ccm_tools_webp_convert_image($source_path, $dest_path = '', $quality = 
 }
 
 /**
+ * Get the PHP memory_limit in bytes.
+ *
+ * @return int Bytes, or 0 if the limit is unlimited/unreadable (nothing to compare against)
+ */
+function ccm_tools_webp_get_memory_limit_bytes() {
+    $limit = ini_get('memory_limit');
+    if ($limit === false || trim((string) $limit) === '-1') {
+        return 0;
+    }
+    return (int) wp_convert_hr_to_bytes($limit);
+}
+
+/**
+ * Image-bomb guard: read dimensions via getimagesize() (cheap — only the
+ * header, not the pixel data) and refuse to decode anything whose pixel
+ * count exceeds a sane, filterable cap, or whose estimated decoded memory
+ * need won't fit in what PHP has available. Call this BEFORE
+ * imagecreatefromjpeg/png/gif() or `new Imagick()` — those decode the
+ * entire image into memory regardless of the final output size.
+ *
+ * @param string $source_path Path to the source image (already containment-checked)
+ * @return true|string True if safe to decode, or a human-readable error message if not.
+ */
+function ccm_tools_webp_check_image_bomb_guard($source_path) {
+    $info = @getimagesize($source_path);
+    if ($info === false) {
+        return __('Could not read image dimensions.', 'ccm-tools');
+    }
+
+    $width = (int) $info[0];
+    $height = (int) $info[1];
+    $pixels = $width * $height;
+
+    // Default cap ~50 megapixels; filterable per site.
+    $max_pixels = (int) apply_filters('ccm_tools_webp_max_image_pixels', 50000000);
+
+    if ($pixels <= 0 || $pixels > $max_pixels) {
+        return sprintf(
+            __('Image is %1$dx%2$d (%3$s megapixels), which exceeds the %4$s megapixel conversion limit.', 'ccm-tools'),
+            $width,
+            $height,
+            round($pixels / 1000000, 1),
+            round($max_pixels / 1000000, 1)
+        );
+    }
+
+    // Rough estimate of decoded memory need: width * height * channels *
+    // bytes-per-channel * 2 (decode buffer + working copy) — the same rule
+    // of thumb used by GD/Imagick sizing guidance.
+    $channels = (!empty($info['channels']) && $info['channels'] > 0) ? (int) $info['channels'] : 4;
+    $bits_per_channel = !empty($info['bits']) ? (int) $info['bits'] : 8;
+    $bytes_per_channel = max(1, (int) ceil($bits_per_channel / 8));
+    $estimated_bytes = $width * $height * $channels * $bytes_per_channel * 2;
+
+    $memory_limit = ccm_tools_webp_get_memory_limit_bytes();
+    if ($memory_limit > 0) {
+        $available = $memory_limit - memory_get_usage(true);
+        if ($estimated_bytes > $available) {
+            return sprintf(
+                __('Image requires an estimated %s of memory to decode, more than is currently available.', 'ccm-tools'),
+                size_format($estimated_bytes)
+            );
+        }
+    }
+
+    return true;
+}
+
+/**
  * Convert image using ImageMagick
  */
 function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality, $result) {
+    // Guard against image-bomb inputs before asking ImageMagick to decode
+    // anything — getimagesize() above only reads the header.
+    $bomb_check = ccm_tools_webp_check_image_bomb_guard($source_path);
+    if ($bomb_check !== true) {
+        $result['message'] = $bomb_check;
+        return $result;
+    }
+
     // Set ImageMagick temp directory to uploads to avoid /tmp/ access restrictions
     // Many hosting providers restrict ImageMagick from using /tmp/ via open_basedir or policy.xml
     $upload_dir = wp_upload_dir();
@@ -229,9 +457,22 @@ function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality,
     }
     putenv('MAGICK_TMPDIR=' . $magick_tmp);
     putenv('MAGICK_TEMPORARY_PATH=' . $magick_tmp);
-    
-    $imagick = new Imagick($source_path);
-    
+
+    $imagick = new Imagick();
+
+    // Cap the memory/map resources ImageMagick may use for this decode, as a
+    // second line of defence behind the pixel-count check above.
+    if (defined('Imagick::RESOURCETYPE_MEMORY') && defined('Imagick::RESOURCETYPE_MAP')) {
+        $memory_limit_bytes = ccm_tools_webp_get_memory_limit_bytes();
+        $imagick_memory_cap = $memory_limit_bytes > 0
+            ? (int) min($memory_limit_bytes * 0.5, 256 * 1024 * 1024)
+            : 256 * 1024 * 1024;
+        $imagick->setResourceLimit(Imagick::RESOURCETYPE_MEMORY, $imagick_memory_cap);
+        $imagick->setResourceLimit(Imagick::RESOURCETYPE_MAP, $imagick_memory_cap * 2);
+    }
+
+    $imagick->readImage($source_path);
+
     // Get source format to determine if it's lossless (PNG/GIF)
     $source_format = strtolower($imagick->getImageFormat());
     $is_lossless_source = in_array($source_format, array('png', 'gif'));
@@ -278,6 +519,13 @@ function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality,
  * Convert image using GD Library
  */
 function ccm_tools_webp_convert_with_gd($source_path, $dest_path, $quality, $result) {
+    // Guard against image-bomb inputs before decoding the full pixel buffer.
+    $bomb_check = ccm_tools_webp_check_image_bomb_guard($source_path);
+    if ($bomb_check !== true) {
+        $result['message'] = $bomb_check;
+        return $result;
+    }
+
     $path_info = pathinfo($source_path);
     $source_ext = strtolower($path_info['extension'] ?? '');
     
@@ -424,43 +672,6 @@ function ccm_tools_webp_filter_image_srcset($sources, $size_array, $image_src, $
 }
 
 /**
- * Filter main image src to serve WebP
- */
-function ccm_tools_webp_filter_image_src($image, $attachment_id, $size) {
-    $settings = ccm_tools_webp_get_settings();
-    
-    // Check if feature is enabled
-    if (empty($settings['enabled']) || empty($settings['serve_webp'])) {
-        return $image;
-    }
-    
-    // Check if browser supports WebP
-    if (!ccm_tools_webp_browser_supports_webp()) {
-        return $image;
-    }
-    
-    if (!is_array($image) || empty($image[0])) {
-        return $image;
-    }
-    
-    $original_url = $image[0];
-    
-    // Skip if already WebP
-    if (preg_match('/\.webp$/i', $original_url)) {
-        return $image;
-    }
-    
-    // Try to get or create WebP version
-    $webp_url = ccm_tools_webp_get_or_create($original_url);
-    
-    if ($webp_url && $webp_url !== $original_url) {
-        $image[0] = $webp_url;
-    }
-    
-    return $image;
-}
-
-/**
  * Filter content to convert <img>/<source> URLs to WebP.
  * This runs AFTER WordPress has generated srcset, so it won't break srcset.
  * Mainly a safety net for content that never reaches the output buffer.
@@ -526,35 +737,14 @@ function ccm_tools_webp_end_output_buffer() {
 function ccm_tools_webp_process_output_buffer($html) {
     $settings = ccm_tools_webp_get_settings();
     $upload_dir = wp_upload_dir();
-    
-    // Process background-image URLs if enabled
-    if (!empty($settings['convert_bg_images']) && stripos($html, 'url(') !== false) {
-        // Pattern matches url() containing image URLs — supports both absolute URLs
-        // (https://example.com/...) and relative paths (/wp-content/uploads/...).
-        // Captures: 1=opening quote (if any), 2=URL
-        $pattern = '/url\s*\(\s*(["\']?)([^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
-        
-        $html = preg_replace_callback($pattern, function($matches) use ($upload_dir) {
-            $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
-            $original_url = $matches[2];
-            
-            // Check if this is a local upload
-            if (strpos($original_url, '/wp-content/uploads/') === false) {
-                return $matches[0]; // Return unchanged
-            }
-            
-            // Try to get WebP version
-            $webp_url = ccm_tools_webp_get_or_create($original_url);
-            
-            if ($webp_url && $webp_url !== $original_url) {
-                // Return with same quote style as original
-                return 'url(' . $quote . $webp_url . $quote . ')';
-            }
-            
-            return $matches[0]; // Return unchanged if no WebP available
-        }, $html);
+
+    // Process background-image URLs if enabled. Off by default; when on,
+    // scoped to <style> blocks and style="" attributes only (see
+    // ccm_tools_webp_convert_bg_images_in_html() docblock for why).
+    if (!empty($settings['convert_bg_images'])) {
+        $html = ccm_tools_webp_convert_bg_images_in_html($html);
     }
-    
+
     // Serve WebP by rewriting <img> and <source> src/srcset in the final HTML.
     // This catches images in theme templates, page builders, and hand-coded
     // <picture> elements that bypass WordPress's srcset filters.
@@ -678,50 +868,89 @@ function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
     }
 
     // <img> tags — rewrite src + srcset.
-    $html = preg_replace_callback('/<img\b[^>]*>/i', function($matches) {
+    $out = preg_replace_callback('/<img\b[^>]*>/i', function($matches) {
         return ccm_tools_webp_rewrite_media_tag($matches[0]);
     }, $html);
+    if (null !== $out) { $html = $out; }
 
     // <source> tags — rewrite src + srcset. This is what fixes hand-coded
     // <picture> elements: the browser picks a matching <source>, not the <img>,
     // so the <source> URLs are the ones that actually need to be WebP.
-    $html = preg_replace_callback('/<source\b[^>]*>/i', function($matches) {
+    $out = preg_replace_callback('/<source\b[^>]*>/i', function($matches) {
         return ccm_tools_webp_rewrite_media_tag($matches[0]);
     }, $html);
+    if (null !== $out) { $html = $out; }
 
     return $html;
 }
 
 /**
- * Convert background image URLs in CSS string to WebP
- * 
- * @param string $css The CSS string containing background-image URLs
- * @param array $upload_dir The WordPress upload directory info
- * @return string CSS with WebP URLs
+ * Rewrite background-image url(...) references to WebP, scoped to <style>
+ * blocks and style="" attributes only.
+ *
+ * The previous implementation ran its url() regex over the ENTIRE raw page
+ * HTML, so a url(x.jpg)-shaped substring inside an inline <script> string
+ * literal or SVG <defs> would be silently rewritten too. Restricting the
+ * pass to actual CSS contexts (style blocks + style attributes) means it
+ * only ever touches real CSS.
+ *
+ * @param string $html The HTML content
+ * @return string HTML with WebP background-image URLs where available
  */
-function ccm_tools_webp_convert_bg_urls($css, $upload_dir) {
-    // Pattern to match url() values - handles with/without quotes
-    // Matches: url(image.jpg), url("image.jpg"), url('image.jpg')
-    $url_pattern = '/url\s*\(\s*["\']?([^"\')\s]+\.(?:jpg|jpeg|png|gif))["\']?\s*\)/i';
-    
-    return preg_replace_callback($url_pattern, function($url_match) use ($upload_dir) {
-        $original_url = $url_match[1];
-        
-        // Check if this is a local upload (from wp-content/uploads)
-        if (strpos($original_url, $upload_dir['baseurl']) === false && 
-            strpos($original_url, '/wp-content/uploads/') === false) {
-            return $url_match[0];
-        }
-        
-        // Try to get WebP version
-        $webp_url = ccm_tools_webp_get_or_create($original_url);
-        
-        if ($webp_url && $webp_url !== $original_url) {
-            return 'url("' . $webp_url . '")';
-        }
-        
-        return $url_match[0];
-    }, $css);
+function ccm_tools_webp_convert_bg_images_in_html($html) {
+    if (stripos($html, 'url(') === false) {
+        return $html;
+    }
+
+    // Pattern matches url() containing image URLs — supports both absolute
+    // URLs (https://example.com/...) and relative paths
+    // (/wp-content/uploads/...). Captures: 1=opening quote (if any), 2=URL
+    $url_pattern = '/url\s*\(\s*(["\']?)([^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
+
+    /*
+     * Every preg_* in this output path falls back to its untouched input.
+     * PCRE returns null once it hits pcre.backtrack_limit, and the <style>
+     * pattern below backtracks once per character, so a page over about a
+     * megabyte containing the substring "<style" exhausts it. Passing that
+     * null on hands the output buffer nothing and every visitor gets a blank
+     * page — which an administrator never sees, because this whole filter is
+     * skipped for them.
+     */
+    $rewrite_css_urls = function($css) use ($url_pattern) {
+        $out = preg_replace_callback($url_pattern, function($matches) {
+            $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
+            $original_url = $matches[2];
+
+            // Only touch local uploads.
+            if (strpos($original_url, '/wp-content/uploads/') === false) {
+                return $matches[0];
+            }
+
+            $webp_url = ccm_tools_webp_get_or_create($original_url);
+
+            if ($webp_url && $webp_url !== $original_url) {
+                return 'url(' . $quote . $webp_url . $quote . ')';
+            }
+
+            return $matches[0];
+        }, $css);
+
+        return (null === $out) ? $css : $out;
+    };
+
+    // <style>...</style> blocks
+    $out = preg_replace_callback('/<style\b[^>]*>([\s\S]*?)<\/style>/i', function($matches) use ($rewrite_css_urls) {
+        return str_replace($matches[1], $rewrite_css_urls($matches[1]), $matches[0]);
+    }, $html);
+    if (null !== $out) { $html = $out; }
+
+    // style="..." attributes on any tag
+    $out = preg_replace_callback('/(\sstyle=)(["\'])([^"\']*)\2/i', function($matches) use ($rewrite_css_urls) {
+        return $matches[1] . $matches[2] . $rewrite_css_urls($matches[3]) . $matches[2];
+    }, $html);
+    if (null !== $out) { $html = $out; }
+
+    return $html;
 }
 
 /**
@@ -736,80 +965,6 @@ function ccm_tools_webp_browser_supports_webp() {
     }
     
     return false;
-}
-
-/**
- * Convert image to WebP on-demand if it doesn't exist
- * 
- * @param string $source_path Path to original image
- * @param string $webp_path Path where WebP should be created
- * @return bool True if WebP exists or was created successfully
- */
-function ccm_tools_webp_convert_on_demand($source_path, $webp_path) {
-    // If WebP already exists, nothing to do
-    if (file_exists($webp_path)) {
-        return true;
-    }
-    
-    // Check if source exists
-    if (!file_exists($source_path)) {
-        return false;
-    }
-    
-    // Get settings
-    $settings = ccm_tools_webp_get_settings();
-    
-    // Check if on-demand conversion is enabled
-    if (empty($settings['convert_on_demand'])) {
-        return false;
-    }
-    
-    // Check if we've already failed to convert this file (avoid repeated attempts)
-    $failed_key = 'ccm_webp_failed_' . md5($source_path);
-    if (get_transient($failed_key)) {
-        return false;
-    }
-    
-    // Perform the conversion
-    $quality = intval($settings['quality']);
-    $extension = $settings['preferred_extension'];
-    
-    $result = ccm_tools_webp_convert_image($source_path, $webp_path, $quality, $extension);
-    
-    if ($result['success']) {
-        // Try to find attachment ID and update meta
-        $upload_dir = wp_upload_dir();
-        $relative_path = str_replace($upload_dir['basedir'] . '/', '', $source_path);
-        
-        global $wpdb;
-        $attachment_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_wp_attached_file' AND meta_value = %s",
-            $relative_path
-        ));
-        
-        if ($attachment_id) {
-            // Update conversion meta
-            $converted = get_post_meta($attachment_id, '_ccm_webp_converted', true);
-            if (!is_array($converted)) {
-                $converted = array();
-            }
-            $converted['on_demand'] = array(
-                'success' => true,
-                'source_path' => $source_path,
-                'dest_path' => $webp_path,
-                'source_size' => $result['source_size'],
-                'dest_size' => $result['dest_size'],
-                'converted_at' => current_time('mysql')
-            );
-            update_post_meta($attachment_id, '_ccm_webp_converted', $converted);
-        }
-        
-        return true;
-    } else {
-        // Mark as failed to avoid repeated attempts (cache for 1 hour)
-        set_transient($failed_key, true, HOUR_IN_SECONDS);
-        return false;
-    }
 }
 
 /**
@@ -838,22 +993,15 @@ function ccm_tools_webp_queue_for_conversion($original_url) {
     }
     
     $upload_dir = wp_upload_dir();
-    
-    // Check if this is a local upload - support both full URL and /wp-content/uploads/ path
-    $original_path = '';
-    if (strpos($original_url, $upload_dir['baseurl']) !== false) {
-        $original_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $original_url);
-    } elseif (strpos($original_url, '/wp-content/uploads/') !== false) {
-        // Extract path after /wp-content/uploads/
-        if (preg_match('#/wp-content/uploads/(.+)$#', $original_url, $path_match)) {
-            $original_path = $upload_dir['basedir'] . '/' . $path_match[1];
-        }
-    }
-    
-    if (empty($original_path)) {
+
+    // Resolve to a real, contained filesystem path — rejects traversal
+    // attempts and anything outside the uploads directory. $must_exist=true
+    // because there's nothing to queue if the source file isn't real.
+    $original_path = ccm_tools_webp_url_to_safe_path($original_url, $upload_dir, true);
+    if ($original_path === false) {
         return;
     }
-    
+
     // Generate WebP path
     $webp_path = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_path);
     
@@ -897,203 +1045,79 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     if (preg_match('/\.webp$/i', $original_url)) {
         return $original_url;
     }
-    
+
     // Only process JPG, PNG, GIF
     if (!preg_match('/\.(jpe?g|png|gif)$/i', $original_url)) {
         return false;
     }
-    
+
     $upload_dir = wp_upload_dir();
     $settings = ccm_tools_webp_get_settings();
-    
-    // Check if this is a local upload - support both full URL and relative path
-    $is_local = false;
-    $original_path = '';
-    
-    if (strpos($original_url, $upload_dir['baseurl']) !== false) {
-        // Full URL with baseurl
-        $is_local = true;
-        $original_path = str_replace($upload_dir['baseurl'], $upload_dir['basedir'], $original_url);
-    } elseif (strpos($original_url, '/wp-content/uploads/') !== false) {
-        // Relative path - reconstruct full path
-        $is_local = true;
-        // Extract the path after /wp-content/uploads/
-        if (preg_match('#/wp-content/uploads/(.+)$#', $original_url, $path_match)) {
-            $original_path = $upload_dir['basedir'] . '/' . $path_match[1];
-        }
-    }
-    
-    if (!$is_local || empty($original_path)) {
+
+    // Resolve to a real, contained filesystem path — rejects traversal
+    // attempts and anything outside the uploads directory. This is the
+    // anonymous-request path (wp_calculate_image_srcset + the output
+    // buffer), so containment here is what stops a crafted <img src="">
+    // anywhere on the site from reading/writing outside uploads.
+    $original_path = ccm_tools_webp_url_to_safe_path($original_url, $upload_dir, true);
+    if ($original_path === false) {
         return false;
     }
-    
-    // Generate WebP path
+
+    // Generate WebP path/URL from the already-validated source path.
     $webp_path = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_path);
     $webp_url = preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $original_url);
-    
+
     // Check if WebP exists
     if (file_exists($webp_path)) {
         return $webp_url;
     }
-    
+
     // Try synchronous on-demand conversion if enabled
-    if (!empty($settings['convert_on_demand']) && file_exists($original_path)) {
-        // Check if we've already failed to convert this file
+    if (!empty($settings['convert_on_demand'])) {
         $failed_key = 'ccm_webp_failed_' . md5($original_path);
-        if (!get_transient($failed_key)) {
-            $quality = intval($settings['quality']);
-            $extension = $settings['preferred_extension'];
-            
-            $result = ccm_tools_webp_convert_image($original_path, $webp_path, $quality, $extension);
-            
-            if ($result['success']) {
-                return $webp_url;
-            } else {
-                // Mark as failed to avoid repeated attempts (cache for 1 hour)
-                set_transient($failed_key, true, HOUR_IN_SECONDS);
+        $lock_key = 'ccm_webp_lock_' . md5($original_path);
+
+        // Per-file in-progress marker: if another request is already
+        // converting this exact file, don't pile on — fall through to the
+        // queue/original below instead of doing a second decode+encode.
+        if (!get_transient($failed_key) && !get_transient($lock_key)) {
+            // Site-wide rate limit: cap on-demand conversions per minute so
+            // an anonymous crawl of a large media library can't force
+            // unlimited full decode+encode cycles in-request. Once over the
+            // cap for this minute, fall back to serving the original and
+            // queue for background processing instead.
+            $rate_key = 'ccm_webp_ondemand_count_' . gmdate('YmdHi');
+            $count = (int) get_transient($rate_key);
+            $max_per_minute = (int) apply_filters('ccm_tools_webp_max_conversions_per_minute', 20);
+
+            if ($count < $max_per_minute) {
+                set_transient($rate_key, $count + 1, 60);
+                set_transient($lock_key, true, 30); // 30s is generous for a single conversion
+
+                $quality = intval($settings['quality']);
+                $extension = $settings['preferred_extension'];
+
+                $result = ccm_tools_webp_convert_image($original_path, $webp_path, $quality, $extension);
+
+                delete_transient($lock_key);
+
+                if ($result['success']) {
+                    return $webp_url;
+                } else {
+                    // Mark as failed to avoid repeated attempts (cache for 1 hour)
+                    set_transient($failed_key, true, HOUR_IN_SECONDS);
+                }
             }
         }
     }
-    
+
     // Queue for background conversion if still not converted
     if ($queue_if_missing) {
         ccm_tools_webp_queue_for_conversion($original_url);
     }
-    
+
     return false;
-}
-
-/**
- * Get attachment ID from image URL
- * 
- * @param string $url The image URL
- * @return int|false Attachment ID or false if not found
- */
-function ccm_tools_webp_get_attachment_id_from_url($url) {
-    global $wpdb;
-    
-    // Remove size suffix to get original URL (e.g., image-300x200.jpg -> image.jpg)
-    $url_without_size = preg_replace('/-\d+x\d+(\.[a-z]+)$/i', '$1', $url);
-    
-    // Try to find by guid first
-    $attachment_id = $wpdb->get_var($wpdb->prepare(
-        "SELECT ID FROM {$wpdb->posts} WHERE guid = %s AND post_type = 'attachment'",
-        $url_without_size
-    ));
-    
-    if ($attachment_id) {
-        return (int) $attachment_id;
-    }
-    
-    // Try with the original URL (might be a sized version)
-    $attachment_id = $wpdb->get_var($wpdb->prepare(
-        "SELECT ID FROM {$wpdb->posts} WHERE guid = %s AND post_type = 'attachment'",
-        $url
-    ));
-    
-    if ($attachment_id) {
-        return (int) $attachment_id;
-    }
-    
-    // Try to find by file path in metadata
-    $upload_dir = wp_upload_dir();
-    $file_path = str_replace($upload_dir['baseurl'] . '/', '', $url_without_size);
-    
-    $attachment_id = $wpdb->get_var($wpdb->prepare(
-        "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_wp_attached_file' AND meta_value = %s",
-        $file_path
-    ));
-    
-    return $attachment_id ? (int) $attachment_id : false;
-}
-
-/**
- * Build responsive srcset with WebP versions for an image
- * 
- * @param string $img_url The image URL
- * @param bool $webp Whether to return WebP URLs
- * @return array Array with 'srcset' and 'sizes' keys, or empty if not available
- */
-function ccm_tools_webp_build_responsive_srcset($img_url, $webp = true) {
-    $result = array('srcset' => '', 'sizes' => '');
-    
-    // Try to get attachment ID
-    $attachment_id = ccm_tools_webp_get_attachment_id_from_url($img_url);
-    
-    if (!$attachment_id) {
-        return $result;
-    }
-    
-    // Get attachment metadata
-    $metadata = wp_get_attachment_metadata($attachment_id);
-    
-    if (!$metadata || empty($metadata['sizes'])) {
-        return $result;
-    }
-    
-    $upload_dir = wp_upload_dir();
-    $base_url = trailingslashit(dirname($img_url));
-    
-    // Get the directory from metadata file path
-    if (!empty($metadata['file'])) {
-        $base_url = trailingslashit($upload_dir['baseurl']) . trailingslashit(dirname($metadata['file']));
-    }
-    
-    $srcset_parts = array();
-    
-    // Check if on-demand conversion is enabled
-    $settings = ccm_tools_webp_get_settings();
-    $enable_on_demand = !empty($settings['convert_on_demand']);
-    
-    // Add all available sizes
-    foreach ($metadata['sizes'] as $size_name => $size_data) {
-        if (empty($size_data['file']) || empty($size_data['width'])) {
-            continue;
-        }
-        
-        $size_url = $base_url . $size_data['file'];
-        
-        if ($webp) {
-            // Check if WebP exists, or create on-demand if enabled
-            $webp_check = ccm_tools_webp_get_or_create($size_url, $enable_on_demand);
-            if ($webp_check) {
-                $srcset_parts[] = esc_url($webp_check) . ' ' . $size_data['width'] . 'w';
-            }
-        } else {
-            $srcset_parts[] = esc_url($size_url) . ' ' . $size_data['width'] . 'w';
-        }
-    }
-    
-    // Add full size
-    if (!empty($metadata['width'])) {
-        $full_url = trailingslashit($upload_dir['baseurl']) . $metadata['file'];
-        
-        if ($webp) {
-            $webp_full = ccm_tools_webp_get_or_create($full_url, $enable_on_demand);
-            if ($webp_full) {
-                $srcset_parts[] = esc_url($webp_full) . ' ' . $metadata['width'] . 'w';
-            }
-        } else {
-            $srcset_parts[] = esc_url($full_url) . ' ' . $metadata['width'] . 'w';
-        }
-    }
-    
-    if (!empty($srcset_parts)) {
-        // Sort by width (smallest first for better browser selection)
-        usort($srcset_parts, function($a, $b) {
-            preg_match('/(\d+)w$/', $a, $ma);
-            preg_match('/(\d+)w$/', $b, $mb);
-            return intval($ma[1] ?? 0) - intval($mb[1] ?? 0);
-        });
-        
-        $result['srcset'] = implode(', ', $srcset_parts);
-        
-        // Generate a sensible default sizes attribute
-        // This tells the browser: on mobile use 100vw, on larger screens use a reasonable size
-        $result['sizes'] = '(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 800px';
-    }
-    
-    return $result;
 }
 
 /**
@@ -1312,382 +1336,553 @@ function ccm_tools_webp_background_queue_script() {
 
 /**
  * Render the WebP Converter admin page
+ *
+ * Reading order: the hero says what will do the converting and whether WebP
+ * is actually being served right now; the stat grid gives the one number
+ * anyone actually wants (how much this has saved); bulk conversion and
+ * settings are the two things this page exists to operate; everything else
+ * (which library is doing the work, a one-image test, import/export, an
+ * uploads backup) is detail needed rarely, so it stays compact or tucked
+ * into a disclosure.
+ *
+ * Containers: settings are one `.ccm-optgroup` card, the same component the
+ * .htaccess and Performance pages use, with the group name, its one line of
+ * context and the live count all in the card header rather than floating
+ * above the list. Bulk conversion keeps a full-width `.ccm-panel` because it
+ * is the primary action here. The two reference blocks — which library is
+ * present, and the one-image test — share a `.ccm-grid-2` row, which drops
+ * to one column on a narrow screen.
+ *
+ * @return void
  */
+/**
+ * Trim an image library's version down to the actual version number.
+ *
+ * Imagick::getVersion() returns a whole sentence, e.g. "ImageMagick 7.1.1-29
+ * Q16-HDRI x86_64 22128 https://imagemagick.org". Printing that after the
+ * library name gives "ImageMagick ImageMagick 7.1.1-29 Q16-HDRI ..." and a URL
+ * in the page heading, so pull out the number and drop the rest.
+ *
+ * @param string $version Raw version string as the extension reported it.
+ * @return string Just the version number, or '' when none can be found.
+ */
+function ccm_tools_webp_clean_version($version) {
+    $version = trim((string) $version);
+    if ($version === '' || strtolower($version) === 'unknown') {
+        return '';
+    }
+    if (preg_match('/(\d+\.\d+[0-9A-Za-z.\-]*)/', $version, $m)) {
+        return $m[1];
+    }
+    return $version;
+}
+
+/**
+ * Render an image library as "Name 7.1.1-29", with no repeated name.
+ *
+ * @param array $ext One entry from ccm_tools_webp_get_available_extensions().
+ * @return string
+ */
+function ccm_tools_webp_library_label($ext) {
+    $name    = isset($ext['name']) ? trim((string) $ext['name']) : '';
+    $version = ccm_tools_webp_clean_version(isset($ext['version']) ? $ext['version'] : '');
+    return trim($name . ' ' . $version);
+}
+
 function ccm_tools_render_webp_page() {
-    // Check if WebP conversion is available
-    $available = ccm_tools_webp_is_available();
-    $extensions = ccm_tools_webp_get_available_extensions();
-    $settings = ccm_tools_webp_get_settings();
-    $stats = ccm_tools_webp_get_statistics();
+    if (!ccm_tools_user_is_admin()) {
+        wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
+    }
+
+    $available      = ccm_tools_webp_is_available();
+    $extensions     = ccm_tools_webp_get_available_extensions();
+    $settings       = ccm_tools_webp_get_settings();
+    $stats          = ccm_tools_webp_get_statistics();
     $best_extension = ccm_tools_webp_get_best_extension();
-    
+
+    // Which library will actually do the conversion: an explicit preference
+    // wins over the auto-picked best, provided it is one that really exists.
+    $preferred  = $settings['preferred_extension'];
+    $active_key = ($preferred !== 'auto' && isset($extensions[$preferred])) ? $preferred : $best_extension;
+    $active     = ($active_key && isset($extensions[$active_key])) ? $extensions[$active_key] : null;
+
+    // WebP is only actually reaching visitors if both the master switch and
+    // the serve toggle are on; ccm_tools_webp_init() requires both.
+    $serving = !empty($settings['enabled']) && !empty($settings['serve_webp']);
+
+    // Tally for the Settings section eyebrow, same shape as the Performance page.
+    $opt_keys = array('serve_webp', 'convert_on_upload', 'convert_on_demand', 'convert_bg_images', 'keep_originals');
+    $opts_on  = 0;
+    foreach ($opt_keys as $opt_key) {
+        if (!empty($settings[$opt_key])) { $opts_on++; }
+    }
+
+    $zip_available = class_exists('ZipArchive') || extension_loaded('zip');
     ?>
-    <div class="wrap ccm-tools">
-        <?php 
+    <div class="wrap ccm-tools ccm-tools-webp">
+        <?php
         if (function_exists('ccm_tools_render_header_nav')) {
             ccm_tools_render_header_nav('ccm-tools-webp');
         }
         ?>
-        
+
         <div class="ccm-content">
-            <!-- Available Extensions -->
-            <div class="ccm-card">
-                <h2><?php _e('Image Processing Extensions', 'ccm-tools'); ?></h2>
-                
-                <?php if (empty($extensions)): ?>
-                    <div class="ccm-alert ccm-alert-error">
-                        <span class="ccm-icon">✗</span>
-                        <div>
-                            <strong><?php _e('No Compatible Extensions Found', 'ccm-tools'); ?></strong>
-                            <p><?php _e('WebP conversion requires GD or ImageMagick PHP extension with WebP support. Please contact your hosting provider to enable one of these extensions.', 'ccm-tools'); ?></p>
-                        </div>
+
+            <?php if (!$available) : ?>
+                <div class="ccm-alert ccm-alert--bad" style="margin-bottom: var(--ccm-space-lg);">
+                    <span class="ccm-dot ccm-dot-bad"></span>
+                    <div>
+                        <strong><?php _e('No image library on this server can create WebP files.', 'ccm-tools'); ?></strong>
+                        <?php _e('Neither GD nor ImageMagick with WebP support was found, so nothing below this notice will work. Ask your hosting provider to enable one of them.', 'ccm-tools'); ?>
                     </div>
-                <?php else: ?>
-                    <div class="ccm-extensions-grid">
-                        <?php foreach ($extensions as $name => $ext): ?>
-                            <div class="ccm-extension-item <?php echo $ext['webp_support'] ? 'ccm-success' : 'ccm-warning'; ?>">
-                                <div class="ccm-extension-header">
-                                    <span class="ccm-icon"><?php echo $ext['webp_support'] ? '✓' : '⚠'; ?></span>
-                                    <div class="ccm-extension-name">
-                                        <strong><?php echo esc_html($ext['name']); ?></strong>
-                                        <?php if ($name === $best_extension): ?>
-                                            <span class="ccm-badge ccm-badge-primary"><?php _e('Recommended', 'ccm-tools'); ?></span>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
-                                <div class="ccm-extension-details">
-                                    <small><?php _e('Version:', 'ccm-tools'); ?> <?php echo esc_html($ext['version']); ?></small>
-                                    <div class="ccm-extension-support">
-                                        <span class="<?php echo $ext['webp_support'] ? 'ccm-success' : 'ccm-error'; ?>" title="WebP">WebP <?php echo $ext['webp_support'] ? '✓' : '✗'; ?></span>
-                                        <span class="<?php echo $ext['jpeg_support'] ? 'ccm-success' : 'ccm-error'; ?>" title="JPEG">JPEG <?php echo $ext['jpeg_support'] ? '✓' : '✗'; ?></span>
-                                        <span class="<?php echo $ext['png_support'] ? 'ccm-success' : 'ccm-error'; ?>" title="PNG">PNG <?php echo $ext['png_support'] ? '✓' : '✗'; ?></span>
-                                        <span class="<?php echo $ext['gif_support'] ? 'ccm-success' : 'ccm-error'; ?>" title="GIF">GIF <?php echo $ext['gif_support'] ? '✓' : '✗'; ?></span>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Hero -->
+            <div class="ccm-hero">
+                <div class="ccm-hero__text">
+                    <h1><?php _e('WebP Converter', 'ccm-tools'); ?></h1>
+                    <div class="ccm-hero__meta">
+                        <span><?php echo $active
+                            ? esc_html(ccm_tools_webp_library_label($active))
+                            : esc_html__('No WebP-capable library', 'ccm-tools'); ?></span>
+                        <span><?php echo $serving
+                            ? esc_html__('serving WebP to capable browsers', 'ccm-tools')
+                            : esc_html__('not currently serving WebP', 'ccm-tools'); ?></span>
                     </div>
+                </div>
+                <?php if ($available) : ?>
+                <div class="ccm-hero__actions">
+                    <span class="ccm-masterswitch<?php echo !empty($settings['enabled']) ? ' is-on' : ''; ?>">
+                        <span class="ccm-masterswitch__label">
+                            <?php echo !empty($settings['enabled'])
+                                ? esc_html__('Conversion on', 'ccm-tools')
+                                : esc_html__('Conversion off', 'ccm-tools'); ?>
+                        </span>
+                        <label class="ccm-toggle">
+                            <input type="checkbox" name="enabled" id="webp-enabled" value="1" <?php checked($settings['enabled'], true); ?>>
+                            <span class="ccm-toggle-slider"></span>
+                        </label>
+                    </span>
+                    <button type="button" id="start-bulk-conversion" class="ccm-button ccm-button-primary" <?php disabled($stats['pending_conversion'] === 0); ?>>
+                        <?php _e('Start bulk conversion', 'ccm-tools'); ?>
+                    </button>
+                    <button type="button" id="stop-bulk-conversion" class="ccm-button ccm-button-danger" style="display: none;">
+                        <?php _e('Stop conversion', 'ccm-tools'); ?>
+                    </button>
+                </div>
                 <?php endif; ?>
             </div>
-            
-            <?php if ($available): ?>
-            
-            <!-- Conversion Statistics -->
-            <div class="ccm-card" id="webp-stats-card">
-                <h2><?php _e('Conversion Statistics', 'ccm-tools'); ?></h2>
-                <div class="ccm-stats-grid">
-                    <div class="ccm-stat-box">
-                        <span class="ccm-stat-value" id="stat-total-images"><?php echo esc_html($stats['total_images']); ?></span>
-                        <span class="ccm-stat-label"><?php _e('Total Images', 'ccm-tools'); ?></span>
+
+            <?php if ($available) : ?>
+
+            <!-- Stat grid: the saving percentage is the headline of this page -->
+            <div class="ccm-stat-grid" id="webp-stats-card">
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value">
+                        <span id="stat-converted-images"><?php echo esc_html($stats['converted_images']); ?></span>
+                        <small>/ <span id="stat-total-images"><?php echo esc_html($stats['total_images']); ?></span></small>
                     </div>
-                    <div class="ccm-stat-box">
-                        <span class="ccm-stat-value ccm-success" id="stat-converted-images"><?php echo esc_html($stats['converted_images']); ?></span>
-                        <span class="ccm-stat-label"><?php _e('Converted to WebP', 'ccm-tools'); ?></span>
-                    </div>
-                    <div class="ccm-stat-box">
-                        <span class="ccm-stat-value <?php echo $stats['pending_conversion'] > 0 ? 'ccm-warning' : ''; ?>" id="stat-pending-images"><?php echo esc_html($stats['pending_conversion']); ?></span>
-                        <span class="ccm-stat-label"><?php _e('Pending Conversion', 'ccm-tools'); ?></span>
-                    </div>
-                    <div class="ccm-stat-box">
-                        <span class="ccm-stat-value ccm-info" id="stat-average-savings"><?php echo esc_html($stats['total_savings']); ?>%</span>
-                        <span class="ccm-stat-label"><?php _e('Average Savings', 'ccm-tools'); ?></span>
-                    </div>
+                    <div class="ccm-stat-tile__label"><?php _e('Converted to WebP', 'ccm-tools'); ?></div>
                 </div>
-                
-                <div class="ccm-size-comparison" id="stat-size-comparison" <?php echo $stats['total_original_size'] > 0 ? '' : 'style="display:none;"'; ?>>
-                    <p>
-                        <strong><?php _e('Original Size:', 'ccm-tools'); ?></strong> 
-                        <span id="stat-original-size"><?php echo esc_html(size_format($stats['total_original_size'])); ?></span>
-                        &rarr;
-                        <strong><?php _e('WebP Size:', 'ccm-tools'); ?></strong> 
-                        <span id="stat-webp-size"><?php echo esc_html(size_format($stats['total_webp_size'])); ?></span>
-                        <span class="ccm-success">
-                            (<span id="stat-saved-size"><?php echo sprintf(__('Saved %s', 'ccm-tools'), size_format($stats['total_original_size'] - $stats['total_webp_size'])); ?></span>)
-                        </span>
-                    </p>
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value" id="stat-original-size"><?php echo esc_html(size_format($stats['total_original_size'])); ?></div>
+                    <div class="ccm-stat-tile__label"><?php _e('Original size', 'ccm-tools'); ?></div>
+                </div>
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value" id="stat-webp-size"><?php echo esc_html(size_format($stats['total_webp_size'])); ?></div>
+                    <div class="ccm-stat-tile__label"><?php _e('WebP size', 'ccm-tools'); ?></div>
+                </div>
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value ccm-stat-tile__value--brand" id="stat-average-savings"><?php echo esc_html($stats['total_savings']); ?>%</div>
+                    <div class="ccm-stat-tile__label"><?php _e('Average saving', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub" id="stat-size-comparison"<?php echo $stats['total_original_size'] > 0 ? '' : ' style="display:none;"'; ?>>
+                        <span id="stat-saved-size"><?php echo esc_html(sprintf(
+                            /* translators: %s: amount of disk space saved, already formatted (e.g. "2.1 MB") */
+                            __('Saved %s', 'ccm-tools'),
+                            size_format($stats['total_original_size'] - $stats['total_webp_size'])
+                        )); ?></span>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Settings -->
-            <div class="ccm-card">
-                <h2><?php _e('WebP Converter Settings', 'ccm-tools'); ?></h2>
-                
-                <form id="webp-settings-form">
-                    <table class="ccm-table ccm-form-table">
-                        <tr>
-                            <th><?php _e('Enable WebP Conversion', 'ccm-tools'); ?></th>
-                            <td>
-                                <label class="ccm-toggle">
-                                    <input type="checkbox" name="enabled" id="webp-enabled" value="1" <?php checked($settings['enabled'], true); ?>>
-                                    <span class="ccm-toggle-slider"></span>
-                                </label>
-                                <p class="ccm-note"><?php _e('Master switch to enable/disable all WebP conversion features.', 'ccm-tools'); ?></p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Compression Quality', 'ccm-tools'); ?></th>
-                            <td>
-                                <div class="ccm-range-control">
-                                    <input type="range" name="quality" id="webp-quality" min="1" max="100" value="<?php echo esc_attr($settings['quality']); ?>">
-                                    <span class="ccm-range-value" id="webp-quality-value"><?php echo esc_html($settings['quality']); ?></span>
+
+            <!-- Bulk conversion: the main thing this page does, so it stays
+                 full width rather than sharing a row with anything. -->
+            <div class="ccm-panel" style="margin-bottom: var(--ccm-space-xl);">
+                <div class="ccm-panel__head">
+                    <span><?php _e('Bulk conversion', 'ccm-tools'); ?></span>
+                    <span class="ccm-text-muted" style="font-size: var(--ccm-text-xs);"><?php echo esc_html(sprintf(
+                        /* translators: 1: converted count, 2: total eligible count */
+                        __('%1$d of %2$d converted', 'ccm-tools'),
+                        $stats['converted_images'],
+                        $stats['total_images']
+                    )); ?></span>
+                </div>
+                <div class="ccm-panel__body">
+
+                    <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-md);">
+                        <?php _e('Converts every eligible image already in the media library. Regenerating deletes the existing WebP files first and redoes them with the current quality and library settings.', 'ccm-tools'); ?>
+                    </p>
+
+                    <div id="webp-bulk-idle">
+                        <p style="margin: 0 0 var(--ccm-space-md);">
+                            <?php if ($stats['pending_conversion'] > 0) : ?>
+                                <?php printf(
+                                    /* translators: %s: number of images waiting, wrapped in a strong tag with an id main.js updates live */
+                                    esc_html__('%s images are waiting to convert. Use Start bulk conversion above to run them now.', 'ccm-tools'),
+                                    '<strong id="stat-pending-images">' . esc_html($stats['pending_conversion']) . '</strong>'
+                                ); ?>
+                            <?php else : ?>
+                                <?php esc_html_e('Every eligible image already has a WebP version.', 'ccm-tools'); ?>
+                                <span id="stat-pending-images" class="ccm-hide">0</span>
+                            <?php endif; ?>
+                        </p>
+                        <button type="button" id="regenerate-all-webp" class="ccm-button ccm-button-secondary ccm-button-small" <?php disabled($stats['converted_images'] === 0); ?>>
+                            <?php echo esc_html(sprintf(
+                                /* translators: %d: number of already-converted images */
+                                __('Regenerate %d WebP Images', 'ccm-tools'),
+                                $stats['converted_images']
+                            )); ?>
+                        </button>
+                    </div>
+
+                    <div id="bulk-conversion-progress" style="display: none;">
+                        <div class="ccm-row" style="justify-content: space-between; margin-bottom: var(--ccm-space-xs);">
+                            <span><?php _e('Converting', 'ccm-tools'); ?> <span id="bulk-current">0</span> / <span id="bulk-total">0</span></span>
+                        </div>
+                        <div class="ccm-meter"><i id="bulk-progress-bar" style="width: 0%;"></i></div>
+                        <div id="bulk-conversion-log" class="ccm-log-box" aria-live="polite"></div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Settings: one contained group, so the quality field and the
+                 toggles it applies to sit in the same card. -->
+            <form id="webp-settings-form">
+                <section class="ccm-optgroup" data-group="settings">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php _e('Settings', 'ccm-tools'); ?></h2>
+                            <p class="ccm-optgroup__note"><?php _e('The master switch above turns all of this on or off. These control what happens while it is on.', 'ccm-tools'); ?></p>
+                        </div>
+                        <span class="ccm-optgroup__count" data-group-count><?php echo esc_html(sprintf(
+                            /* translators: 1: enabled count, 2: total count */
+                            __('%1$d of %2$d on', 'ccm-tools'), $opts_on, count($opt_keys)
+                        )); ?></span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <div class="ccm-opt">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <label class="ccm-opt__label" for="webp-quality"><?php _e('Quality', 'ccm-tools'); ?></label>
+                                    <p class="ccm-opt__desc"><?php _e('85 is the default and is close to lossless. Push it past 90 and the file barely shrinks for the extra size.', 'ccm-tools'); ?></p>
                                 </div>
-                                <p class="ccm-note">
-                                    <?php _e('1 = smallest file, lowest quality. 100 = largest file, best quality. Recommended: 75-85.', 'ccm-tools'); ?>
-                                </p>
-                                <div class="ccm-quality-presets">
-                                    <button type="button" class="ccm-button ccm-button-small ccm-quality-preset" data-quality="60"><?php _e('Low (60)', 'ccm-tools'); ?></button>
-                                    <button type="button" class="ccm-button ccm-button-small ccm-quality-preset" data-quality="75"><?php _e('Medium (75)', 'ccm-tools'); ?></button>
-                                    <button type="button" class="ccm-button ccm-button-small ccm-quality-preset" data-quality="82"><?php _e('Balanced (82)', 'ccm-tools'); ?></button>
-                                    <button type="button" class="ccm-button ccm-button-small ccm-quality-preset" data-quality="90"><?php _e('High (90)', 'ccm-tools'); ?></button>
+                                <span class="ccm-slider">
+                                    <input type="range" name="quality" id="webp-quality" class="ccm-slider__range"
+                                           min="1" max="100" step="1"
+                                           value="<?php echo esc_attr($settings['quality']); ?>"
+                                           data-slider-output="#webp-quality-value">
+                                    <output class="ccm-slider__value" id="webp-quality-value"
+                                            for="webp-quality"><?php echo esc_html($settings['quality']); ?></output>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['serve_webp']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Serve WebP to capable browsers', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Rewrites image URLs to the WebP version for browsers that support it. Anything older still gets the original file.', 'ccm-tools'); ?></p>
                                 </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Convert on Upload', 'ccm-tools'); ?></th>
-                            <td>
-                                <label class="ccm-toggle">
-                                    <input type="checkbox" name="convert_on_upload" id="webp-convert-on-upload" value="1" <?php checked($settings['convert_on_upload'], true); ?>>
-                                    <span class="ccm-toggle-slider"></span>
-                                </label>
-                                <p class="ccm-note"><?php _e('Automatically convert images to WebP when they are uploaded.', 'ccm-tools'); ?></p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Serve WebP to Browsers', 'ccm-tools'); ?></th>
-                            <td>
                                 <label class="ccm-toggle">
                                     <input type="checkbox" name="serve_webp" id="webp-serve" value="1" <?php checked($settings['serve_webp'], true); ?>>
                                     <span class="ccm-toggle-slider"></span>
                                 </label>
-                                <p class="ccm-note"><?php _e('Automatically serve WebP images to browsers that support them. Original images are served to older browsers.', 'ccm-tools'); ?></p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Convert On-Demand', 'ccm-tools'); ?></th>
-                            <td>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['convert_on_upload']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Convert on upload', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Creates the WebP version the moment an image is added to the media library, so new uploads never join the backlog.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="convert_on_upload" id="webp-convert-on-upload" value="1" <?php checked($settings['convert_on_upload'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['convert_on_demand']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Convert on demand', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Converts an image during a visitor\'s request, the first time it is actually needed, instead of waiting for a bulk run. That first request is a little slower while the conversion happens, but nothing is left unconverted.', 'ccm-tools'); ?></p>
+                                </div>
                                 <label class="ccm-toggle">
                                     <input type="checkbox" name="convert_on_demand" id="webp-convert-on-demand" value="1" <?php checked($settings['convert_on_demand'], true); ?>>
                                     <span class="ccm-toggle-slider"></span>
                                 </label>
-                                <p class="ccm-note"><?php _e('Automatically convert images to WebP when they are displayed on a page (if WebP doesn\'t exist yet). This enables lazy/on-the-fly conversion without needing bulk conversion.', 'ccm-tools'); ?></p>
-                                <div class="ccm-alert ccm-alert-info ccm-alert-small">
-                                    <span class="ccm-icon">ℹ</span>
-                                    <small><?php _e('First page load may be slightly slower while images are converted, but subsequent loads will be fast.', 'ccm-tools'); ?></small>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['keep_originals']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Keep original files', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php _e('Leaves the original JPG, PNG or GIF in place next to the WebP version. Turning this off removes the fallback that older browsers need.', 'ccm-tools'); ?></p>
                                 </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Convert Background Images', 'ccm-tools'); ?></th>
-                            <td>
-                                <label class="ccm-toggle">
-                                    <input type="checkbox" name="convert_bg_images" id="webp-bg-images" value="1" <?php checked($settings['convert_bg_images'], true); ?>>
-                                    <span class="ccm-toggle-slider"></span>
-                                </label>
-                                <p class="ccm-note"><?php _e('Convert CSS background-image URLs to WebP in inline styles and style blocks. Works with page builders and custom CSS.', 'ccm-tools'); ?></p>
-                                <div class="ccm-code-example">
-                                    <small><?php _e('Example:', 'ccm-tools'); ?></small>
-                                    <pre>background-image: url("image.jpg")
-→ background-image: url("image.webp")</pre>
-                                </div>
-                                <div class="ccm-alert ccm-alert-info ccm-alert-small">
-                                    <span class="ccm-icon">ℹ</span>
-                                    <small><?php _e('Only converts images from your uploads folder. External images are not affected.', 'ccm-tools'); ?></small>
-                                </div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Keep Original Files', 'ccm-tools'); ?></th>
-                            <td>
                                 <label class="ccm-toggle">
                                     <input type="checkbox" name="keep_originals" id="webp-keep-originals" value="1" <?php checked($settings['keep_originals'], true); ?>>
                                     <span class="ccm-toggle-slider"></span>
                                 </label>
-                                <p class="ccm-note"><?php _e('Keep original JPG/PNG files alongside WebP versions. Recommended for compatibility.', 'ccm-tools'); ?></p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <th><?php _e('Preferred Extension', 'ccm-tools'); ?></th>
-                            <td>
-                                <select name="preferred_extension" id="webp-preferred-extension">
-                                    <option value="auto" <?php selected($settings['preferred_extension'], 'auto'); ?>><?php _e('Auto (Best Available)', 'ccm-tools'); ?></option>
-                                    <?php foreach ($extensions as $name => $ext): ?>
-                                        <?php if ($ext['webp_support']): ?>
-                                            <option value="<?php echo esc_attr($name); ?>" <?php selected($settings['preferred_extension'], $name); ?>>
-                                                <?php echo esc_html($ext['name']); ?>
-                                            </option>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                </select>
-                                <p class="ccm-note"><?php _e('Choose which image processing library to use for conversion.', 'ccm-tools'); ?></p>
-                            </td>
-                        </tr>
-                    </table>
-                    
-                    <div class="ccm-form-actions">
-                        <button type="submit" id="save-webp-settings" class="ccm-button ccm-button-primary">
-                            <?php _e('Save Settings', 'ccm-tools'); ?>
-                        </button>
-                    </div>
-                </form>
-            </div>
-            
-            <!-- Bulk Conversion -->
-            <div class="ccm-card">
-                <h2><?php _e('Bulk Convert Existing Images', 'ccm-tools'); ?></h2>
-                <p><?php _e('Convert all existing images in your media library to WebP format.', 'ccm-tools'); ?></p>
-                
-                <div class="ccm-alert ccm-alert-info">
-                    <span class="ccm-icon">ℹ</span>
-                    <div>
-                        <strong><?php _e('Before You Start', 'ccm-tools'); ?></strong>
-                        <ul>
-                            <li><?php _e('This process may take a long time depending on the number of images.', 'ccm-tools'); ?></li>
-                            <li><?php _e('Make sure you have a backup of your uploads folder.', 'ccm-tools'); ?></li>
-                            <li><?php _e('Keep this browser tab open during conversion.', 'ccm-tools'); ?></li>
-                        </ul>
-                    </div>
-                </div>
-                
-                <div class="ccm-bulk-actions" style="display: flex; gap: var(--ccm-space-sm); flex-wrap: wrap;">
-                    <button type="button" id="start-bulk-conversion" class="ccm-button ccm-button-primary" <?php echo $stats['pending_conversion'] === 0 ? 'disabled' : ''; ?>>
-                        <?php echo sprintf(__('Convert %d Images', 'ccm-tools'), $stats['pending_conversion']); ?>
-                    </button>
-                    <button type="button" id="regenerate-all-webp" class="ccm-button" <?php echo $stats['converted_images'] === 0 ? 'disabled' : ''; ?>>
-                        <?php echo sprintf(__('Regenerate %d WebP Images', 'ccm-tools'), $stats['converted_images']); ?>
-                    </button>
-                    <button type="button" id="stop-bulk-conversion" class="ccm-button ccm-button-danger" style="display: none;">
-                        <?php _e('Stop Conversion', 'ccm-tools'); ?>
-                    </button>
-                </div>
-                
-                <p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm); font-size: var(--ccm-text-sm);">
-                    <?php _e('Use "Regenerate" to re-convert all images with new quality settings.', 'ccm-tools'); ?>
-                </p>
-                
-                <div id="bulk-conversion-progress" style="display: none;">
-                    <div class="ccm-progress-info">
-                        <p><?php _e('Converting:', 'ccm-tools'); ?> <span id="bulk-current">0</span>/<span id="bulk-total">0</span></p>
-                        <div class="ccm-progress-bar">
-                            <div class="ccm-progress-fill" id="bulk-progress-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <div class="ccm-opt<?php echo !empty($settings['convert_bg_images']) ? ' is-on' : ''; ?>">
+                            <div class="ccm-opt__main">
+                                <div class="ccm-opt__text">
+                                    <span class="ccm-opt__label"><?php _e('Convert background images', 'ccm-tools'); ?></span>
+                                    <p class="ccm-opt__desc"><?php echo esc_html__('Rewrites background-image URLs to WebP in inline styles and style blocks, which covers most page builders. Only touches images already in this site\'s uploads folder.', 'ccm-tools'); ?></p>
+                                </div>
+                                <label class="ccm-toggle">
+                                    <input type="checkbox" name="convert_bg_images" id="webp-bg-images" value="1" <?php checked($settings['convert_bg_images'], true); ?>>
+                                    <span class="ccm-toggle-slider"></span>
+                                </label>
+                            </div>
                         </div>
                     </div>
-                    <div id="bulk-conversion-log" class="ccm-log-box"></div>
-                </div>
-            </div>
-            
-            <!-- Import/Export Settings -->
-            <div class="ccm-card">
-                <h2><?php _e('Import / Export Settings', 'ccm-tools'); ?></h2>
-                <p class="ccm-text-muted"><?php _e('Export your WebP settings to a JSON file for backup or to import on another site.', 'ccm-tools'); ?></p>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--ccm-space-lg);">
-                    <!-- Export -->
-                    <div>
-                        <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Export Settings', 'ccm-tools'); ?></h3>
-                        <p class="ccm-text-muted"><?php _e('Download your current WebP settings as a JSON file.', 'ccm-tools'); ?></p>
-                        <button type="button" id="export-webp-settings" class="ccm-button ccm-button-secondary" style="margin-top: var(--ccm-space-sm);">
-                            📥 <?php _e('Export Settings', 'ccm-tools'); ?>
-                        </button>
-                    </div>
-                    
-                    <!-- Import -->
-                    <div>
-                        <h3 style="margin-bottom: var(--ccm-space-sm);"><?php _e('Import Settings', 'ccm-tools'); ?></h3>
-                        <p class="ccm-text-muted"><?php _e('Import WebP settings from a previously exported JSON file.', 'ccm-tools'); ?></p>
-                        <input type="file" id="import-webp-settings-file" accept=".json" style="display: none;">
-                        <button type="button" id="import-webp-settings-btn" class="ccm-button ccm-button-secondary" style="margin-top: var(--ccm-space-sm);">
-                            📤 <?php _e('Choose File', 'ccm-tools'); ?>
-                        </button>
-                        <span id="import-webp-file-name" class="ccm-file-name" style="margin-left: var(--ccm-space-sm);"></span>
-                        <button type="button" id="import-webp-settings" class="ccm-button ccm-button-primary" style="margin-top: var(--ccm-space-sm); display: none;">
-                            <?php _e('Import Settings', 'ccm-tools'); ?>
-                        </button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Test Conversion -->
-            <div class="ccm-card">
-                <h2><?php _e('Test Conversion', 'ccm-tools'); ?></h2>
-                <p><?php _e('Test WebP conversion with a single image to verify everything is working correctly.', 'ccm-tools'); ?></p>
-                
-                <div class="ccm-test-area">
-                    <div class="ccm-file-upload">
-                        <input type="file" id="test-image-upload" accept="image/jpeg,image/png,image/gif" style="display: none;">
-                        <button type="button" id="select-test-image" class="ccm-button">
-                            <?php _e('Select Test Image', 'ccm-tools'); ?>
-                        </button>
-                        <span id="test-image-name" class="ccm-file-name"></span>
-                    </div>
-                    
-                    <button type="button" id="run-test-conversion" class="ccm-button ccm-button-primary" disabled>
-                        <?php _e('Test Conversion', 'ccm-tools'); ?>
+                </section>
+
+                <div class="ccm-row" style="margin-top: var(--ccm-space-md);">
+                    <button type="submit" id="save-webp-settings" class="ccm-button ccm-button-primary">
+                        <?php _e('Save settings', 'ccm-tools'); ?>
                     </button>
                 </div>
-                
-                <div id="test-conversion-result" style="display: none;">
-                    <div id="test-result-content"></div>
-                </div>
-            </div>
-            
+            </form>
+
             <?php endif; // if ($available) ?>
-            
-            <!-- Uploads Backup Card -->
-            <div class="ccm-card">
-                <h2><?php _e('Uploads Backup', 'ccm-tools'); ?></h2>
-                <?php if (class_exists('ZipArchive') || extension_loaded('zip')) : ?>
-                    <p class="ccm-text-muted"><?php _e('Create a downloadable ZIP backup of your uploads folder.', 'ccm-tools'); ?></p>
-                    
-                    <div id="backup-info" style="margin: var(--ccm-space-md) 0;">
-                        <p><span class="ccm-icon">📁</span> <?php _e('Loading uploads information...', 'ccm-tools'); ?></p>
+
+            <!-- Reference detail rather than decisions: which library does the
+                 work, and a one-image spot check. The two share a row on a wide
+                 screen and drop to one column on a narrow one. -->
+            <div class="ccm-grid-2" style="margin-top: var(--ccm-space-xl);">
+
+                <div class="ccm-panel">
+                    <div class="ccm-panel__head">
+                        <span><?php _e('Image processing', 'ccm-tools'); ?></span>
+                        <span class="ccm-row">
+                            <span class="ccm-text-muted" style="font-size: var(--ccm-text-xs);"><?php echo esc_html(sprintf(
+                                /* translators: %d: number of image processing extensions detected on this server */
+                                _n('%d extension detected', '%d extensions detected', count($extensions), 'ccm-tools'),
+                                count($extensions)
+                            )); ?></span>
+                            <?php if ($active) : ?>
+                                <span class="ccm-chip ccm-chip--good"><?php echo esc_html(sprintf(
+                                    /* translators: %s: name of the image library actually in use, e.g. "ImageMagick" */
+                                    __('Using %s', 'ccm-tools'), $active['name']
+                                )); ?></span>
+                            <?php else : ?>
+                                <span class="ccm-chip ccm-chip--bad"><?php _e('None available', 'ccm-tools'); ?></span>
+                            <?php endif; ?>
+                        </span>
                     </div>
-                    
-                    <div id="backup-actions" style="display: flex; gap: var(--ccm-space-sm); flex-wrap: wrap; align-items: center;">
-                        <button type="button" id="start-uploads-backup" class="ccm-button ccm-button-primary">
-                            <?php _e('Create Backup', 'ccm-tools'); ?>
-                        </button>
-                        <button type="button" id="cancel-uploads-backup" class="ccm-button ccm-button-danger" style="display: none;">
-                            <?php _e('Cancel', 'ccm-tools'); ?>
-                        </button>
+                    <div class="ccm-panel__body">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0;">
+                            <?php _e('The PHP extension that creates WebP files, and which one this site prefers when more than one is available.', 'ccm-tools'); ?>
+                        </p>
                     </div>
-                    
-                    <div id="backup-progress" style="display: none; margin-top: var(--ccm-space-md);">
-                        <div class="ccm-progress-info">
-                            <p><?php _e('Processing:', 'ccm-tools'); ?> <span id="backup-current">0</span>/<span id="backup-total">0</span> <?php _e('files', 'ccm-tools'); ?> (<span id="backup-percent">0</span>%)</p>
-                            <div class="ccm-progress-bar">
-                                <div class="ccm-progress-fill" id="backup-progress-bar" style="width: 0%"></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div id="backup-complete" style="display: none; margin-top: var(--ccm-space-md);">
-                        <div class="ccm-alert ccm-alert-success">
-                            <span class="ccm-icon">✓</span>
+                    <div class="ccm-kv">
+                        <?php if (empty($extensions)) : ?>
                             <div>
-                                <strong><?php _e('Backup Complete!', 'ccm-tools'); ?></strong>
-                                <p><?php _e('File size:', 'ccm-tools'); ?> <span id="backup-size"></span></p>
-                                <p style="margin-top: var(--ccm-space-sm); display: flex; gap: var(--ccm-space-sm); flex-wrap: wrap;">
-                                    <a href="#" id="download-backup" class="ccm-button ccm-button-primary"><?php _e('Download Backup', 'ccm-tools'); ?></a>
-                                    <button type="button" id="delete-backup" class="ccm-button ccm-button-danger"><?php _e('Delete Backup', 'ccm-tools'); ?></button>
-                                </p>
-                                <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin-top: var(--ccm-space-sm);">
-                                    <?php _e('Backup files are automatically deleted after 24 hours.', 'ccm-tools'); ?>
-                                </p>
+                                <span class="ccm-kv__k"><?php _e('Extensions', 'ccm-tools'); ?></span>
+                                <span class="ccm-kv__v ccm-text-muted"><?php _e('Neither GD nor ImageMagick is loaded on this server.', 'ccm-tools'); ?></span>
+                            </div>
+                        <?php endif; ?>
+                        <?php foreach ($extensions as $ext_name => $ext) : ?>
+                            <div>
+                                <span class="ccm-kv__k"><?php echo esc_html($ext['name']); ?></span>
+                                <span class="ccm-kv__v">
+                                    <?php echo esc_html(sprintf(
+                                        /* translators: %s: version string reported by the library */
+                                        __('Version %s', 'ccm-tools'), ccm_tools_webp_clean_version($ext['version'])
+                                    )); ?>
+                                    <span class="ccm-chip<?php echo $ext['webp_support'] ? ' ccm-chip--good' : ' ccm-chip--bad'; ?>">
+                                        <?php echo $ext['webp_support'] ? esc_html__('WebP', 'ccm-tools') : esc_html__('No WebP', 'ccm-tools'); ?>
+                                    </span>
+                                    <small><?php echo esc_html(sprintf(
+                                        /* translators: 1: JPEG supported tick/cross, 2: PNG supported tick/cross, 3: GIF supported tick/cross */
+                                        __('Also reads JPEG %1$s, PNG %2$s, GIF %3$s', 'ccm-tools'),
+                                        $ext['jpeg_support'] ? '✓' : '✗',
+                                        $ext['png_support'] ? '✓' : '✗',
+                                        $ext['gif_support'] ? '✓' : '✗'
+                                    )); ?></small>
+                                </span>
+                            </div>
+                        <?php endforeach; ?>
+                        <?php if ($available) : ?>
+                            <div>
+                                <span class="ccm-kv__k"><?php _e('Preferred library', 'ccm-tools'); ?></span>
+                                <span class="ccm-kv__v">
+                                    <select name="preferred_extension" id="webp-preferred-extension" aria-label="<?php esc_attr_e('Preferred image library', 'ccm-tools'); ?>">
+                                        <option value="auto" <?php selected($settings['preferred_extension'], 'auto'); ?>><?php _e('Auto (best available)', 'ccm-tools'); ?></option>
+                                        <?php foreach ($extensions as $ext_name => $ext) : ?>
+                                            <?php if ($ext['webp_support']) : ?>
+                                                <option value="<?php echo esc_attr($ext_name); ?>" <?php selected($settings['preferred_extension'], $ext_name); ?>>
+                                                    <?php echo esc_html($ext['name']); ?>
+                                                </option>
+                                            <?php endif; ?>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small><?php _e('Auto prefers ImageMagick over GD when both are present.', 'ccm-tools'); ?></small>
+                                </span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <?php if ($available) : ?>
+                <div class="ccm-panel">
+                    <div class="ccm-panel__head">
+                        <span><?php _e('Test conversion', 'ccm-tools'); ?></span>
+                    </div>
+                    <div class="ccm-panel__body">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-md);">
+                            <?php _e('Converts one image with the current quality and library settings, and shows the before and after sizes.', 'ccm-tools'); ?>
+                        </p>
+                        <div class="ccm-row">
+                            <input type="file" id="test-image-upload" accept="image/jpeg,image/png,image/gif" class="ccm-hide" aria-label="<?php esc_attr_e('Choose an image to test convert', 'ccm-tools'); ?>">
+                            <button type="button" id="select-test-image" class="ccm-button ccm-button-secondary ccm-button-small">
+                                <?php _e('Choose an image', 'ccm-tools'); ?>
+                            </button>
+                            <span id="test-image-name" class="ccm-text-muted" style="font-size: var(--ccm-text-sm);"></span>
+                            <span class="ccm-toolbar__spacer"></span>
+                            <button type="button" id="run-test-conversion" class="ccm-button ccm-button-primary ccm-button-small" disabled>
+                                <?php _e('Convert', 'ccm-tools'); ?>
+                            </button>
+                        </div>
+                        <div id="test-conversion-result" style="display: none; margin-top: var(--ccm-space-md);">
+                            <div id="test-result-content"></div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; // if ($available) ?>
+
+            </div>
+
+            <!-- Housekeeping -->
+            <div class="ccm-section">
+                <div>
+                    <span class="ccm-section__eyebrow"><?php _e('Occasional', 'ccm-tools'); ?></span>
+                    <h2><?php _e('Housekeeping', 'ccm-tools'); ?></h2>
+                    <p><?php _e('Carry settings between sites, and back up before a large run.', 'ccm-tools'); ?></p>
+                </div>
+            </div>
+
+            <div class="ccm-stack ccm-stack--sm">
+
+                <?php if ($available) : ?>
+                <details class="ccm-disclose">
+                    <summary><?php _e('Import or export these settings', 'ccm-tools'); ?></summary>
+                    <div class="ccm-disclose__body">
+                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-md);">
+                            <?php _e('Copy this configuration to or from another site.', 'ccm-tools'); ?>
+                        </p>
+                        <div class="ccm-grid-2">
+                            <div>
+                                <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-sm);"><?php _e('Download the current settings as a JSON file.', 'ccm-tools'); ?></p>
+                                <button type="button" id="export-webp-settings" class="ccm-button ccm-button-secondary ccm-button-small">
+                                    📥 <?php _e('Export Settings', 'ccm-tools'); ?>
+                                </button>
+                            </div>
+                            <div>
+                                <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-sm);"><?php _e('Load settings that were exported from another site.', 'ccm-tools'); ?></p>
+                                <input type="file" id="import-webp-settings-file" accept=".json" class="ccm-hide" aria-label="<?php esc_attr_e('Choose a WebP settings file to import', 'ccm-tools'); ?>">
+                                <button type="button" id="import-webp-settings-btn" class="ccm-button ccm-button-secondary ccm-button-small">
+                                    <?php _e('Choose file', 'ccm-tools'); ?>
+                                </button>
+                                <span id="import-webp-file-name" class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin-left: var(--ccm-space-sm);"></span>
+                                <button type="button" id="import-webp-settings" class="ccm-button ccm-button-primary ccm-button-small" style="display: none; margin-top: var(--ccm-space-sm);">
+                                    <?php _e('Import Settings', 'ccm-tools'); ?>
+                                </button>
                             </div>
                         </div>
                     </div>
-                <?php else : ?>
-                    <div class="ccm-alert ccm-alert-warning">
-                        <span class="ccm-icon">⚠</span>
-                        <div>
-                            <strong><?php _e('ZipArchive Not Available', 'ccm-tools'); ?></strong>
-                            <p><?php _e('The PHP ZipArchive extension is not installed on this server. Contact your hosting provider to enable it.', 'ccm-tools'); ?></p>
-                        </div>
+                </details>
+                <?php endif; // if ($available) ?>
+
+                <details class="ccm-disclose">
+                    <summary><?php _e('Uploads folder backup', 'ccm-tools'); ?></summary>
+                    <div class="ccm-disclose__body">
+                        <?php if ($zip_available) : ?>
+                            <p class="ccm-text-muted" style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-md);">
+                                <?php _e('Creates a downloadable ZIP of the entire uploads folder, useful before a large bulk conversion.', 'ccm-tools'); ?>
+                            </p>
+                            <div id="backup-info" style="margin-bottom: var(--ccm-space-md); font-size: var(--ccm-text-sm);">
+                                <p><?php _e('Loading uploads information…', 'ccm-tools'); ?></p>
+                            </div>
+                            <div class="ccm-row">
+                                <button type="button" id="start-uploads-backup" class="ccm-button ccm-button-primary ccm-button-small">
+                                    <?php _e('Create backup', 'ccm-tools'); ?>
+                                </button>
+                                <button type="button" id="cancel-uploads-backup" class="ccm-button ccm-button-danger ccm-button-small" style="display: none;">
+                                    <?php _e('Cancel', 'ccm-tools'); ?>
+                                </button>
+                            </div>
+                            <div id="backup-progress" style="display: none; margin-top: var(--ccm-space-md);">
+                                <p style="font-size: var(--ccm-text-sm); margin: 0 0 var(--ccm-space-xs);">
+                                    <?php _e('Processing', 'ccm-tools'); ?>
+                                    <span id="backup-current">0</span>/<span id="backup-total">0</span> <?php _e('files', 'ccm-tools'); ?>
+                                    (<span id="backup-percent">0</span>%)
+                                </p>
+                                <div class="ccm-meter"><i id="backup-progress-bar" style="width: 0%;"></i></div>
+                            </div>
+                            <div id="backup-complete" style="display: none; margin-top: var(--ccm-space-md);">
+                                <div class="ccm-alert ccm-alert--good">
+                                    <span class="ccm-dot ccm-dot-ok"></span>
+                                    <div>
+                                        <strong><?php _e('Backup complete.', 'ccm-tools'); ?></strong>
+                                        <?php _e('File size:', 'ccm-tools'); ?> <span id="backup-size"></span>
+                                        <div class="ccm-row" style="margin-top: var(--ccm-space-sm);">
+                                            <a href="#" id="download-backup" class="ccm-button ccm-button-primary ccm-button-small"><?php _e('Download', 'ccm-tools'); ?></a>
+                                            <button type="button" id="delete-backup" class="ccm-button ccm-button-danger ccm-button-small"><?php _e('Delete backup', 'ccm-tools'); ?></button>
+                                        </div>
+                                        <p class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin: var(--ccm-space-sm) 0 0;">
+                                            <?php _e('Deleted automatically after 24 hours.', 'ccm-tools'); ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php else : ?>
+                            <div class="ccm-alert ccm-alert--warn">
+                                <span class="ccm-dot ccm-dot-warn"></span>
+                                <div>
+                                    <strong><?php _e('ZipArchive is not available.', 'ccm-tools'); ?></strong>
+                                    <?php _e('The PHP zip extension is not installed on this server, so a backup cannot be created here. Ask your hosting provider to enable it.', 'ccm-tools'); ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
                     </div>
-                <?php endif; ?>
+                </details>
+
             </div>
-            
+
         </div>
+
+        <?php if ($available) : ?>
+        <div class="ccm-savebar" data-ccm-savebar data-savebar-target="#save-webp-settings">
+            <span class="ccm-savebar__dot" aria-hidden="true"></span>
+            <span class="ccm-savebar__msg"><?php _e('No unsaved changes', 'ccm-tools'); ?></span>
+            <button type="button" class="ccm-button ccm-button-secondary ccm-button-small" data-savebar-discard>
+                <?php _e('Discard', 'ccm-tools'); ?>
+            </button>
+            <button type="button" class="ccm-button ccm-button-primary" data-savebar-save>
+                <?php _e('Save settings', 'ccm-tools'); ?>
+            </button>
+        </div>
+        <?php endif; ?>
     </div>
     <?php
 }

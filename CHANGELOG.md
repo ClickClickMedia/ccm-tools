@@ -1,5 +1,845 @@
 # CCM Tools — Changelog
 
+## v8.11.4 — Security review findings
+
+Five reviewers went over the plugin, the update service and the staff console.
+What they found, and what is now fixed.
+
+- **The WebP and Cloudflare pages had no permission check at all.** Nine of the
+  eleven admin screens gated properly; those two did not. Hiding the menu is
+  not a gate — WordPress checks the capability the page was registered with,
+  which is `manage_options`, so a shop manager or client role holding that
+  capability could open either page by typing its address and read the WebP
+  settings or the Cloudflare connection state. Both gated now.
+- **A package URL from the update service was taken on trust.** The integrity
+  gate only recognises our own hosts, and on any other host it stood aside and
+  let WordPress install the file unverified. One bad answer was arbitrary code
+  on every site that took it. The URL is now refused at the boundary unless it
+  is https on the service's own hostname, so a foreign one never reaches
+  WordPress at all, and the gate itself refuses rather than standing aside.
+- **The integrity gate no longer interferes with other plugins.**
+  `upgrader_pre_download` fires for every download WordPress makes, and this
+  one judged ownership by hostname alone — so any other plugin updating from
+  GitHub had its package checked against our release, failed, and showed a
+  CCM Tools error for somebody else's software. It uses the plugin name
+  WordPress passes it.
+- **The count badges on the risky database groups were never tinted.** They
+  asked for `warning` and `has-items`, neither of which exists in the
+  stylesheet. Same silent-failure class as v8.11.3, in a shape that version's
+  new test could not see.
+
+Two tests grew to cover the blind spots that let these through. The handler
+audit now checks page callbacks, not only ajax handlers — the gap that hid the
+first finding sat between two tests, in neither one's job description. The
+modifier check now resolves a class assembled from a variable beside a
+component class, which is how the badge bug hid. Both were confirmed to fail
+against the real bugs before being kept.
+
+## v8.11.3 — Modifiers that were never defined
+
+The Update channel panel picked its chip colour from a tone that could be
+`ok`, but the component kit defines `--good`, `--warn`, `--bad` and `--info`.
+An unknown class is not an error: the browser keeps it, applies nothing, and
+the element renders as bare text. So the healthy state lost its pill while the
+unhealthy one looked right, and the bug only showed itself when things were
+going well.
+
+Looking for others found three more, older, on the Cloudflare page. Its
+Security, Network and Analytics panels asked for `ccm-optgroup__body--host`,
+which has never existed — and because the typo replaced the base class rather
+than adding to it, those three lost their body padding and the separators
+between their rows as well.
+
+`tests/css_modifiers_test.php` now checks every component modifier the PHP and
+JavaScript ask for against the stylesheet, including tones assembled from a
+variable. Nothing else could catch this: the markup is valid, so `php -l`, the
+render test and the nesting gate are all happy with it.
+
+## v8.11.2 — A healthy site said the service was unreachable
+
+Every site upgrading into v8.11.0 reported "Service reachable: No", showed
+"GitHub (fallback)" on the Update channel panel, and said "Last checked: never"
+while simultaneously naming the version the service had just offered it. All of
+it wrong, and the contradiction on the panel is what gave it away.
+
+v8.11.0 added a record of each attempt and then judged the service by it. A
+site upgrading into that version has a stored answer written by the version
+before, which kept no such record — so the absence was read as failure.
+
+The stored answer is only ever written after a check that succeeded, so its
+existence is the evidence. It is now judged by its own age, and "Last checked"
+falls back to the answer's own timestamp rather than claiming never.
+
+This mattered beyond the display: a falsely degraded site would have had the
+updater prefer GitHub over the service, which is the authority. Entitlement was
+never affected — that is read from the stored answer either way.
+
+## v8.11.1 — The register keeps up with an upgrade
+
+After an update installed, the register still showed the version that had just
+been replaced, and stayed wrong until the next twelve-hour cycle. The console
+exists to watch a rollout, so a console that is a cycle behind the fleet is
+worse than useless.
+
+The cause is that `after_install` re-activates the plugin, which forces a check
+— but that runs with the old code still loaded in the process, so it reports
+the version being replaced. Forcing harder would not have helped. What the next
+request needs is simply to ask again, so the freshness of the stored answer is
+dropped and the following page load re-checks with the new version running.
+
+Entitlement itself is left alone, and there is a test for that: an upgrade must
+not become a way to shed a block.
+
+## v8.11.0 — Both update paths, while the fleet crosses over
+
+Updates can now come from either the Click Click Media update service or, while
+the crossover lasts, from GitHub. A site is never left with no way to update.
+
+- **The service is the authority whenever it answers.** If it says this site is
+  not entitled, that is the answer and there is no fallback — otherwise a
+  blocked site could simply help itself from GitHub and blocking would mean
+  nothing. That holds even while the service is unreachable: a refusal we were
+  given stays given.
+- **GitHub is used when the service has never answered, or has stopped
+  answering.** Nobody gets stranded because a Worker had a bad afternoon.
+- **Both paths are verified.** The integrity gate used to intercept only
+  packages from the service, which would have left the fallback — the one path
+  with no service behind it — installing unchecked. It now covers both and
+  still fails closed.
+- **The checksum asset is named `ccm-tools-sha256.txt`.** Not
+  `ccm-tools.zip.sha256`, because the v7.44.1 updater still running on the fleet
+  picks its download with "the first asset whose name contains `.zip`" — and
+  that old name contains it. A release carrying it could hand a site a 64-byte
+  text file instead of the plugin.
+- **A subdirectory install is its own site.** The register keyed on the hostname
+  alone, so every WordPress under `example.com/_websites/<name>` collapsed into
+  one row that fought over its version and its entitlement. The path is part of
+  the key now.
+- **New "Update channel" panel** on the CCM Tools dashboard: whether the service
+  is reachable, whether this site is entitled, which source an update would come
+  from right now, what was last offered, and a Check now button that asks again
+  without waiting for the twelve-hour cycle.
+
+The GitHub half is temporary. It goes, along with `api_request()` and the repo
+properties, at the same moment the repository is made private — the two have to
+happen together, because making it private is exactly what stops it working.
+
+## v8.10.0 — Updates come from us now
+
+CCM Tools updates no longer come from GitHub. They come from the Click Click
+Media update service, and they are part of what you get while you have an
+active service with us.
+
+**What this changes for a site that is a current customer: nothing.** Updates
+arrive the same way, in the same place, on the same schedule.
+
+**What it changes for a site that is not:** the plugin keeps working exactly as
+it is — every .htaccess rule, the Redis drop-in, the converted images, every
+optimiser filter, all untouched and all still running — and it stops being
+offered new versions. wp-admin says so plainly, on our own screens and on the
+Plugins page, and nowhere else. A security release is served to every site
+regardless, because a plugin with our name on it being exploitable is our
+problem whoever is paying.
+
+- **The site registers itself on activation** and checks in every twelve hours.
+  It sends its URL, name, WordPress version, PHP version and the plugin
+  version. Nothing else, and nothing secret.
+- **The check fails open, in every direction.** A timeout, a 500, a captive
+  portal, truncated JSON, the service switched off entirely — all of them leave
+  the site exactly as it was. Entitlement is only ever withdrawn by an explicit
+  answer saying so, and the last good answer is kept, so an outage cannot put a
+  notice in front of every customer at once.
+- **No credential lives on a client site.** The old updater could authenticate
+  to a private repo with a GitHub token in `wp-config.php`, which would have
+  meant a token with access to the organisation's repositories readable on
+  every server we do not own. The service authorises by domain instead.
+- **The integrity gate got simpler and stronger.** The checksum now arrives
+  with the release rather than from a second URL that could fail on its own,
+  and the download link is re-issued at the moment of download, so an update
+  can no longer go stale between the check and the click. It still fails
+  closed. Where a release is signed and the host has libsodium, the signature
+  is verified as well as the digest.
+- **`?force-check=1` actually re-checks again.** It was clearing WordPress's
+  transient and then reading our own cached answer straight back, so it
+  reported the same version it already had and looked broken.
+- Removed the dead GitHub API client, the unused repo properties and a fallback
+  download path that could never fire.
+
+## v8.9.0 — Administrators only, and the last of the rails
+
+**Only an administrator can see or use CCM Tools now.** The gate was the
+`manage_options` capability, which sounds like "is an administrator" and is
+not. Shop manager roles, client roles built by membership plugins and several
+page builders' "site manager" roles are all handed that capability on real
+sites. This plugin rewrites wp-config.php and .htaccess, installs an object
+cache drop-in and permanently deletes database rows, so the capability on its
+own was the wrong thing to trust.
+
+- Every one of the 83 permission checks across the plugin now goes through one
+  gate that requires the administrator role, not just the capability. The menu,
+  the submenus and the Settings link on the Plugins screen are not registered
+  at all for anyone else.
+- Multisite super admins still pass, because a super admin often holds no role
+  on a given subsite and would otherwise be locked out of their own site.
+- `tests/admin_gate_test.php` drives eleven kinds of user through the gate,
+  including a shop manager holding `manage_options`, and fails if anything in
+  the plugin goes back to checking the capability on its own.
+
+**WebP quality is a slider.** It was a number box with a "/ 100" hanging off
+the end, taller than every toggle around it and the one control in the card
+that did not line up. All six controls in that card now sit on the same right
+edge, and the track shows you where 82 sits between the two ends instead of
+making you already know.
+
+**The last left accent rails are gone.** Nine of them in the stylesheet and one
+built in JavaScript on the Site Health status banner, which is why it survived
+the previous sweep of the CSS. Severity is carried by the tinted ground and the
+coloured dot, the same as every other notice. Four of the nine belonged to
+classes nothing had used for versions; those rules are deleted rather than
+patched.
+
+Also in here: `css/style.css`, `ccm.php` and `inc/redis-object-cache.php` had
+picked up mixed line endings. Each file is now internally consistent, which
+changes nothing in the repository but stops editing tools guessing wrong.
+
+## v8.8.0 — You can see what you started
+
+Running the database optimiser used to be three places for one job. You ticked
+tasks at the bottom of a long list, scrolled back to the top for the Run button
+in the hero, clicked it, and nothing you could see changed. The run had started
+and was working the whole time; its progress was rendering into a box at the
+foot of the page, below everything you had just scrolled past.
+
+- **A run panel now owns the run.** It opens the moment you click, names every
+  task, and fills in each one as it lands. The click and the visible response
+  are the same event.
+- **Long table work names the table it is on** rather than sitting on a spinner,
+  so a slow run reads as progress instead of a stall.
+- **Escape and a click on the backdrop do nothing while it is running.** The
+  work carries on server-side whatever the page does, so dismissing the panel
+  would only hide a running job, not stop it. Both work once it has finished.
+- **A floating action bar keeps Run with the selection.** Same dock as the save
+  bar. It reports what is ticked and proxies the page's own button, so the two
+  cannot disagree about what running means.
+- **The record of the last run sits under the hero**, where the eye already is
+  when the panel closes, and names anything that did not complete.
+- **The confirm for irreversible tasks is the plugin's own**, not the browser's.
+  On a screen whose whole point is being careful about permanent deletes, the
+  one dialog that matters should not be the one that looks bolted on.
+- **The WooCommerce result box is no longer written to while invisible.** It was
+  rendered `display:none`, filled in on both the success and failure paths, and
+  never shown.
+- **Bulk WebP conversion scrolls its progress into view.** That job can run for
+  a long time and has a Stop button, so it gets the progress brought to it
+  rather than a panel taking the screen away.
+
+## v8.7.0 — Fields line up
+
+Every field in a settings card now sits in one grid, so the column edge is a
+single straight line down the whole card.
+
+It was not. One card could hold three different layout mechanisms at once: a
+two-column grid for the first pair of fields, a flex row with a 2:1 ratio for
+the second, and full-width fields under both. Every row therefore chose its own
+split point from its own content, the boundary moved by tens of pixels between
+one row and the next, and it was obvious the moment you looked down the page.
+
+- **The Redis connection fields are three tidy rows** — connection type and
+  database, host and port, password and username — instead of four ragged ones
+  with two of them full width for no reason.
+- **The wrappers the page uses to swap TCP for a Unix socket no longer form a
+  box of their own.** They pass their fields through to the card's grid, so
+  Host and Port line up with everything above and below them.
+- **Timeouts, serializer, compression and the WooCommerce values** share the
+  same two tracks, so the Advanced card reads as one block rather than two.
+- One gap value throughout, matching the gap between cards.
+
+### Redis connect timeout could hang every request
+
+The read timeout was clamped to a tenth of a second but the connect timeout was
+not, and phpredis reads a connect timeout of zero as "wait indefinitely". A
+Redis that was down, or a firewall quietly dropping the port, would have hung
+every single request until PHP's own limit killed it — the whole site, not just
+the cache. The field accepted zero. Both are now floored at 0.1 seconds.
+
+The default of 1 second is right and unchanged: a local Redis connects in well
+under a millisecond, and a long timeout is the dangerous direction, because it
+is how long every page waits before giving up and using the database.
+
+
+## v8.6.2 — Two database sweeps that reached past their own scope
+
+Both of these were found in the v8.5.0 review and missed when the rest were
+fixed.
+
+### Removing orphaned term relationships deleted things that were not orphans
+
+`term_relationships.object_id` does not always hold a post id. It holds
+whichever object type the taxonomy was registered against: WordPress core's own
+link_category taxonomy keeps `wp_links.link_id` there, BuddyPress member and
+group types keep user and group ids, and any user-taxonomy plugin does the
+same. The sweep joined to `wp_posts` and deleted every row that did not match,
+so on a site running BuddyPress or the Links Manager it wiped every one of
+those assignments in a single statement — from an option that describes itself
+as removing relationships for deleted posts.
+
+It is now restricted to taxonomies actually registered against a post type, and
+the figure shown before the click uses the same restriction.
+
+### Deleting spam or trashed comments purged unrelated data
+
+Both sweeps finished with a site-wide "delete every orphaned commentmeta row",
+not just the rows belonging to the comments they had removed. That is offered
+separately as its own option, graded moderate and off by default, so two
+default-on cleanups graded safe were quietly doing the work of a riskier one
+nobody had ticked.
+
+Each now deletes the meta belonging to the comments it is removing, by id, and
+reports how many rows actually went rather than assuming success.
+
+
+## v8.6.1 — The Database page's figures now match what the buttons do
+
+Three small corrections, all the same shape: the number shown before a
+destructive click did not describe the click.
+
+- **The transient count was measuring something else.** It counted
+  `%_transient_%`, with wildcards at both ends and an unescaped underscore,
+  which SQL treats as a single-character wildcard. That matched keys like
+  `my_plugin_transients_list` that Clear Transients never removes. It now uses
+  the same anchored patterns the delete uses, so the figure is the figure.
+- **Preview and action disagreed about the date** on a site not running in UTC.
+  The cut-offs for spam, trash and old revisions were worked out with the local
+  clock in one place and UTC in the other, so a run could touch a different set
+  of rows than the one it had just counted.
+- **Backup filenames carry microseconds**, so two `.htaccess` writes in the same
+  second no longer sort arbitrarily. "Restore the last backup" and the
+  keep-five prune both pick by name, so that ordering has to be real.
+
+
+## v8.6.0 — The rest of the review findings
+
+Everything outstanding from the v8.5.0 review, fixed.
+
+### The .htaccess page could arm a site-breaking option by itself
+
+It worked out which options were "already applied" by searching the whole
+`.htaccess`, not its own block. A cache plugin writing a `wordpress_logged_in`
+cookie condition plus a security plugin writing a `/wp-json/` rule was enough
+to pre-tick Block REST API, which is a high-risk option, and one click on
+Update then blocked the REST API for logged-out visitors and took out the
+block editor, forms and most front-end AJAX. HSTS was pre-ticked the same way,
+adopting a one-year browser commitment nobody chose. Detection now reads only
+the block this plugin wrote. Verified against a realistic WP Rocket and
+Wordfence file: three options that used to pre-tick now come back off.
+
+### The .htaccess backups can be restored
+
+The plugin has taken a backup before every write for a long time and the page
+says so, but nothing could put one back. That matters most in the case the
+backups exist for: a directive is refused by the host, Apache returns 500 on
+every request including wp-admin, and the tool that could undo it is behind the
+500. There is a Restore button now, and every write is checked afterwards by
+fetching the home page and rolling back on a 5xx.
+
+### "Delete trashed posts" was marked Safe and ticked by default
+
+It ran four raw SQL deletes instead of `wp_delete_post()`, so attachments,
+revisions and child posts survived as orphans pointing at rows that no longer
+existed, WooCommerce order-item tables kept their rows forever, term counts
+were left overstated, and it reported success even when every delete failed.
+It goes through WordPress now, in batches, and reports what actually happened.
+
+### Two Database options destroyed each other's work
+
+Adding the postmeta index dropped every index containing that column, which
+includes the composite index the option above it had just spent twenty minutes
+building. Only genuinely single-column indexes are candidates now, and an index
+of ours that covers more than expected is left alone rather than dropped.
+
+### Also fixed
+
+- **The updater failed open.** No checksum asset, a failed fetch or a package
+  URL mismatch all meant "install it anyway", silently. It refuses now, and the
+  checksum is paired to the zip by filename rather than being whichever asset
+  happened to end in `.sha256`.
+- **WebP bulk conversion looped forever** on any image it could not convert,
+  hammering the site's own server indefinitely. It tracks what it has tried,
+  finishes, and names what it skipped.
+- **The wp-config writer accepted an empty write**, because its byte-count check
+  passes when the content is empty. That put a zero-byte file over wp-config.php.
+  Its backups are pruned to five now, rather than accumulating one per toggle.
+- **Cloudflare Reconnect could never succeed:** the field is pre-filled with
+  bullets and the handler rejected them as an invalid token. Bullets now mean
+  leave it alone. The token is also no longer wiped when the WordPress salts
+  rotate, which used to lose it for good.
+- **Deleting spam or trash no longer purges unrelated data**, and the oEmbed
+  cleanup no longer deletes Elementor, WPBakery and Yoast meta that merely has
+  `_oembed_` somewhere in the key.
+- **Large deletes are chunked**, so a site with hundreds of thousands of
+  revisions no longer exceeds `max_allowed_packet`, delete nothing, and report
+  success.
+- **The delayed-JavaScript timeout was a thousand times too small.** Labelled
+  seconds, capped at 30, and passed straight to `setTimeout`, which takes
+  milliseconds.
+- **Confirmations** on flushing Redis and on changing the Cloudflare SSL mode or
+  security level, matching the actions beside them that already confirmed.
+- **The error log's line count** applies straight away instead of waiting for
+  the next thirty-second refresh.
+
+
+## v8.5.0 — Review findings, and three tests that would have caught them
+
+A full security and correctness review, five reviewers over the whole codebase,
+plus a settings audit. The authorisation layer came back clean: all 66 AJAX
+actions check a nonce and a capability, there are no logged-out endpoints, and
+no SQL injection is reachable from a request. What it did find was a set of
+faults that take a site down or lose an administrator's work without ever
+reporting an error.
+
+### Critical: a Redis password could take the whole site down
+
+Saving Redis settings inserted the generated block into wp-config.php with
+`preg_replace`, using that block as the replacement string. A replacement
+string is parsed for backreferences, so a `$1` inside a password was replaced
+with capture group one, which is the "That's all, stop editing!" comment. That
+comment contains an apostrophe, so the resulting `define()` was a hard parse
+error and wp-config.php took the front end and wp-admin down together,
+recoverable only over SFTP. The password validator rejects quotes, backslashes
+and control characters, but `$` is an ordinary character in a generated
+password. The insert is done by offset now and parses nothing.
+
+### Blank pages for every visitor
+
+Two output filters ran regular expressions over the whole page and assigned
+the result straight back. PCRE returns null when it hits its backtrack limit,
+and both used a lazy pattern that backtracks once per character, so a page over
+about a megabyte containing an unclosed `<style>`, `<script>`, `<pre>` or
+`<textarea>` produced null and the visitor got an empty page. Administrators
+never saw it, because both filters are skipped for them. Every pass now falls
+back to the untouched input.
+
+### The exclude lists were destroyed on the first save
+
+The defer, delay and preload exclusion lists are rendered into a textarea one
+per line, but the save handler split on commas only and then ran `sanitize_key`
+over the result. The shipped default of jquery, jquery-core and jquery-migrate
+came back as the single handle `jqueryjquery-corejquery-migrate` the first time
+anyone pressed Save, and a hand-added `jquery.validate` became
+`jqueryvalidate`. The matcher is a case-sensitive substring test, so both fail
+silently and the script you excluded gets deferred anyway.
+
+### The save bar said "Saved" when the save failed
+
+It inferred completion from the page's own button going disabled and back, and
+every save routine re-enables its button in a `finally`, so a request that
+failed looked exactly like one that succeeded. It now waits for the routine to
+report the actual result, and says "Not saved" while leaving the changes marked
+unsaved.
+
+### Dark mode
+
+The options inside a native dropdown are drawn by the operating system in a
+separate popup and do not inherit the control's colour, so on a dark theme they
+were dark on dark and only the highlighted row could be read. Both themes now
+state the colour explicitly. An option is also no longer disabled while it is
+the stored value, because a disabled option that is selected renders the whole
+control blank on Windows.
+
+### Also
+
+- Saving WebP settings erased `exclude_sizes`, which is set by import and read
+  when converting. The handler merges onto the stored settings now.
+- The preferred image library was stored with no whitelist.
+
+### Three new tests
+
+- `tests/wp_config_write_test.php` drives the real writer against a wp-config
+  fixture with eleven awkward passwords and runs `php -l` over what it produced.
+  The existing test passed throughout, because it tested the function named in
+  an old report rather than the operation that report was about.
+- `tests/settings_roundtrip_test.php` posts every control each page offers
+  through the real handlers and reads the option back. 110 settings pass.
+- `tests/handler_auth_test.php` fails if any AJAX handler is missing a nonce or
+  a capability check, or is registered for logged-out visitors.
+
+
+## v8.4.2 — Six vitals on one line
+
+There are always exactly six lab metrics on Site Health, but the grid was
+fitting as many as would go and stranding Server Response Time alone on a
+second row. The column count is set now, and every step down the widths
+divides six evenly, so no screen size leaves a tile on its own.
+
+- **Metric values are formatted here rather than taken from Lighthouse.** Its
+  own displayValue is not consistent between audits: most are a bare figure
+  like "1.7 s", but server-response-time returns the sentence "Root document
+  took 0 ms", which read as a caption and wrapped onto a second line.
+- **Findings use a dot instead of a full-height coloured rail**, the same as
+  everything else in the plugin.
+- **The Cloudflare Under Attack callout** was painted with a hardcoded red over
+  a hardcoded pink, so it stayed pink in dark theme. It reads from the palette
+  now. It was also referencing a custom property this stylesheet never defines.
+- The settings group heading was sized with `--ccm-text-md`, which does not
+  exist either, and had been landing on its fallback.
+
+
+## v8.4.1 — Every finished database task says so
+
+On the Database page, a task with nothing left to run said "Already done,
+nothing to run" but only some of them carried the Done marker beside the name.
+The marker was written into the chip that shows the row's count, and the five
+index tasks have no count to show, so they had no chip to write into. One is
+created for them now.
+
+Finished rows are also muted, so the tasks you can still act on are the ones
+that stand out.
+
+
+## v8.4.0 — One component, no accent rails
+
+The v8.3.0 pages were consistent in palette but not in construction, so they
+read as variations on each other. Every settings list in the plugin is now the
+same container, and the coloured bar down the left of each row is gone.
+
+### The accent rail is gone everywhere
+
+A tinted stripe down the left edge of every card is the most recognisable
+generated-interface tic there is, and the switch on the right already says what
+is on. An enabled row lifts its own surface instead. The same treatment was
+applied to notices, toasts, the extension chips and the Database page's rows.
+
+### One card per group
+
+A settings group is now a single contained card, with its name, one line of
+context and its live count in the header. Previously a floating heading sat
+above a borderless list, which is why no two pages quite matched. The .htaccess,
+Performance, WebP, Redis, WooCommerce, System Info and Database pages all use it.
+
+### Cloudflare was a different product
+
+Most of that page is drawn by JavaScript, which was still emitting tables with
+the controls jammed against the right edge, so it never picked up the restyle.
+It now emits the same rows and tiles as everything else. The Pro-plan lock is a
+chip beside the setting's name rather than loose text crowding the control, and
+the seven analytics tiles became six, because seven left one stranded on a row
+of its own.
+
+### Two columns where it helps
+
+Reference material that is read rather than set now pairs up: the Redis status
+and drop-in panels, its two install commands, WebP's library list beside the
+test panel, and System Info's four detail panels as two rows of two. Settings
+lists stay full width, because two long lists side by side is harder to scan,
+not easier.
+
+### Fixes
+
+- **The WooCommerce payment restriction could not be turned off.** The button
+  reads a `data-enabled` attribute that was never written, so it always read as
+  off and always sent "turn on". Cash on Delivery and Bank Transfer stayed
+  hidden from real customers after testing was finished. One attribute.
+- **The .htaccess rows lost their live status** in the v8.3.0 rebuild, because
+  the script was still looking for the old row class. Each row says again
+  whether saving would add the directive, remove it, or leave it alone.
+- **A failed error-log load was unreadable in light theme.** The viewer is a
+  fixed dark surface in both themes, but the error text took the light theme's
+  dark red.
+- The Database page's risk groups were headed with emoji. They are named now.
+
+### Housekeeping
+
+Removed 243 lines of stylesheet for the row component the Database page no
+longer uses. The preview build gained a markup-nesting gate, because a stray
+closing tag is repaired silently by the browser, is invisible to `php -l`, and
+had already broken one container this release.
+
+
+## v8.3.0 — The rest of the pages, and a save bar that follows you
+
+The v8.2.0 restyle changed the palette but left most pages' markup alone, so
+they still read as the old plugin. This release rebuilds the remaining five on
+the same component kit the Performance and Site Health pages use.
+
+### Save settings is always reachable
+
+Every settings page now carries a floating bar that stays in view no matter how
+far you have scrolled. It counts what you have actually changed, offers Discard,
+and warns before you leave with unsaved work. It drives the page's real Save
+button rather than replacing it, so nothing about how settings are saved changed.
+
+### Pages rebuilt
+
+- **Redis** leads with hit rate, memory, key count and round-trip time, then
+  status as a key/value panel instead of a table. Settings are grouped by
+  Connection, Cache behaviour, WooCommerce and Advanced, each with a live count
+  of how many values wp-config.php has locked. Compression now names the actual
+  production incident it caused instead of listing options neutrally. Drop-in
+  install instructions moved to a disclosure, shown only when they apply.
+- **WebP** opens with conversion coverage and the size saved, and separates bulk
+  conversion from settings from the library detail. Import, export and the
+  uploads backup moved to disclosures at the bottom.
+- **Error Log** now tells you what is actually wrong before showing you the log.
+  Identical messages in the visible window are grouped and ranked by frequency,
+  and when one plugin accounts for most of the fatals it says so by name. Added
+  a text filter over the visible lines. Clear Log moved away from Refresh and
+  Download, into a disclosure, as the destructive action it is.
+- **Cloudflare** is ordered Cache, Security, SSL/TLS and network, then DNS, with
+  development mode warned about where you can see it. Connection settings moved
+  to a disclosure, since a token is set once.
+- **.htaccess** rebuilt on the same kit.
+
+### Fixes
+
+- **Importing performance settings did nothing.** The catalogue rewrite in
+  v8.2.0 left one Import button where `js/main.js` expects three elements: a
+  button that opens the file picker, a label for the chosen filename, and the
+  Import button itself, revealed only once a file is selected. Because the
+  first was missing, the file input's change handler was never attached.
+- **Four detection buttons were lost in that same rewrite.** Find scripts to
+  defer, find third-party scripts to delay, and find origins to preconnect or
+  DNS-prefetch all scan the site and fill the matching list for you. Their
+  target fields were still there; only the buttons had gone.
+- **Their result panels could not appear even when present.** They were hidden
+  with a class that sets `display: none !important`, and `js/main.js` reveals
+  them with an inline style, which cannot win against it.
+- **Bulk turn-off came back.** Turn on everything safe had no counterpart, so
+  the only way back from a page of enabled toggles was sixty clicks.
+
+- **The error log was unreadable in light theme.** A generic `pre` rule defined
+  later in the stylesheet was overriding the viewer's own background, so
+  terminal-coloured syntax landed on a near-white box. Same fault in the
+  .htaccess viewer.
+- **Every page scrolled sideways on a phone.** The ten-item tab strip sized
+  itself to its content and widened the whole document by about 100px. Wide
+  reference tables now scroll inside their own card, and the two-column grids
+  collapse to one column instead of holding a 480px floor.
+- **ImageMagick reported itself twice**, as "ImageMagick ImageMagick 7.1.1-29
+  Q16-HDRI x86_64 https://imagemagick.org", because its version string already
+  contains the name. Trimmed to the version number.
+- **Contrast.** Both themes now meet WCAG AA across all ten pages. Small brand
+  green text has its own token, because the fill green only reaches 3.7:1 on a
+  light surface; the warning, error, success and muted text colours were
+  adjusted to clear 4.5:1.
+- **The logo vanished in light theme.** It is drawn light for a dark bar, so it
+  now sits on a dark ground there rather than being run through a filter.
+- **The auto-refresh countdown read "Auto-refreshes in30seconds"** because a
+  flex container discards the whitespace between its items.
+- **The error log's file picker printed the whole absolute path**, which on a
+  real host pushes the rest of the toolbar off the row. Shows the path from the
+  WordPress root, with the full path on hover.
+- **WebP quality and convert-on-demand described the wrong defaults.**
+- Five form controls had no accessible name.
+
+### Testing
+
+`tests/render_test.php` now stubs `checked()`, `selected()` and `disabled()` the
+way WordPress actually implements them: a plain string comparison. The previous
+stub also matched any two truthy values, which made every option in a select
+match, so the browser kept the last one and every dropdown previewed the wrong
+stored value. `get_option()` returns real scalars for core options and
+`size_format()` formats properly, so a preview shows what a real site shows.
+
+
+## v8.2.0 — Performance page rebuilt from a catalogue
+
+- **The page is now generated from data.** Every setting is described once in
+  `inc/performance-catalogue.php` (label, description, risk, sub-fields) and one
+  renderer draws them all. That replaced 1,104 lines of hand-written markup where
+  each group was styled slightly differently and each risky option was warned about
+  in its own words, or not at all. Adding a setting is now one array entry.
+- **Every option states its risk.** Safe, test after, or can break things, with the
+  specific failure named in the description rather than a vague warning.
+- **Search and filter.** Sixty-odd toggles is not a list you scroll. Filter by All,
+  On, Safe only or Risky, or type to find one.
+- **Sub-settings live with their toggle** and appear when it is switched on, instead
+  of sitting in a separate block further down the page.
+- **Turn on everything safe** in one click, and a running count per group and for the
+  page, updated live.
+- **The master switch is in the header** with a plain warning when it is off, because
+  a page full of enabled toggles that are doing nothing is misleading.
+- **Prerequisites are enforced in the interface.** Deferring stylesheets stays disabled
+  until critical CSS actually has content in it, and unlocks the moment it does.
+- Fixed: `[hidden]` is a user-agent rule, so any class rule setting `display` beats it.
+  Sub-field blocks were visible under switched-off toggles. Restated now, with a
+  blanket rule so a future component cannot reintroduce it.
+
+## v8.1.0 — Site Health rebuilt, and a real component kit
+
+The v8.0.0 restyle swapped the palette and left every page's markup alone, so it
+still read as the old plugin with a new coat of paint. This starts fixing that
+properly, beginning with the page that needed it most.
+
+### A component kit, not just tokens
+
+New reusable pieces the pages are rebuilt *from* rather than decorated with: score
+gauges, metrics with threshold bars, ranked finding rows, section heads, segmented
+controls, sparklines, disclosures, flat panels, key/value lists, chips, toolbars and
+empty states. All presentational and page-agnostic, so the remaining pages can be
+rebuilt on the same vocabulary.
+
+### Site Health
+
+A full rebuild rather than a reskin.
+
+- **Scores are rings, not table rows.** Four gauges coloured by Google's own bands,
+  with the arc baked into the markup so the page is correct the instant it paints.
+- **Core Web Vitals show where you actually sit.** Each metric draws the good,
+  needs-improvement and poor bands to scale with a marker at the measured value.
+  A number alone cannot tell you whether 2.6s was a near miss or nowhere close.
+- **Findings are ranked with an impact bar** relative to the worst item, so the eye
+  sorts them before the numbers are read, with the CCM Tools setting that addresses
+  each one linked beside it.
+- **Full history, kept.** The cap went from 20 runs to 200 per device. Sparklines per
+  category on a fixed 0-100 scale, a change indicator against the previous run, and
+  every recorded run in an expandable log.
+- **Mobile and desktop are a segmented control**, not three separate buttons.
+- **The API key moved to the bottom**, collapsed, because you set it once.
+- Real-visitor data from the Chrome UX Report is shown when Google has it.
+
+## v8.0.3 — Cloudflare Zone Features layout
+
+- **The Polish dropdown rendered as a full-width control tiled with dozens of
+  chevrons.** The new shared form styling set `background` as a shorthand, which
+  resets `background-repeat` to its initial `repeat`. wp-admin then re-applied only
+  its own arrow image on top, with no repeat value of its own to restore, so the
+  arrow tiled across the whole control. Selects now carry their own arrow with an
+  explicit `no-repeat`, so neither the shorthand nor wp-admin can reproduce it.
+- **Selects no longer stretch to the full row width.** Several sit inline beside a
+  label or a "Requires Pro+" note, and a stretched one pushed its neighbour onto the
+  next line. They size to their content now, with a sensible minimum. A select that
+  explicitly opts into `.ccm-input` still fills its container.
+- **"Requires Pro+" no longer collides with the control beside it.** The note and its
+  toggle or select now share a baseline with a real gap and the note does not wrap.
+- Removed inline styling on the cron interval select that zeroed the right padding
+  the arrow sits in.
+
+## v8.0.2 — Dashboard reported the object cache as unavailable
+
+- **The dashboard said "Not Available" while Redis was connected and serving.**
+  Its object-cache tile asked whether the third-party *Redis Object Cache* plugin
+  by Till Krüss was installed and active. CCM Tools ships its own drop-in and exists
+  specifically so that plugin is not needed, so the answer was always no and the
+  dashboard contradicted the Redis page sitting one tab away.
+  The tile now reads the drop-in actually installed at `wp-content/object-cache.php`,
+  the same source the Redis page uses, and distinguishes five real states: our
+  drop-in running, another plugin's drop-in, an unrecognised one, Redis running with
+  no drop-in, and no Redis at all. Each says which it is rather than just "not
+  available".
+- Removed `ccm_tools_check_redis_plugin()`, which existed only for that check, and a
+  pair of status variables it fed that were computed on every dashboard load and
+  never displayed.
+
+## v8.0.1 — Dashboard fatal
+
+- **Fixed a fatal on the CCM Tools dashboard.** `ccm_tools_convert_php_size_to_bytes()`
+  was declared *inside* `create_dashboard_page()`, roughly a hundred lines below the
+  new at-a-glance tiles that call it, so opening the dashboard died with "call to
+  undefined function". The helper now lives at file scope, which is where it always
+  should have been.
+- **Fixed an undefined index warning on the same page.** `ccm_tools_cf_detect()`
+  returned a cached array without checking it carried the key its callers read, so a
+  stale or malformed transient produced a PHP warning on every dashboard view.
+- **Added `tests/render_test.php`.** It stubs WordPress, loads every module and then
+  actually executes all eleven admin page callbacks. Neither bug above was visible to
+  `php -l` or to importing the files; only running the page finds them.
+
+## v8.0.0 — Premium removed, AI optimiser removed, new UI
+
+Everything that used to be paid is now standard, the AI auto-optimiser is gone, and the whole admin interface has been rebuilt. This is a major version because the Premium page, the AI Performance Hub and their settings no longer exist.
+
+### Every feature is now available to every site
+
+The premium tier is retired. There is no subscription, no API key to the CCM hub, no upgrade prompt and no locked card. Everything the plugin can do, it does on every install:
+
+- **Redis Advanced Settings** — serializer, compression, async flush (UNLINK), ACL authentication, TLS connections, connection and read timeouts, and the drop-in runtime diagnostics.
+- **Redis WooCommerce optimisation** — product query caching, term count caching and the per-type TTLs.
+- **Cloudflare Security** — security level and Under Attack mode.
+- **Cloudflare SSL/TLS and Network** — encryption mode, HTTP/2, HTTP/3, 0-RTT, always use HTTPS, automatic HTTPS rewrites, email obfuscation, hotlink protection, opportunistic encryption, early hints, Brotli and pseudo-IPv4.
+- **Cloudflare Zone Analytics** and the read-only **DNS Records** viewer.
+- **The postmeta composite index** on the Database page, which is the single biggest database win on an ACF or WooCommerce site.
+
+A one-time cleanup runs on the first admin page load after updating and removes the orphaned subscription and AI options and transients. Nothing else in the database is touched.
+
+### The AI Performance Optimiser is gone
+
+Removed in full: hub PageSpeed testing, AI analysis, the one-click optimise loop, visual regression screenshots, the console check, the AI troubleshooter chat, settings snapshots and rollback, and the cross-site "known bad" learning store.
+
+It was removed because it did not work. It applied its own guesses to live production sites, its rollback only ever undid the most recent iteration, infrastructure changes it made to `.htaccess` and the Redis drop-in were never reverted at all, and the visual check meant to catch "fast but broken" could be skipped by a missing screenshot. On top of that its opportunity data had been silently empty for months: Lighthouse 13 removed the audit IDs it was keyed to.
+
+Nothing is applied automatically by this plugin any more. A human ticks every box.
+
+### New: Site Health
+
+The measurement half was worth keeping, so it has been rebuilt without the hub and without the auto-apply:
+
+- Talks **straight to the Google PageSpeed Insights API** with your own API key. No CCM middleman.
+- Mobile and desktop scores, Core Web Vitals, and real-visitor field data from the Chrome UX Report where Google has it.
+- Findings are **ranked by how much time each one costs**, and where CCM Tools has a setting that addresses one, there is a link to it. It never changes the setting for you.
+- Reads audits generically rather than by fixed ID, so a future Lighthouse release cannot silently empty the report the way it did to the old integration.
+- Score history, so you can see whether a change actually helped.
+- The key can live in the database or, better, as `CCM_TOOLS_PSI_KEY` in `wp-config.php`. Restrict it to the PageSpeed Insights API in the Google Cloud console.
+
+### Security
+
+Ten fixes, several of them reachable without logging in.
+
+- **Stored XSS in the error log viewer.** The AJAX path returned the raw log and the browser rendered it as HTML, so anything that wrote attacker-controlled text into `debug.log` executed in the admin's browser on the 30-second auto-refresh. A previous release recorded this as fixed; only the initial page render had been escaped, not the refresh. Now escaped on every path, and the client no longer has a raw fallback to fall back to.
+- **Any visitor could switch the plugin off for one request.** The REST detection matched `/wp-json/` anywhere in the request URI, query string included, and bailed out before loading any module. `/checkout/?x=/wp-json/` therefore disabled the admin-only Cash on Delivery and Bank Transfer restriction and allowed an unpaid order. The WooCommerce Store API bypassed it with no trick at all. The short-circuit has been removed entirely.
+- **Path traversal in the WebP converter, reachable anonymously.** Image paths were derived from URLs by string replacement with no containment check, and the frontend pass scans every image tag on the page, so a crafted `src` in any post or comment gave a file read and write outside the uploads directory. On shared hosting that crossed customer accounts. Every URL-to-path conversion now resolves with `realpath()` and is confined to the uploads tree, with an extension allowlist.
+- **`.htaccess` could be wiped to a single newline.** The regex that replaces the managed block was unguarded against a null return, which a PCRE backtrack-limit failure on a large `.htaccess` produces. That wrote an empty file: permalinks, other plugins' rules and the wp-config protection all gone, sitewide 500, no backup. Now guarded, backed up before every write, written atomically, and refused outright if the result would be empty or implausibly short.
+- **`Disable WP Cron` erased the cron array.** It returned an empty array to every reader of the cron option, not just the runner, so the next plugin to schedule an event wrote back only its own and wiped every other scheduled job on the site.
+- **wp-config.php writes are now atomic everywhere.** The debug toggles, the memory limit handler and both Redis writers used a plain write with no temp file. A worker killed mid-write or a full disk left a truncated wp-config.php, which is a white screen with no way into wp-admin to fix it. All of them now write to a temp file in the same directory, verify the byte count and rename into place, after taking a backup.
+- **wp-config backups are encrypted at rest.** They hold database credentials and auth salts, and the `.htaccess` that was protecting them does nothing on nginx. Now AES-256-CBC with an HMAC, keyed from the site's own salts.
+- **`?force-check=1` needed no permission.** Any logged-in user, including a subscriber or a customer, could hit it on any admin screen and force an unauthenticated GitHub API call, exhausting the 60-per-hour budget shared by every site behind the same IP. Now requires `update_plugins` and a nonce.
+- **A Cloudflare Zone ID is now checked against the site's own domain.** With an all-zones API token and a mistyped or stale Zone ID, one site's admin panel silently drove another customer's zone.
+- **The Cloudflare API token is encrypted at rest** and the update package is verified against a published SHA-256 when the release provides one.
+
+### Correctness
+
+- **The uploads backup failed on every batch after the first.** It used `ZipArchive::RDWR`, which is not a real constant, and threw an `Error` that the surrounding `catch` could not catch.
+- **Redis cache keys now always carry a salt.** The field only ever showed the hostname as placeholder text, which is never submitted, so the constant was usually never written. Two WordPress installs sharing one Redis produced identical keys and could read each other's options, sessions and cart data.
+- **Settings import no longer destroys preload URLs.** They were run through `sanitize_key`, which turns `https://site/font.woff2` into `httpsxsitefontwoff2`, and every page then emitted a broken preload tag. Script exclusion lists had the same problem and could never match again after a round trip.
+- **The WebP reset no longer deletes hand-uploaded WebP files.** It inferred targets from filenames, so a `hero.webp` uploaded alongside `hero.png` was destroyed. It now only deletes files this plugin recorded converting.
+- **`Preload CSS` cannot be enabled without critical CSS**, which was a guaranteed flash of unstyled content, and it no longer silently undoes small-stylesheet inlining.
+- **Inlining a small script no longer discards its inline companion**, so configuration blobs and translations attached to a script survive, and deferred scripts are left alone.
+- **Block theme guards** on the Gutenberg and block CSS toggles, which were dequeuing `global-styles` and rendering block themes unstyled.
+- **WooCommerce asset trimming** now checks for product blocks and shortcodes, so a homepage with a products block keeps its add-to-cart.
+- **Cache-Control** is emitted after the query, never alongside a `Set-Cookie`, and carries `Vary: Cookie`.
+- **The LCP image flag** is no longer claimed by the site logo, which left the real hero image lazy-loaded.
+- **Table conversion and database optimisation report truthfully.** Failed `ALTER` and `OPTIMIZE` statements were silently reported as successes.
+- **The WooCommerce payment gateway check** no longer runs third-party gateways against a null cart in wp-admin, and its "available but disabled" states are now reachable.
+- **`memory_limit = -1`** reads as unlimited instead of being flagged red.
+- The admin Pages list keeps its own ordering instead of being forced to date descending.
+- The plugin no longer flushes the entire object cache on every dashboard view, which on a shared Redis emptied the cache for every site on the box.
+- The updater loads the admin plugin API before using it, so a cron run started by ordinary traffic cannot fatal and take every other scheduled job down with it.
+- `HSTS` is no longer on by default. It is a one-year commitment and it now sits with the other options you choose deliberately.
+
+### Interface
+
+The admin interface has been rebuilt in the house design language, carried over from frikwork but vendored into the plugin's own stylesheet. Nothing is fetched from an external CDN, so a strict Content Security Policy or HSTS configuration on a client site cannot half-load it.
+
+- **Light and dark themes**, with a toggle in the header. It follows the operating system until you choose, remembers your choice per browser, and is stamped before the page paints so there is no flash of the wrong palette.
+- **Frosted glass cards** over a brand wash, gradient buttons, and a consistent set of badges, switches, tables and form controls.
+- **The CCM brand spinner** replaces every loading indicator in the plugin, vendored from the shared `ccm-spinner` component so it matches ServerWatch, WebWatch and the tools site.
+- The muted text colour is darker than the shared token, which measured 3.75:1 on a card and failed accessibility contrast.
+- The stylesheet lost 1,942 lines of dead premium and AI rules.
+
+### Housekeeping
+
+- Removed roughly 2,460 lines of PHP across the two deleted modules, plus their orphaned test and documentation.
+- Retired a second, weaker wp-config writer that hardcoded `127.0.0.1:6379`, never wrote its backup to disk and left an unterminated comment that the remover could not match.
+- Deleted a number of AJAX handlers and functions with no caller anywhere, including one that returned the database host, name and user.
+- De-duplicated the table name and collation validators, which existed twice byte for byte.
+- Both escapers now escape quotes. Three call sites put their output inside an HTML attribute, where a quote could break out.
+- Fixed a double-binding bug that started a second concurrent optimisation run on the second click of the run button.
+
+## v7.45.0 — Security & AI safety hardening
+
+- **Security:** fixed an authenticated PHP-injection/RCE in the Redis object-cache config writer (Redis password/username are now var_export-safe and quote/control-char-rejected at input); moved secret-bearing wp-config backups out of the web root into uploads/ccm-private/ with a deny .htaccess.
+- **AI safety:** the AI apply path now validates every recommendation against a typed allow-list with preconditions — preload_css/critical_css require non-empty critical CSS (enforced before AND after sanitization), block-theme-incompatible settings are skipped on block themes, WooCommerce-only settings gated, and value type-mismatches are rejected (with benign int/bool normalization) instead of coerced.
+- **AI one-click optimize:** interim safety guardrails — infrastructure changes (.htaccess/Redis/WebP/Cloudflare) are no longer auto-applied during optimize (they are never rolled back); the visual-regression gate now fails closed (rolls back when it cannot confirm the page is intact on both mobile and desktop); and an uncaught error always rolls back to the pre-optimization snapshot.
+
 ## v7.44.0
 - **WebP is now actually served on sites that use `<picture>` elements**
   - On sites whose theme hand-codes `<picture>` markup (responsive `<source media="…" srcset="…">` children with an `<img>` fallback), the browser selects a matching `<source>` and serves *that* — it only falls back to the `<img>` when no source matches. The converter previously only rewrote the `<img>` `src` to WebP and never touched `<source>` elements, so the browser kept serving the original PNG/JPG from the source. The frontend WebP pass now rewrites `src` **and** `srcset` on both `<img>` **and** `<source>` tags, so the URL the browser actually picks is the WebP one. Each candidate is verified against the on-disk WebP (respecting the *Convert On-Demand* setting) and the original URL is kept whenever no WebP is available — no broken images. The pass is idempotent (already-`.webp` and non-upload URLs are skipped) and only runs for WebP-capable browsers (with `Vary: Accept` already set). An explicit `<source type="image/png|jpeg|gif">` hint is updated to `image/webp` when its URL is swapped.
