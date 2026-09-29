@@ -82,14 +82,51 @@ function ccm_tools_registry_last_attempt() {
  * @return bool
  */
 function ccm_tools_registry_is_degraded(): bool {
-    if (ccm_tools_registry_state() === null) {
-        return true;
+    $state = ccm_tools_registry_state();
+    if ($state === null) {
+        return true;   // never had an answer at all
     }
+
     $last = ccm_tools_registry_last_attempt();
-    if ($last === null) {
+    if ($last !== null) {
+        return empty($last['ok']);
+    }
+
+    /*
+     * A stored answer but no record of the attempt that produced it.
+     *
+     * That is every site upgrading into the first version that records
+     * attempts: the answer was written by the version before, which did not
+     * keep one. Reading the absence as failure told those sites the service
+     * was unreachable when it was fine, put "GitHub (fallback)" on the panel,
+     * and would have had the updater prefer GitHub over the authority.
+     *
+     * The stored answer is only ever written after a check that succeeded, so
+     * its existence IS the evidence. Judge it by its own age instead.
+     */
+    $checked_at = isset($state['checked_at']) ? (int) $state['checked_at'] : 0;
+    if ($checked_at <= 0) {
         return true;
     }
-    return empty($last['ok']);
+
+    return (time() - $checked_at) > (2 * CCM_TOOLS_REGISTRY_TTL);
+}
+
+/**
+ * When the service last gave us an answer, however we know it.
+ *
+ * Falls back to the stored answer's own timestamp, so a site that has upgraded
+ * into attempt-recording does not report "never".
+ *
+ * @return int Unix time, or 0 if we have nothing.
+ */
+function ccm_tools_registry_last_checked_at(): int {
+    $last = ccm_tools_registry_last_attempt();
+    if ($last !== null && !empty($last['at'])) {
+        return (int) $last['at'];
+    }
+    $state = ccm_tools_registry_state();
+    return is_array($state) && !empty($state['checked_at']) ? (int) $state['checked_at'] : 0;
 }
 
 /**
@@ -351,11 +388,12 @@ function ccm_tools_registry_render_panel(): void {
         $source_tone = 'bad';
     }
 
-    $when = ($last && !empty($last['at']))
+    $checked_at = ccm_tools_registry_last_checked_at();
+    $when = $checked_at > 0
         ? sprintf(
             /* translators: %s: human time difference, e.g. "3 mins" */
             __('%s ago', 'ccm-tools'),
-            human_time_diff((int) $last['at'], time())
+            human_time_diff($checked_at, time())
         )
         : __('never', 'ccm-tools');
 

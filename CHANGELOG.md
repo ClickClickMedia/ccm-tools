@@ -1,5 +1,24 @@
 # CCM Tools — Changelog
 
+## v8.11.2 — A healthy site said the service was unreachable
+
+Every site upgrading into v8.11.0 reported "Service reachable: No", showed
+"GitHub (fallback)" on the Update channel panel, and said "Last checked: never"
+while simultaneously naming the version the service had just offered it. All of
+it wrong, and the contradiction on the panel is what gave it away.
+
+v8.11.0 added a record of each attempt and then judged the service by it. A
+site upgrading into that version has a stored answer written by the version
+before, which kept no such record — so the absence was read as failure.
+
+The stored answer is only ever written after a check that succeeded, so its
+existence is the evidence. It is now judged by its own age, and "Last checked"
+falls back to the answer's own timestamp rather than claiming never.
+
+This mattered beyond the display: a falsely degraded site would have had the
+updater prefer GitHub over the service, which is the authority. Entitlement was
+never affected — that is read from the stored answer either way.
+
 ## v8.11.1 — The register keeps up with an upgrade
 
 After an update installed, the register still showed the version that had just

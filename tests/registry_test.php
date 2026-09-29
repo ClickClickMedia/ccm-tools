@@ -370,6 +370,50 @@ check(
 
 printf("
 ");
+// -- 11. Upgrading INTO attempt-recording ------------------------
+//
+// The version before this one wrote a stored answer but kept no record of the
+// attempt. Reading that absence as failure told a perfectly healthy site the
+// service was unreachable, showed "GitHub (fallback)" on the panel, and would
+// have had the updater prefer GitHub over the authority. The stored answer is
+// only ever written after a check that succeeded, so its existence is the
+// evidence.
+
+reset_state();
+$GLOBALS['__options'][CCM_TOOLS_REGISTRY_OPTION] = array(
+    'entitled'   => true,
+    'notice'     => '',
+    'update'     => $sample_update,
+    'checked_at' => time() - 60,      // a minute ago, by the previous version
+);
+// ...and deliberately no CCM_TOOLS_REGISTRY_LAST, as an upgraded site has.
+
+check(
+    'a recent answer with no attempt record is NOT degraded',
+    ccm_tools_registry_is_degraded() === false,
+    'this is what put "GitHub (fallback)" on a healthy site'
+);
+check(
+    'and it does not report "never checked"',
+    ccm_tools_registry_last_checked_at() > 0
+);
+
+// The same shape, but genuinely old, should still read as degraded.
+$GLOBALS['__options'][CCM_TOOLS_REGISTRY_OPTION]['checked_at'] = time() - (5 * CCM_TOOLS_REGISTRY_TTL);
+check(
+    'a long-stale answer with no record IS degraded',
+    ccm_tools_registry_is_degraded() === true
+);
+
+// A stored answer with no timestamp at all tells us nothing.
+$GLOBALS['__options'][CCM_TOOLS_REGISTRY_OPTION]['checked_at'] = 0;
+check(
+    'an answer with no timestamp is degraded',
+    ccm_tools_registry_is_degraded() === true
+);
+
+printf("
+");
 if ($failures) {
     printf("%d check(s) failed\n", $failures);
     exit(1);
