@@ -1,5 +1,21 @@
 # CCM Tools — Changelog
 
+## v8.11.1 — The register keeps up with an upgrade
+
+After an update installed, the register still showed the version that had just
+been replaced, and stayed wrong until the next twelve-hour cycle. The console
+exists to watch a rollout, so a console that is a cycle behind the fleet is
+worse than useless.
+
+The cause is that `after_install` re-activates the plugin, which forces a check
+— but that runs with the old code still loaded in the process, so it reports
+the version being replaced. Forcing harder would not have helped. What the next
+request needs is simply to ask again, so the freshness of the stored answer is
+dropped and the following page load re-checks with the new version running.
+
+Entitlement itself is left alone, and there is a test for that: an upgrade must
+not become a way to shed a block.
+
 ## v8.11.0 — Both update paths, while the fleet crosses over
 
 Updates can now come from either the Click Click Media update service or, while

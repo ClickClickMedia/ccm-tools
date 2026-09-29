@@ -227,6 +227,26 @@ function ccm_tools_registry_update_info() {
 }
 
 /**
+ * Mark what we know as stale, so the very next request asks again.
+ *
+ * Used immediately after an upgrade. A check cannot usefully be forced at that
+ * moment: the new files are on disk but the running process still holds the old
+ * code, so CCM_HELPER_VERSION is the version being replaced and the register
+ * would be told the site is still on it. Entitlement is deliberately left
+ * alone - only its freshness is dropped - so an upgrade can never be a way to
+ * shed a block.
+ */
+function ccm_tools_registry_invalidate(): void {
+    delete_transient(CCM_TOOLS_REGISTRY_BACKOFF);
+
+    $state = ccm_tools_registry_state();
+    if (is_array($state)) {
+        $state['checked_at'] = 0;
+        update_option(CCM_TOOLS_REGISTRY_OPTION, $state, false);
+    }
+}
+
+/**
  * Register the site the moment the plugin is switched on, rather than waiting
  * for the first scheduled update check.
  */

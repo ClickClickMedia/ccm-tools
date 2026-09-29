@@ -333,6 +333,43 @@ check(
 
 printf("
 ");
+// -- 10. Invalidating after an upgrade ---------------------------
+//
+// The next request must ask again, so the register learns the version that was
+// just installed. But an upgrade must not be a way to shed a block.
+
+reset_state();
+$GLOBALS['__next_http'] = ok_response(true, $sample_update);
+ccm_tools_registry_check(true);
+$calls_before = $GLOBALS['__http_calls'];
+
+ccm_tools_registry_check();          // cached, no request
+check(
+    'a fresh answer is not re-fetched',
+    $GLOBALS['__http_calls'] === $calls_before
+);
+
+ccm_tools_registry_invalidate();
+ccm_tools_registry_check();          // must go out again
+check(
+    'after an upgrade the next check goes out',
+    $GLOBALS['__http_calls'] === $calls_before + 1,
+    sprintf('made %d calls, expected %d', $GLOBALS['__http_calls'], $calls_before + 1)
+);
+
+// And the important half: a blocked site cannot upgrade its way out.
+reset_state();
+$GLOBALS['__next_http'] = ok_response(false, null, 'Services cancelled.');
+ccm_tools_registry_check(true);
+ccm_tools_registry_invalidate();
+check(
+    'invalidating does not restore entitlement',
+    ccm_tools_registry_is_entitled() === false,
+    'an upgrade must not be a way around a block'
+);
+
+printf("
+");
 if ($failures) {
     printf("%d check(s) failed\n", $failures);
     exit(1);

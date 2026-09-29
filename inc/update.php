@@ -907,7 +907,20 @@ class CCM_Tools_Updater {
         
         // Clean up maintenance file
         $this->check_maintenance_file();
-        
+
+        /*
+         * Drop the freshness of what the service told us, so the next request
+         * asks again and the register learns the version that was just
+         * installed. Forcing a check here would not do it: this runs with the
+         * old code still loaded, so it would report the version being replaced
+         * and the console would sit a whole cycle behind the fleet it exists to
+         * watch. activate_plugin() above has already done exactly that, which
+         * is why this comes after it.
+         */
+        if (function_exists('ccm_tools_registry_invalidate')) {
+            ccm_tools_registry_invalidate();
+        }
+
         return $response;
     }
     
