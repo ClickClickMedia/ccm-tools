@@ -1,5 +1,39 @@
 # CCM Tools — Changelog
 
+## v8.11.0 — Both update paths, while the fleet crosses over
+
+Updates can now come from either the Click Click Media update service or, while
+the crossover lasts, from GitHub. A site is never left with no way to update.
+
+- **The service is the authority whenever it answers.** If it says this site is
+  not entitled, that is the answer and there is no fallback — otherwise a
+  blocked site could simply help itself from GitHub and blocking would mean
+  nothing. That holds even while the service is unreachable: a refusal we were
+  given stays given.
+- **GitHub is used when the service has never answered, or has stopped
+  answering.** Nobody gets stranded because a Worker had a bad afternoon.
+- **Both paths are verified.** The integrity gate used to intercept only
+  packages from the service, which would have left the fallback — the one path
+  with no service behind it — installing unchecked. It now covers both and
+  still fails closed.
+- **The checksum asset is named `ccm-tools-sha256.txt`.** Not
+  `ccm-tools.zip.sha256`, because the v7.44.1 updater still running on the fleet
+  picks its download with "the first asset whose name contains `.zip`" — and
+  that old name contains it. A release carrying it could hand a site a 64-byte
+  text file instead of the plugin.
+- **A subdirectory install is its own site.** The register keyed on the hostname
+  alone, so every WordPress under `example.com/_websites/<name>` collapsed into
+  one row that fought over its version and its entitlement. The path is part of
+  the key now.
+- **New "Update channel" panel** on the CCM Tools dashboard: whether the service
+  is reachable, whether this site is entitled, which source an update would come
+  from right now, what was last offered, and a Check now button that asks again
+  without waiting for the twelve-hour cycle.
+
+The GitHub half is temporary. It goes, along with `api_request()` and the repo
+properties, at the same moment the repository is made private — the two have to
+happen together, because making it private is exactly what stops it working.
+
 ## v8.10.0 — Updates come from us now
 
 CCM Tools updates no longer come from GitHub. They come from the Click Click

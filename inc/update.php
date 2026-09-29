@@ -25,6 +25,9 @@ class CCM_Tools_Updater {
     private $basename;         // Plugin directory name
     private $active;           // Whether the plugin is active
     private $authorize_token;  // always empty; see add_auth_to_request()
+    private $username = 'ClickClickMedia';   // GitHub fallback only
+    private $repository = 'ccm-tools';       // GitHub fallback only
+    private $source = '';                    // 'service' | 'github' | ''
     private $release_response; // Cached release record from the update service
     
     /**
@@ -253,22 +256,127 @@ class CCM_Tools_Updater {
      *
      * @return bool True when a release is on offer.
      */
+     /**
+     * Load the release this site is being offered, from whichever source is
+     * authoritative right now.
+     *
+     * Two sources exist on purpose, and only while the fleet is crossing over.
+     * A site still on v7.44.1 has an updater that only knows GitHub, so it
+     * reaches this version through GitHub and nothing else is possible. From
+     * here on the update service is the authority — but until enough sites have
+     * arrived and the GitHub releases stop, losing the service must not strand
+     * anyone. So:
+     *
+     *   service answered, not entitled  -> no update, and NO fallback. A
+     *                                      fallback here would let a blocked
+     *                                      site help itself from GitHub, which
+     *                                      makes blocking meaningless.
+     *   service answered, has one       -> use it.
+     *   service answered, up to date    -> no update. It is the authority.
+     *   service never answered          -> GitHub, so nobody is stranded.
+     *
+     * Note the second rule holds even while the service is unreachable: a
+     * refusal we were given stays given. Only never having had an answer, or
+     * having lost it, opens the fallback.
+     *
+     * @return bool True when a release is on offer.
+     */
     private function get_repository_info() {
         if (!empty($this->release_response)) {
             return true;
         }
 
-        if (!function_exists('ccm_tools_registry_update_info')) {
+        if (!function_exists('ccm_tools_registry_check')) {
+            return $this->get_repository_info_github();
+        }
+
+        $state = ccm_tools_registry_check();
+
+        if (is_array($state) && isset($state['entitled'])) {
+            if (empty($state['entitled'])) {
+                $this->source = 'service';
+                return false;   // refused, and deliberately no fallback
+            }
+
+            $update = isset($state['update']) && is_array($state['update']) ? $state['update'] : null;
+            if ($update && !empty($update['version']) && !empty($update['package'])) {
+                $this->release_response = $this->build_release_record($update);
+                $this->source = 'service';
+                return true;
+            }
+
+            // Entitled, nothing newer. Believe it, unless the service is not
+            // actually talking to us and this is just the last thing it said.
+            if (!ccm_tools_registry_is_degraded()) {
+                $this->source = 'service';
+                return false;
+            }
+        }
+
+        return $this->get_repository_info_github();
+    }
+
+    /**
+     * The GitHub release path, kept only for the crossover.
+     *
+     * Delete this, `api_request()` and the `github_*` helpers once the register
+     * shows the fleet has arrived; that is also the moment the repository can
+     * go private, and the two have to happen together because making it private
+     * is exactly what stops this working.
+     *
+     * @return bool
+     */
+    private function get_repository_info_github() {
+        if (!$this->github_fallback_enabled()) {
             return false;
         }
 
-        $update = ccm_tools_registry_update_info();
-        if (!is_array($update) || empty($update['version']) || empty($update['package'])) {
+        $transient_key = 'ccm_github_' . md5($this->basename);
+        $cached = get_transient($transient_key);
+
+        if ($cached && is_object($cached)) {
+            $this->release_response = $cached;
+            $this->source = 'github';
+            return true;
+        }
+
+        $response = $this->api_request(
+            "https://api.github.com/repos/{$this->username}/{$this->repository}/releases/latest"
+        );
+
+        if (empty($response) || !is_object($response) || empty($response->tag_name)) {
             return false;
         }
 
-        $this->release_response = $this->build_release_record($update);
+        set_transient($transient_key, $response, HOUR_IN_SECONDS);
+        $this->release_response = $response;
+        $this->source = 'github';
         return true;
+    }
+
+    /**
+     * Whether the GitHub fallback may still be used.
+     *
+     * Defined as a constant so a single site can be taken off it for testing,
+     * and so switching the whole fleet off later is one release rather than a
+     * hunt through this class.
+     *
+     * @return bool
+     */
+    private function github_fallback_enabled() {
+        if (defined('CCM_TOOLS_GITHUB_FALLBACK')) {
+            return (bool) CCM_TOOLS_GITHUB_FALLBACK;
+        }
+        return true;
+    }
+
+    /**
+     * Which source answered last. 'service', 'github' or '' if neither did.
+     *
+     * @return string
+     */
+    public function last_source() {
+        return $this->source;
     }
 
     /**
@@ -385,13 +493,69 @@ class CCM_Tools_Updater {
      *
      * @return string Lowercase 64-char hex digest, or '' if there isn't one.
      */
+     /**
+     * The SHA-256 for the release on offer.
+     *
+     * From the service it arrives with the release, which is one request fewer
+     * and therefore one failure fewer. From GitHub it comes from an asset named
+     * `ccm-tools-sha256.txt`.
+     *
+     * That asset is deliberately not called `ccm-tools.zip.sha256`: the v7.44.1
+     * updater still running on the fleet picks its download with
+     * `strpos($asset->name, '.zip') !== false`, and that name contains the
+     * substring, so a release carrying it could hand a site a 64-byte text file
+     * instead of the plugin.
+     *
+     * @return string Lowercase 64-char hex digest, or '' if there isn't one.
+     */
     private function get_expected_checksum() {
-        if (empty($this->release_response) || empty($this->release_response->sha256)) {
+        if (empty($this->release_response)) {
             return '';
         }
 
-        $digest = strtolower(trim((string) $this->release_response->sha256));
-        return preg_match('/^[a-f0-9]{64}$/', $digest) ? $digest : '';
+        // Straight off the service's answer.
+        if (!empty($this->release_response->sha256)) {
+            $digest = strtolower(trim((string) $this->release_response->sha256));
+            return preg_match('/^[a-f0-9]{64}$/', $digest) ? $digest : '';
+        }
+
+        // Or from the release asset, on the GitHub path.
+        if (empty($this->release_response->assets) || !is_array($this->release_response->assets)) {
+            return '';
+        }
+
+        foreach ($this->release_response->assets as $asset) {
+            if (isset($asset->name, $asset->browser_download_url)
+                && $asset->name === 'ccm-tools-sha256.txt') {
+                return $this->fetch_remote_checksum($asset->browser_download_url);
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Read a digest out of a checksum asset.
+     *
+     * Accepts a bare hex digest or the usual `sha256sum` output shape
+     * ("<hex>  <filename>").
+     *
+     * @param string $url
+     * @return string
+     */
+    private function fetch_remote_checksum($url) {
+        $response = wp_remote_get($url, array('timeout' => 15, 'sslverify' => true));
+
+        if (is_wp_error($response) || 200 !== (int) wp_remote_retrieve_response_code($response)) {
+            return '';
+        }
+
+        $body = trim((string) wp_remote_retrieve_body($response));
+        if (preg_match('/\b([a-f0-9]{64})\b/i', $body, $m)) {
+            return strtolower($m[1]);
+        }
+
+        return '';
     }
 
     /**
@@ -466,16 +630,25 @@ class CCM_Tools_Updater {
             return $reply;
         }
 
-        // Only ever interfere with our own package.
+        /*
+         * Only ever interfere with our own package, from either source. While
+         * the fleet is crossing over a package may legitimately come from
+         * GitHub, and letting that one through unverified would leave the gate
+         * open on exactly the path that has no service behind it.
+         */
         $host = strtolower((string) wp_parse_url($package, PHP_URL_HOST));
-        if ($host === '' || $host !== $this->service_host()) {
+        $from_service = ($host !== '' && $host === $this->service_host());
+        $from_github  = ($host === 'github.com' || substr($host, -20) === 'githubusercontent.com');
+
+        if (!$from_service && !$from_github) {
             return $reply;
         }
 
         // Ask again so the URL and the digest are both current and belong to
-        // each other.
+        // each other. Only meaningful on the service path; the GitHub asset
+        // URLs are stable.
         $this->release_response = null;
-        if (function_exists('ccm_tools_registry_check')) {
+        if ($from_service && function_exists('ccm_tools_registry_check')) {
             ccm_tools_registry_check(true);
         }
 
@@ -494,7 +667,12 @@ class CCM_Tools_Updater {
             );
         }
 
-        $fresh = $this->get_download_url();
+        /*
+         * On the service path the URL is re-issued, because the one WordPress
+         * cached for twelve hours has almost certainly expired. On the GitHub
+         * path the URL WordPress already has is the right one.
+         */
+        $fresh = $from_service ? $this->get_download_url() : $package;
         if ($fresh === '') {
             return new WP_Error(
                 'ccm_package_unavailable',
@@ -733,6 +911,34 @@ class CCM_Tools_Updater {
         return $response;
     }
     
+    /**
+     * One GitHub API request, for the fallback path only.
+     *
+     * Unauthenticated: the repository is public for exactly as long as this
+     * crossover lasts, and a token sitting on a client site is the thing this
+     * whole move is getting rid of. Goes with the rest of the fallback.
+     *
+     * @param string $url
+     * @return object|false
+     */
+    private function api_request($url) {
+        $response = wp_remote_get($url, array(
+            'timeout'   => 15,
+            'sslverify' => true,
+            'headers'   => array(
+                'Accept'     => 'application/vnd.github+json',
+                'User-Agent' => 'CCM-Tools/' . (defined('CCM_HELPER_VERSION') ? CCM_HELPER_VERSION : '0'),
+            ),
+        ));
+
+        if (is_wp_error($response) || 200 !== (int) wp_remote_retrieve_response_code($response)) {
+            return false;
+        }
+
+        $decoded = json_decode(wp_remote_retrieve_body($response));
+        return is_object($decoded) ? $decoded : false;
+    }
+
     /**
      * Identify ourselves to the update service.
      *

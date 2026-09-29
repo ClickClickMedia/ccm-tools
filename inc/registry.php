@@ -44,6 +44,53 @@ if (!defined('CCM_TOOLS_REGISTRY_RETRY')) {
 
 const CCM_TOOLS_REGISTRY_OPTION   = 'ccm_tools_registry_state';
 const CCM_TOOLS_REGISTRY_BACKOFF  = 'ccm_tools_registry_backoff';
+const CCM_TOOLS_REGISTRY_LAST     = 'ccm_tools_registry_last_attempt';
+
+/**
+ * Record how the most recent attempt went, for the updater's fallback decision
+ * and for the diagnostics panel.
+ *
+ * @param bool   $ok
+ * @param string $detail
+ */
+function ccm_tools_registry_note_attempt(bool $ok, string $detail = ''): void {
+    update_option(CCM_TOOLS_REGISTRY_LAST, array(
+        'at'     => time(),
+        'ok'     => $ok,
+        'detail' => $detail,
+    ), false);
+}
+
+/**
+ * The most recent attempt, whatever its outcome.
+ *
+ * @return array{at:int,ok:bool,detail:string}|null
+ */
+function ccm_tools_registry_last_attempt() {
+    $last = get_option(CCM_TOOLS_REGISTRY_LAST);
+    return is_array($last) ? $last : null;
+}
+
+/**
+ * Is the update service currently not answering us?
+ *
+ * True when we have never had an answer, or when the most recent attempt
+ * failed. The updater uses this to decide whether falling back to GitHub is
+ * legitimate: while the service is answering it is the only authority, and a
+ * fallback would let a blocked site help itself to updates anyway.
+ *
+ * @return bool
+ */
+function ccm_tools_registry_is_degraded(): bool {
+    if (ccm_tools_registry_state() === null) {
+        return true;
+    }
+    $last = ccm_tools_registry_last_attempt();
+    if ($last === null) {
+        return true;
+    }
+    return empty($last['ok']);
+}
 
 /**
  * Base URL of the update service.
@@ -131,12 +178,16 @@ function ccm_tools_registry_check(bool $force = false) {
 
     if (is_wp_error($response) || (int) wp_remote_retrieve_response_code($response) !== 200) {
         set_transient(CCM_TOOLS_REGISTRY_BACKOFF, 1, CCM_TOOLS_REGISTRY_RETRY);
+        ccm_tools_registry_note_attempt(false, is_wp_error($response)
+            ? $response->get_error_message()
+            : 'HTTP ' . (int) wp_remote_retrieve_response_code($response));
         return $state; // whatever we knew before, unchanged
     }
 
     $parsed = json_decode(wp_remote_retrieve_body($response), true);
     if (!is_array($parsed) || !array_key_exists('entitled', $parsed)) {
         set_transient(CCM_TOOLS_REGISTRY_BACKOFF, 1, CCM_TOOLS_REGISTRY_RETRY);
+        ccm_tools_registry_note_attempt(false, 'the reply was not an answer we understood');
         return $state;
     }
 
@@ -149,6 +200,9 @@ function ccm_tools_registry_check(bool $force = false) {
 
     delete_transient(CCM_TOOLS_REGISTRY_BACKOFF);
     update_option(CCM_TOOLS_REGISTRY_OPTION, $new, false);
+    ccm_tools_registry_note_attempt(true, $new['entitled']
+        ? ($new['update'] ? 'offered ' . $new['update']['version'] : 'up to date')
+        : 'not entitled');
 
     return $new;
 }
@@ -240,3 +294,139 @@ function ccm_tools_registry_plugin_row_meta(array $plugin_meta, string $plugin_f
 
     return $plugin_meta;
 }
+
+/**
+ * Render the update channel panel.
+ *
+ * Exists so the crossover can be watched rather than guessed at. It answers,
+ * on the site itself: did we reach the service, what did it say, which source
+ * would an update come from right now, and when was it last asked. Without
+ * this the only way to tell a working fallback from a broken one is to wait
+ * and see whether an update ever arrives.
+ */
+function ccm_tools_registry_render_panel(): void {
+    if (!function_exists('ccm_tools_user_is_admin') || !ccm_tools_user_is_admin()) {
+        return;
+    }
+
+    $state    = ccm_tools_registry_state();
+    $last     = ccm_tools_registry_last_attempt();
+    $degraded = ccm_tools_registry_is_degraded();
+    $entitled = ccm_tools_registry_is_entitled();
+
+    $fallback_on = !defined('CCM_TOOLS_GITHUB_FALLBACK') || CCM_TOOLS_GITHUB_FALLBACK;
+
+    // Which source a check right now would actually use.
+    if (!$entitled) {
+        $source      = __('Service (refused)', 'ccm-tools');
+        $source_tone = 'warn';
+    } elseif (!$degraded) {
+        $source      = __('Update service', 'ccm-tools');
+        $source_tone = 'ok';
+    } elseif ($fallback_on) {
+        $source      = __('GitHub (fallback)', 'ccm-tools');
+        $source_tone = 'warn';
+    } else {
+        $source      = __('None reachable', 'ccm-tools');
+        $source_tone = 'bad';
+    }
+
+    $when = ($last && !empty($last['at']))
+        ? sprintf(
+            /* translators: %s: human time difference, e.g. "3 mins" */
+            __('%s ago', 'ccm-tools'),
+            human_time_diff((int) $last['at'], time())
+        )
+        : __('never', 'ccm-tools');
+
+    $offered = ($state && !empty($state['update']['version']))
+        ? (string) $state['update']['version']
+        : __('nothing newer', 'ccm-tools');
+    ?>
+    <section class="ccm-optgroup" id="ccm-update-channel">
+        <header class="ccm-optgroup__head">
+            <div>
+                <h2 class="ccm-optgroup__title"><?php _e('Update channel', 'ccm-tools'); ?></h2>
+                <p class="ccm-optgroup__note">
+                    <?php _e('Where this site gets its updates, and what the service last said about it.', 'ccm-tools'); ?>
+                </p>
+            </div>
+            <span class="ccm-chip ccm-chip--<?php echo esc_attr($source_tone); ?>">
+                <?php echo esc_html($source); ?>
+            </span>
+        </header>
+        <div class="ccm-optgroup__body ccm-panel__body">
+            <div class="ccm-fieldgrid">
+                <div class="ccm-optfield">
+                    <span class="ccm-opt__label"><?php _e('Entitled to updates', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php echo $entitled
+                        ? esc_html__('Yes', 'ccm-tools')
+                        : esc_html__('No - the plugin keeps working, it just stops being offered new versions.', 'ccm-tools'); ?></p>
+                </div>
+                <div class="ccm-optfield">
+                    <span class="ccm-opt__label"><?php _e('Service reachable', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php echo $degraded
+                        ? esc_html__('No - falling back to GitHub while this lasts.', 'ccm-tools')
+                        : esc_html__('Yes', 'ccm-tools'); ?></p>
+                </div>
+                <div class="ccm-optfield">
+                    <span class="ccm-opt__label"><?php _e('Last checked', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc">
+                        <?php echo esc_html($when); ?>
+                        <?php if ($last && !empty($last['detail'])) : ?>
+                            &mdash; <?php echo esc_html($last['detail']); ?>
+                        <?php endif; ?>
+                    </p>
+                </div>
+                <div class="ccm-optfield">
+                    <span class="ccm-opt__label"><?php _e('Version on offer', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php echo esc_html($offered); ?></p>
+                </div>
+                <div class="ccm-optfield ccm-fieldgrid__wide">
+                    <span class="ccm-opt__label"><?php _e('Endpoint', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc ccm-mono"><?php echo esc_html(ccm_tools_registry_endpoint()); ?></p>
+                </div>
+            </div>
+
+            <div class="ccm-row" style="margin-top: var(--ccm-space-md);">
+                <button type="button" id="ccm-registry-recheck" class="ccm-button ccm-button-secondary ccm-button-small">
+                    <?php _e('Check now', 'ccm-tools'); ?>
+                </button>
+                <span class="ccm-text-muted" style="font-size: var(--ccm-text-sm);">
+                    <?php _e('Asks the service again straight away instead of waiting for the twelve-hour cycle.', 'ccm-tools'); ?>
+                </span>
+            </div>
+            <div id="ccm-registry-recheck-result" class="ccm-result-box" style="display: none;"></div>
+        </div>
+    </section>
+    <?php
+}
+
+/**
+ * Force a fresh check from the panel.
+ */
+function ccm_tools_ajax_registry_recheck(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!ccm_tools_user_is_admin()) {
+        wp_send_json_error(array('message' => __('You do not have permission to do that.', 'ccm-tools')));
+    }
+
+    delete_transient(CCM_TOOLS_REGISTRY_BACKOFF);
+    ccm_tools_registry_check(true);
+
+    $last     = ccm_tools_registry_last_attempt();
+    $state    = ccm_tools_registry_state();
+    $degraded = ccm_tools_registry_is_degraded();
+
+    wp_send_json_success(array(
+        'ok'       => $last ? (bool) $last['ok'] : false,
+        'detail'   => $last ? (string) $last['detail'] : '',
+        'entitled' => ccm_tools_registry_is_entitled(),
+        'source'   => $degraded ? 'github' : 'service',
+        'offered'  => ($state && !empty($state['update']['version'])) ? $state['update']['version'] : '',
+        'message'  => $last && $last['ok']
+            ? sprintf(__('Service answered: %s', 'ccm-tools'), (string) $last['detail'])
+            : sprintf(__('Could not reach the service: %s', 'ccm-tools'), $last ? (string) $last['detail'] : __('unknown', 'ccm-tools')),
+    ));
+}
+add_action('wp_ajax_ccm_tools_registry_recheck', 'ccm_tools_ajax_registry_recheck');

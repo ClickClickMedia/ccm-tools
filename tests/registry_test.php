@@ -54,9 +54,25 @@ function __($s, $d = null) { return $s; }
 function get_current_screen() { return null; }
 function ccm_tools_user_is_admin(): bool { return true; }
 
+// registry.php registers its recheck handler at file scope and renders a panel;
+// neither is under test here, but both have to exist for the file to load.
+function add_action($h, $c, $p = 10, $a = 1) { return true; }
+function check_ajax_referer($a = '', $q = false, $die = true) { return true; }
+function wp_send_json_error($d = null, $s = null) { throw new RuntimeException('json_error'); }
+function wp_send_json_success($d = null, $s = null) { throw new RuntimeException('json_success'); }
+function human_time_diff($from, $to = 0) { return (string) max(1, (int) round(($to - $from) / 60)) . ' mins'; }
+function esc_attr($t) { return htmlspecialchars((string) $t, ENT_QUOTES); }
+function _e($t, $d = null) { echo $t; }
+
 class WP_Error {
+    public $code;
     public $msg;
-    public function __construct($c = '', $m = '') { $this->msg = $m; }
+    public function __construct($c = '', $m = '') { $this->code = $c; $this->msg = $m; }
+    // Real WP_Error has these; the stub did not, and the client calls
+    // get_error_message() when recording why an attempt failed. A stub that is
+    // missing a method the real class has will invent a bug that is not there.
+    public function get_error_message() { return $this->msg; }
+    public function get_error_code() { return $this->code; }
 }
 function is_wp_error($t) { return $t instanceof WP_Error; }
 
@@ -270,6 +286,53 @@ check(
 );
 
 printf("\n");
+// -- 9. The signal the updater's GitHub fallback hangs off --------
+//
+// A fallback is only legitimate while the service is not answering. If it is
+// answering it is the authority, and falling back would let a blocked site
+// help itself to updates from GitHub anyway.
+
+reset_state();
+check(
+    'never asked            -> degraded, fallback allowed',
+    ccm_tools_registry_is_degraded() === true
+);
+
+$GLOBALS['__next_http'] = ok_response(true, $sample_update);
+ccm_tools_registry_check(true);
+check(
+    'a good answer          -> not degraded, service is the authority',
+    ccm_tools_registry_is_degraded() === false
+);
+
+$GLOBALS['__next_http'] = new WP_Error('http_request_failed', 'cURL error 28');
+ccm_tools_registry_check(true);
+check(
+    'service drops          -> degraded again',
+    ccm_tools_registry_is_degraded() === true,
+    'without this the updater would never fall back'
+);
+
+$last = ccm_tools_registry_last_attempt();
+check(
+    'the failure reason is recorded for the diagnostics panel',
+    is_array($last) && $last['ok'] === false && strpos($last['detail'], 'cURL error 28') !== false,
+    'got: ' . var_export($last, true)
+);
+
+reset_state();
+$GLOBALS['__next_http'] = ok_response(false, null, 'Services cancelled.');
+ccm_tools_registry_check(true);
+$GLOBALS['__next_http'] = new WP_Error('http_request_failed', 'timeout');
+ccm_tools_registry_check(true);
+check(
+    'a blocked site stays blocked when the service drops',
+    ccm_tools_registry_is_entitled() === false,
+    'otherwise an outage becomes a way around a block'
+);
+
+printf("
+");
 if ($failures) {
     printf("%d check(s) failed\n", $failures);
     exit(1);

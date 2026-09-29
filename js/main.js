@@ -893,6 +893,52 @@
     }
 
     /**
+     * "Check now" on the update channel panel.
+     *
+     * Delegated from document because the panel is rendered by PHP on one page
+     * only; binding directly would mean knowing whether that page is the one
+     * being viewed.
+     */
+    document.addEventListener('click', async (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest('#ccm-registry-recheck') : null;
+        if (!btn) return;
+        e.preventDefault();
+
+        const out = $('#ccm-registry-recheck-result');
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Checking…';
+
+        try {
+            const res = await ajax('ccm_tools_registry_recheck', {}, { timeout: 30000 });
+            const d = res?.data || {};
+            const tone = d.ok ? 'good' : 'warn';
+            const dot = d.ok ? 'ok' : 'warn';
+
+            let html = `<div class="ccm-alert ccm-alert--${tone}">
+                <span class="ccm-dot ccm-dot-${dot}"></span>
+                <div><strong>${escapeHtml(d.message || '')}</strong>`;
+            html += `<br>Source now: ${escapeHtml(d.source === 'service' ? 'update service' : 'GitHub fallback')}`;
+            html += ` · Entitled: ${d.entitled ? 'yes' : 'no'}`;
+            if (d.offered) html += ` · On offer: ${escapeHtml(d.offered)}`;
+            html += '</div></div>';
+
+            out.innerHTML = html;
+            revealPanel(out);
+            showNotification(d.message || 'Checked', d.ok ? 'success' : 'warning');
+        } catch (error) {
+            if (out) {
+                out.innerHTML = `<div class="ccm-alert ccm-alert--bad"><span class="ccm-dot ccm-dot-bad"></span><div>${escapeHtml(error.message || 'Check failed')}</div></div>`;
+                revealPanel(out);
+            }
+            showNotification(error.message || 'Check failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    });
+
+    /**
      * Initialize .htaccess options and event handlers
      */
     function initHtaccessOptions() {

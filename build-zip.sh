@@ -78,18 +78,27 @@ PYEOF
 
 cp ccm-tools.zip "archive/ccm-tools-$VERSION.zip"
 
-# The updater looks for a ccm-tools.zip.sha256 asset on the release and, when
-# it finds one, refuses to install a package that does not match.
+# Checksum for the GitHub fallback path, which is only used while the fleet is
+# still crossing over to the update service.
+#
+# The name deliberately does NOT contain ".zip". The updater shipped in v7.44.1
+# — which is what the fleet is running — picks its download with
+# `strpos($asset->name, '.zip') !== false`, i.e. the first asset whose name
+# merely CONTAINS that substring. "ccm-tools.zip.sha256" contains it, so if
+# GitHub happened to list it first, every site would download a 64-byte text
+# file as its plugin. "ccm-tools-sha256.txt" cannot be mistaken for the package
+# by that picker, and the current updater looks for it by this exact name.
 if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum ccm-tools.zip | awk '{print $1}' > ccm-tools.zip.sha256
+    sha256sum ccm-tools.zip | awk '{print $1}' > ccm-tools-sha256.txt
 else
-    shasum -a 256 ccm-tools.zip | awk '{print $1}' > ccm-tools.zip.sha256
+    shasum -a 256 ccm-tools.zip | awk '{print $1}' > ccm-tools-sha256.txt
 fi
+cp ccm-tools-sha256.txt ccm-tools.zip.sha256   # legacy name, still written
 
 echo "built ccm-tools $VERSION"
 echo "  ccm-tools.zip                  $(du -h ccm-tools.zip | cut -f1)"
 echo "  archive/ccm-tools-$VERSION.zip"
-echo "  sha256                         $(cat ccm-tools.zip.sha256)"
+echo "  sha256                         $(cat ccm-tools-sha256.txt)"
 echo
 echo "top-level entries in the archive (must be exactly ccm-tools/):"
 unzip -Z1 ccm-tools.zip | cut -d/ -f1 | sort -u | sed 's/^/  /'
