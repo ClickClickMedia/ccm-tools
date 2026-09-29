@@ -1,5 +1,25 @@
 # CCM Tools — Changelog
 
+## v8.11.3 — Modifiers that were never defined
+
+The Update channel panel picked its chip colour from a tone that could be
+`ok`, but the component kit defines `--good`, `--warn`, `--bad` and `--info`.
+An unknown class is not an error: the browser keeps it, applies nothing, and
+the element renders as bare text. So the healthy state lost its pill while the
+unhealthy one looked right, and the bug only showed itself when things were
+going well.
+
+Looking for others found three more, older, on the Cloudflare page. Its
+Security, Network and Analytics panels asked for `ccm-optgroup__body--host`,
+which has never existed — and because the typo replaced the base class rather
+than adding to it, those three lost their body padding and the separators
+between their rows as well.
+
+`tests/css_modifiers_test.php` now checks every component modifier the PHP and
+JavaScript ask for against the stylesheet, including tones assembled from a
+variable. Nothing else could catch this: the markup is valid, so `php -l`, the
+render test and the nesting gate are all happy with it.
+
 ## v8.11.2 — A healthy site said the service was unreachable
 
 Every site upgrading into v8.11.0 reported "Service reachable: No", showed

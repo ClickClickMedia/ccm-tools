@@ -1250,7 +1250,7 @@ function ccm_tools_cf_render_security_section(): void {
                 <p class="ccm-optgroup__note"><?php _e('Challenge and bot controls for this zone. Changing a switch needs the API token to carry the Zone Settings: Edit permission.', 'ccm-tools'); ?></p>
             </div>
         </header>
-        <div class="ccm-optgroup__body--host">
+        <div class="ccm-optgroup__body">
             <div id="cf-security-settings">
                 <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading security settings...', 'ccm-tools'); ?></p></div>
             </div>
@@ -1283,7 +1283,7 @@ function ccm_tools_cf_render_network_section(): void {
                 <p class="ccm-optgroup__note"><?php _e('Encryption and protocol settings for this zone. 0-RTT (below) lets returning visitors skip a round trip, but it carries a replay risk for non-idempotent requests such as form submissions or checkouts — leave it off unless the app is known to guard against replayed requests.', 'ccm-tools'); ?></p>
             </div>
         </header>
-        <div class="ccm-optgroup__body--host">
+        <div class="ccm-optgroup__body">
             <div id="cf-network-settings">
                 <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading network settings...', 'ccm-tools'); ?></p></div>
             </div>
@@ -1312,7 +1312,7 @@ function ccm_tools_cf_render_dns_section(array $settings): void {
                 <p class="ccm-optgroup__note"><?php _e('A read-only view of this zone\'s DNS records. Manage records in the Cloudflare dashboard.', 'ccm-tools'); ?></p>
             </div>
         </header>
-        <div class="ccm-optgroup__body--host">
+        <div class="ccm-optgroup__body">
             <div id="cf-dns-records">
                 <div style="text-align:center; padding: var(--ccm-space-lg) 0;"><div class="ccm-spinner"></div><p class="ccm-text-muted" style="margin-top: var(--ccm-space-sm);"><?php _e('Loading DNS records...', 'ccm-tools'); ?></p></div>
             </div>

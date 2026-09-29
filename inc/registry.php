@@ -379,7 +379,10 @@ function ccm_tools_registry_render_panel(): void {
         $source_tone = 'warn';
     } elseif (!$degraded) {
         $source      = __('Update service', 'ccm-tools');
-        $source_tone = 'ok';
+        // 'good', not 'ok': the chip modifiers are --good/--warn/--bad/--info,
+        // and a name that is not one of them renders as bare text with no pill,
+        // which is exactly what the healthy state did.
+        $source_tone = 'good';
     } elseif ($fallback_on) {
         $source      = __('GitHub (fallback)', 'ccm-tools');
         $source_tone = 'warn';
