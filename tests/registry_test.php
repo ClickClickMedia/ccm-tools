@@ -63,6 +63,7 @@ function wp_send_json_success($d = null, $s = null) { throw new RuntimeException
 function human_time_diff($from, $to = 0) { return (string) max(1, (int) round(($to - $from) / 60)) . ' mins'; }
 function esc_attr($t) { return htmlspecialchars((string) $t, ENT_QUOTES); }
 function _e($t, $d = null) { echo $t; }
+function wp_parse_url($url, $component = -1) { return parse_url($url, $component); }
 
 class WP_Error {
     public $code;
@@ -410,6 +411,60 @@ $GLOBALS['__options'][CCM_TOOLS_REGISTRY_OPTION]['checked_at'] = 0;
 check(
     'an answer with no timestamp is degraded',
     ccm_tools_registry_is_degraded() === true
+);
+
+printf("
+");
+// -- 12. The package URL must be ours --------------------------
+//
+// The integrity gate in inc/update.php only recognises our own hosts. On
+// anything else it stood aside and let WordPress install the file unverified,
+// so a service answering with a package URL on any host at all was arbitrary
+// code on every site that took it. A foreign URL must never get that far.
+
+$package_cases = array(
+    'our service over https'  => array('https://updates.clickclick.media/v1/download?token=x', true),
+    'our service, other path' => array('https://updates.clickclick.media/anything', true),
+    'a different host'        => array('https://attacker.example/payload.zip', false),
+    'lookalike host'          => array('https://updates.clickclick.media.evil.com/x.zip', false),
+    'our host over http'      => array('http://updates.clickclick.media/v1/download', false),
+    'no scheme'               => array('updates.clickclick.media/x.zip', false),
+    'no host'                 => array('https:///x.zip', false),
+    'javascript scheme'       => array('javascript:alert(1)', false),
+    'empty'                   => array('', false),
+);
+
+foreach ($package_cases as $label => $case) {
+    list($url, $expected) = $case;
+    check(
+        sprintf('package %-22s %s', $label, $expected ? 'accepted' : 'refused'),
+        ccm_tools_registry_package_is_ours($url) === $expected,
+        'got the opposite for ' . var_export($url, true)
+    );
+}
+
+// And end to end: a foreign package never reaches the updater.
+reset_state();
+$GLOBALS['__next_http'] = ok_response(true, array(
+    'version' => '99.0.0',
+    'package' => 'https://attacker.example/payload.zip',
+    'sha256'  => str_repeat('b', 64),
+));
+ccm_tools_registry_check(true);
+check(
+    'a foreign package is not passed to the updater',
+    ccm_tools_registry_update_info() === null,
+    'this is the arbitrary-code path'
+);
+
+// A well-formed one still is.
+reset_state();
+$GLOBALS['__next_http'] = ok_response(true, $sample_update);
+ccm_tools_registry_check(true);
+$info = ccm_tools_registry_update_info();
+check(
+    'our own package still gets through',
+    is_array($info) && $info['version'] === '8.11.0'
 );
 
 printf("

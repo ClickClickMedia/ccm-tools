@@ -260,6 +260,21 @@ function ccm_tools_registry_update_info() {
         return null;
     }
 
+    /*
+     * The package must be on the update service's own host.
+     *
+     * Without this, a service that had been compromised could answer with a
+     * package URL on any host it liked. The integrity gate in inc/update.php
+     * only recognises our own hosts, and on anything else it stood down and
+     * let WordPress install the file unverified — so a single bad answer was
+     * arbitrary code on every site that took it. Refusing the URL here means
+     * such an answer never reaches WordPress at all, rather than relying on a
+     * downstream gate to notice.
+     */
+    if (!ccm_tools_registry_package_is_ours((string) $update['package'])) {
+        return null;
+    }
+
     return $update;
 }
 
@@ -281,6 +296,33 @@ function ccm_tools_registry_invalidate(): void {
         $state['checked_at'] = 0;
         update_option(CCM_TOOLS_REGISTRY_OPTION, $state, false);
     }
+}
+
+/**
+ * Is this package URL one we are prepared to download from?
+ *
+ * https only, and only the update service's own hostname. This is the boundary
+ * the rest of the updater trusts: anything that gets past here is treated as
+ * ours.
+ *
+ * @param string $url
+ * @return bool
+ */
+function ccm_tools_registry_package_is_ours(string $url): bool {
+    if ($url === '') {
+        return false;
+    }
+
+    $parts = wp_parse_url($url);
+    if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+        return false;
+    }
+    if (strtolower($parts['scheme']) !== 'https') {
+        return false;
+    }
+
+    $ours = strtolower((string) wp_parse_url(ccm_tools_registry_endpoint(), PHP_URL_HOST));
+    return $ours !== '' && strtolower($parts['host']) === $ours;
 }
 
 /**

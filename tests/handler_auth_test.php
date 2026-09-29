@@ -115,6 +115,65 @@ foreach ($registered as $action => $meta) {
     }
 }
 
+/*
+ * Page callbacks.
+ *
+ * Hiding the menu is not a gate. add_menu_page()/add_submenu_page() register
+ * every screen with the capability string passed to them, and WordPress checks
+ * THAT when the page is requested, independently of whether the menu item was
+ * ever drawn. So a role holding manage_options but not the administrator role
+ * saw no CCM Tools menu and could still open any of its pages by typing the
+ * address.
+ *
+ * Two of eleven callbacks were missing their check when this was written: the
+ * WebP and Cloudflare screens rendered their full settings and connection
+ * state to anyone who guessed the URL. Neither existing test looked here at
+ * all - this one knew only about wp_ajax_ registrations, and admin_gate_test
+ * exercised the gate function in isolation - so the gap sat in the blind spot
+ * between them.
+ */
+$page_callbacks = array();
+foreach ($src as $file => $body) {
+    if (preg_match_all('/add_(?:menu|submenu)_page\s*\((.*?)\);/s', $body, $calls)) {
+        foreach ($calls[1] as $args) {
+            if (preg_match("/array\(\s*\$this\s*,\s*'([a-z0-9_]+)'/i", $args, $m)) {
+                $page_callbacks[$m[1]] = $file;
+            } elseif (preg_match_all("/'([a-z0-9_]+)'/i", $args, $m)) {
+                foreach ($m[1] as $cand) {
+                    if (strpos($cand, 'render') !== false || strpos($cand, '_page') !== false) {
+                        $page_callbacks[$cand] = $file;
+                    }
+                }
+            }
+        }
+    }
+}
+
+$page_problems = array();
+foreach ($page_callbacks as $fn => $where) {
+    list($body, ) = ccm_fn_body($src, $fn);
+    if ($body === null) {
+        continue;   // a capability string or slug that merely looked like one
+    }
+    /*
+     * The gate has to be near the top. A check at the bottom of a render
+     * function has already leaked the page, so look only at the opening.
+     */
+    if (strpos(substr($body, 0, 900), 'ccm_tools_user_is_admin') === false) {
+        $page_problems[] = array($fn, basename($where), 'no gate at the top of the callback');
+    }
+}
+
+printf("Page callback authorisation" . PHP_EOL . PHP_EOL . "  %d callbacks found" . PHP_EOL . PHP_EOL, count($page_callbacks));
+if ($page_problems) {
+    foreach ($page_problems as $p) {
+        printf("  FAIL %-38s %-28s %s" . PHP_EOL, $p[0], $p[1], $p[2]);
+    }
+    printf(PHP_EOL . "%d page callback(s) render without the gate, reachable by URL" . PHP_EOL, count($page_problems));
+    exit(1);
+}
+printf("  every page callback gates before it renders" . PHP_EOL . PHP_EOL);
+
 printf("Ajax handler authorisation\n\n  %d actions registered\n\n", count($registered));
 
 if ($problems) {

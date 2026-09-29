@@ -63,7 +63,7 @@ class CCM_Tools_Updater {
         add_filter('plugins_api', array($this, 'plugin_popup'), 10, 3);
         add_filter('upgrader_post_install', array($this, 'after_install'), 10, 3);
         add_filter('upgrader_source_selection', array($this, 'fix_source_dir'), 10, 4);
-        add_filter('upgrader_pre_download', array($this, 'verify_package_checksum'), 10, 3);
+        add_filter('upgrader_pre_download', array($this, 'verify_package_checksum'), 10, 4);
         add_filter('http_request_args', array($this, 'add_auth_to_request'), 10, 2);
 
         // Backstop for the update transient: populates our plugin if a fresh
@@ -624,23 +624,53 @@ class CCM_Tools_Updater {
      * @param object               $upgrader
      * @return bool|WP_Error|string
      */
-    public function verify_package_checksum($reply, $package, $upgrader) {
+    public function verify_package_checksum($reply, $package, $upgrader = null, $hook_extra = array()) {
         // Something upstream already decided, or there is nothing to check.
         if (false !== $reply || empty($package)) {
             return $reply;
         }
 
         /*
-         * Only ever interfere with our own package, from either source. While
-         * the fleet is crossing over a package may legitimately come from
-         * GitHub, and letting that one through unverified would leave the gate
-         * open on exactly the path that has no service behind it.
+         * Whose download is this?
+         *
+         * `upgrader_pre_download` fires for EVERY plugin and theme WordPress
+         * downloads, not just ours. Deciding by host alone meant that any other
+         * plugin on the site updating from github.com had its package checked
+         * against OUR release and refused, which would silently block somebody
+         * else's legitimate update and blame it on CCM Tools. WordPress passes
+         * $hook_extra['plugin'] from 6.3 onward; where it is available it is
+         * the authority on ownership.
          */
+        $named = isset($hook_extra['plugin']) ? (string) $hook_extra['plugin'] : '';
+        if ($named !== '' && $named !== $this->plugin) {
+            return $reply;   // definitely not ours
+        }
+
         $host = strtolower((string) wp_parse_url($package, PHP_URL_HOST));
         $from_service = ($host !== '' && $host === $this->service_host());
         $from_github  = ($host === 'github.com' || substr($host, -20) === 'githubusercontent.com');
 
         if (!$from_service && !$from_github) {
+            /*
+             * A host we do not recognise.
+             *
+             * This used to return $reply, which means "carry on" — so a package
+             * URL pointing anywhere at all bypassed the integrity gate
+             * completely and WordPress installed it unverified. That is
+             * arbitrary code on the site from one bad answer.
+             *
+             * When WordPress has told us this download IS ours, refuse it. When
+             * it has not said (older WordPress, or a theme), we cannot claim it
+             * without risking blocking someone else's update, so stand aside —
+             * which is safe because ccm_tools_registry_package_is_ours() has
+             * already refused to let a foreign URL become our package.
+             */
+            if ($named === $this->plugin) {
+                return new WP_Error(
+                    'ccm_package_foreign_host',
+                    __('The CCM Tools update came from an unexpected address, so it has not been installed.', 'ccm-tools')
+                );
+            }
             return $reply;
         }
 

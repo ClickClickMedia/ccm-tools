@@ -977,6 +977,10 @@ function ccm_tools_cf_auto_purge_all_action(): void {
  * for the full accounting. main.js itself is untouched.
  */
 function ccm_tools_render_cloudflare_page(): void {
+    if (!ccm_tools_user_is_admin()) {
+        wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
+    }
+
     $settings    = ccm_tools_cf_get_settings();
     $connected   = !empty($settings['connected']) && !empty($settings['zone_id']);
     $cf_detected = ccm_tools_cf_detect();

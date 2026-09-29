@@ -467,7 +467,16 @@
 
                 for (const item of group.items) {
                     const stat = getStatForOption(item.key, stats);
-                    const statClass = stat > 0 ? (riskLevel === 'high' ? 'warning' : 'has-items') : '';
+                    /*
+                     * The kit's modifiers are --good/--warn/--bad/--info. This
+                     * asked for `warning` and `has-items`, neither of which is
+                     * defined anywhere, so the count badge on the risky groups
+                     * has never actually been tinted - it rendered as a plain
+                     * chip and nothing said otherwise.
+                     */
+                    const statClass = stat > 0
+                        ? (riskLevel === 'high' ? 'ccm-chip--warn' : 'ccm-chip--info')
+                        : '';
                     const checked = item.default ? ' checked' : '';
 
                     html += `

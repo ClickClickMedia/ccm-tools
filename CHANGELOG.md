@@ -1,5 +1,40 @@
 # CCM Tools — Changelog
 
+## v8.11.4 — Security review findings
+
+Five reviewers went over the plugin, the update service and the staff console.
+What they found, and what is now fixed.
+
+- **The WebP and Cloudflare pages had no permission check at all.** Nine of the
+  eleven admin screens gated properly; those two did not. Hiding the menu is
+  not a gate — WordPress checks the capability the page was registered with,
+  which is `manage_options`, so a shop manager or client role holding that
+  capability could open either page by typing its address and read the WebP
+  settings or the Cloudflare connection state. Both gated now.
+- **A package URL from the update service was taken on trust.** The integrity
+  gate only recognises our own hosts, and on any other host it stood aside and
+  let WordPress install the file unverified. One bad answer was arbitrary code
+  on every site that took it. The URL is now refused at the boundary unless it
+  is https on the service's own hostname, so a foreign one never reaches
+  WordPress at all, and the gate itself refuses rather than standing aside.
+- **The integrity gate no longer interferes with other plugins.**
+  `upgrader_pre_download` fires for every download WordPress makes, and this
+  one judged ownership by hostname alone — so any other plugin updating from
+  GitHub had its package checked against our release, failed, and showed a
+  CCM Tools error for somebody else's software. It uses the plugin name
+  WordPress passes it.
+- **The count badges on the risky database groups were never tinted.** They
+  asked for `warning` and `has-items`, neither of which exists in the
+  stylesheet. Same silent-failure class as v8.11.3, in a shape that version's
+  new test could not see.
+
+Two tests grew to cover the blind spots that let these through. The handler
+audit now checks page callbacks, not only ajax handlers — the gap that hid the
+first finding sat between two tests, in neither one's job description. The
+modifier check now resolves a class assembled from a variable beside a
+component class, which is how the badge bug hid. Both were confirmed to fail
+against the real bugs before being kept.
+
 ## v8.11.3 — Modifiers that were never defined
 
 The Update channel panel picked its chip colour from a tone that could be

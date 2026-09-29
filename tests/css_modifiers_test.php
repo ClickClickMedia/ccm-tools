@@ -100,6 +100,65 @@ foreach ($files as $file) {
     }
 }
 
+/*
+ * A modifier does not have to be written as one token.
+ *
+ * `class="ccm-chip ${statClass}"` with statClass = 'warning' produces
+ * `class="ccm-chip warning"`, and `warning` is defined nowhere. The scan above
+ * cannot see that twice over: it is a separate token, and it carries no ccm-
+ * prefix to match on. It shipped and went unnoticed because an undefined class
+ * is silent - the count badge simply rendered untinted.
+ *
+ * So: find a class attribute that puts a template hole beside a ccm- component
+ * class, resolve that variable's literal assignments, and check each one.
+ */
+$interpolated = array();
+foreach ($files as $file) {
+    $body = (string) file_get_contents($file);
+
+    if (!preg_match_all('/class="(ccm-[a-z0-9_-]+)\s+\$\{([a-zA-Z0-9_]+)\}"/', $body, $hits, PREG_SET_ORDER)) {
+        continue;
+    }
+
+    foreach ($hits as $hit) {
+        $var = $hit[2];
+
+        // The whole assignment, so a ternary spread over several lines reads as
+        // one expression rather than being cut at the first newline.
+        if (!preg_match_all('/\b' . preg_quote($var, '/') . '\s*=([^;]*);/s', $body, $assignments)) {
+            continue;
+        }
+
+        foreach ($assignments[1] as $expression) {
+            /*
+             * Drop comparison operands before reading the literals. Without
+             * this, `riskLevel === 'high' ? 'ccm-chip--warn' : ...` reports
+             * `high` as a missing class. This test's own first run did exactly
+             * that, and a check that cries wolf is a check somebody switches
+             * off.
+             */
+            $values = preg_replace('/[!=]==?\s*[\x27"][^\x27"]*[\x27"]/', '', $expression);
+
+            if (!preg_match_all('/[\x27"]([a-zA-Z0-9_-]+)[\x27"]/', (string) $values, $vals)) {
+                continue;
+            }
+            foreach (array_unique($vals[1]) as $literal) {
+                if ($literal !== '') {
+                    $interpolated[$literal] = basename($file)
+                        . ' (via $' . $var . ' beside .' . $hit[1] . ')';
+                }
+            }
+        }
+    }
+}
+
+foreach ($interpolated as $class => $where) {
+    $checked++;
+    if (!isset($defined[$class])) {
+        $problems[$class][] = $where;
+    }
+}
+
 printf("Component modifiers\n\n  %d modifier uses checked against css/style.css\n\n", $checked);
 
 if ($problems) {

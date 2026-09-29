@@ -1390,6 +1390,10 @@ function ccm_tools_webp_library_label($ext) {
 }
 
 function ccm_tools_render_webp_page() {
+    if (!ccm_tools_user_is_admin()) {
+        wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
+    }
+
     $available      = ccm_tools_webp_is_available();
     $extensions     = ccm_tools_webp_get_available_extensions();
     $settings       = ccm_tools_webp_get_settings();
