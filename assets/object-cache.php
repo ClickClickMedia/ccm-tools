@@ -8,7 +8,7 @@
  * wp_cache_remember(), HTML footnote, KEEPTTL on incr/decr.
  * 
  * @package CCM_Tools
- * @version 8.0.0
+ * @version 8.13.7
  *
  * This file should be placed in wp-content/object-cache.php
  */
@@ -687,6 +687,107 @@ class CCM_Redis_Object_Cache {
         }
     }
 
+    /* ───── Untrusted-value guard ───── */
+
+    /**
+     * Name the serialization format a raw value's leading bytes belong to.
+     *
+     * Only used to spot bytes that disagree with the configured serializer —
+     * see is_failed_deserialization() for why that matters.
+     *
+     * @param  string $value
+     * @return string 'igbinary', 'php', or '' when the bytes match neither.
+     */
+    private function detect_encoding($value) {
+        // igbinary leads with a four-byte format version; 0x00000002 is the
+        // only one the extension has ever written.
+        if (strncmp($value, "\x00\x00\x00\x02", 4) === 0) {
+            return 'igbinary';
+        }
+
+        // A type tag *and* the length/value prefix that must follow it.
+        // Deliberately stricter than "starts with a:" — real cached strings
+        // begin that way often enough to matter.
+        if (preg_match('/^(?:a:\d+:\{|O:\d+:"|s:\d+:"|i:-?\d+;|b:[01];|d:-?(?:\d|INF|NAN)|N;)/', $value) === 1) {
+            return 'php';
+        }
+
+        return '';
+    }
+
+    /**
+     * Whether phpredis handed back raw stored bytes because it could not
+     * deserialize them.
+     *
+     * A site migrated from another object cache can hold values written under
+     * a different serializer beneath the same key salt — an Object Cache Pro
+     * salt left behind in wp-config.php is how we found this. phpredis set to
+     * igbinary does not raise on a value that isn't igbinary; it hands back
+     * the stored bytes verbatim. We then return a string to a caller that
+     * expects an array, and core's `false === $value` miss test lets it
+     * straight through: wp-includes/class-wp-textdomain-registry.php
+     * foreach()es it and warns on every request. Same family as the
+     * LZ4+igbinary corruption documented on $skip_persistent_groups, and on a
+     * large enough value it ends the same way — a multi-gigabyte allocation
+     * rather than log noise.
+     *
+     * The value alone cannot settle it: a site is perfectly entitled to cache
+     * the string 'a:3:{...}', and after a successful igbinary round-trip that
+     * comes back indistinguishable from a failed one. So the shape check is
+     * only a gate, and the verdict comes from re-reading the key with
+     * rawCommand, which bypasses OPT_SERIALIZER/OPT_COMPRESSION (the same
+     * trick ensure_config_consistency() uses). If the stored bytes are
+     * byte-for-byte what we were just handed, phpredis transformed nothing
+     * and the value is raw; if they carry an encoding header, the round-trip
+     * worked and the string is genuinely a string. The extra round trip only
+     * ever happens for a value that already failed the gate, and a value that
+     * fails both is deleted, so it is paid once and not again.
+     *
+     * @param  mixed  $value     Whatever get()/mGet() returned.
+     * @param  string $cache_key Fully built key, for the raw re-read.
+     * @return bool
+     */
+    private function is_failed_deserialization($value, $cache_key) {
+        // Anything phpredis decoded comes back as its real type, so only a
+        // string can be undecoded bytes.
+        if (!is_string($value) || $value === '') {
+            return false;
+        }
+
+        $looks_like = $this->detect_encoding($value);
+
+        // Bytes in the format we are configured for are a value that decoded
+        // to a string which happens to look encoded. Nothing to do.
+        if ($looks_like === '' || $looks_like === $this->serializer) {
+            return false;
+        }
+
+        $raw = $this->redis_call(function ($r) use ($cache_key) {
+            return $r->rawCommand('GET', $cache_key);
+        });
+
+        return is_string($raw) && $raw === $value;
+    }
+
+    /**
+     * Account for an untrusted value as a miss and drop the key.
+     *
+     * Deleting is what makes this self-healing: WordPress regenerates the
+     * value, the next set() writes it in the configured format, and the key
+     * stops costing a wasted round trip on every request for the rest of its
+     * TTL. The salted key is kept out of the message — the group and key
+     * identify it well enough for a log.
+     */
+    private function discard_untrusted($key, $group) {
+        $this->track_error(
+            "{$group}:{$key} came back as raw undeserialized bytes (serializer={$this->serializer})"
+                . ' — treating as a cache miss and dropping the key'
+        );
+
+        $this->delete($key, $group);
+        $this->stats['misses']++;
+    }
+
     /* ───── Key building ───── */
 
     private function build_key($key, $group = 'default') {
@@ -899,6 +1000,16 @@ class CCM_Redis_Object_Cache {
             });
 
             if ($value !== false) {
+                // Bytes we could not decode are not a value — see
+                // is_failed_deserialization(). Must come first: a poisoned
+                // blob can satisfy every check below while still being a
+                // string core will foreach() over.
+                if ($this->is_failed_deserialization($value, $cache_key)) {
+                    $this->discard_untrusted($key, $group);
+                    $found = false;
+                    return false;
+                }
+
                 // Belt-and-braces (defends sites that set WP_REDIS_PERSIST_OPTIONS):
                 // the options group must round-trip as arrays. A corrupt blob can
                 // decode to a scalar/garbage whose serialized length prefix triggers
@@ -957,6 +1068,15 @@ class CCM_Redis_Object_Cache {
             $i = 0;
             foreach (array_keys($fetch_keys) as $key) {
                 if (is_array($values) && $values[$i] !== false) {
+                    // mGet decodes with the same OPT_SERIALIZER as get(), so it
+                    // hands back the same undecodable bytes on the same keys.
+                    if ($this->is_failed_deserialization($values[$i], $fetch_keys[$key])) {
+                        $this->discard_untrusted($key, $group);
+                        $results[$key] = false;
+                        $i++;
+                        continue;
+                    }
+
                     $this->stats['hits']++;
                     $this->cache[$group][$key] = $values[$i];
                     $results[$key] = is_object($values[$i]) ? clone $values[$i] : $values[$i];

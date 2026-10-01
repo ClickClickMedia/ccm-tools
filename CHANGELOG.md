@@ -1,5 +1,44 @@
 # CCM Tools — Changelog
 
+## v8.13.7 — The object cache stops handing WordPress bytes it could not read
+
+A site that has ever run a different object cache can hold values written
+under a different serializer beneath the same key salt. phpredis set to
+igbinary does not raise on a value that is not igbinary — it hands back the
+stored bytes verbatim. The drop-in passed them straight to WordPress, and core
+only treats `false` as a miss, so a string reached code expecting an array:
+
+    PHP Warning: foreach() argument must be of type array|object, string given
+    in wp-includes/class-wp-textdomain-registry.php on line 324
+
+Found on a live site whose `wp-config.php` still carries an Object Cache Pro
+key salt. On a small array it is log noise. On a large one it is the same
+failure that once had workers trying to allocate gigabytes.
+
+- **A value the drop-in cannot trust is now a cache miss.** WordPress
+  regenerates it, the next write stores it in the right format, and the
+  poisoned key is dropped so it stops costing a round trip. Self-healing
+  rather than a warning on every request.
+- **Shape is only a gate, never the verdict.** A site is perfectly entitled to
+  cache the string `a:3:{...}`, which after a successful round-trip looks
+  identical to a failed one. The decision comes from re-reading the key with
+  `rawCommand`, which bypasses the serializer: if the stored bytes are exactly
+  what we were handed, nothing was decoded. That read only happens for a value
+  that already looks wrong, and the key is deleted, so it is paid once.
+- Applied to `get()` and to `get_multiple()`, which decodes the same way and
+  would otherwise return the same bad bytes.
+- If the raw re-read is unavailable the value is **kept**. The guard goes
+  quiet rather than discarding on no evidence.
+
+The existing sentinel did not catch this, and could not: it stamps the
+encoding *we* are configured for and flushes when that changes. Here nothing
+of ours ever changed — the bad keys were written by software that is no longer
+installed.
+
+The drop-in's own `@version` is bumped to 8.13.7. That is load-bearing: the
+bundled copy is only written over a deployed one when it is strictly newer, so
+without it this fix would have shipped in the package and reached no site.
+
 ## v8.13.6 — Running the newest PHP is not a fault
 
 Site Health grades PHP against a hard-coded table of end-of-life dates, and
