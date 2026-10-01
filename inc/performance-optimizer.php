@@ -2692,7 +2692,7 @@ function ccm_tools_render_perf_page() {
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </span>
-                    <button type="button" id="save-perf-settings" class="ccm-button ccm-button-primary">
+                    <button type="button" id="save-perf-settings" class="ccm-button ccm-button-primary ccm-savebar__proxy">
                         <?php _e('Save settings', 'ccm-tools'); ?>
                     </button>
                 </div>

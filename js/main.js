@@ -337,7 +337,26 @@
             clearTimeout(timeoutId);
             
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                /*
+                 * Say what the status actually means. "HTTP error! status: 403"
+                 * is true and useless: a 403 from admin-ajax is almost always
+                 * check_ajax_referer() refusing a nonce that has expired, which
+                 * the person reading it can fix in one reload. Leaving them to
+                 * guess turned a stale tab into a reported bug.
+                 */
+                if (response.status === 403) {
+                    throw new Error(
+                        'This page has been open too long and its security token has expired. ' +
+                        'Reload the page and try again — your changes are still on screen until you do.'
+                    );
+                }
+                if (response.status === 0 || response.status >= 500) {
+                    throw new Error(
+                        `The server did not complete the request (HTTP ${response.status}). ` +
+                        'Nothing was saved. Try again in a moment.'
+                    );
+                }
+                throw new Error(`The request was refused (HTTP ${response.status}).`);
             }
             
             const result = await response.json();

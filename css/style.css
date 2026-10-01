@@ -1671,39 +1671,6 @@ tr.ccm-front-page-row {
 }
 
 /* Stats Grid */
-.ccm-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--ccm-space-md);
-    margin-bottom: var(--ccm-space-lg);
-}
-
-.ccm-stats-grid-2 {
-    grid-template-columns: repeat(2, 1fr);
-    max-width: 500px;
-}
-
-.ccm-stat-box {
-    background: var(--ccm-bg);
-    padding: var(--ccm-space-lg);
-    border-radius: var(--ccm-radius-lg);
-    text-align: center;
-    border: 1px solid var(--ccm-border);
-}
-
-.ccm-stat-value {
-    display: block;
-    font-size: var(--ccm-text-2xl);
-    font-weight: 700;
-    margin-bottom: var(--ccm-space-xs);
-}
-
-.ccm-stat-label {
-    display: block;
-    font-size: var(--ccm-text-sm);
-    color: var(--ccm-text-muted);
-}
-
 .ccm-size-comparison {
     padding: var(--ccm-space-md);
     background: var(--ccm-bg);
@@ -2409,17 +2376,6 @@ tr.ccm-front-page-row {
 }
 
 /* Stats boxes color variants */
-.ccm-stat-value.ccm-success {
-    color: var(--ccm-success);
-}
-
-.ccm-stat-value.ccm-warning {
-    color: var(--ccm-warning);
-}
-
-.ccm-stat-value.ccm-error {
-    color: var(--ccm-error);
-}
 
 /* ── Cloudflare Zone Settings Controls ────────────────────────── */
 .ccm-cf-select {
@@ -2874,6 +2830,7 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
 }
 
 .ccm-stat-tile__value--brand { color: var(--ccm-primary); }
+
 
 .ccm-stat-tile__value small {
     font-size: 0.95rem;
@@ -4835,4 +4792,84 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 @media (max-width: 600px) {
     .ccm-slider__range { width: 8rem; }
+}
+
+/* The save bar's proxy target.
+   The bar does not know how to save: it clicks the page's own save button, so
+   that button has to exist. It does not have to be SEEN, and having both meant
+   two Save controls on one screen with the floating one as the only reliable
+   one. Hidden, not removed: HTMLElement.click() fires on a display:none
+   element, so the bar still works exactly as before. */
+.ccm-savebar__proxy { display: none !important; }
+
+
+/* ── Focused control ───────────────────────────────────────────
+   Marks the one setting somebody was sent here to change, from a link on the
+   health page. Two seconds of obvious, then gone: long enough to find it,
+   short enough not to live on the page. */
+
+.ccm-focus {
+    animation: ccm-focus-pulse 2.6s var(--ccm-ease-settle, ease) 1;
+    border-radius: var(--ccm-radius);
+}
+
+@keyframes ccm-focus-pulse {
+    0%, 70% {
+        background: color-mix(in srgb, var(--ccm-brand-raw) 16%, transparent);
+        box-shadow: 0 0 0 2px var(--ccm-brand-raw);
+    }
+    100% {
+        background: transparent;
+        box-shadow: 0 0 0 0 transparent;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* No pulse, but still say which one. */
+    .ccm-focus {
+        animation: none;
+        background: color-mix(in srgb, var(--ccm-brand-raw) 16%, transparent);
+        box-shadow: 0 0 0 2px var(--ccm-brand-raw);
+    }
+}
+
+/* ── Health check row ──────────────────────────────────────────
+   A check reuses .ccm-opt, because it IS the same shape as a settings row:
+   label, one line of explanation, and something on the right. What sits on
+   the right is the answer plus the way to act on it. */
+
+.ccm-check__right {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ccm-space-md);
+    flex: 0 0 auto;
+}
+
+.ccm-check__value {
+    font-size: var(--ccm-text-sm);
+    font-weight: 650;
+    color: var(--ccm-text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ccm-opt__label .ccm-dot { margin-right: 0.4rem; vertical-align: middle; }
+
+@media (max-width: 700px) {
+    /* Stack rather than squeeze the answer and its button off the edge. */
+    .ccm-check__right {
+        width: 100%;
+        justify-content: space-between;
+        margin-top: var(--ccm-space-sm);
+    }
+}
+
+/* ── A run in the log ──────────────────────────────────────────
+   Each row opens that run, so it has to look like it does something. */
+
+.sh-run { cursor: pointer; }
+.sh-run:hover td { background: color-mix(in srgb, var(--ccm-brand-raw) 8%, transparent); }
+.sh-run:focus-visible {
+    outline: 2px solid var(--ccm-brand-raw);
+    outline-offset: -2px;
 }

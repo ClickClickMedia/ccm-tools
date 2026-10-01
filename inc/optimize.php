@@ -1733,6 +1733,132 @@ function ccm_tools_optimization_clean_orphaned_relationships() {
 }
 
 /**
+ * The database overview, for the dashboard at the top of the Database page.
+ *
+ * The page used to open with a list of cleanup tasks and nothing else, so the
+ * only question it could answer was "is there anything to tick". It could not
+ * answer "what is actually in here", which is the question you have before you
+ * decide whether any of it is worth running.
+ *
+ * Everything here is one pass over information_schema plus two counts, so it
+ * costs about the same as the task list it sits above.
+ *
+ * @return array
+ */
+function ccm_tools_db_overview(): array {
+    global $wpdb;
+
+    $out = array(
+        'size_bytes'     => 0,
+        'overhead_bytes' => 0,
+        'rows'           => 0,
+        'tables'         => 0,
+        'engines'        => array(),
+        'collations'     => array(),
+        'largest'        => array(),
+        'autoload_bytes' => 0,
+        'autoload_count' => 0,
+        'prefix'         => $wpdb->prefix,
+        'server'         => '',
+    );
+
+    $version = $wpdb->get_var('SELECT VERSION()');
+    $out['server'] = is_string($version) ? $version : '';
+
+    /*
+     * One query for every table in this schema. DATA_FREE is the reclaimable
+     * space OPTIMIZE would return; on InnoDB without file-per-table it is
+     * reported against the shared tablespace and is not meaningful per table,
+     * which is why the fragmentation check elsewhere uses a ratio rather than
+     * a raw figure.
+     */
+    $tables = $wpdb->get_results(
+        "SELECT TABLE_NAME, ENGINE, TABLE_COLLATION, TABLE_ROWS,
+                (DATA_LENGTH + INDEX_LENGTH) AS total_bytes,
+                DATA_FREE AS free_bytes
+           FROM information_schema.TABLES
+          WHERE TABLE_SCHEMA = DATABASE()
+          ORDER BY total_bytes DESC"
+    );
+
+    if (!is_array($tables)) {
+        return $out;
+    }
+
+    foreach ($tables as $t) {
+        $out['tables']++;
+        $out['size_bytes']     += (int) $t->total_bytes;
+        $out['overhead_bytes'] += (int) $t->free_bytes;
+        $out['rows']           += (int) $t->TABLE_ROWS;
+
+        $engine = $t->ENGINE ? $t->ENGINE : 'unknown';
+        $out['engines'][$engine] = isset($out['engines'][$engine]) ? $out['engines'][$engine] + 1 : 1;
+
+        $collation = $t->TABLE_COLLATION ? $t->TABLE_COLLATION : 'unknown';
+        $out['collations'][$collation] = isset($out['collations'][$collation])
+            ? $out['collations'][$collation] + 1
+            : 1;
+
+        if (count($out['largest']) < 8) {
+            $out['largest'][] = array(
+                'name'      => (string) $t->TABLE_NAME,
+                'bytes'     => (int) $t->total_bytes,
+                'free'      => (int) $t->free_bytes,
+                'rows'      => (int) $t->TABLE_ROWS,
+                'engine'    => $engine,
+                'collation' => $collation,
+                // A table outside this install's prefix belongs to something
+                // else sharing the database, and is not ours to tidy.
+                'foreign'   => strpos((string) $t->TABLE_NAME, $wpdb->prefix) !== 0,
+            );
+        }
+    }
+
+    /*
+     * Autoloaded options. Every one of these is read on EVERY request, so this
+     * is the single number on the page that costs something on every page view
+     * rather than only when somebody looks. Anything over about 800KB is worth
+     * investigating; a megabyte of autoload is a measurable slowdown on every
+     * request the site serves.
+     */
+    $autoload = $wpdb->get_row(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(option_value)), 0) AS bytes
+           FROM {$wpdb->options}
+          WHERE autoload IN ('yes', 'on')"
+    );
+    if ($autoload) {
+        $out['autoload_count'] = (int) $autoload->n;
+        $out['autoload_bytes'] = (int) $autoload->bytes;
+    }
+
+    return $out;
+}
+
+/**
+ * The biggest autoloaded options, which is what you actually act on once the
+ * total looks wrong.
+ *
+ * @param int $limit
+ * @return array
+ */
+function ccm_tools_db_autoload_worst(int $limit = 5): array {
+    global $wpdb;
+
+    $rows = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT option_name, LENGTH(option_value) AS bytes
+               FROM {$wpdb->options}
+              WHERE autoload IN ('yes', 'on')
+              ORDER BY bytes DESC
+              LIMIT %d",
+            $limit
+        )
+    );
+
+    return is_array($rows) ? $rows : array();
+}
+
+/**
  * Get database statistics for optimization preview
  */
 function ccm_tools_get_optimization_stats() {

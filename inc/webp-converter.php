@@ -1657,7 +1657,7 @@ function ccm_tools_render_webp_page() {
                 </section>
 
                 <div class="ccm-row" style="margin-top: var(--ccm-space-md);">
-                    <button type="submit" id="save-webp-settings" class="ccm-button ccm-button-primary">
+                    <button type="submit" id="save-webp-settings" class="ccm-button ccm-button-primary ccm-savebar__proxy">
                         <?php _e('Save settings', 'ccm-tools'); ?>
                     </button>
                 </div>

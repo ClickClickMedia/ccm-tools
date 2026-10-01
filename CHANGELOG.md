@@ -1,5 +1,45 @@
 # CCM Tools — Changelog
 
+## v8.12.0 — Site Health is about the site now
+
+That page was a PageSpeed score with a nav tab. A PageSpeed score measures one
+page, on one run, from Google's machine, and it can read 98 on a site with no
+object cache, MyISAM tables and a PHP version that stopped getting security
+fixes two years ago. Meanwhile the plugin already knew all of that and showed
+it nowhere you could see it together.
+
+- **Twelve checks across caching, front end, database and platform**, each with
+  what is true, whether that is good, and a button straight to the control that
+  changes it. PageSpeed is one input among them rather than the whole page.
+- **Weighted overall score.** "Off" counts as a miss rather than being skipped:
+  a site with no object cache is not neutral on caching, it is paying for every
+  query twice.
+- **Links land on the setting, not the page.** The target screen opens whatever
+  the control is folded inside, scrolls it to the middle, highlights it for a
+  couple of seconds and puts keyboard focus on it. Telling somebody something
+  is wrong and dropping them at the top of a sixty-row settings page is half an
+  answer.
+- **A run in the log can be opened.** Runs now keep what they found, not only
+  their four scores, so you can reopen March and see what was blamed rather
+  than only that performance fell eleven points. Detail is kept for the twenty
+  most recent runs per device and scores for all two hundred, because the trend
+  line wants many points and reopening only ever asks about recent ones.
+- **A loud banner while an old run is showing**, because the scores and
+  findings look identical either way, and acting on last month's report is the
+  obvious way for this to mislead.
+- The neutral dot on the "running a test" banner is gone. There is already a
+  spinner in that message; a grey circle beside it was decoration pretending to
+  be status.
+
+Also: the stored PageSpeed report is no longer autoloaded. It is one of the
+larger things this plugin writes and it is read on one admin screen, which is
+exactly what the new autoload check on this page warns about.
+
+`tests/health_links_test.php` checks every deep link resolves to a page and an
+element that actually exists. A dead anchor fails silently — the page loads,
+nothing scrolls, and it looks like a link that simply went to the right place.
+Two of the first six written were wrong that way.
+
 ## v8.11.4 — Security review findings
 
 Five reviewers went over the plugin, the update service and the staff console.

@@ -27,6 +27,16 @@ if (!defined('CCM_TOOLS_PSI_ENDPOINT')) {
  * How many past runs to keep per strategy. Only the scores and a timestamp are
  * stored per run, a few dozen bytes, so this can afford to be generous.
  */
+/** How many recent runs per strategy keep their full findings. */
+if (!defined('CCM_TOOLS_SH_DETAIL_RUNS')) {
+    define('CCM_TOOLS_SH_DETAIL_RUNS', 20);
+}
+
+/** How many findings are kept for one run. */
+if (!defined('CCM_TOOLS_SH_DETAIL_FINDINGS')) {
+    define('CCM_TOOLS_SH_DETAIL_FINDINGS', 8);
+}
+
 if (!defined('CCM_TOOLS_SH_HISTORY_MAX')) {
     define('CCM_TOOLS_SH_HISTORY_MAX', 200);
 }
@@ -62,7 +72,9 @@ function ccm_tools_sh_save_settings(array $settings): bool {
         'api_key'  => isset($settings['api_key']) ? trim(sanitize_text_field($settings['api_key'])) : $current['api_key'],
         'last_url' => isset($settings['last_url']) ? esc_url_raw($settings['last_url']) : $current['last_url'],
     );
-    return update_option('ccm_tools_site_health', $clean);
+    // Not autoloaded: a full report is one of the biggest things this plugin
+    // stores, and it is read on one admin screen, not on every request.
+    return update_option('ccm_tools_site_health', $clean, false);
 }
 
 /**
@@ -503,11 +515,38 @@ function ccm_tools_sh_record(array $report): void {
         $history = array();
     }
 
+    /*
+     * Keep what the run actually found, not only its four numbers.
+     *
+     * The history existed to draw a trend line, so scores were all it kept and
+     * a past run could not be reopened - you could see that performance fell
+     * eleven points in March and never what was blamed for it.
+     *
+     * Trimmed on the way in: the top findings only, and without the suggestion
+     * block, which is derived from the audit id and is rebuilt at render time
+     * rather than stored hundreds of times over.
+     */
+    $findings = array();
+    if (!empty($report['findings']) && is_array($report['findings'])) {
+        foreach (array_slice($report['findings'], 0, CCM_TOOLS_SH_DETAIL_FINDINGS) as $f) {
+            $findings[] = array(
+                'id'            => (string) ($f['id'] ?? ''),
+                'title'         => (string) ($f['title'] ?? ''),
+                'display'       => (string) ($f['display'] ?? ''),
+                'savings_ms'    => (int) ($f['savings_ms'] ?? 0),
+                'savings_bytes' => (int) ($f['savings_bytes'] ?? 0),
+                'score'         => (float) ($f['score'] ?? 0),
+            );
+        }
+    }
+
     $history[] = array(
-        'at'       => (int) $report['fetched_at'],
-        'strategy' => (string) $report['strategy'],
-        'url'      => (string) $report['url'],
-        'scores'   => isset($report['scores']) ? array_map('intval', $report['scores']) : array(),
+        'at'         => (int) $report['fetched_at'],
+        'strategy'   => (string) $report['strategy'],
+        'url'        => (string) $report['url'],
+        'scores'     => isset($report['scores']) ? array_map('intval', $report['scores']) : array(),
+        'findings'   => $findings,
+        'field_data' => isset($report['field_data']) && is_array($report['field_data']) ? $report['field_data'] : array(),
     );
 
     // Keep the newest N per strategy.
@@ -516,10 +555,25 @@ function ccm_tools_sh_record(array $report): void {
         $key = (isset($row['strategy']) && $row['strategy'] === 'desktop') ? 'desktop' : 'mobile';
         $by_strategy[$key][] = $row;
     }
+    /*
+     * Two different retentions, because the two uses want different things.
+     * The trend line wants as many points as possible and only needs four
+     * integers each. Reopening a run wants everything, and is only ever asked
+     * about recent ones. Keeping full detail on all 200 per strategy would put
+     * several megabytes in one option row.
+     */
     $trimmed = array();
     foreach ($by_strategy as $rows) {
         $rows = array_slice($rows, -CCM_TOOLS_SH_HISTORY_MAX);
-        $trimmed = array_merge($trimmed, $rows);
+
+        $keep_detail_from = count($rows) - CCM_TOOLS_SH_DETAIL_RUNS;
+        foreach ($rows as $i => $row) {
+            if ($i < $keep_detail_from) {
+                unset($rows[$i]['findings'], $rows[$i]['field_data']);
+            }
+        }
+
+        $trimmed = array_merge($trimmed, array_values($rows));
     }
     usort($trimmed, function ($a, $b) {
         return ((int) $a['at']) <=> ((int) $b['at']);
@@ -823,6 +877,140 @@ function ccm_tools_render_site_health_page(): void {
             </div>
 
             <div id="sh-status" role="status" aria-live="polite"></div>
+
+            <?php
+            /*
+             * Says loudly when the page is showing an old run rather than the
+             * current state of the site, because the scores and findings above
+             * look identical either way and acting on last month's report is
+             * the obvious way for this feature to mislead.
+             */
+            ?>
+            <div id="sh-viewing" class="ccm-hide"></div>
+
+            <!-- At a glance -->
+            <?php
+            /*
+             * The health of everything this plugin touches, before the speed
+             * test. A PageSpeed score measures one page on one run; it is an
+             * input to site health, not a definition of it, and it used to be
+             * the whole page.
+             *
+             * Bare grid under the hero, the same as Redis and Database.
+             */
+            $report = function_exists('ccm_tools_health_report') ? ccm_tools_health_report() : null;
+            if ($report) :
+                $grade_dot = 'ccm-dot-' . ($report['grade'] === 'good' ? 'ok' : ($report['grade'] === 'warn' ? 'warn' : 'bad'));
+                $needs = (int) $report['counts']['bad'] + (int) $report['counts']['warn'] + (int) $report['counts']['off'];
+            ?>
+            <div class="ccm-stat-grid">
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value ccm-stat-tile__value--brand"><?php echo esc_html(number_format_i18n($report['score'])); ?><small>%</small></div>
+                    <div class="ccm-stat-tile__label"><?php _e('Overall health', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub">
+                        <span class="ccm-dot <?php echo esc_attr($grade_dot); ?>"></span>
+                        <?php _e('Weighted across every check below', 'ccm-tools'); ?>
+                    </div>
+                </div>
+
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n($report['counts']['good'])); ?></div>
+                    <div class="ccm-stat-tile__label"><?php _e('Healthy', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub"><?php _e('Nothing to do here', 'ccm-tools'); ?></div>
+                </div>
+
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n($needs)); ?></div>
+                    <div class="ccm-stat-tile__label"><?php _e('Worth a look', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub">
+                        <span class="ccm-dot <?php echo $needs > 0 ? 'ccm-dot-warn' : 'ccm-dot-ok'; ?>"></span>
+                        <?php echo $needs > 0
+                            ? esc_html__('Each one links to its setting', 'ccm-tools')
+                            : esc_html__('Everything checked is in order', 'ccm-tools'); ?>
+                    </div>
+                </div>
+
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value" id="sh-tile-perf">
+                        <?php echo $last && isset($last['scores']['performance'])
+                            ? esc_html(number_format_i18n((int) $last['scores']['performance']))
+                            : '&mdash;'; ?>
+                    </div>
+                    <div class="ccm-stat-tile__label"><?php _e('PageSpeed', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub">
+                        <?php echo $last
+                            ? esc_html(sprintf(
+                                /* translators: %s: how long ago, e.g. "2 hours" */
+                                __('Tested %s ago', 'ccm-tools'),
+                                human_time_diff((int) ($last['at'] ?? time()), time())
+                            ))
+                            : esc_html__('Not tested yet', 'ccm-tools'); ?>
+                    </div>
+                </div>
+            </div>
+
+            <p class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin-top: calc(-1 * var(--ccm-space-md)); margin-bottom: var(--ccm-space-lg);">
+                <?php _e('Measured now from this site, except the PageSpeed figure, which is whatever Google last reported.', 'ccm-tools'); ?>
+            </p>
+
+            <?php foreach ($report['groups'] as $key => $group) :
+                if (empty($group['checks'])) { continue; }
+            ?>
+                <section class="ccm-optgroup">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php echo esc_html($group['name']); ?></h2>
+                        </div>
+                        <?php
+                        $group_bad = 0;
+                        foreach ($group['checks'] as $c) {
+                            if ($c['status'] === 'bad' || $c['status'] === 'warn' || $c['status'] === 'off') { $group_bad++; }
+                        }
+                        ?>
+                        <span class="ccm-chip ccm-chip--<?php echo $group_bad > 0 ? 'warn' : 'good'; ?>">
+                            <?php echo $group_bad > 0
+                                ? esc_html(sprintf(
+                                    /* translators: %s: count */
+                                    _n('%s to look at', '%s to look at', $group_bad, 'ccm-tools'),
+                                    number_format_i18n($group_bad)
+                                ))
+                                : esc_html__('All good', 'ccm-tools'); ?>
+                        </span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <?php foreach ($group['checks'] as $check) :
+                            $dot = 'ccm-dot-ok';
+                            if ($check['status'] === 'warn' || $check['status'] === 'off') { $dot = 'ccm-dot-warn'; }
+                            if ($check['status'] === 'bad') { $dot = 'ccm-dot-bad'; }
+                            if ($check['status'] === 'info') { $dot = ''; }
+                        ?>
+                            <div class="ccm-opt" id="sh-check-<?php echo esc_attr($check['id']); ?>">
+                                <div class="ccm-opt__main">
+                                    <div class="ccm-opt__text">
+                                        <span class="ccm-opt__label">
+                                            <?php if ($dot !== '') : ?>
+                                                <span class="ccm-dot <?php echo esc_attr($dot); ?>"></span>
+                                            <?php endif; ?>
+                                            <?php echo esc_html($check['label']); ?>
+                                        </span>
+                                        <p class="ccm-opt__desc"><?php echo esc_html($check['detail']); ?></p>
+                                    </div>
+                                    <span class="ccm-check__right">
+                                        <span class="ccm-check__value"><?php echo esc_html($check['value']); ?></span>
+                                        <?php if (!empty($check['link']['url'])) : ?>
+                                            <a class="ccm-button ccm-button-secondary ccm-button-small"
+                                               href="<?php echo esc_url($check['link']['url']); ?>">
+                                                <?php echo esc_html($check['link']['label']); ?>
+                                            </a>
+                                        <?php endif; ?>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+            <?php endforeach; ?>
+            <?php endif; ?>
 
             <?php if (!$has_key) : ?>
                 <div class="ccm-empty" id="sh-nokey">

@@ -686,11 +686,79 @@
         });
     }
 
+    // ── Focus a control somebody was sent to ────────────────────
+    //
+    // The health page links straight at individual settings, as
+    // `...page=ccm-tools-redis#ccm-focus-redis-enable`. Telling somebody a
+    // setting is wrong and then dropping them at the top of a sixty-row
+    // settings screen is half an answer, so the target page finds the control,
+    // opens whatever it is folded inside, scrolls to it and marks it.
+    //
+    // The prefix matters: a bare `#redis-enable` would make the browser do its
+    // own jump before any of this runs, landing the element under the sticky
+    // header with no indication of why. `#ccm-focus-` means nothing to the
+    // browser, so the page stays where it is until this positions it properly.
+
+    var FOCUS_PREFIX = '#ccm-focus-';
+
+    function focusTarget(id, attempt) {
+        var el = document.getElementById(id);
+
+        if (!el) {
+            /*
+             * Several of these lists are rendered by JavaScript after their
+             * counts come back, so the element genuinely does not exist yet on
+             * first look. Try again a few times rather than giving up and
+             * leaving the link looking broken.
+             */
+            if ((attempt || 0) < 20) {
+                window.setTimeout(function () { focusTarget(id, (attempt || 0) + 1); }, 150);
+            }
+            return;
+        }
+
+        // Open anything it is folded inside, or we scroll to a closed box.
+        var node = el;
+        while (node && node !== document.body) {
+            if (node.tagName === 'DETAILS') { node.open = true; }
+            node = node.parentElement;
+        }
+
+        // Mark the row rather than the input itself where there is one: a
+        // highlighted checkbox is nearly invisible, a highlighted row is not.
+        var mark = el.closest('.ccm-opt, .ccm-optfield, .ccm-stat-tile, tr, .ccm-optgroup') || el;
+
+        var reduce = window.matchMedia
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        mark.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+
+        mark.classList.add('ccm-focus');
+        window.setTimeout(function () { mark.classList.remove('ccm-focus'); }, 2600);
+
+        // Put keyboard focus on the control too, so the next keystroke acts on
+        // the thing the person was sent here to change.
+        if (typeof el.focus === 'function') {
+            try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+        }
+    }
+
+    function initFocusTarget() {
+        if (window.location.hash.indexOf(FOCUS_PREFIX) !== 0) {
+            return;
+        }
+        var id = window.location.hash.slice(FOCUS_PREFIX.length);
+        if (id) {
+            focusTarget(id, 0);
+        }
+    }
+
     // ── Boot ────────────────────────────────────────────────────
 
     function init() {
         initThemeToggle();
         initSliders(document);
+        initFocusTarget();
         initSaveBar();
         initActionBar();
         upgradeAll(document);

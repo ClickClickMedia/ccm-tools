@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.11.4
+ * Version: 8.12.0
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.11.4');
+    define('CCM_HELPER_VERSION', '8.12.0');
 }
 
 /**
@@ -484,6 +484,7 @@ function ccm_initialize_plugin() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/performance-optimizer.php';
     require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php'; // Add Redis Object Cache
     require_once CCM_HELPER_ROOT_DIR . 'inc/cloudflare.php'; // Cloudflare integration
+    require_once CCM_HELPER_ROOT_DIR . 'inc/health.php';       // Whole-site health checks
     require_once CCM_HELPER_ROOT_DIR . 'inc/site-health.php'; // PageSpeed Insights reporting
     
     // Initialize plugin settings
@@ -1611,6 +1612,174 @@ class CCMSettings {
                  */
                 ?>
                 <div id="optimization-results" class="ccm-result-box" style="display: none;"></div>
+
+                <!-- At a glance -->
+                <?php
+                /*
+                 * The state of the database, before the list of things you
+                 * could do to it.
+                 *
+                 * Bare, directly under the hero, exactly as the Redis page does
+                 * it: a stat grid, then one muted caption line pulled up tight
+                 * beneath. Two earlier attempts got this wrong - the first
+                 * invented its own stat component, the second used the right
+                 * tiles but wrapped them in a card, which no other page does.
+                 * Tone lives in a dot on the sub line, not in a coloured
+                 * number, for the same reason.
+                 */
+                $overview = function_exists('ccm_tools_db_overview') ? ccm_tools_db_overview() : null;
+                if ($overview) :
+                    $fmt = static function ($bytes) {
+                        return function_exists('size_format') ? size_format((int) $bytes, 1) : (int) $bytes . ' B';
+                    };
+
+                    $myisam = 0;
+                    foreach ($overview['engines'] as $engine => $n) {
+                        if (strtoupper((string) $engine) !== 'INNODB') { $myisam += (int) $n; }
+                    }
+
+                    // Every autoloaded option is read on every request, so this
+                    // is the one figure here that costs on each page view
+                    // rather than only when somebody opens this screen. The
+                    // bands are a judgement call: past a megabyte it is a
+                    // measurable drag on every request the site serves.
+                    $autoload_kb  = $overview['autoload_bytes'] / 1024;
+                    $autoload_dot = $autoload_kb > 1024 ? 'ccm-dot-bad'
+                                  : ($autoload_kb > 512 ? 'ccm-dot-warn' : 'ccm-dot-ok');
+                    $overhead_dot = $overview['overhead_bytes'] > 0 ? 'ccm-dot-warn' : 'ccm-dot-ok';
+                    $engine_dot   = $myisam > 0 ? 'ccm-dot-warn' : 'ccm-dot-ok';
+                ?>
+                <div class="ccm-stat-grid">
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value ccm-stat-tile__value--brand"><?php echo esc_html($fmt($overview['size_bytes'])); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Total size', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <?php printf(
+                                esc_html(_n('%s table', '%s tables', (int) $overview['tables'], 'ccm-tools')),
+                                esc_html(number_format_i18n($overview['tables']))
+                            ); ?>
+                        </div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n($overview['rows'])); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Rows', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub"><?php _e('Estimated, from table statistics', 'ccm-tools'); ?></div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html($fmt($overview['overhead_bytes'])); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Reclaimable', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo esc_attr($overhead_dot); ?>"></span>
+                            <?php echo $overview['overhead_bytes'] > 0
+                                ? esc_html__('Returned by Optimise tables', 'ccm-tools')
+                                : esc_html__('Nothing to reclaim', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value"><?php echo esc_html($fmt($overview['autoload_bytes'])); ?></div>
+                        <div class="ccm-stat-tile__label"><?php _e('Autoloaded options', 'ccm-tools'); ?></div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo esc_attr($autoload_dot); ?>"></span>
+                            <?php printf(
+                                /* translators: %s: number of autoloaded options */
+                                esc_html__('%s of them, read on every request', 'ccm-tools'),
+                                esc_html(number_format_i18n($overview['autoload_count']))
+                            ); ?>
+                        </div>
+                    </div>
+
+                    <div class="ccm-stat-tile">
+                        <div class="ccm-stat-tile__value">
+                            <?php echo $myisam > 0
+                                ? esc_html(number_format_i18n($myisam))
+                                : esc_html__('All', 'ccm-tools'); ?>
+                        </div>
+                        <div class="ccm-stat-tile__label">
+                            <?php echo $myisam > 0
+                                ? esc_html__('Not on InnoDB', 'ccm-tools')
+                                : esc_html__('On InnoDB', 'ccm-tools'); ?>
+                        </div>
+                        <div class="ccm-stat-tile__sub">
+                            <span class="ccm-dot <?php echo esc_attr($engine_dot); ?>"></span>
+                            <?php echo $myisam > 0
+                                ? esc_html__('MyISAM locks the whole table on write', 'ccm-tools')
+                                : esc_html__('Row-level locking throughout', 'ccm-tools'); ?>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin-top: calc(-1 * var(--ccm-space-md)); margin-bottom: var(--ccm-space-lg);">
+                    <?php printf(
+                        /* translators: 1: server version, 2: table prefix */
+                        esc_html__('Measured now on %1$s — this install uses the prefix %2$s', 'ccm-tools'),
+                        esc_html($overview['server'] ?: 'this server'),
+                        '<code>' . esc_html($overview['prefix']) . '</code>'
+                    ); ?>
+                </p>
+
+                <?php if ($autoload_kb > 512) : ?>
+                    <div class="ccm-alert ccm-alert--<?php echo $autoload_kb > 1024 ? 'bad' : 'warn'; ?>" style="margin-bottom: var(--ccm-space-lg);">
+                        <span class="ccm-dot ccm-dot-<?php echo $autoload_kb > 1024 ? 'bad' : 'warn'; ?>"></span>
+                        <div>
+                            <strong><?php printf(
+                                /* translators: %s: formatted size */
+                                esc_html__('%s of options are autoloaded.', 'ccm-tools'),
+                                esc_html($fmt($overview['autoload_bytes']))
+                            ); ?></strong>
+                            <?php _e('That is read from the database on every request this site serves, before anything is rendered. The usual cause is a plugin storing a large value with autoload on, often one that has since been removed.', 'ccm-tools'); ?>
+                            <?php
+                            $worst = function_exists('ccm_tools_db_autoload_worst') ? ccm_tools_db_autoload_worst(3) : array();
+                            if ($worst) :
+                                $bits = array();
+                                foreach ($worst as $w) {
+                                    $bits[] = '<code>' . esc_html($w->option_name) . '</code> ' . esc_html($fmt($w->bytes));
+                                }
+                            ?>
+                                <br><?php _e('Largest:', 'ccm-tools'); ?> <?php echo implode(', ', $bits); // parts escaped above ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <details class="ccm-disclose" style="margin-bottom: var(--ccm-space-lg);">
+                    <summary><?php _e('Largest tables', 'ccm-tools'); ?></summary>
+                    <table class="ccm-table">
+                        <thead>
+                            <tr>
+                                <th><?php _e('Table', 'ccm-tools'); ?></th>
+                                <th><?php _e('Size', 'ccm-tools'); ?></th>
+                                <th><?php _e('Rows', 'ccm-tools'); ?></th>
+                                <th><?php _e('Engine', 'ccm-tools'); ?></th>
+                                <th><?php _e('Reclaimable', 'ccm-tools'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($overview['largest'] as $t) : ?>
+                            <tr>
+                                <td class="ccm-mono">
+                                    <?php echo esc_html($t['name']); ?>
+                                    <?php if ($t['foreign']) : ?>
+                                        <span class="ccm-chip" title="<?php esc_attr_e('Outside this install\'s table prefix, so it belongs to something else sharing this database.', 'ccm-tools'); ?>"><?php _e('not ours', 'ccm-tools'); ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="ccm-mono"><?php echo esc_html($fmt($t['bytes'])); ?></td>
+                                <td class="ccm-mono"><?php echo esc_html(number_format_i18n($t['rows'])); ?></td>
+                                <td class="ccm-mono">
+                                    <?php echo esc_html($t['engine']); ?>
+                                    <?php if (strtoupper($t['engine']) !== 'INNODB') : ?>
+                                        <span class="ccm-chip ccm-chip--warn">MyISAM</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="ccm-mono"><?php echo $t['free'] > 0 ? esc_html($fmt($t['free'])) : '&mdash;'; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </details>
+                <?php endif; ?>
 
                 <div class="ccm-alert" style="margin-bottom: var(--ccm-space-lg);">
                     <span class="ccm-dot ccm-dot-ok"></span>
