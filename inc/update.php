@@ -408,15 +408,49 @@ class CCM_Tools_Updater {
             return $reply;
         }
 
-        /* 219a6cc7283d0d7f */
+        /*
+         * This filter fires for EVERY download WordPress makes — plugins,
+         * themes, core, language packs — so the only safe question is "can I
+         * prove this one is mine", never "can I prove it is not".
+         *
+         * It used to ask the second question: bail out when hook_extra['plugin']
+         * names somebody else, otherwise carry on. But WordPress only sets
+         * ['plugin'] for a plugin UPDATE. A theme update sets ['theme'], and a
+         * core update, a language pack and a fresh upload-install set neither.
+         * All of those arrived here with an empty name, fell through to a host
+         * check that accepts github.com, and had this plugin's integrity gate
+         * applied to them. A GitHub-hosted theme on a site with CCM Tools
+         * installed was refused with a CCM Tools error on it — somebody else's
+         * software, broken by us, blaming us. That is a routine arrangement,
+         * not a corner case.
+         *
+         * So: ours only when WordPress names us, or when nothing is named and
+         * the package came from the update service, which serves nothing else.
+         */
         $named = isset($hook_extra['plugin']) ? (string) $hook_extra['plugin'] : '';
+
+        // Anything positively identified as another kind of thing is not ours.
+        if (isset($hook_extra['theme']) || isset($hook_extra['language_update'])) {
+            return $reply;
+        }
+
         if ($named !== '' && $named !== $this->plugin) {
-            return $reply;   // definitely not ours
+            return $reply;   // named, and not us
         }
 
         $host = strtolower((string) wp_parse_url($package, PHP_URL_HOST));
         $from_service = ($host !== '' && $host === $this->service_host());
-        $from_github  = ($host === 'github.com' || substr($host, -20) === 'githubusercontent.com');
+
+        // substr($host, -20) could never equal a 21-character literal, so the
+        // asset-host half of this test had never once been true.
+        $from_github = ($host === 'github.com'
+            || $host === 'githubusercontent.com'
+            || substr($host, -22) === '.githubusercontent.com');
+
+        if ($named === '' && !$from_service) {
+            // Unnamed and not from the one host that only ever serves us.
+            return $reply;
+        }
 
         if (!$from_service && !$from_github) {
             /* 63d223e4440a9bd4 */

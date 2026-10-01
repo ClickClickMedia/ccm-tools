@@ -974,6 +974,21 @@ function ccm_tools_write_htaccess_safely(string $htaccess_file, string $new_cont
     $backup_file = '';
     if ($had_file) {
         $backup_file = ccm_tools_backup_htaccess($htaccess_file);
+
+        /*
+         * No backup, no write. ccm_tools_backup_htaccess() returns '' when its
+         * own write came up short, and that return was being ignored — so a
+         * full disk or a read-only directory produced no backup and the live
+         * file was replaced anyway. The rollback below is the only thing
+         * standing between a rejected directive and a site that is down, and
+         * it has nothing to restore from if this step quietly failed.
+         */
+        if ($backup_file === '') {
+            return array(
+                'success' => false,
+                'message' => __('The current .htaccess could not be backed up, so it has not been changed. Check that the site root is writable and has space.', 'ccm-tools')
+            );
+        }
     }
 
     /* 7fff534fac517d8a */
@@ -1009,10 +1024,23 @@ function ccm_tools_write_htaccess_safely(string $htaccess_file, string $new_cont
 
     /* 956b7a2ad6ee73e1 */
     if (function_exists('wp_remote_get') && function_exists('home_url')) {
-        $response = wp_remote_get(home_url('/'), array(
+        /*
+         * Cache-busting query string and a no-cache header, because this is
+         * asking "is the site still up" and a CDN will happily answer with a
+         * copy it took before the write. Plenty of these sites sit behind
+         * Cloudflare with APO on, where a cached 200 would have reported a
+         * healthy site while every uncached request got a 500.
+         */
+        $probe_url = add_query_arg('ccm-htaccess-probe', (string) time(), home_url('/'));
+
+        $response = wp_remote_get($probe_url, array(
             'timeout'     => 10,
             'sslverify'   => false,
             'redirection' => 0,
+            'headers'     => array(
+                'Cache-Control' => 'no-cache, no-store, max-age=0',
+                'Pragma'        => 'no-cache',
+            ),
         ));
 
         /* f4596ad0d3ad9184 */
@@ -1020,6 +1048,31 @@ function ccm_tools_write_htaccess_safely(string $htaccess_file, string $new_cont
         $failed_to_connect = function_exists('is_wp_error') && is_wp_error($response);
         if (!$failed_to_connect && function_exists('wp_remote_retrieve_response_code')) {
             $status = (int) wp_remote_retrieve_response_code($response);
+        }
+
+        /*
+         * Could not reach the site at all. This used to leave $status at 0,
+         * sail past the `>= 500` test and report success — so on a host that
+         * blocks loopback requests, the one case where a bad directive is most
+         * likely to go unnoticed, the plugin wrote the file, verified nothing,
+         * and said it had worked. "I could not check" is not "it is fine": a
+         * site that is down looks exactly like this from here.
+         */
+        if ($failed_to_connect || $status === 0) {
+            $rolled_back = false;
+
+            if ($backup_file !== '' && is_readable($backup_file)) {
+                $rolled_back = @copy($backup_file, $htaccess_file);
+            } elseif (!$had_file) {
+                $rolled_back = @unlink($htaccess_file);
+            }
+
+            return array(
+                'success' => false,
+                'message' => $rolled_back
+                    ? __('The site could not be reached to check the change, so it was rolled back. This host may block requests from the site to itself; if so, apply the change again and check the site by hand.', 'ccm-tools')
+                    : __('The site could not be reached to check the change, and it could not be rolled back automatically. Check the site now, and restore the most recent .htaccess.ccm-backup- file from the site root if it is down.', 'ccm-tools')
+            );
         }
 
         if ($status >= 500) {

@@ -8,7 +8,7 @@
  * wp_cache_remember(), HTML footnote, KEEPTTL on incr/decr.
  * 
  * @package CCM_Tools
- * @version 8.13.8
+ * @version 8.13.9
  *
  * This file should be placed in wp-content/object-cache.php
  */
@@ -714,6 +714,10 @@ class CCM_Redis_Object_Cache {
         // handle. The key name is versioned rather than reused, because the
         // stored value's format changes here: a fresh key is absent on first
         // read, which skips the flush branch and simply records the truth.
+        if (!method_exists($this->redis, 'rawCommand')) {
+            return;
+        }
+
         $sentinel_key = $this->key_salt . '__ccm_dropin_config_v2';
         $current      = $this->applied_encoding();
 
@@ -724,10 +728,45 @@ class CCM_Redis_Object_Cache {
         }
 
         if ($stored !== false && $stored !== null && $stored !== $current) {
-            $this->track_error(
-                "Redis encoding changed ({$stored} -> {$current}); flushing stale cache to avoid corrupt reads"
-            );
-            $this->flush(); // selective: only this site's salted keys
+            /*
+             * At most one flush per site per cooldown, whoever gets there
+             * first.
+             *
+             * Stamping what each worker actually applied is right, but it has
+             * a consequence I missed: during the transition this exists to
+             * catch, two worker pools are briefly alive at once with genuinely
+             * different encodings. Each reads the other's stamp, sees a change,
+             * flushes, and writes its own — so they ping-pong and flush on
+             * EVERY request until the old pool drains. Every one of those
+             * requests then rebuilds its cache from MySQL, which is a database
+             * load spike during a PHP upgrade, precisely when the server is
+             * already busy.
+             *
+             * One flush clears the stale keys; the rest are noise. SET NX EX
+             * is the lock, so only the request that wins it pays, and the
+             * others carry on with the per-key guard in get() covering
+             * anything that slipped through.
+             */
+            $won_lock = false;
+            try {
+                $won_lock = (bool) $this->redis->rawCommand(
+                    'SET',
+                    $this->key_salt . '__ccm_dropin_flush_lock',
+                    (string) time(),
+                    'NX',
+                    'EX',
+                    '300'
+                );
+            } catch (Exception $e) {
+                $won_lock = false;
+            }
+
+            if ($won_lock) {
+                $this->track_error(
+                    "Redis encoding changed ({$stored} -> {$current}); flushing stale cache to avoid corrupt reads"
+                );
+                $this->flush(); // selective: only this site's salted keys
+            }
         }
 
         if ($stored !== $current) {
@@ -811,6 +850,13 @@ class CCM_Redis_Object_Cache {
         // Bytes in the format we are configured for are a value that decoded
         // to a string which happens to look encoded. Nothing to do.
         if ($looks_like === '' || $looks_like === $this->serializer) {
+            return false;
+        }
+
+        // A missing method raises Error, not Exception, so redis_call()'s
+        // catch would not hold it — and an uncaught Error on this path is
+        // every page of the site, since this runs inside get().
+        if (!method_exists($this->redis, 'rawCommand')) {
             return false;
         }
 

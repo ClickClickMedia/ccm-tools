@@ -1,5 +1,58 @@
 # CCM Tools — Changelog
 
+## v8.13.9 — Four faults found by reviewing today's work
+
+Four independent reviews of everything released today. Three of these are
+long-standing; two were introduced this afternoon. Nothing below was guessed —
+each was reproduced before it was fixed.
+
+**This plugin was breaking other people's updates.** Its integrity check hooks
+`upgrader_pre_download`, which WordPress fires for every package it fetches —
+plugins, themes, core, language packs. The check asked "can I prove this is not
+mine" and bailed out when WordPress named a different plugin. But WordPress
+only names a plugin on a plugin *update*: a theme update names a theme, and a
+core update, a language pack and a fresh upload-install name nothing at all.
+Those fell through to a host test that accepted github.com, and had this
+plugin's checksum enforced on them. A GitHub-hosted theme — an ordinary
+arrangement — was refused, with a CCM Tools error on somebody else's software.
+The question is now the other way round: ours only when WordPress names us, or
+when nothing is named and the package came from the update service, which
+serves nothing else.
+
+**One malformed answer could have stopped updates everywhere at once.** The
+reply from the update service was read as `(bool) $parsed['entitled']`, which
+asks whether the value is falsy rather than whether anyone decided anything.
+`null`, `0`, `""`, `"0"` and `[]` all revoked. Those are what a nullable column
+or a half-finished deploy returns, and every site asks the same endpoint, so one
+response of that shape would have told the whole fleet it was no longer
+entitled, silently. Only a real boolean moves entitlement now; anything else
+takes the same path as truncated JSON.
+
+**The .htaccess safety net had a hole exactly where it was needed.** After
+writing, the plugin fetches the home page and rolls back on a 5xx. If it could
+not connect at all, the status stayed `0`, the rollback never ran, and it
+reported success — so on a host that blocks loopback requests, the case where a
+rejected directive is least likely to be noticed, it wrote the file, checked
+nothing and said it had worked. Not being able to check is now a failure, and
+rolls back. The probe is also cache-busted, because a CDN answering with a copy
+taken before the write would have reported a healthy site while the origin
+returned 500 to everyone else. And a backup that fails to write now stops the
+write entirely, rather than leaving the rollback with nothing to restore.
+
+**Two from this afternoon.** v8.13.8's drift sentinel stamps what each worker
+actually applied — correct, but during the PHP upgrade it exists to catch, two
+worker pools are briefly alive with different encodings, and they ping-ponged
+the sentinel and flushed the cache on *every* request until the old pool
+drained. One flush clears the stale keys; the rest were a database load spike
+at the worst moment. It is now rate-limited to one flush per site per five
+minutes. And `rawCommand` is guarded by `method_exists` the way `getOption`
+already was: a missing method raises `Error`, not `Exception`, and an uncaught
+`Error` inside `get()` is every page of the site.
+
+Also: `substr($host, -20) === 'githubusercontent.com'` compares twenty
+characters with a twenty-one character literal, so that half of the host test
+had never once been true.
+
 ## v8.13.8 — The cache notices when the server changes under it
 
 v8.13.7 stopped a mis-encoded value reaching WordPress. This stops the cache
