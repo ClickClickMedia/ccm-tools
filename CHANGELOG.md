@@ -1,5 +1,28 @@
 # CCM Tools — Changelog
 
+## v8.13.6 — Running the newest PHP is not a fault
+
+Site Health grades PHP against a hard-coded table of end-of-life dates, and
+the table stopped at 8.4. A site on 8.5 fell off the end of it and was graded
+`warn` — "1 to look at" — directly above a line reading "Still receiving
+security fixes". The check contradicted itself, and the better the site was
+maintained the more likely it was to see it.
+
+It was not only a wrong dot. The overall health score counts a warning as a
+miss, so every site on a current PHP was being marked down for being current.
+
+- There are two ways to fall off that table and they are not the same thing.
+  Older than everything listed is genuinely bad. **Newer than everything
+  listed means you are ahead of it, not behind**, and now reads as good.
+- 8.5 added to the table, and the grading pulled out into
+  `ccm_tools_php_branch_status()` so it can be driven with versions the
+  machine running the test is not itself on.
+
+`php_eol_test` covers nine versions from 5.6 to a branch that does not exist
+yet, asserts the detail never contradicts the status, and fails if the table's
+newest entry has itself gone past end of life — which is how a table like this
+goes stale: by nobody touching it.
+
 ## v8.13.5 — The run panel stops spelling task names vertically
 
 A task row is a three-column grid, and the last column was sized `auto` — to

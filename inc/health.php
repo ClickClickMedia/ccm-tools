@@ -264,29 +264,96 @@ function ccm_tools_health_database(): array {
 
 /* ───────────────────────── Platform ───────────────────────── */
 
+/**
+ * When each PHP branch stops getting security fixes.
+ *
+ * Ordered oldest first; ccm_tools_php_branch_status() relies on that to work
+ * out which side of the table an unlisted branch falls on.
+ */
+function ccm_tools_php_eol_dates(): array {
+    return array(
+        '7.4' => '2022-11-28', '8.0' => '2023-11-26', '8.1' => '2025-12-31',
+        '8.2' => '2026-12-31', '8.3' => '2027-12-31', '8.4' => '2028-12-31',
+        '8.5' => '2029-12-31',
+    );
+}
+
+/**
+ * How a PHP version should be reported, as status and explanation.
+ *
+ * A hard-coded table of end-of-life dates goes stale by doing nothing, and
+ * there are two ways to fall off it. This used to treat both the same way --
+ * anything not listed was a warning -- so a site on the NEWEST PHP available
+ * was told it had something to look at, directly above a line reading "Still
+ * receiving security fixes". Being ahead of the table is not a fault; the only
+ * unlisted branch worth warning about is one older than everything in it.
+ *
+ * Separated from the check itself so it can be driven with versions this
+ * machine is not running. See tests/php_eol_test.php.
+ *
+ * @param string   $version A full PHP version, e.g. "8.5.10".
+ * @param int|null $now     Unix time to judge against; defaults to now.
+ * @return array{status:string, detail:string}
+ */
+function ccm_tools_php_branch_status(string $version, $now = null): array {
+    $eol_dates = ccm_tools_php_eol_dates();
+    $now = $now === null ? time() : (int) $now;
+
+    $branch   = implode('.', array_slice(explode('.', $version), 0, 2));
+    $branches = array_keys($eol_dates);
+    $oldest   = reset($branches);
+    $newest   = end($branches);
+
+    if (isset($eol_dates[$branch])) {
+        $eol = $eol_dates[$branch];
+        if (strtotime($eol) < $now) {
+            return array(
+                'status' => 'bad',
+                'detail' => sprintf(
+                    /* translators: %s: end-of-life date */
+                    __('Security support for this branch ended on %s. It is no longer receiving fixes.', 'ccm-tools'),
+                    $eol
+                ),
+            );
+        }
+        return array(
+            'status' => 'good',
+            'detail' => __('Still receiving security fixes.', 'ccm-tools'),
+        );
+    }
+
+    if (version_compare($branch, $newest, '>')) {
+        return array(
+            'status' => 'good',
+            'detail' => __('Newer than every branch this plugin has an end-of-life date for, so it is ahead of them rather than behind.', 'ccm-tools'),
+        );
+    }
+
+    if (version_compare($branch, $oldest, '<')) {
+        return array(
+            'status' => 'bad',
+            'detail' => __('Older than any branch still tracked here, so it stopped receiving security fixes years ago.', 'ccm-tools'),
+        );
+    }
+
+    // Between two listed branches without being either: not a real PHP release.
+    return array(
+        'status' => 'warn',
+        'detail' => __('This is not a PHP branch with a published support schedule.', 'ccm-tools'),
+    );
+}
+
 function ccm_tools_health_platform(): array {
     $checks = array();
 
     /* 5a147deaac7316d3 */
-    $php_eol = array(
-        '7.4' => '2022-11-28', '8.0' => '2023-11-26', '8.1' => '2025-12-31',
-        '8.2' => '2026-12-31', '8.3' => '2027-12-31', '8.4' => '2028-12-31',
-    );
-    $branch = implode('.', array_slice(explode('.', PHP_VERSION), 0, 2));
-    $eol = isset($php_eol[$branch]) ? $php_eol[$branch] : null;
-    $past_eol = $eol !== null && strtotime($eol) < time();
+    $php = ccm_tools_php_branch_status(PHP_VERSION);
 
     $checks[] = ccm_tools_health_check(
         'php', __('PHP version', 'ccm-tools'),
-        $past_eol ? 'bad' : ($eol === null ? 'warn' : 'good'),
+        $php['status'],
         PHP_VERSION,
-        $past_eol
-            ? sprintf(
-                /* translators: %s: end-of-life date */
-                __('Security support for this branch ended on %s. It is no longer receiving fixes.', 'ccm-tools'),
-                esc_html($eol)
-            )
-            : __('Still receiving security fixes.', 'ccm-tools'),
+        $php['detail'],
         array(),
         3
     );
