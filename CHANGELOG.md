@@ -1,5 +1,186 @@
 # CCM Tools — Changelog
 
+## v8.13.4 — The update panel names a source, not an address
+
+Every administrator on every site we install on could read the host that serves
+our releases off the Update channel panel. The panel's job is to answer who is
+giving this site its updates and whether it is working; the address is not part
+of that answer.
+
+- **"Endpoint: https://…" is now "Updates from: Click Click Media"**, or GitHub
+  when the fallback is actually carrying the site — not merely when the
+  fallback is permitted, which is a different thing and would have named GitHub
+  on sites whose checks were working.
+- **The failure messages were the bigger leak.** `WP_Error` hands back "cURL
+  error 6: Could not resolve host: &lt;host&gt;", and the panel printed it
+  verbatim on the Last checked line — so the address appeared precisely when
+  something was broken and somebody was reading the panel to find out why. The
+  host is now taken out of the message as it is stored and again as it is read,
+  so a row written by an earlier version is covered too. The rest of the
+  message is untouched, because that is the part worth having.
+- The chip and the field use the same words. Two names for one thing on one
+  panel reads as two different things.
+
+Worth being plain about what this is: a lower profile, not a secret. The host
+is in the plugin source and in every outbound request, so anyone who goes
+looking will find it. What it stops is the address being read off a screen.
+
+`registry_test` renders the panel in both the healthy and the failed state and
+asserts the host appears in neither. Written that way on purpose — the first
+version tested the two new helpers, which against the old code did not fail,
+they fatalled, and a test that dies on the code it is judging has proved
+nothing about what was on the screen.
+
+## v8.13.3 — The TTFB tile is a tile like the others
+
+It was writing its explanation into the slot that holds the number, with a
+`<br>` in front of it, so a paragraph of body text appeared above the label in
+large brand type — the one tile on the dashboard that did not read like the
+rest of the row.
+
+- **Label above the note**, so the tile runs figure, label, context, the same
+  as every other tile beside it.
+- **The note is a sub line now**, which gives it the same type as "Above the
+  256M floor" next door instead of inheriting the figure's size and weight.
+- **A green, amber or red dot**, matching the dots already on the tiles around
+  it. One table decides the word, the text colour and the dot together, so the
+  tile cannot say "Fast" beside an amber dot — the threshold and its three
+  consequences are declared once.
+- A failed measurement now says so in the figure and puts the reason on the
+  note line with a red dot, rather than printing the exception where the
+  number goes.
+
+New `.ccm-stat-tile__sub--wrap` for a sub line that runs past one line: the
+base is a centred flex row, which would put the dot halfway down a three-line
+note and let the text push out of the tile rather than wrap inside it.
+
+## v8.13.2 — The reasoning comes out of the shipped code
+
+No functional change. This plugin installs on client servers, and about a
+fifth of what it put there was commentary explaining why the code is the way
+it is — useful to us, nobody else's business, and read by anyone with file
+access.
+
+- **842 long comments moved out**, leaving a short hash where each one was:
+  `/* 86160b4aa7654620 */`. 5,139 lines and 220 KB off the shipped payload,
+  14% of it. Comments shorter than three lines stay — a hash would be longer
+  than the comment and tell you less.
+- **What stayed**, because it does a job beyond explaining: the plugin header
+  WordPress parses, every `translators:` note the i18n tooling reads, and any
+  tool directive. Tests and docs are untouched; they never ship.
+- **The CSS a later rule had already overridden is gone.** The Glass Deck
+  redesign appended its rules rather than replacing the originals, leaving two
+  definitions of `.ccm-button`, three of `.ccm-toggle-slider` and 86 other
+  selectors declared more than once. 259 declarations and 47 whole blocks that
+  never applied: 10.5 KB, 480 lines.
+
+The stylesheet was checked by re-parsing it independently and comparing the
+value every (context, selector, property) finally resolves to — 2,663 before,
+2,663 after, all identical. That check paid for itself immediately: the first
+attempt treated `.ccm-input, .ccm-select { ... }` as dead because everything
+in it was overridden later for `.ccm-input`, and would have taken ten live
+declarations off `.ccm-select`.
+
+## v8.13.1 — Button size follows the place, not the page
+
+There are two button sizes. Which one a button gets should depend only on the
+kind of container it sits in, so that nine screens read as one plugin. Two
+contexts had drifted, and the giveaway was two buttons side by side whose tops
+and bottoms did not line up.
+
+- **.htaccess "Remove CCM block" is full size.** It was the only small button
+  in any hero action bar, sitting next to a full-size "Update .htaccess". Size
+  is not what carries hierarchy up there — Refresh, Flush Cache and Disable
+  Object Cache are all full size on their own pages; tone does the work.
+- **The dashboard's four setting-row controls are small**, matching the same
+  row component on Cloudflare and on every one of the twelve health checks.
+- **"Save settings"**, everywhere. Redis said "Save Settings", as did four
+  strings in the JavaScript, two of which are notices telling you to press a
+  button whose label they then got wrong.
+
+`button_size_test` checks all three rules against the source: hero bars are
+full size, setting rows are small, and no two adjacent buttons differ. It
+finds the six faults above in the previous markup. The save bar is its one
+listed exception — a quiet Discard beside a prominent Save, written identically
+on all four pages that have one, so it stays a decision rather than becoming
+the precedent for the next mismatched pair.
+
+## v8.13.0 — Three that were failing quietly
+
+Everything here was already broken in production. None of it announced itself:
+a link that looked like a permissions error, a count that looked like a zero,
+and a dialog that looked like someone else's software.
+
+- **The Site Health links no longer land on "Sorry, you are not allowed to
+  access this page."** Debug output linked to the Front Page Debug screen,
+  which only registers when `CCM_DEBUG_FRONT_PAGE` is defined, so on a normal
+  site it did not exist — and WordPress answers an unregistered page with a
+  permissions message, sending you to look at roles. It now points at the debug
+  controls on the dashboard, which are the things it was talking about all
+  along. Redis, WebP and Cloudflare had the same fault waiting: all three pages
+  register conditionally, so any site without the extension would have hit it
+  too. The link helper now checks the menu that was actually built and withholds
+  a link to a page that is not there.
+- **The transient count on the Database page was always zero.** The query named
+  its LIKE escape character with one backslash, which escaped its own closing
+  quote, so MySQL rejected the whole statement and the null came back as 0. It
+  logged a database error on every page load and showed a plausible-looking
+  number regardless. Four backslashes in the source reach MySQL as the one it
+  needs.
+- **Confirmations use the plugin's own dialog.** Twenty actions still raised the
+  browser's `confirm()` — unstyled, headed "web.clickclick.media says", with
+  nothing but OK and Cancel. The plugin has had a styled confirmation all along,
+  used by seven other call sites. The rest now use it too, and each button says
+  what it will do: Flush the cache, Disable it, Write to wp-config.
+- **The caveat on the .htaccess backup tile moved behind an (i).** It was a
+  paragraph of small grey text, read once, sitting permanently inside a tile
+  whose job is to show a date. It opens on hover, on keyboard focus and on tap.
+
+Three tests were added or rebuilt around these. One of them, the deep-link
+test, was passing on the broken link the whole time: it asked whether the slug
+appeared anywhere in the plugin's PHP, and it did — inside the `if` that stops
+it registering. It now reads the registration calls themselves.
+
+## v8.12.0 — Site Health is about the site now
+
+That page was a PageSpeed score with a nav tab. A PageSpeed score measures one
+page, on one run, from Google's machine, and it can read 98 on a site with no
+object cache, MyISAM tables and a PHP version that stopped getting security
+fixes two years ago. Meanwhile the plugin already knew all of that and showed
+it nowhere you could see it together.
+
+- **Twelve checks across caching, front end, database and platform**, each with
+  what is true, whether that is good, and a button straight to the control that
+  changes it. PageSpeed is one input among them rather than the whole page.
+- **Weighted overall score.** "Off" counts as a miss rather than being skipped:
+  a site with no object cache is not neutral on caching, it is paying for every
+  query twice.
+- **Links land on the setting, not the page.** The target screen opens whatever
+  the control is folded inside, scrolls it to the middle, highlights it for a
+  couple of seconds and puts keyboard focus on it. Telling somebody something
+  is wrong and dropping them at the top of a sixty-row settings page is half an
+  answer.
+- **A run in the log can be opened.** Runs now keep what they found, not only
+  their four scores, so you can reopen March and see what was blamed rather
+  than only that performance fell eleven points. Detail is kept for the twenty
+  most recent runs per device and scores for all two hundred, because the trend
+  line wants many points and reopening only ever asks about recent ones.
+- **A loud banner while an old run is showing**, because the scores and
+  findings look identical either way, and acting on last month's report is the
+  obvious way for this to mislead.
+- The neutral dot on the "running a test" banner is gone. There is already a
+  spinner in that message; a grey circle beside it was decoration pretending to
+  be status.
+
+Also: the stored PageSpeed report is no longer autoloaded. It is one of the
+larger things this plugin writes and it is read on one admin screen, which is
+exactly what the new autoload check on this page warns about.
+
+`tests/health_links_test.php` checks every deep link resolves to a page and an
+element that actually exists. A dead anchor fails silently — the page loads,
+nothing scrolls, and it looks like a link that simply went to the right place.
+Two of the first six written were wrong that way.
+
 ## v8.11.4 — Security review findings
 
 Five reviewers went over the plugin, the update service and the staff console.

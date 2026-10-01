@@ -1,13 +1,4 @@
-/**
- * CCM Tools — Site Health
- *
- * Renders PageSpeed Insights results as gauges, threshold bars and ranked
- * findings. Read-only by design: there is no code path in this file that
- * writes a performance setting, which is the whole difference between it and
- * the AI optimiser it replaced.
- *
- * @since 8.0.0
- */
+/* dc3dc77771b12a95 */
 (function () {
     'use strict';
 
@@ -20,6 +11,17 @@
     // ── State ───────────────────────────────────────────────────
 
     var latest = { mobile: null, desktop: null };
+
+    /* 9e29ce3ace734cea */
+    var viewing = null;
+
+    /** The run the page is currently showing. */
+    function shown(strategy) {
+        if (viewing) {
+            return (viewing.strategy || 'mobile') === (strategy || device()) ? viewing : null;
+        }
+        return latest[strategy || device()];
+    }
     var history = [];
     var busy = false;
 
@@ -96,20 +98,15 @@
         var el = $('#sh-status');
         if (!el) { return; }
         if (!html) { el.innerHTML = ''; return; }
-        /*
-         * The house .ccm-alert, not a toolbar with an inline accent rail.
-         * The stripe down the left of this banner was the last one left in
-         * the plugin and it was built here in JavaScript, which is why it
-         * survived a sweep of the stylesheet. Severity is carried by the
-         * tinted ground and the dot, the same as every other notice.
-         */
+        /* 3993f4fc5f0f4b5f */
         var variant = kind === 'error' ? ' ccm-alert--bad'
             : kind === 'success' ? ' ccm-alert--good' : '';
-        var dot = kind === 'error' ? ' ccm-dot-bad'
-            : kind === 'success' ? ' ccm-dot-ok' : '';
+        /* 61dcfe3c79fb7c23 */
+        var dot = kind === 'error' ? '<span class="ccm-dot ccm-dot-bad" aria-hidden="true"></span>'
+            : kind === 'success' ? '<span class="ccm-dot ccm-dot-ok" aria-hidden="true"></span>'
+            : '';
         el.innerHTML = '<div class="ccm-alert' + variant + '" style="margin-bottom: var(--ccm-space-lg);">' +
-            '<span class="ccm-dot' + dot + '" aria-hidden="true"></span>' +
-            '<div>' + html + '</div></div>';
+            dot + '<div>' + html + '</div></div>';
     }
 
     function spinner(size) {
@@ -141,7 +138,7 @@
     }
 
     function renderScores() {
-        var r = latest[device()];
+        var r = shown();
         if (!r) { show('#sh-scores-wrap', false); return; }
 
         $('#sh-gauges').innerHTML = CATEGORIES.map(function (c) {
@@ -198,7 +195,7 @@
     }
 
     function renderVitals() {
-        var r = latest[device()];
+        var r = shown();
         if (!r || !r.metrics || !Object.keys(r.metrics).length) {
             show('#sh-vitals-wrap', false);
             return;
@@ -237,8 +234,9 @@
         // saving per audit so one list covers both.
         var merged = {};
         ['mobile', 'desktop'].forEach(function (s) {
-            if (!latest[s] || !latest[s].findings) { return; }
-            latest[s].findings.forEach(function (f) {
+            var run = shown(s);
+            if (!run || !run.findings) { return; }
+            run.findings.forEach(function (f) {
                 var seen = merged[f.id];
                 if (!seen || f.savings_ms > seen.savings_ms) {
                     merged[f.id] = { f: f, where: (seen ? seen.where : {}) };
@@ -252,7 +250,18 @@
         });
 
         if (!list.length) {
-            if (!latest.mobile && !latest.desktop) { show('#sh-findings-wrap', false); return; }
+            if (!shown('mobile') && !shown('desktop')) { show('#sh-findings-wrap', false); return; }
+            if (viewing && !viewing.findings) {
+                // A run from before runs carried their detail.
+                $('#sh-findings').innerHTML =
+                    '<div class="ccm-finding ccm-finding--low"><span class="ccm-finding__stripe"></span>' +
+                    '<div class="ccm-finding__body"><p class="ccm-finding__title">Only the scores were kept for this run</p>' +
+                    '<p class="ccm-finding__detail">It was recorded before runs started keeping what they found. ' +
+                    'Runs from here on can be opened in full.</p></div></div>';
+                $('#sh-findings-count').textContent = 'scores only';
+                show('#sh-findings-wrap', true);
+                return;
+            }
             $('#sh-findings').innerHTML =
                 '<div class="ccm-finding ccm-finding--low"><span class="ccm-finding__stripe"></span>' +
                 '<div class="ccm-finding__body"><p class="ccm-finding__title">Nothing significant to fix</p>' +
@@ -351,6 +360,61 @@
             (now === null ? '&ndash;' : esc(now)) + '</div>' + spark + '</div>';
     }
 
+    /* ee11d6291e2e8116 */
+    function viewRun(index) {
+        viewing = (index === null) ? null : (history[index] || null);
+
+        var banner = $('#sh-viewing');
+        if (banner) {
+            if (viewing) {
+                var when = new Date(Number(viewing.at) * 1000);
+                banner.innerHTML =
+                    '<div class="ccm-alert ccm-alert--warn" style="margin-bottom: var(--ccm-space-lg);">' +
+                    '<span class="ccm-dot ccm-dot-warn"></span><div>' +
+                    '<strong>Showing a run from ' + esc(when.toLocaleString()) + '</strong> ' +
+                    esc((viewing.strategy === 'desktop') ? 'Desktop' : 'Mobile') + '. ' +
+                    'This is not the current state of the site. ' +
+                    '<button type="button" class="ccm-button ccm-button-secondary ccm-button-small" data-sh-latest>' +
+                    'Back to the latest run</button></div></div>';
+                show('#sh-viewing', true);
+            } else {
+                banner.innerHTML = '';
+                show('#sh-viewing', false);
+            }
+        }
+
+        renderScores();
+        renderVitals();
+        renderFindings();
+
+        var target = $('#sh-scores-wrap');
+        if (target && viewing) {
+            var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+        }
+    }
+
+    document.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('[data-sh-latest]')) {
+            e.preventDefault();
+            viewRun(null);
+            return;
+        }
+        var row = e.target.closest ? e.target.closest('tr.sh-run') : null;
+        if (row) {
+            viewRun(parseInt(row.getAttribute('data-run'), 10));
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') { return; }
+        var row = e.target.closest ? e.target.closest('tr.sh-run') : null;
+        if (row) {
+            e.preventDefault();
+            viewRun(parseInt(row.getAttribute('data-run'), 10));
+        }
+    });
+
     function renderHistory() {
         if (!history.length) { show('#sh-history-wrap', false); return; }
 
@@ -378,8 +442,12 @@
             var when = new Date(Number(r.at) * 1000);
             var path = '/';
             try { path = new URL(r.url).pathname || '/'; } catch (e) {}
-            return '<tr>' +
-                '<td>' + esc(when.toLocaleString()) + '</td>' +
+            var idx = history.indexOf(r);
+            var hasDetail = !!(r.findings && r.findings.length);
+            return '<tr class="sh-run" data-run="' + idx + '" tabindex="0" role="button" ' +
+                   'title="' + (hasDetail ? 'Open this run' : 'Scores only for this run') + '">' +
+                '<td>' + esc(when.toLocaleString()) +
+                    (hasDetail ? '' : ' <span class="ccm-chip">scores only</span>') + '</td>' +
                 '<td>' + esc((r.strategy === 'desktop') ? 'Desktop' : 'Mobile') + '</td>' +
                 '<td>' + cell('performance') + '</td>' +
                 '<td>' + cell('accessibility') + '</td>' +
@@ -516,15 +584,25 @@
         });
     }
 
+    /* 7b19aef547cc9204 */
+    function ask(message, verb) {
+        return window.ccmConfirm
+            ? window.ccmConfirm(message, verb)
+            : Promise.resolve(window.confirm(message));
+    }
+
     var clearBtn = $('#sh-clear-history');
     if (clearBtn) {
         clearBtn.addEventListener('click', function () {
-            if (!window.confirm('Clear every recorded run? This cannot be undone.')) { return; }
-            clearBtn.disabled = true;
-            ajax('ccm_tools_sh_clear_history', {})
-                .then(function () { history = []; show('#sh-history-wrap', false); })
-                .catch(function (err) { status(esc(err.message), 'error'); })
-                .then(function () { clearBtn.disabled = false; });
+            ask('Clear every recorded run? This cannot be undone.', 'Clear history')
+                .then(function (ok) {
+                    if (!ok) { return; }
+                    clearBtn.disabled = true;
+                    return ajax('ccm_tools_sh_clear_history', {})
+                        .then(function () { history = []; show('#sh-history-wrap', false); })
+                        .catch(function (err) { status(esc(err.message), 'error'); })
+                        .then(function () { clearBtn.disabled = false; });
+                });
         });
     }
 

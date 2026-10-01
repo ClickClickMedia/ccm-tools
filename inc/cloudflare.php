@@ -1,38 +1,18 @@
 <?php
-/**
- * CCM Tools — Cloudflare Integration
- *
- * Provides Cloudflare detection, cache purging, development mode toggle,
- * and a read-only status dashboard for connected zones.
- *
- * @package CCMTools
- */
+/* 572fe790e3d9414b */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-// ──────────────────────────────────────────────
-// Settings helpers
-// ──────────────────────────────────────────────
+/* dab498c3fe06b54a */
 
 /** Marker prefix on stored api_token values that are AES-256-CBC encrypted. */
 if (!defined('CCM_TOOLS_CF_TOKEN_ENC_PREFIX')) {
     define('CCM_TOOLS_CF_TOKEN_ENC_PREFIX', 'ccmcf1:');
 }
 
-/**
- * Derive the encryption + HMAC keys used to protect the stored Cloudflare
- * API token, from WordPress's own AUTH_KEY / SECURE_AUTH_KEY salts.
- *
- * These salts are already secret, per-site, and never stored in the
- * database (they live in wp-config.php), so deriving from them means the
- * token ciphertext is useless without also having filesystem access to
- * wp-config.php — a straight DB dump (or another plugin with option-read
- * access) is no longer enough to recover a live Cloudflare token.
- *
- * @return array{0:string,1:string}  [encryption key (32 raw bytes), hmac key (32 raw bytes)]
- */
+/* f1dd39386ff7aa12 */
 function ccm_tools_cf_token_keys(): array {
     $auth_key        = defined('AUTH_KEY') && AUTH_KEY ? AUTH_KEY : 'ccm-tools-fallback-auth-key';
     $secure_auth_key = defined('SECURE_AUTH_KEY') && SECURE_AUTH_KEY ? SECURE_AUTH_KEY : 'ccm-tools-fallback-secure-auth-key';
@@ -43,16 +23,7 @@ function ccm_tools_cf_token_keys(): array {
     return array($enc_key, $hmac_key);
 }
 
-/**
- * Encrypt a Cloudflare API token for storage.
- *
- * Format: PREFIX + base64( iv[16] . hmac[32] . ciphertext ), AES-256-CBC with
- * an HMAC-SHA256 (encrypt-then-MAC) over the IV + ciphertext to detect
- * tampering/corruption before we ever hand a garbled value to the CF API.
- *
- * @param string $plain
- * @return string|false Encrypted value, or false if encryption isn't available.
- */
+/* c263b5573b9969df */
 function ccm_tools_cf_encrypt_token(string $plain) {
     if ($plain === '' || !function_exists('openssl_encrypt')) {
         return false;
@@ -75,13 +46,7 @@ function ccm_tools_cf_encrypt_token(string $plain) {
     return CCM_TOOLS_CF_TOKEN_ENC_PREFIX . base64_encode($iv . $hmac . $ciphertext);
 }
 
-/**
- * Decrypt a Cloudflare API token previously encrypted with
- * ccm_tools_cf_encrypt_token().
- *
- * @param string $stored
- * @return string|false Decrypted plaintext, or false on failure (bad key, tampered value, etc).
- */
+/* daf9c2fa7d0a0a9b */
 function ccm_tools_cf_decrypt_token(string $stored) {
     if (strpos($stored, CCM_TOOLS_CF_TOKEN_ENC_PREFIX) !== 0 || !function_exists('openssl_decrypt')) {
         return false;
@@ -110,16 +75,7 @@ function ccm_tools_cf_decrypt_token(string $stored) {
     return $plain === false ? false : $plain;
 }
 
-/**
- * Get Cloudflare settings from the database.
- *
- * The API token is stored encrypted at rest (see ccm_tools_cf_save_settings())
- * and is transparently decrypted here for use. A pre-existing plaintext token
- * (from before this encryption was introduced) is decrypted-as-is and quietly
- * migrated to the encrypted format on this first read.
- *
- * @return array
- */
+/* eb4406ff16c45169 */
 function ccm_tools_cf_get_settings(): array {
     $defaults = array(
         'api_token'  => '',
@@ -150,30 +106,11 @@ function ccm_tools_cf_get_settings(): array {
     return $settings;
 }
 
-/**
- * Save Cloudflare settings.
- *
- * The api_token is encrypted at rest before being written — see
- * ccm_tools_cf_encrypt_token(). Callers always pass the plaintext token (as
- * returned by ccm_tools_cf_get_settings()); it is never stored unencrypted.
- *
- * @param array $settings
- * @return void
- */
+/* 333fcd2e1c910bba */
 function ccm_tools_cf_save_settings(array $settings): void {
     $stored = get_option('ccm_tools_cf_settings', array());
 
-    /*
-     * Never write an empty token over one that is stored.
-     *
-     * ccm_tools_cf_get_settings() blanks api_token when it cannot decrypt it,
-     * which happens whenever the WordPress salts are rotated, because the
-     * cipher key is derived from AUTH_KEY and SECURE_AUTH_KEY. Any handler
-     * that round-trips get -> save then persisted that blank over the
-     * ciphertext, and a Cloudflare API token is shown once at creation, so it
-     * was gone for good. Keep the stored value and let the operator re-enter
-     * it deliberately.
-     */
+    /* 13c1c96a3c3634d6 */
     if (empty($settings['api_token']) && !empty($stored['api_token'])) {
         $settings['api_token'] = $stored['api_token'];
     }
@@ -184,11 +121,7 @@ function ccm_tools_cf_save_settings(array $settings): void {
         if ($encrypted !== false) {
             $settings['api_token'] = $encrypted;
         } elseif (!empty($stored['api_token'])) {
-            /*
-             * Encryption is unavailable on this host. Writing the token in
-             * plaintext would be a silent downgrade, so keep whatever is
-             * already stored rather than replacing it with a readable copy.
-             */
+            /* 4e818d36b63d6513 */
             $settings['api_token'] = $stored['api_token'];
         }
     }
@@ -196,18 +129,9 @@ function ccm_tools_cf_save_settings(array $settings): void {
     update_option('ccm_tools_cf_settings', $settings);
 }
 
-// ──────────────────────────────────────────────
-// Detection
-// ──────────────────────────────────────────────
+/* d13d79aabea9521d */
 
-/**
- * Detect whether the site is behind Cloudflare.
- *
- * Checks $_SERVER for CF-specific headers (set on every proxied request),
- * then falls back to a self-request. Cached in a short transient.
- *
- * @return array  {detected: bool, ray_id?: string, server?: string}
- */
+/* 170c460ab1102774 */
 function ccm_tools_cf_detect(): array {
     // API connection check must run BEFORE the transient cache so a connected
     // API always trumps a stale "not detected" cache entry.
@@ -215,9 +139,7 @@ function ccm_tools_cf_detect(): array {
     $api_connected = !empty($cf_settings['connected']) && !empty($cf_settings['zone_id']);
 
     $cached = get_transient('ccm_tools_cf_detected');
-    // array_key_exists, not is_array alone: a cache entry written by an older
-    // version (or any malformed value) would otherwise be returned as-is and
-    // every caller reading ['detected'] would warn on an undefined index.
+    /* f6dc9b88ad0b77a9 */
     if (is_array($cached) && array_key_exists('detected', $cached)) {
         // Trust cache only when API is disconnected, or cache already says detected
         if (!$api_connected || !empty($cached['detected'])) {
@@ -235,17 +157,7 @@ function ccm_tools_cf_detect(): array {
         $result['source']   = 'api';
     }
 
-    // Primary: check $_SERVER for CF headers (set on every proxied request).
-    //
-    // SECURITY NOTE: HTTP_CF_RAY and HTTP_CF_CONNECTING_IP are ordinary
-    // request headers — visitor-controlled, trivially spoofable by anyone
-    // sending a direct request to the origin (they are only meaningful when
-    // the origin is locked down to accept traffic solely from Cloudflare's
-    // IP ranges, which this plugin does not verify). They are used here
-    // purely for an informational "is Cloudflare probably in front of this
-    // site" label; NEVER use them to gate a security decision (e.g. trusting
-    // a "real" visitor IP, or skipping auth/rate-limiting) without that
-    // origin-side IP allowlist in place.
+    /* 12df0265657f0162 */
     if (!empty($_SERVER['HTTP_CF_RAY'])) {
         $result['detected'] = true;
         $result['ray_id']   = sanitize_text_field($_SERVER['HTTP_CF_RAY']);
@@ -277,31 +189,9 @@ function ccm_tools_cf_detect(): array {
     return $result;
 }
 
-// ──────────────────────────────────────────────
-// Cloudflare API helpers
-// ──────────────────────────────────────────────
+/* 0aba87ba8334ce7b */
 
-/**
- * Make a request to the Cloudflare API v4 — REST or GraphQL.
- *
- * Uses PHP cURL directly (not wp_remote_request) to prevent other WordPress
- * plugins from injecting headers via the http_request_args filter, which
- * causes Cloudflare error 6003 "Invalid request headers".
- *
- * Also serves the GraphQL Analytics endpoint (pass $endpoint = 'graphql',
- * $graphql = true) so callers don't need to duplicate the cURL request /
- * response / error-parsing plumbing: GraphQL responses have a different
- * shape ({data, errors} rather than REST's {success, result, errors}), so
- * $graphql switches which shape is used to decide success vs failure.
- *
- * @param string $endpoint  Path after /client/v4/ (e.g. "zones/{id}/purge_cache", or "graphql").
- * @param string $method    HTTP method.
- * @param array  $body      Request body (will be JSON-encoded for POST/PUT/PATCH/DELETE). For GraphQL this is the raw
- *                           {"query": "..."} payload.
- * @param string $token     API token (uses saved setting if empty).
- * @param bool   $graphql   True to parse the response as a GraphQL {data, errors} payload instead of REST's {success, result, errors}.
- * @return array|WP_Error   Decoded JSON body, or WP_Error.
- */
+/* 59c531597b3e2a4f */
 function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body = array(), string $token = '', bool $graphql = false) {
     if (empty($token)) {
         $settings = ccm_tools_cf_get_settings();
@@ -376,13 +266,7 @@ function ccm_tools_cf_api(string $endpoint, string $method = 'GET', array $body 
     return $data;
 }
 
-/**
- * Verify the API Token works and determine the Zone ID.
- *
- * @param string $token  API token to test.
- * @param string $zone_id Manually supplied zone ID (optional — auto-detect if empty).
- * @return array|WP_Error  Zone details on success.
- */
+/* 032aff874cfb8e23 */
 function ccm_tools_cf_verify_token(string $token, string $zone_id = '') {
     // If zone_id supplied, verify token by fetching the zone directly
     if (!empty($zone_id)) {
@@ -393,13 +277,7 @@ function ccm_tools_cf_verify_token(string $token, string $zone_id = '') {
         }
         $zone_result = $data['result'] ?? $data;
 
-        // SECURITY: a token — especially an agency-wide all-zones token —
-        // can see zones belonging to other sites/customers. A manually
-        // entered (stale or mistyped) Zone ID must never be trusted just
-        // because the token happens to have access to it: verify the zone
-        // Cloudflare handed back actually belongs to THIS site's domain (or
-        // is a parent domain of it, e.g. this site is shop.example.com and
-        // the zone is example.com) before accepting it.
+        /* 7ad0257acf5ca131 */
         $zone_name = isset($zone_result['name']) ? strtolower((string) $zone_result['name']) : '';
 
         $site_host = wp_parse_url(home_url(), PHP_URL_HOST);
@@ -462,11 +340,7 @@ function ccm_tools_cf_verify_token(string $token, string $zone_id = '') {
     return new WP_Error('zone_not_found', __('Token is valid but no Cloudflare zone found for this domain. Please enter the Zone ID manually.', 'ccm-tools'));
 }
 
-/**
- * Fetch zone details + feature settings for the status panel.
- *
- * @return array|WP_Error
- */
+/* 07eddfc61f769f19 */
 function ccm_tools_cf_get_zone_status() {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
@@ -528,11 +402,7 @@ function ccm_tools_cf_get_zone_status() {
     );
 }
 
-/**
- * Purge the entire Cloudflare cache for the configured zone.
- *
- * @return true|WP_Error
- */
+/* 63c075a9e953f7ef */
 function ccm_tools_cf_purge_all() {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
@@ -548,12 +418,7 @@ function ccm_tools_cf_purge_all() {
     return is_wp_error($data) ? $data : true;
 }
 
-/**
- * Purge specific URLs from Cloudflare cache.
- *
- * @param array $urls List of full URLs to purge.
- * @return true|WP_Error
- */
+/* d76bb27a352ace96 */
 function ccm_tools_cf_purge_urls(array $urls) {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
@@ -576,12 +441,7 @@ function ccm_tools_cf_purge_urls(array $urls) {
     return true;
 }
 
-/**
- * Toggle Cloudflare Development Mode.
- *
- * @param bool $enable True to enable, false to disable.
- * @return true|WP_Error
- */
+/* 94a4c4c10cdf8ecf */
 function ccm_tools_cf_toggle_dev_mode(bool $enable) {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
@@ -597,13 +457,7 @@ function ccm_tools_cf_toggle_dev_mode(bool $enable) {
     return is_wp_error($data) ? $data : true;
 }
 
-/**
- * Update a Cloudflare zone setting.
- *
- * @param string $setting Setting key (e.g. 'rocket_loader', 'always_online').
- * @param mixed  $value   Setting value ('on'/'off', integer for browser_cache_ttl).
- * @return true|WP_Error
- */
+/* 96c17f9c92de16f0 */
 function ccm_tools_cf_update_setting(string $setting, $value) {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
@@ -644,15 +498,9 @@ function ccm_tools_cf_update_setting(string $setting, $value) {
     return is_wp_error($data) ? $data : true;
 }
 
-// ──────────────────────────────────────────────
-// Apply Recommended WordPress Settings
-// ──────────────────────────────────────────────
+/* db87f282b4ad6400 */
 
-/**
- * Apply Cloudflare's recommended settings for WordPress.
- *
- * @return array Results with successes and failures.
- */
+/* 6dc3b2805dbde9ae */
 function ccm_tools_cf_apply_recommended(): array {
     $recommended = array(
         'security_level'           => 'medium',
@@ -690,17 +538,9 @@ function ccm_tools_cf_apply_recommended(): array {
     );
 }
 
-// ──────────────────────────────────────────────
-// Zone Analytics
-// ──────────────────────────────────────────────
+/* b1177846b53fa0b1 */
 
-/**
- * Fetch zone analytics for the last 24 hours via Cloudflare GraphQL Analytics API.
- *
- * @param string $since  ISO 8601 date (default: -24h).
- * @param string $until  ISO 8601 date (default: now).
- * @return array|WP_Error
- */
+/* 338a7c22aa4f0357 */
 function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
@@ -799,15 +639,9 @@ function ccm_tools_cf_get_analytics(string $since = '', string $until = '') {
     );
 }
 
-// ──────────────────────────────────────────────
-// DNS Records
-// ──────────────────────────────────────────────
+/* 1769f1a4c4384896 */
 
-/**
- * Fetch DNS records for the connected zone.
- *
- * @return array|WP_Error
- */
+/* a08aafb03f539991 */
 function ccm_tools_cf_get_dns_records() {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['zone_id'])) {
@@ -833,15 +667,9 @@ function ccm_tools_cf_get_dns_records() {
     return $records;
 }
 
-// ──────────────────────────────────────────────
-// Auto-Purge on Content Changes
-// ──────────────────────────────────────────────
+/* c8afd40170bd588c */
 
-/**
- * Automatically purge Cloudflare cache when content is saved.
- *
- * Hooks into WordPress save/update actions to purge relevant URLs.
- */
+/* aedd6ff9719fb51c */
 function ccm_tools_cf_auto_purge_init(): void {
     $settings = ccm_tools_cf_get_settings();
     if (empty($settings['connected']) || empty($settings['zone_id']) || empty($settings['auto_purge'])) {
@@ -872,12 +700,7 @@ function ccm_tools_cf_auto_purge_init(): void {
 }
 add_action('init', 'ccm_tools_cf_auto_purge_init');
 
-/**
- * Purge CF cache for a specific post and related pages.
- *
- * @param int     $post_id
- * @param WP_Post $post
- */
+/* bdfe657a1e694803 */
 function ccm_tools_cf_auto_purge_post(int $post_id, $post): void {
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
         return;
@@ -932,13 +755,7 @@ function ccm_tools_cf_auto_purge_post(int $post_id, $post): void {
     }
 }
 
-/**
- * Purge CF cache for a term and related pages.
- *
- * @param int    $term_id
- * @param int    $tt_id
- * @param string $taxonomy
- */
+/* ec95b7272dd159d8 */
 function ccm_tools_cf_auto_purge_term(int $term_id, int $tt_id, string $taxonomy): void {
     $urls = array();
     $term_link = get_term_link($term_id, $taxonomy);
@@ -953,29 +770,15 @@ function ccm_tools_cf_auto_purge_term(int $term_id, int $tt_id, string $taxonomy
     }
 }
 
-/**
- * Purge entire CF cache (for menu/widget/theme changes).
- */
+/* 9fa4f80136411723 */
 function ccm_tools_cf_auto_purge_all_action(): void {
     ccm_tools_cf_purge_all();
 }
 
 
-// ──────────────────────────────────────────────
-// Admin page renderer
-// ──────────────────────────────────────────────
+/* fa7c07fc542e1a54 */
 
-/**
- * Render the Cloudflare Tools admin page.
- *
- * Hero + stat grid + grouped sections, per docs/UI-BRIEF.md, replacing the
- * former flat stack of ten equally-weighted `.ccm-card` tables. Every
- * container id that js/main.js queries (`#cf-connection-form`,
- * `#cf-zone-status`, `#cf-analytics`, `#cf-security-settings`,
- * `#cf-network-settings`, `#cf-dns-records`, and every button/input id it
- * binds to) is preserved exactly — see the per-section render helpers below
- * for the full accounting. main.js itself is untouched.
- */
+/* 391deb64cca5fd57 */
 function ccm_tools_render_cloudflare_page(): void {
     if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -1012,24 +815,7 @@ function ccm_tools_render_cloudflare_page(): void {
     <?php
 }
 
-/**
- * Hero: title, zone/detection context, and the primary action.
- *
- * The zone name and plan are only known once js/main.js has fetched
- * `ccm_tools_cf_get_status` (they are not cached anywhere in $settings),
- * so showing them here synchronously would mean either a second, blocking,
- * render-time call to the Cloudflare API (a real behaviour change) or new
- * JS wiring outside this file. Neither is in scope, so the meta line shows
- * what IS known at render time — the site's own domain (the zone is this
- * domain or a parent of it, exactly as ccm_tools_cf_verify_token() already
- * assumes) and whether Cloudflare is actually in front of requests. The
- * live zone name + plan continue to appear exactly where they always have,
- * in the panel js/main.js fills in directly below (see
- * ccm_tools_cf_render_zone_panel()).
- *
- * @param bool $connected
- * @param bool $is_cf
- */
+/* 51232ad847445661 */
 function ccm_tools_cf_render_hero(bool $connected, bool $is_cf): void {
     $domain = wp_parse_url(home_url(), PHP_URL_HOST);
     ?>
@@ -1063,19 +849,7 @@ function ccm_tools_cf_render_hero(bool $connected, bool $is_cf): void {
     <?php
 }
 
-/**
- * Development Mode alert. Caller only invokes this when $connected is true.
- *
- * #cf-dev-mode-status is the exact element js/main.js already writes to
- * (via updateDevModeStatus(), called both on load and on toggle) — it sets
- * that element's innerHTML to a message when Development Mode is on, or to
- * an empty string when it's off. main.js never touches this element's
- * classes, so a small inline observer (scoped to this page, not touching
- * js/main.js) mirrors that content into visibility on the wrapping
- * `.ccm-alert`. This is the same "inline script owned by the render file"
- * pattern already used in inc/performance-optimizer.php and
- * inc/webp-converter.php.
- */
+/* 72336abfa85cfc47 */
 function ccm_tools_cf_render_dev_mode_alert(): void {
     ?>
     <div class="ccm-alert ccm-alert--warn ccm-hide" id="cf-dev-mode-alert">
@@ -1099,19 +873,7 @@ function ccm_tools_cf_render_dev_mode_alert(): void {
     <?php
 }
 
-/**
- * Zone Analytics. Caller only invokes this when $connected is true.
- *
- * js/main.js replaces #cf-analytics's entire innerHTML with its own
- * `.ccm-cf-analytics-grid` of `.ccm-cf-stat-card` tiles (cache ratio, total
- * requests, threats blocked, bandwidth, etc. — see loadCfAnalytics() in
- * js/main.js). That grid already IS this page's stat-grid equivalent, with
- * its own matching CSS, so it is kept as the container js/main.js expects
- * rather than wrapped in an unrelated `.ccm-stat-grid` that would have no
- * children to lay out (main.js's own wrapper div is the only child). It
- * sits directly under the hero, where the brief wants the at-a-glance
- * numbers.
- */
+/* 1d2029b8245105fb */
 function ccm_tools_cf_render_analytics(): void {
     ?>
     <div id="cf-analytics">
@@ -1120,20 +882,7 @@ function ccm_tools_cf_render_analytics(): void {
     <?php
 }
 
-/**
- * Zone snapshot panel: the live Zone/Plan/Status/Features table js/main.js
- * writes into #cf-zone-status, plus the "Apply Recommended" action.
- * Caller only invokes this when $connected is true.
- *
- * #cf-zone-status is where js/main.js (loadCloudflareStatus()) writes a
- * `<table class="ccm-table">` — per the brief, that container is kept
- * as-is and wrapped in a `.ccm-panel` rather than fought. The
- * `data-premium="1"` attribute that used to sit on this container is
- * dead: nothing in js/main.js or any other JS file reads it (confirmed by
- * grep), so it has been dropped rather than carried forward as clutter —
- * the actual gate it once referred to (paid-tier feature editability) was
- * already removed from the PHP side.
- */
+/* 3dce2d5ee6b557c1 */
 function ccm_tools_cf_render_zone_panel(): void {
     ?>
     <div class="ccm-panel">
@@ -1155,14 +904,7 @@ function ccm_tools_cf_render_zone_panel(): void {
     <?php
 }
 
-/**
- * Cache section: purge URLs, auto-purge on save, development mode.
- * Caller only invokes this when $connected is true.
- *
- * "Purge everything" itself is not repeated here as a second control — it
- * is the hero's primary action (#cf-purge-all can only exist once in the
- * document), so this section points to it instead of duplicating it.
- */
+/* 7e7d6903951677cd */
 function ccm_tools_cf_render_cache_section(): void {
     $settings = ccm_tools_cf_get_settings();
     ?>
@@ -1226,25 +968,7 @@ function ccm_tools_cf_render_cache_section(): void {
     <?php
 }
 
-/**
- * Security section: the live Security Settings panel js/main.js writes
- * (Under Attack mode, security level, email obfuscation, etc.). Caller
- * only invokes this when $connected is true.
- *
- * #cf-security-settings is where js/main.js (renderCfSecurityPanel()) writes
- * a `<div class="ccm-cf-under-attack">` block plus a `<table>` — kept as-is
- * and wrapped in a `.ccm-panel`. That panel's own copy already explains
- * Under Attack mode ("Visitors see a challenge page for ~5 seconds while
- * Cloudflare verifies the request") — that text is authored in js/main.js,
- * not here, and already satisfies the brief's "say what Under Attack does"
- * requirement, so it isn't duplicated in this section's intro.
- *
- * `data-confirm-settings="under_attack"` used to sit on this container as a
- * marker for a confirm() step main.js was meant to read; grep confirms
- * nothing reads it (js/main.js's own confirm() for Under Attack is wired
- * directly to its #cf-under-attack-toggle, not to this attribute), so it
- * has been dropped rather than carried forward as a dead marker.
- */
+/* ab68918d94c47ea8 */
 function ccm_tools_cf_render_security_section(): void {
     ?>
     <section class="ccm-optgroup">
@@ -1263,21 +987,7 @@ function ccm_tools_cf_render_security_section(): void {
     <?php
 }
 
-/**
- * SSL/TLS & network section: the live Network Settings panel js/main.js
- * writes. Caller only invokes this when $connected is true.
- *
- * #cf-network-settings is where js/main.js (renderCfNetworkPanel()) writes
- * a `<table>` — kept as-is, wrapped in a `.ccm-panel`. Its per-row 0-RTT
- * description ("Improve performance for repeat visitors with zero round-trip
- * time") is authored in js/main.js and does not mention the replay risk on
- * non-idempotent requests the brief wants called out; that copy can't be
- * changed here without editing js/main.js, so the caveat is added at the
- * section level instead, below.
- *
- * `data-confirm-settings="ssl"` was another dead marker (see the note on
- * ccm_tools_cf_render_security_section()) — same situation, dropped.
- */
+/* 6be7b55b488678c7 */
 function ccm_tools_cf_render_network_section(): void {
     ?>
     <section class="ccm-optgroup">
@@ -1296,17 +1006,7 @@ function ccm_tools_cf_render_network_section(): void {
     <?php
 }
 
-/**
- * DNS Records section (read-only, populated client-side). Caller only
- * invokes this when $connected is true. Last in the page, per the brief.
- *
- * #cf-dns-records is where js/main.js (loadCfDnsRecords()) writes a
- * `<div class="ccm-cf-dns-table-wrap"><table>…</table></div>` — kept as-is,
- * wrapped in a `.ccm-panel`.
- *
- * @param array $settings  Unused directly; kept for parity with the other
- *                          section helpers and in case a future caller needs it.
- */
+/* 93fcfa1cde834ce3 */
 function ccm_tools_cf_render_dns_section(array $settings): void {
     ?>
     <section class="ccm-optgroup">
@@ -1325,10 +1025,7 @@ function ccm_tools_cf_render_dns_section(array $settings): void {
     <?php
 }
 
-/**
- * Empty state shown instead of every connected-only section when there is
- * no API connection yet.
- */
+/* 254072dc76b0abcc */
 function ccm_tools_cf_render_empty_state(): void {
     ?>
     <div class="ccm-empty">
@@ -1342,17 +1039,7 @@ function ccm_tools_cf_render_empty_state(): void {
     <?php
 }
 
-/**
- * Connection settings: API Token + Zone ID form, and the token setup
- * guide. Always rendered (open by default while disconnected) — this is
- * also where #cf-connection-form lives, and js/main.js only initialises
- * any of its Cloudflare handlers at all when that element exists
- * (`if ($('#cf-connection-form')) { initCloudflareHandlers(); }`), so it
- * must never be left out of the page regardless of connection state.
- *
- * @param array $settings
- * @param bool  $connected
- */
+/* df735822a4f76113 */
 function ccm_tools_cf_render_connection_disclosure(array $settings, bool $connected): void {
     ?>
     <details class="ccm-disclose" id="cf-connection-disclose"<?php echo !$connected ? ' open' : ''; ?>>

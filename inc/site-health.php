@@ -1,18 +1,5 @@
 <?php
-/**
- * Site Health — Google PageSpeed Insights
- *
- * Replaces the removed AI Performance Hub. This module measures and reports;
- * it NEVER changes a setting on its own. Every recommendation is a link to the
- * relevant toggle so a human decides. That is the whole point: the old AI
- * optimiser applied its own guesses to live sites and broke them.
- *
- * Talks straight to Google's PageSpeed Insights API v5 with the site's own API
- * key. There is no CCM hub in the middle any more.
- *
- * @package CCM_Tools
- * @since 8.0.0
- */
+/* 1cc39878e5740fe6 */
 
 if (!defined('ABSPATH')) {
     exit;
@@ -23,21 +10,24 @@ if (!defined('CCM_TOOLS_PSI_ENDPOINT')) {
     define('CCM_TOOLS_PSI_ENDPOINT', 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
 }
 
-/**
- * How many past runs to keep per strategy. Only the scores and a timestamp are
- * stored per run, a few dozen bytes, so this can afford to be generous.
- */
+/* 56e28544d03088ef */
+/** How many recent runs per strategy keep their full findings. */
+if (!defined('CCM_TOOLS_SH_DETAIL_RUNS')) {
+    define('CCM_TOOLS_SH_DETAIL_RUNS', 20);
+}
+
+/** How many findings are kept for one run. */
+if (!defined('CCM_TOOLS_SH_DETAIL_FINDINGS')) {
+    define('CCM_TOOLS_SH_DETAIL_FINDINGS', 8);
+}
+
 if (!defined('CCM_TOOLS_SH_HISTORY_MAX')) {
     define('CCM_TOOLS_SH_HISTORY_MAX', 200);
 }
 
 // ─── Settings ───────────────────────────────────────────────────
 
-/**
- * Site Health settings.
- *
- * @return array
- */
+/* c3e9d06fe3712daf */
 function ccm_tools_sh_get_settings(): array {
     $defaults = array(
         'api_key'    => '',
@@ -50,28 +40,19 @@ function ccm_tools_sh_get_settings(): array {
     return wp_parse_args($stored, $defaults);
 }
 
-/**
- * Persist Site Health settings, whitelisted.
- *
- * @param array $settings Raw settings.
- * @return bool
- */
+/* b2bbee044ffaedff */
 function ccm_tools_sh_save_settings(array $settings): bool {
     $current = ccm_tools_sh_get_settings();
     $clean   = array(
         'api_key'  => isset($settings['api_key']) ? trim(sanitize_text_field($settings['api_key'])) : $current['api_key'],
         'last_url' => isset($settings['last_url']) ? esc_url_raw($settings['last_url']) : $current['last_url'],
     );
-    return update_option('ccm_tools_site_health', $clean);
+    // Not autoloaded: a full report is one of the biggest things this plugin
+    // stores, and it is read on one admin screen, not on every request.
+    return update_option('ccm_tools_site_health', $clean, false);
 }
 
-/**
- * Whether an API key is configured.
- *
- * A constant in wp-config.php wins, so a key can be kept out of the database.
- *
- * @return string
- */
+/* 757f8d77597e441d */
 function ccm_tools_sh_api_key(): string {
     if (defined('CCM_TOOLS_PSI_KEY') && CCM_TOOLS_PSI_KEY) {
         return (string) CCM_TOOLS_PSI_KEY;
@@ -80,27 +61,14 @@ function ccm_tools_sh_api_key(): string {
     return (string) $settings['api_key'];
 }
 
-/**
- * Whether the key came from wp-config.php rather than the database.
- *
- * @return bool
- */
+/* 3139db5b1777b079 */
 function ccm_tools_sh_key_is_constant(): bool {
     return defined('CCM_TOOLS_PSI_KEY') && CCM_TOOLS_PSI_KEY;
 }
 
 // ─── URL handling ───────────────────────────────────────────────
 
-/**
- * Confine a URL to this site.
- *
- * PSI will happily test any public URL. Restricting it to this install stops
- * the plugin being used to run scans against third parties on Google's dime,
- * and stops a tampered request pointing the report somewhere misleading.
- *
- * @param string $url Candidate URL.
- * @return string|WP_Error Normalised URL, or an error.
- */
+/* 88b2adbb3dd5eb79 */
 function ccm_tools_sh_validate_url(string $url) {
     $url = trim($url);
     if ($url === '') {
@@ -140,13 +108,7 @@ function ccm_tools_sh_validate_url(string $url) {
 
 // ─── The API call ───────────────────────────────────────────────
 
-/**
- * Run PageSpeed Insights against one URL and strategy.
- *
- * @param string $url      URL on this site.
- * @param string $strategy 'mobile' or 'desktop'.
- * @return array|WP_Error Extracted report, or an error.
- */
+/* 4ff8181f80a859d2 */
 function ccm_tools_sh_run(string $url, string $strategy) {
     $strategy = ($strategy === 'desktop') ? 'desktop' : 'mobile';
 
@@ -163,9 +125,7 @@ function ccm_tools_sh_run(string $url, string $strategy) {
         );
     }
 
-    // Categories must be repeated as separate query parameters. Building them
-    // with http_build_query on an array yields category[0]=..., which Google
-    // silently ignores, and only the performance category comes back.
+    /* 318818d93ddf6980 */
     $categories = array('PERFORMANCE', 'ACCESSIBILITY', 'BEST_PRACTICES', 'SEO');
     $query = 'url=' . rawurlencode($url)
         . '&strategy=' . rawurlencode($strategy)
@@ -221,34 +181,8 @@ function ccm_tools_sh_run(string $url, string $strategy) {
     return ccm_tools_sh_extract($body, $url, $strategy);
 }
 
-/**
- * Pull the parts we display out of a PSI response.
- *
- * Deliberately schema-agnostic about audit ids. Lighthouse 13 removed the
- * legacy opportunity audits (render-blocking-resources, unused-javascript and
- * friends) in favour of "*-insight" audits carrying metricSavings. Keying off
- * fixed ids is exactly why the old integration stopped returning anything, so
- * this walks every audit and keeps whatever is failing and quantified.
- *
- * @param array  $body     Decoded PSI response.
- * @param string $url      URL tested.
- * @param string $strategy Strategy used.
- * @return array
- */
-/**
- * Format a lab metric for display.
- *
- * Lighthouse's own displayValue is not consistent between audits: most are a
- * bare figure like "1.7 s", but server-response-time returns the sentence
- * "Root document took 0 ms". Printing that as the tile's headline value reads
- * as a caption rather than a measurement, and it wraps onto a second line,
- * which makes that one tile taller than the five beside it.
- *
- * @param string     $id       Lighthouse audit id.
- * @param float|null $numeric  numericValue, in ms except for CLS.
- * @param string     $fallback displayValue, used only when there is no number.
- * @return string
- */
+/* c6814332cf22eab3 */
+/* 8bb908dbdd8fb9d1 */
 function ccm_tools_sh_format_metric(string $id, $numeric, string $fallback): string {
     if ($numeric === null) {
         return $fallback !== '' ? $fallback : '-';
@@ -294,10 +228,7 @@ function ccm_tools_sh_extract(array $body, string $url, string $strategy): array
 
     $audits = (!empty($lh['audits']) && is_array($lh['audits'])) ? $lh['audits'] : array();
 
-    // Lab metrics. Each carries Google's published good / needs-improvement
-    // boundaries so the interface can show WHERE a value falls, not just what
-    // colour it is. A bare number cannot tell you whether 2.6s was a near miss
-    // or a long way off.
+    /* ed2273549f67d0b9 */
     $metric_ids = array(
         'largest-contentful-paint' => array(__('Largest Contentful Paint', 'ccm-tools'), 'LCP',  2500, 4000),
         'cumulative-layout-shift'  => array(__('Cumulative Layout Shift', 'ccm-tools'),  'CLS',  0.1,  0.25),
@@ -407,16 +338,7 @@ function ccm_tools_sh_extract(array $body, string $url, string $strategy): array
 
 // ─── Mapping audits to this plugin's own controls ───────────────
 
-/**
- * Which CCM Tools control, if any, addresses a given Lighthouse audit.
- *
- * Both the legacy audit ids and the Lighthouse 13 "-insight" ids are listed,
- * because a given site can be served either depending on Google's rollout.
- * Nothing here is ever applied automatically; it only produces a link.
- *
- * @param string $audit_id Lighthouse audit id.
- * @return array{page:string,label:string,note:string}|null
- */
+/* ef7d4978e12fe8dd */
 function ccm_tools_sh_suggest_for_audit(string $audit_id) {
     $map = array(
         // Render blocking.
@@ -488,26 +410,35 @@ function ccm_tools_sh_suggest_for_audit(string $audit_id) {
 
 // ─── History ────────────────────────────────────────────────────
 
-/**
- * Append a run to the stored history and return the trimmed list.
- *
- * Only the scores and a timestamp are kept, never the whole payload, so the
- * option cannot grow without bound.
- *
- * @param array $report Extracted report.
- * @return void
- */
+/* d8eec3dbf7416fcc */
 function ccm_tools_sh_record(array $report): void {
     $history = get_option('ccm_tools_site_health_history', array());
     if (!is_array($history)) {
         $history = array();
     }
 
+    /* 3cd265c17bd04755 */
+    $findings = array();
+    if (!empty($report['findings']) && is_array($report['findings'])) {
+        foreach (array_slice($report['findings'], 0, CCM_TOOLS_SH_DETAIL_FINDINGS) as $f) {
+            $findings[] = array(
+                'id'            => (string) ($f['id'] ?? ''),
+                'title'         => (string) ($f['title'] ?? ''),
+                'display'       => (string) ($f['display'] ?? ''),
+                'savings_ms'    => (int) ($f['savings_ms'] ?? 0),
+                'savings_bytes' => (int) ($f['savings_bytes'] ?? 0),
+                'score'         => (float) ($f['score'] ?? 0),
+            );
+        }
+    }
+
     $history[] = array(
-        'at'       => (int) $report['fetched_at'],
-        'strategy' => (string) $report['strategy'],
-        'url'      => (string) $report['url'],
-        'scores'   => isset($report['scores']) ? array_map('intval', $report['scores']) : array(),
+        'at'         => (int) $report['fetched_at'],
+        'strategy'   => (string) $report['strategy'],
+        'url'        => (string) $report['url'],
+        'scores'     => isset($report['scores']) ? array_map('intval', $report['scores']) : array(),
+        'findings'   => $findings,
+        'field_data' => isset($report['field_data']) && is_array($report['field_data']) ? $report['field_data'] : array(),
     );
 
     // Keep the newest N per strategy.
@@ -516,10 +447,19 @@ function ccm_tools_sh_record(array $report): void {
         $key = (isset($row['strategy']) && $row['strategy'] === 'desktop') ? 'desktop' : 'mobile';
         $by_strategy[$key][] = $row;
     }
+    /* f6c139d57d8b3776 */
     $trimmed = array();
     foreach ($by_strategy as $rows) {
         $rows = array_slice($rows, -CCM_TOOLS_SH_HISTORY_MAX);
-        $trimmed = array_merge($trimmed, $rows);
+
+        $keep_detail_from = count($rows) - CCM_TOOLS_SH_DETAIL_RUNS;
+        foreach ($rows as $i => $row) {
+            if ($i < $keep_detail_from) {
+                unset($rows[$i]['findings'], $rows[$i]['field_data']);
+            }
+        }
+
+        $trimmed = array_merge($trimmed, array_values($rows));
     }
     usort($trimmed, function ($a, $b) {
         return ((int) $a['at']) <=> ((int) $b['at']);
@@ -528,12 +468,7 @@ function ccm_tools_sh_record(array $report): void {
     update_option('ccm_tools_site_health_history', $trimmed, false);
 }
 
-/**
- * Stored history, newest last.
- *
- * @param string $strategy 'mobile', 'desktop' or '' for both.
- * @return array
- */
+/* 7a4ad500865996a1 */
 function ccm_tools_sh_history(string $strategy = ''): array {
     $history = get_option('ccm_tools_site_health_history', array());
     if (!is_array($history)) {
@@ -554,11 +489,7 @@ function ccm_tools_sh_history(string $strategy = ''): array {
 // ─── AJAX ───────────────────────────────────────────────────────
 
 add_action('wp_ajax_ccm_tools_sh_save_key', 'ccm_tools_ajax_sh_save_key');
-/**
- * Save the PageSpeed Insights API key.
- *
- * @return void
- */
+/* 88bed9fe41b490fb */
 function ccm_tools_ajax_sh_save_key(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!ccm_tools_user_is_admin()) {
@@ -588,14 +519,7 @@ function ccm_tools_ajax_sh_save_key(): void {
 }
 
 add_action('wp_ajax_ccm_tools_sh_run_test', 'ccm_tools_ajax_sh_run_test');
-/**
- * Run one PageSpeed Insights test.
- *
- * The browser calls this once per strategy so neither request runs long enough
- * to hit an execution timeout.
- *
- * @return void
- */
+/* df8e79b59fccd740 */
 function ccm_tools_ajax_sh_run_test(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!ccm_tools_user_is_admin()) {
@@ -617,11 +541,7 @@ function ccm_tools_ajax_sh_run_test(): void {
 }
 
 add_action('wp_ajax_ccm_tools_sh_clear_history', 'ccm_tools_ajax_sh_clear_history');
-/**
- * Wipe the stored score history.
- *
- * @return void
- */
+/* 2c982441f53e7845 */
 function ccm_tools_ajax_sh_clear_history(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!ccm_tools_user_is_admin()) {
@@ -633,12 +553,7 @@ function ccm_tools_ajax_sh_clear_history(): void {
 
 // ─── Page ───────────────────────────────────────────────────────
 
-/**
- * Score band for a 0-100 Lighthouse category score.
- *
- * @param int|null $score
- * @return string good|ok|bad|none
- */
+/* 69b9e648ee8869e2 */
 function ccm_tools_sh_band($score): string {
     if ($score === null || $score === '') {
         return 'none';
@@ -649,18 +564,7 @@ function ccm_tools_sh_band($score): string {
     return 'bad';
 }
 
-/**
- * Render one score ring.
- *
- * The arc is drawn with stroke-dasharray on a circle, so the value is baked
- * into the markup rather than animated into place by script. The page is
- * correct the instant it paints and stays correct with JavaScript off.
- *
- * @param string   $label Category name.
- * @param int|null $score 0-100, or null when not measured.
- * @param string   $sub   Small line beneath the label.
- * @return string
- */
+/* 920a46c227d7e635 */
 function ccm_tools_sh_gauge(string $label, $score, string $sub = ''): string {
     $band = ccm_tools_sh_band($score);
     $r    = 46;
@@ -689,13 +593,7 @@ function ccm_tools_sh_gauge(string $label, $score, string $sub = ''): string {
     return $out;
 }
 
-/**
- * Render a sparkline plus the latest value for one category's history.
- *
- * @param string $label  Category name.
- * @param array  $points Chronological list of ints.
- * @return string
- */
+/* 231375bca4edf838 */
 function ccm_tools_sh_trend(string $label, array $points): string {
     $points = array_values(array_filter($points, 'is_numeric'));
     $now    = $points ? (int) end($points) : null;
@@ -745,15 +643,7 @@ function ccm_tools_sh_trend(string $label, array $points): string {
     return $out;
 }
 
-/**
- * Render the Site Health admin page.
- *
- * Reading order is deliberate: the thing you came for (scores) is first, the
- * thing you act on (findings) is second, the record (history) is third, and
- * the API key, which you set once and never touch again, is last.
- *
- * @return void
- */
+/* 432bcb3329899969 */
 function ccm_tools_render_site_health_page(): void {
     if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -823,6 +713,128 @@ function ccm_tools_render_site_health_page(): void {
             </div>
 
             <div id="sh-status" role="status" aria-live="polite"></div>
+
+            <?php
+            /* e707fa56c1f275ff */
+            ?>
+            <div id="sh-viewing" class="ccm-hide"></div>
+
+            <!-- At a glance -->
+            <?php
+            /* ea4c66cff5eda47a */
+            $report = function_exists('ccm_tools_health_report') ? ccm_tools_health_report() : null;
+            if ($report) :
+                $grade_dot = 'ccm-dot-' . ($report['grade'] === 'good' ? 'ok' : ($report['grade'] === 'warn' ? 'warn' : 'bad'));
+                $needs = (int) $report['counts']['bad'] + (int) $report['counts']['warn'] + (int) $report['counts']['off'];
+            ?>
+            <div class="ccm-stat-grid">
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value ccm-stat-tile__value--brand"><?php echo esc_html(number_format_i18n($report['score'])); ?><small>%</small></div>
+                    <div class="ccm-stat-tile__label"><?php _e('Overall health', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub">
+                        <span class="ccm-dot <?php echo esc_attr($grade_dot); ?>"></span>
+                        <?php _e('Weighted across every check below', 'ccm-tools'); ?>
+                    </div>
+                </div>
+
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n($report['counts']['good'])); ?></div>
+                    <div class="ccm-stat-tile__label"><?php _e('Healthy', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub"><?php _e('Nothing to do here', 'ccm-tools'); ?></div>
+                </div>
+
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value"><?php echo esc_html(number_format_i18n($needs)); ?></div>
+                    <div class="ccm-stat-tile__label"><?php _e('Worth a look', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub">
+                        <span class="ccm-dot <?php echo $needs > 0 ? 'ccm-dot-warn' : 'ccm-dot-ok'; ?>"></span>
+                        <?php echo $needs > 0
+                            ? esc_html__('Each one links to its setting', 'ccm-tools')
+                            : esc_html__('Everything checked is in order', 'ccm-tools'); ?>
+                    </div>
+                </div>
+
+                <div class="ccm-stat-tile">
+                    <div class="ccm-stat-tile__value" id="sh-tile-perf">
+                        <?php echo $last && isset($last['scores']['performance'])
+                            ? esc_html(number_format_i18n((int) $last['scores']['performance']))
+                            : '&mdash;'; ?>
+                    </div>
+                    <div class="ccm-stat-tile__label"><?php _e('PageSpeed', 'ccm-tools'); ?></div>
+                    <div class="ccm-stat-tile__sub">
+                        <?php echo $last
+                            ? esc_html(sprintf(
+                                /* translators: %s: how long ago, e.g. "2 hours" */
+                                __('Tested %s ago', 'ccm-tools'),
+                                human_time_diff((int) ($last['at'] ?? time()), time())
+                            ))
+                            : esc_html__('Not tested yet', 'ccm-tools'); ?>
+                    </div>
+                </div>
+            </div>
+
+            <p class="ccm-text-muted" style="font-size: var(--ccm-text-xs); margin-top: calc(-1 * var(--ccm-space-md)); margin-bottom: var(--ccm-space-lg);">
+                <?php _e('Measured now from this site, except the PageSpeed figure, which is whatever Google last reported.', 'ccm-tools'); ?>
+            </p>
+
+            <?php foreach ($report['groups'] as $key => $group) :
+                if (empty($group['checks'])) { continue; }
+            ?>
+                <section class="ccm-optgroup">
+                    <header class="ccm-optgroup__head">
+                        <div>
+                            <h2 class="ccm-optgroup__title"><?php echo esc_html($group['name']); ?></h2>
+                        </div>
+                        <?php
+                        $group_bad = 0;
+                        foreach ($group['checks'] as $c) {
+                            if ($c['status'] === 'bad' || $c['status'] === 'warn' || $c['status'] === 'off') { $group_bad++; }
+                        }
+                        ?>
+                        <span class="ccm-chip ccm-chip--<?php echo $group_bad > 0 ? 'warn' : 'good'; ?>">
+                            <?php echo $group_bad > 0
+                                ? esc_html(sprintf(
+                                    /* translators: %s: count */
+                                    _n('%s to look at', '%s to look at', $group_bad, 'ccm-tools'),
+                                    number_format_i18n($group_bad)
+                                ))
+                                : esc_html__('All good', 'ccm-tools'); ?>
+                        </span>
+                    </header>
+                    <div class="ccm-optgroup__body">
+                        <?php foreach ($group['checks'] as $check) :
+                            $dot = 'ccm-dot-ok';
+                            if ($check['status'] === 'warn' || $check['status'] === 'off') { $dot = 'ccm-dot-warn'; }
+                            if ($check['status'] === 'bad') { $dot = 'ccm-dot-bad'; }
+                            if ($check['status'] === 'info') { $dot = ''; }
+                        ?>
+                            <div class="ccm-opt" id="sh-check-<?php echo esc_attr($check['id']); ?>">
+                                <div class="ccm-opt__main">
+                                    <div class="ccm-opt__text">
+                                        <span class="ccm-opt__label">
+                                            <?php if ($dot !== '') : ?>
+                                                <span class="ccm-dot <?php echo esc_attr($dot); ?>"></span>
+                                            <?php endif; ?>
+                                            <?php echo esc_html($check['label']); ?>
+                                        </span>
+                                        <p class="ccm-opt__desc"><?php echo esc_html($check['detail']); ?></p>
+                                    </div>
+                                    <span class="ccm-check__right">
+                                        <span class="ccm-check__value"><?php echo esc_html($check['value']); ?></span>
+                                        <?php if (!empty($check['link']['url'])) : ?>
+                                            <a class="ccm-button ccm-button-secondary ccm-button-small"
+                                               href="<?php echo esc_url($check['link']['url']); ?>">
+                                                <?php echo esc_html($check['link']['label']); ?>
+                                            </a>
+                                        <?php endif; ?>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+            <?php endforeach; ?>
+            <?php endif; ?>
 
             <?php if (!$has_key) : ?>
                 <div class="ccm-empty" id="sh-nokey">

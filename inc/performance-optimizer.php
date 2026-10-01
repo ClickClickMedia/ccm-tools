@@ -1,24 +1,12 @@
 <?php
-/**
- * Performance Optimizer
- * 
- * Eliminates render-blocking resources and improves Lighthouse scores.
- * Features: Defer JS, Delay JS, Async CSS, Preconnect hints, Remove query strings.
- * 
- * @package CCM_Tools
- * @since 7.4.0
- */
+/* 1b5be285c77d4edb */
 
 // Prevent direct file access
 if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Get performance optimizer settings
- * 
- * @return array Current settings
- */
+/* d0d27cf1c6b7c6d4 */
 function ccm_tools_perf_get_settings() {
     static $cached = null;
     global $ccm_tools_perf_settings_dirty;
@@ -115,51 +103,27 @@ function ccm_tools_perf_get_settings() {
     $cached = wp_parse_args($settings, $defaults);
     return $cached;
 }
-/**
- * Save performance optimizer settings
- * 
- * @param array $settings Settings to save
- * @return bool Success
- */
+/* f6f36a4072590e35 */
 function ccm_tools_perf_save_settings($settings) {
     // Clear static cache so next get_settings() call returns fresh data
     ccm_tools_perf_clear_settings_cache();
     return update_option('ccm_tools_perf_settings', $settings);
 }
 
-/**
- * Clear the static settings cache
- * Called after saving settings to ensure fresh data
- */
+/* f07ca47b7415d8a4 */
 function ccm_tools_perf_clear_settings_cache() {
-    // We need to reset the static variable in ccm_tools_perf_get_settings()
-    // Since PHP doesn't allow direct access to another function's static vars,
-    // we use a global flag that get_settings checks
+    /* 4c94a0bd124feb49 */
     global $ccm_tools_perf_settings_dirty;
     $ccm_tools_perf_settings_dirty = true;
 }
 
-/**
- * Check if performance optimizer is enabled
- * 
- * @return bool
- */
+/* 89bf8983b252c168 */
 function ccm_tools_perf_is_enabled() {
     $settings = ccm_tools_perf_get_settings();
     return !empty($settings['enabled']);
 }
 
-/**
- * Whether markup-transforming content filters (facades, lazy-load rewrites, dimension/
- * srcset/lazy injection) should run for the current request.
- *
- * These transforms assume a full browser DOM and the companion JS this module prints in
- * wp_footer. RSS/Atom readers never load that JS, so a feed gets facade markup with no way
- * to ever load the real embed; REST responses (including block-editor ServerSideRender
- * previews) shouldn't be mutated either.
- *
- * @return bool
- */
+/* 61398474c3a9ce2c */
 function ccm_tools_perf_should_transform_content() {
     if (function_exists('is_feed') && is_feed()) {
         return false;
@@ -173,9 +137,7 @@ function ccm_tools_perf_should_transform_content() {
     return true;
 }
 
-/**
- * Initialize performance optimizer hooks
- */
+/* d8523f684d0990b2 */
 function ccm_tools_perf_init() {
     $settings = ccm_tools_perf_get_settings();
 
@@ -214,9 +176,7 @@ function ccm_tools_perf_init() {
         add_action('wp_footer', 'ccm_tools_perf_delay_js_script', 99);
     }
     
-    // Preload CSS — gated on critical CSS being configured. Without inlined critical
-    // CSS, switching every media="all" stylesheet (including the theme's main CSS) to
-    // print-then-swap is a guaranteed flash of unstyled content.
+    /* 825fe4f43464aa03 */
     if (!empty($settings['preload_css']) && !empty($settings['critical_css']) && !empty($settings['critical_css_code'])) {
         add_filter('style_loader_tag', 'ccm_tools_perf_preload_css', 10, 4);
     }
@@ -437,9 +397,7 @@ function ccm_tools_perf_init() {
         add_action('wp_enqueue_scripts', 'ccm_tools_perf_woo_scripts_shop_only', 99);
     }
 
-    // Browser cache headers (v7.28.0) — hooked on 'wp', not 'send_headers'. send_headers
-    // fires before the main query runs, so is_search()/WooCommerce conditional tags
-    // inside ccm_tools_perf_cache_headers() cannot work reliably there.
+    /* 428463dfb04ecd72 */
     if (!empty($settings['cache_control_meta']) || !empty($settings['stale_while_revalidate'])) {
         add_action('wp', 'ccm_tools_perf_cache_headers');
     }
@@ -449,34 +407,11 @@ function ccm_tools_perf_init() {
         add_action('template_redirect', 'ccm_tools_perf_disable_author_archives');
     }
 
-    // Passive event listeners: removed in v8.0.0. It overrode
-    // EventTarget.prototype.addEventListener to force {passive:true}, which breaks
-    // preventDefault() in scroll-lock modals, mobile menus and wheel-zoom, and broke
-    // every jQuery .on() handler for those events because jQuery passes no options
-    // object. Chromium already defaults document-level touch and wheel listeners to
-    // passive, so there was little upside against that breakage.
+    /* f0c663b87ecab4d4 */
 }
 add_action('init', 'ccm_tools_perf_init');
 
-/**
- * Early cron throttle — registers on plugins_loaded so the filter is in place before
- * wp_cron() runs at init priority 10.
- *
- * FIX (v8.0.0 security hardening): this used to filter `pre_option_cron` and return
- * array() for the whole throttle window. That filter is read by EVERY consumer of the
- * `cron` option, not just the runner — so the universal
- * `if (!wp_next_scheduled('x')) wp_schedule_event(...)` pattern used on `init` by
- * WooCommerce, Action Scheduler, and backup plugins saw "nothing scheduled", scheduled
- * its own event, and `_set_cron_array()` wrote back an array containing ONLY that event,
- * erasing every other job on the site. It also throttled genuine system-cron hits to
- * wp-cron.php itself.
- *
- * Fixed by filtering `pre_get_ready_cron_jobs` (WP 5.1+) instead. That filter is only
- * consumed by wp_get_ready_cron_jobs(), which is only called from wp_cron() (the
- * runner). wp_next_scheduled() and everything else that reads the schedule calls
- * _get_cron_array() directly and never sees this filter, so the stored cron array is
- * never touched and no other plugin's scheduled events can be clobbered.
- */
+/* 8bf8c77a6dd2db4a */
 add_action('plugins_loaded', 'ccm_tools_perf_cron_early_init', 5);
 function ccm_tools_perf_cron_early_init() {
     $settings = ccm_tools_perf_get_settings();
@@ -493,15 +428,7 @@ function ccm_tools_perf_cron_early_init() {
     });
 }
 
-/**
- * Defer JavaScript files
- * Adds defer attribute to script tags
- * 
- * @param string $tag Script HTML tag
- * @param string $handle Script handle
- * @param string $src Script source URL
- * @return string Modified script tag
- */
+/* 49f28d5489bdab3a */
 function ccm_tools_perf_defer_js($tag, $handle, $src) {
     // Skip if already has defer or async
     if (strpos($tag, 'defer') !== false || strpos($tag, 'async') !== false) {
@@ -513,11 +440,7 @@ function ccm_tools_perf_defer_js($tag, $handle, $src) {
         return $tag;
     }
 
-    // Skip scripts with registered inline `before`/`after` companions —
-    // wp_add_inline_script(handle, ..., 'after') emits a sibling inline
-    // <script> that runs at parse time and references symbols from the
-    // parent (e.g. wp.i18n.setLocaleData). If we defer the parent, the
-    // inline runs before its dependency and throws ReferenceError.
+    /* f2646b415fd18aa9 */
     if (ccm_tools_perf_has_inline_companion($handle)) {
         return $tag;
     }
@@ -541,12 +464,7 @@ function ccm_tools_perf_defer_js($tag, $handle, $src) {
     return str_replace(' src=', ' defer src=', $tag);
 }
 
-/**
- * True if the script identified by $handle has an inline `before` or `after`
- * companion registered via wp_add_inline_script(). Such scripts must not be
- * deferred or delayed — their inline sibling runs at parse time and would
- * reference symbols (wp, jQuery, …) that the parent hasn't defined yet.
- */
+/* 4ad0f5180a523de3 */
 function ccm_tools_perf_has_inline_companion($handle, $type = 'script') {
     if ('style' === $type) {
         global $wp_styles;
@@ -562,26 +480,14 @@ function ccm_tools_perf_has_inline_companion($handle, $type = 'script') {
     return !empty($extra['after']) || !empty($extra['before']);
 }
 
-/**
- * Delay JavaScript execution until user interaction
- * Changes script type to prevent immediate execution
- * 
- * @param string $tag Script HTML tag
- * @param string $handle Script handle
- * @param string $src Script source URL
- * @return string Modified script tag
- */
+/* ffe2f90254d50e08 */
 function ccm_tools_perf_delay_js($tag, $handle, $src) {
     // Skip inline scripts
     if (empty($src)) {
         return $tag;
     }
 
-    // Delaying JS until interaction is the most aggressive optimisation here — bypass it
-    // for every logged-in user (not just administrators), since the frontend init() gate
-    // only exempts manage_options and shop managers/editors/logged-in customers still hit
-    // this filter and can lose admin-bar, account, and cart interactivity until they touch
-    // the page.
+    /* 431557ac640bb919 */
     if (is_user_logged_in()) {
         return $tag;
     }
@@ -624,21 +530,10 @@ function ccm_tools_perf_delay_js($tag, $handle, $src) {
     return $tag;
 }
 
-/**
- * Output the delay JS execution script
- * Listens for user interaction then loads delayed scripts
- */
+/* 07535bb11f47521d */
 function ccm_tools_perf_delay_js_script() {
     $settings = ccm_tools_perf_get_settings();
-    /*
-     * The field is labelled seconds, capped at 30, and suffixed "sec", but the
-     * value went straight into setTimeout, which takes milliseconds. Entering
-     * 10 gave a 10ms fallback and the highest the interface allowed was 30ms,
-     * so the setting could never do what it said. Convert here rather than
-     * relabel the field, because a fallback measured in milliseconds is not a
-     * useful thing to offer. Clamped, so an imported value cannot produce a
-     * delay measured in hours.
-     */
+    /* 1aa2a08b508e9677 */
     $seconds = isset($settings['delay_js_timeout']) ? intval($settings['delay_js_timeout']) : 0;
     $timeout = max(0, min(30, $seconds)) * 1000;
     ?>
@@ -704,35 +599,20 @@ function ccm_tools_perf_delay_js_script() {
     <?php
 }
 
-/**
- * Make CSS non-render-blocking using the print media trick
- * Changes media="all" to media="print" with onload handler to swap back
- * This eliminates render-blocking CSS while still loading stylesheets
- * 
- * @param string $tag Stylesheet HTML tag
- * @param string $handle Stylesheet handle
- * @param string $href Stylesheet URL
- * @param string $media Media attribute
- * @return string Modified stylesheet tag
- */
+/* 23c061755a551c9a */
 function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
     // Skip admin styles
     if (strpos($handle, 'admin') !== false) {
         return $tag;
     }
 
-    // Re-check the critical-CSS gate here too, not just in ccm_tools_perf_init() — this
-    // filter can still fire in contexts that bypass that one-time gate (e.g. a later
-    // style enqueued after settings were read). Without inlined critical CSS this feature
-    // is a guaranteed flash of unstyled content, so require both to be set.
+    /* b84e8c6ddb47f4f6 */
     $settings = ccm_tools_perf_get_settings();
     if (empty($settings['critical_css']) || empty($settings['critical_css_code'])) {
         return $tag;
     }
 
-    // If inline_small_styles (priority 5) already turned this into a <style> block, there
-    // is no href left to preload — leave it alone. Rebuilding a <link> here would silently
-    // undo the inlining.
+    /* 993f8dfd62a6bcf1 */
     if (stripos($tag, '<style') !== false) {
         return $tag;
     }
@@ -781,9 +661,7 @@ function ccm_tools_perf_preload_css($tag, $handle, $href, $media) {
     return $mutated . "\n" . $noscript . "\n";
 }
 
-/**
- * Add preconnect hints for external resources
- */
+/* 58bf9eee867d9bfb */
 function ccm_tools_perf_preconnect_hints() {
     $settings = ccm_tools_perf_get_settings();
     
@@ -799,9 +677,7 @@ function ccm_tools_perf_preconnect_hints() {
     }
 }
 
-/**
- * Add DNS prefetch hints
- */
+/* 82112792334c9422 */
 function ccm_tools_perf_dns_prefetch() {
     $settings = ccm_tools_perf_get_settings();
     
@@ -821,13 +697,7 @@ function ccm_tools_perf_dns_prefetch() {
     }
 }
 
-/**
- * Remove query strings from static resources
- * Helps with caching and reduces URL length
- * 
- * @param string $src Resource URL
- * @return string Modified URL
- */
+/* 8a8b712e105aa197 */
 function ccm_tools_perf_remove_query_strings($src) {
     if (strpos($src, 'ver=') !== false) {
         $src = remove_query_arg('ver', $src);
@@ -835,9 +705,7 @@ function ccm_tools_perf_remove_query_strings($src) {
     return $src;
 }
 
-/**
- * Disable WordPress emoji scripts and styles
- */
+/* 2a6e1db49df8d420 */
 function ccm_tools_perf_disable_emojis() {
     remove_action('wp_head', 'print_emoji_detection_script', 7);
     remove_action('wp_print_styles', 'print_emoji_styles');
@@ -857,9 +725,7 @@ function ccm_tools_perf_disable_emojis() {
     });
 }
 
-/**
- * Disable dashicons for non-logged-in users
- */
+/* 747208739da29d07 */
 function ccm_tools_perf_disable_dashicons() {
     if (!is_user_logged_in()) {
         wp_dequeue_style('dashicons');
@@ -867,12 +733,7 @@ function ccm_tools_perf_disable_dashicons() {
     }
 }
 
-/**
- * Add lazy loading to iframes
- * 
- * @param string $content Post content
- * @return string Modified content
- */
+/* 7fdc77028d557e76 */
 function ccm_tools_perf_lazy_load_iframes($content) {
     if (empty($content)) {
         return $content;
@@ -897,12 +758,7 @@ function ccm_tools_perf_lazy_load_iframes($content) {
     return $content;
 }
 
-/**
- * Replace YouTube embeds with lightweight facade
- * 
- * @param string $content Post content
- * @return string Modified content
- */
+/* 65d6f368b0b1a821 */
 function ccm_tools_perf_youtube_facade($content) {
     if (empty($content)) {
         return $content;
@@ -934,9 +790,7 @@ function ccm_tools_perf_youtube_facade($content) {
     return $content;
 }
 
-/**
- * Output YouTube facade click handler script
- */
+/* aba155ef957d212a */
 function ccm_tools_perf_youtube_facade_script() {
     ?>
     <script>
@@ -964,16 +818,7 @@ function ccm_tools_perf_youtube_facade_script() {
     <?php
 }
 
-/**
- * Video Lazy Load — replace below-fold <video> tags with a lightweight poster placeholder.
- * On user interaction (click/tap) the real video element is restored.
- * Autoplay videos with muted attribute are skipped (they are likely hero/background videos that
- * must play immediately). The FIRST video on the page is also left untouched since it's most
- * likely above the fold and may be the LCP element.
- *
- * @param string $content Post content
- * @return string Modified content
- */
+/* bd3f41c5a5cb5b8a */
 function ccm_tools_perf_video_lazy_load($content) {
     if (empty($content) || stripos($content, '<video') === false) {
         return $content;
@@ -1044,9 +889,7 @@ function ccm_tools_perf_video_lazy_load($content) {
     return $content;
 }
 
-/**
- * Output the click handler script for video lazy-load facades
- */
+/* 53d8d4174e7ec8e9 */
 function ccm_tools_perf_video_lazy_load_script() {
     ?>
     <script>
@@ -1071,15 +914,7 @@ function ccm_tools_perf_video_lazy_load_script() {
     <?php
 }
 
-/**
- * Video Preload None — set preload="none" on non-autoplay <video> elements.
- * This prevents the browser from downloading video data until the user clicks play,
- * which reduces initial page weight and improves LCP / load metrics.
- * Autoplay videos are left untouched because they need to preload to play immediately.
- *
- * @param string $content Post content
- * @return string Modified content
- */
+/* 1cb0908c63ad616c */
 function ccm_tools_perf_video_preload_none($content) {
     if (empty($content) || stripos($content, '<video') === false) {
         return $content;
@@ -1110,13 +945,7 @@ function ccm_tools_perf_video_preload_none($content) {
     return $content;
 }
 
-/**
- * Add fetchpriority="high" to the first image in content
- * This helps browsers prioritize the LCP (Largest Contentful Paint) image
- * 
- * @param string $content Post content
- * @return string Modified content
- */
+/* 0452ed97ccb64256 */
 function ccm_tools_perf_lcp_fetchpriority($content) {
     // Safety checks
     if (!is_string($content) || empty($content)) {
@@ -1148,16 +977,7 @@ function ccm_tools_perf_lcp_fetchpriority($content) {
     return $content;
 }
 
-/**
- * Add fetchpriority="high" to featured images
- *
- * @param string $html Post thumbnail HTML
- * @param int $post_id Post ID
- * @param int $thumbnail_id Thumbnail attachment ID
- * @param string|int[] $size Image size
- * @param string|array $attr Query string or array of attributes
- * @return string Modified HTML
- */
+/* 61333e16b5e0120a */
 function ccm_tools_perf_lcp_fetchpriority_thumbnail($html, $post_id, $thumbnail_id, $size, $attr) {
     // Safety checks
     if (!is_string($html) || empty($html)) {
@@ -1193,22 +1013,7 @@ function ccm_tools_perf_lcp_fetchpriority_thumbnail($html, $post_id, $thumbnail_
     return $html;
 }
 
-/**
- * Add fetchpriority="high" to images rendered via wp_get_attachment_image()
- * This catches images in page builders and theme templates that bypass the_content
- *
- * wp_get_attachment_image_attributes fires for the custom logo in the header on nearly
- * every theme, and that call happens before the_content/post_thumbnail_html ever run — so
- * without a guard the logo permanently claims the shared LCP flag and the real hero image
- * gets loading="lazy" instead. This hook therefore never sets the shared
- * $ccm_lcp_priority_added flag itself; only the_content and post_thumbnail_html claim it.
- * A local static prevents this hook from tagging more than one image of its own per request.
- *
- * @param array $attr Image attributes array
- * @param WP_Post $attachment Attachment post object
- * @param string|int[] $size Image size
- * @return array Modified attributes
- */
+/* 534805c2e5225512 */
 function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) {
     // Only run once per page load (use same global as content/thumbnail filters)
     global $ccm_lcp_priority_added;
@@ -1221,9 +1026,7 @@ function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) 
         return $attr;
     }
 
-    // Never claim the site logo — check both the class and, defensively, whether we're
-    // still building <head>/header markup (wp_body_open hasn't fired yet), since the logo
-    // and other header chrome render before it on virtually every theme.
+    /* 9f38d034e7400c6c */
     if (!empty($attr['class']) && preg_match('/\bcustom-logo\b/', $attr['class'])) {
         return $attr;
     }
@@ -1236,10 +1039,7 @@ function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) 
         return $attr;
     }
 
-    // This hook may run for many images across the page (builder widgets, ACF fields,
-    // etc.) — only tag the first one it sees after the guards above, without touching the
-    // shared flag that the_content/post_thumbnail_html use to decide whether the real LCP
-    // candidate still needs tagging.
+    /* 9da25868a3d4334c */
     static $local_claimed = false;
     if ($local_claimed) {
         return $attr;
@@ -1257,16 +1057,7 @@ function ccm_tools_perf_lcp_fetchpriority_attributes($attr, $attachment, $size) 
     return $attr;
 }
 
-/**
- * Add lazy loading and/or async decoding to images loaded via wp_get_attachment_image().
- * Runs at priority 10, after the LCP fetchpriority handler at priority 5, so the LCP
- * image already has fetchpriority="high" and we can safely skip it here.
- *
- * @param array  $attr       Image HTML attributes.
- * @param object $attachment Attachment post object.
- * @param mixed  $size       Requested image size.
- * @return array Modified attributes.
- */
+/* 440b8fec1df54c56 */
 function ccm_tools_perf_image_attributes( $attr, $attachment, $size ) {
     // Skip the LCP image — it must not be lazy-loaded.
     if ( isset( $attr['fetchpriority'] ) && $attr['fetchpriority'] === 'high' ) {
@@ -1286,14 +1077,7 @@ function ccm_tools_perf_image_attributes( $attr, $attachment, $size ) {
     return $attr;
 }
 
-/**
- * Add lazy loading and/or async decoding to raw <img> tags in post content.
- * Catches images that bypass wp_get_attachment_image() (classic editor HTML, page
- * builders whose output passes through the_content).
- *
- * @param string $content Post content HTML.
- * @return string Modified HTML.
- */
+/* 1b320ff78b839c89 */
 function ccm_tools_perf_image_lazydecode_content( $content ) {
     if ( empty( $content ) || stripos( $content, '<img' ) === false ) {
         return $content;
@@ -1336,11 +1120,7 @@ function ccm_tools_perf_image_lazydecode_content( $content ) {
     return $content;
 }
 
-/**
- * Output a small inline script that prefetches same-origin pages on hover/touch.
- * Uses a 100 ms debounce to avoid prefetching links the user only glances at.
- * Automatically disabled when the browser/OS reports data-saving mode.
- */
+/* e43851ab5287186d */
 function ccm_tools_perf_prefetch_on_hover() {
     ?>
     <script id="ccm-prefetch-on-hover">
@@ -1374,9 +1154,7 @@ function ccm_tools_perf_prefetch_on_hover() {
     <?php
 }
 
-/**
- * Preload the LCP image if URL is specified
- */
+/* e9a27e82f1b326ca */
 function ccm_tools_perf_lcp_preload() {
     $settings = ccm_tools_perf_get_settings();
     
@@ -1407,16 +1185,7 @@ function ccm_tools_perf_lcp_preload() {
     echo '<link rel="preload" as="image" href="' . $url . '"' . $type . ' fetchpriority="high">' . "\n";
 }
 
-/**
- * Add font-display: swap to Google Fonts and other font stylesheets
- * Fixes "Ensure text remains visible during webfont load" warning
- * 
- * @param string $tag Stylesheet HTML tag
- * @param string $handle Stylesheet handle
- * @param string $href Stylesheet URL
- * @param string $media Media attribute
- * @return string Modified stylesheet tag
- */
+/* e6d83b1be56d6748 */
 function ccm_tools_perf_font_display_swap($tag, $handle, $href, $media) {
     // Only modify Google Fonts URLs
     if (strpos($href, 'fonts.googleapis.com') !== false) {
@@ -1430,18 +1199,13 @@ function ccm_tools_perf_font_display_swap($tag, $handle, $href, $media) {
     return $tag;
 }
 
-/**
- * Add preload hints for Google Fonts
- */
+/* b89ff15f371799eb */
 function ccm_tools_perf_font_display_preload() {
     // Add preconnect for fonts.gstatic.com (actual font files)
     echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n";
 }
 
-/**
- * Start output buffering to inject font-display: swap into @font-face rules
- * This catches self-hosted fonts in theme CSS that don't have font-display set
- */
+/* 189ca5f324a7d247 */
 function ccm_tools_perf_font_display_start_buffer() {
     // Don't buffer AJAX requests, admin, REST API, or feeds
     if (wp_doing_ajax() || is_admin() || (defined('REST_REQUEST') && REST_REQUEST) || is_feed()) {
@@ -1451,12 +1215,7 @@ function ccm_tools_perf_font_display_start_buffer() {
     ob_start('ccm_tools_perf_font_display_process_buffer');
 }
 
-/**
- * Process output buffer to inject font-display: swap into @font-face rules
- * 
- * @param string $html The complete HTML output
- * @return string Modified HTML with font-display: swap injected
- */
+/* 1636f189cb89627e */
 function ccm_tools_perf_font_display_process_buffer($html) {
     // Only process HTML responses
     if (empty($html)) {
@@ -1495,11 +1254,7 @@ function ccm_tools_perf_font_display_process_buffer($html) {
     return $html;
 }
 
-/**
- * Output Speculation Rules for instant page navigation
- * Uses the Speculation Rules API for prerendering pages on hover
- * @see https://developer.chrome.com/docs/web-platform/prerender-pages
- */
+/* 642a7e1a910733aa */
 function ccm_tools_perf_speculation_rules() {
     $settings = ccm_tools_perf_get_settings();
     $eagerness = isset($settings['speculation_eagerness']) ? $settings['speculation_eagerness'] : 'moderate';
@@ -1543,9 +1298,7 @@ function ccm_tools_perf_speculation_rules() {
     echo "\n</script>\n";
 }
 
-/**
- * Inline critical CSS in the head
- */
+/* 22681733e7f579a8 */
 function ccm_tools_perf_inline_critical_css() {
     $settings = ccm_tools_perf_get_settings();
     
@@ -1559,10 +1312,7 @@ function ccm_tools_perf_inline_critical_css() {
     echo '<style id="ccm-critical-css">' . $css . '</style>' . "\n";
 }
 
-/**
- * Disable jQuery Migrate
- * jQuery Migrate is often unnecessary for modern themes/plugins
- */
+/* 892d12a4eec2dd5d */
 function ccm_tools_perf_disable_jquery_migrate($scripts) {
     if (!is_admin() && isset($scripts->registered['jquery'])) {
         $jquery = $scripts->registered['jquery'];
@@ -1573,10 +1323,7 @@ function ccm_tools_perf_disable_jquery_migrate($scripts) {
     }
 }
 
-/**
- * Disable WordPress Block Library CSS (Gutenberg)
- * Useful if not using the block editor on frontend
- */
+/* 879369ed817aabfe */
 function ccm_tools_perf_disable_block_css() {
     // A block theme's `global-styles` carries its entire theme.json presets and layout —
     // dequeuing it on a block theme renders the site unstyled.
@@ -1585,18 +1332,13 @@ function ccm_tools_perf_disable_block_css() {
     }
     wp_dequeue_style('wp-block-library');
     wp_dequeue_style('wp-block-library-theme');
-    wp_dequeue_style('wc-blocks-style'); // WooCommerce Blocks
-    // Still skip global-styles on a classic theme page that actually uses blocks —
-    // it may be the only source of the block editor's colour/typography presets there.
+    wp_dequeue_style('wc-blocks-style'); /* a8c9db826c70b867 */
     if (!(function_exists('has_blocks') && has_blocks())) {
         wp_dequeue_style('global-styles'); // Global styles
     }
 }
 
-/**
- * Disable WooCommerce cart fragments AJAX
- * Cart fragments can slow down pages significantly
- */
+/* 9f17ba8f1b97a09a */
 function ccm_tools_perf_disable_cart_fragments() {
     if (class_exists('WooCommerce')) {
         // Only disable on non-cart/checkout pages
@@ -1606,12 +1348,7 @@ function ccm_tools_perf_disable_cart_fragments() {
     }
 }
 
-/**
- * Reduce Heartbeat API frequency
- * 
- * @param array $settings Heartbeat settings
- * @return array Modified settings
- */
+/* aab1504a84767ffa */
 function ccm_tools_perf_reduce_heartbeat($settings) {
     $perf_settings = ccm_tools_perf_get_settings();
     $interval = isset($perf_settings['heartbeat_interval']) ? intval($perf_settings['heartbeat_interval']) : 60;
@@ -1623,22 +1360,13 @@ function ccm_tools_perf_reduce_heartbeat($settings) {
     return $settings;
 }
 
-/**
- * Remove X-Pingback header
- * 
- * @param array $headers HTTP headers
- * @return array Modified headers
- */
+/* d73bd3bdb260c6cf */
 function ccm_tools_perf_remove_x_pingback($headers) {
     unset($headers['X-Pingback']);
     return $headers;
 }
 
-/**
- * Get list of registered scripts for the exclude list UI
- * 
- * @return array Script handles and info
- */
+/* 9c2bf9a06b519c27 */
 function ccm_tools_perf_get_registered_scripts() {
     global $wp_scripts;
     
@@ -1657,11 +1385,7 @@ function ccm_tools_perf_get_registered_scripts() {
     return $scripts;
 }
 
-/**
- * Get list of registered styles for the exclude list UI
- * 
- * @return array Style handles and info
- */
+/* 16b3a8e2f463eb14 */
 function ccm_tools_perf_get_registered_styles() {
     global $wp_styles;
     
@@ -1680,12 +1404,7 @@ function ccm_tools_perf_get_registered_styles() {
     return $styles;
 }
 
-/**
- * Helper: Convert a local URL to an absolute filesystem path.
- *
- * @param string $url Local URL (with or without query string).
- * @return string|false Absolute path, or false if the URL is external.
- */
+/* 47cee0c5e8c3bc3f */
 function ccm_tools_perf_url_to_path( $url ) {
     $url        = strtok( $url, '?' );
     $site_url   = rtrim( site_url( '/' ), '/' );
@@ -1703,18 +1422,7 @@ function ccm_tools_perf_url_to_path( $url ) {
     return false;
 }
 
-/**
- * Helper: Whether a resolved filesystem path is safe to read and inline verbatim.
- *
- * Requires the path to end in one of the given extensions AND to resolve (via realpath,
- * so ../ traversal can't escape it) inside either WP_CONTENT_DIR or ABSPATH/wp-includes.
- * Without this, a plugin enqueuing e.g. plugins_url('dynamic-css.php') would get its PHP
- * source echoed verbatim into every page.
- *
- * @param string $path          Absolute filesystem path (from ccm_tools_perf_url_to_path()).
- * @param array  $allowed_exts  Lowercase extensions without the dot, e.g. array('js').
- * @return bool
- */
+/* 1e0b28cbf73c3f31 */
 function ccm_tools_perf_is_safe_inline_path( $path, $allowed_exts ) {
     if ( empty( $path ) || ! is_file( $path ) ) {
         return false;
@@ -1744,15 +1452,7 @@ function ccm_tools_perf_is_safe_inline_path( $path, $allowed_exts ) {
     return false;
 }
 
-/**
- * Replace only the "<script ... src=...></script>" substring inside a WordPress-built
- * script_loader_tag $tag with a given replacement, leaving anything else in $tag
- * (translations, before/after inline companions) untouched.
- *
- * @param string $tag         Full tag HTML from the script_loader_tag filter.
- * @param string $replacement Markup to splice in place of the <script src=...> element.
- * @return string|false Modified tag, or false if no matching <script src> was found.
- */
+/* 4a8a2a0892f121d3 */
 function ccm_tools_perf_splice_into_tag( $tag, $pattern, $replacement ) {
     if ( ! preg_match( $pattern, $tag, $m, PREG_OFFSET_CAPTURE ) ) {
         return false;
@@ -1762,25 +1462,13 @@ function ccm_tools_perf_splice_into_tag( $tag, $pattern, $replacement ) {
     return substr_replace( $tag, $replacement, $offset, strlen( $match ) );
 }
 
-/**
- * Inline small local scripts below the configured KB threshold.
- * Eliminates individual HTTP round-trips for tiny assets.
- *
- * @param string $tag    Full <script> tag HTML.
- * @param string $handle Registered script handle.
- * @param string $src    Script URL.
- * @return string Original tag or inline <script> block.
- */
+/* 06636c7beeda9345 */
 function ccm_tools_perf_inline_small_scripts( $tag, $handle, $src ) {
     if ( empty( $src ) || strpos( $src, 'wp-admin' ) !== false ) {
         return $tag;
     }
 
-    // Never discard translations, wp_add_inline_script() before/after companions, or
-    // convert a WP 6.3+ strategy=defer|async script into a synchronous parse-time one —
-    // WordPress builds $tag as translations + before-script + <script src> + after-script
-    // before this filter runs, and a companion may reference symbols the parent script
-    // hasn't defined yet if it stops being deferred.
+    /* 866cffc8d46d8f9e */
     if ( ccm_tools_perf_has_inline_companion( $handle ) || preg_match( '/\b(defer|async)\b/i', $tag ) ) {
         return $tag;
     }
@@ -1824,16 +1512,7 @@ function ccm_tools_perf_inline_small_scripts( $tag, $handle, $src ) {
     return $spliced . "\n";
 }
 
-/**
- * Inline small local stylesheets below the configured KB threshold.
- * Eliminates render-blocking HTTP requests for tiny CSS files.
- *
- * @param string $tag    Full <link> tag HTML.
- * @param string $handle Registered style handle.
- * @param string $href   Stylesheet URL.
- * @param string $media  Media attribute value.
- * @return string Original tag or inline <style> block.
- */
+/* 305f720211ce8d41 */
 function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
     if ( empty( $href ) || strpos( $href, 'wp-admin' ) !== false ) {
         return $tag;
@@ -1879,18 +1558,7 @@ function ccm_tools_perf_inline_small_styles( $tag, $handle, $href, $media ) {
     return ( false !== $spliced ? $spliced : $inline ) . "\n";
 }
 
-/**
- * Resolve a (possibly resized, e.g. -300x200) local upload URL to its attachment ID.
- * Memoised per request — inject_image_dimensions and inject_srcset both call this once
- * per <img> tag, and attachment_url_to_postid() is an uncached DB SELECT.
- *
- * attachment_url_to_postid() only matches the exact stored _wp_attached_file value, so it
- * returns 0 for the common resized-URL case (image-300x200.jpg) unless we strip the size
- * suffix first.
- *
- * @param string $src_clean Local URL with any query string already stripped.
- * @return int Attachment ID, or 0 if not found.
- */
+/* e3efb1bc7d9ad4d9 */
 function ccm_tools_perf_resolve_attachment_id( $src_clean ) {
     static $cache = array();
     if ( array_key_exists( $src_clean, $cache ) ) {
@@ -1907,13 +1575,7 @@ function ccm_tools_perf_resolve_attachment_id( $src_clean ) {
     return $cache[ $src_clean ];
 }
 
-/**
- * Inject missing width and height attributes on local <img> tags in post content.
- * Prevents Cumulative Layout Shift (CLS) by reserving space before images load.
- *
- * @param string $content Post content HTML.
- * @return string Modified content.
- */
+/* 24b8dce2ef315ba3 */
 function ccm_tools_perf_inject_image_dimensions( $content ) {
     if ( empty( $content ) || ! is_string( $content ) ) {
         return $content;
@@ -1968,14 +1630,7 @@ function ccm_tools_perf_inject_image_dimensions( $content ) {
     }, $content );
 }
 
-/**
- * Inject missing srcset and sizes attributes on local <img> tags in post content.
- * Ensures the browser downloads the right image size for each viewport,
- * even for images output by page builders that bypass wp_get_attachment_image().
- *
- * @param string $content Post content HTML.
- * @return string Modified content.
- */
+/* 882eeea756f01457 */
 function ccm_tools_perf_inject_srcset( $content ) {
     if ( empty( $content ) || ! is_string( $content ) ) {
         return $content;
@@ -2019,46 +1674,26 @@ function ccm_tools_perf_inject_srcset( $content ) {
     }, $content );
 }
 
-/**
- * Start HTML minification output buffer (v7.26.0)
- */
+/* 2e7256aed6484a43 */
 function ccm_tools_perf_minify_html_start() {
     if ( is_feed() ) return;
     ob_start( 'ccm_tools_perf_minify_html_callback' );
 }
 
-/**
- * Minify HTML — strips whitespace/comments; preserves pre, textarea, script, style (v7.26.0)
- *
- * @param string $html Raw HTML output.
- * @return string Minified HTML.
- */
+/* c7e3877cde31f86b */
 function ccm_tools_perf_minify_html_callback( $html ) {
-    // Only ever minify an actual HTML document. is_feed() alone doesn't catch core
-    // sitemaps, robots.txt, or plugin JSON that also render via template_redirect —
-    // require the buffer to actually start with a doctype/html tag.
+    /* ffdd23160208596e */
     $head = ltrim( substr( $html, 0, 200 ) );
     if ( stripos( $head, '<!DOCTYPE' ) !== 0 && stripos( $head, '<html' ) !== 0 ) {
         return $html;
     }
 
-    /*
-     * Every preg_* below must be null-checked and the original returned on
-     * failure. PCRE returns null when it hits pcre.backtrack_limit, and the
-     * first pattern here uses a lazy .*? that backtracks once per character:
-     * an unclosed <pre|textarea|script|style> on a page over about a megabyte
-     * exhausts it. Assigning that null back to $html and returning it hands
-     * the output buffer nothing, so every logged-out visitor gets a blank
-     * page. Administrators never see it, because ccm_tools_perf_init() skips
-     * all of this for them.
-     */
+    /* 602a8bb824101729 */
     $original = $html;
 
     $preserve = array();
     $i        = 0;
-    // Extract pre/textarea/script/style and replace with placeholders
-    // Uses non-comment tokens so the comment-removal step won't strip them
-    // \b after the tag name so e.g. <preview-card> doesn't match as <pre>
+    /* 1c7901944ff6473d */
     $html = preg_replace_callback(
         '/<(pre|textarea|script|style)\b[^>]*>.*?<\/\1>/si',
         function ( $matches ) use ( &$preserve, &$i ) {
@@ -2090,9 +1725,7 @@ function ccm_tools_perf_minify_html_callback( $html ) {
     return $html;
 }
 
-/**
- * Output <link rel="preload"> tags for configured key-request URLs (v7.26.0)
- */
+/* 41cf1386e0d99903 */
 function ccm_tools_perf_preload_key_requests() {
     $settings = ccm_tools_perf_get_settings();
     $urls     = isset( $settings['preload_key_urls'] ) ? (array) $settings['preload_key_urls'] : array();
@@ -2121,20 +1754,12 @@ function ccm_tools_perf_preload_key_requests() {
     }
 }
 
-/**
- * Deregister the wp-embed script (v7.26.0)
- */
+/* 00144383ff29ddd8 */
 function ccm_tools_perf_disable_wp_embed() {
     wp_deregister_script( 'wp-embed' );
 }
 
-/**
- * Rewrite Google Fonts stylesheet URLs to locally-hosted copies (v7.26.0)
- *
- * @param string $src    Stylesheet src URL.
- * @param string $handle Stylesheet handle.
- * @return string        Local URL if downloaded successfully, otherwise original $src.
- */
+/* ee18b901edc69542 */
 function ccm_tools_perf_self_host_google_fonts_src( $src, $handle ) {
     // Exact-host match rather than strpos() anywhere in the string — a URL like
     // https://evil.example/?x=fonts.googleapis.com would otherwise pass.
@@ -2145,18 +1770,9 @@ function ccm_tools_perf_self_host_google_fonts_src( $src, $handle ) {
     return $local ?: $src;
 }
 
-/**
- * Download Google Fonts CSS + font files to uploads/ccm-fonts/ and return the local CSS URL.
- * Cached for 30 days. Returns false on any download or write failure so the caller falls
- * back to the original googleapis URL instead of linking a stylesheet that 404s.
- *
- * @param string $fonts_url Original Google Fonts API URL.
- * @return string|false     Local CSS URL or false.
- */
+/* 1aa973dbe68c8489 */
 function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
-    // style_loader_src (this filter) runs before style_loader_tag, so
-    // ccm_tools_perf_font_display_swap() never sees this googleapis URL to add
-    // display=swap itself — bake it into the URL we fetch instead.
+    /* b890ea14bc1e1b63 */
     $fonts_url = add_query_arg( 'display', 'swap', $fonts_url );
 
     $upload_dir     = wp_upload_dir();
@@ -2222,10 +1838,7 @@ function ccm_tools_perf_fetch_local_google_font( $fonts_url ) {
     return $css_url;
 }
 
-/**
- * Preload LCP CSS background image (v7.27.0)
- * Outputs a high-priority preload link for a CSS background image that is the LCP element.
- */
+/* 3e6450e91305b45c */
 function ccm_tools_perf_preload_css_bg_image() {
     $settings = ccm_tools_perf_get_settings();
     $url = esc_url( $settings['preload_css_bg_url'] ?? '' );
@@ -2233,18 +1846,13 @@ function ccm_tools_perf_preload_css_bg_image() {
     echo '<link rel="preload" as="image" href="' . $url . '" fetchpriority="high">' . "\n";
 }
 
-/**
- * Priority hints for above-fold images — start output buffer (v7.27.0)
- */
+/* 3ee5a17ab16308e3 */
 function ccm_tools_perf_priority_hints_start_buffer() {
     if ( is_admin() || is_feed() ) return;
     ob_start( 'ccm_tools_perf_priority_hints_process_buffer' );
 }
 
-/**
- * Priority hints for above-fold images — process output buffer (v7.27.0)
- * Adds fetchpriority="high" and removes loading="lazy" from matching images.
- */
+/* f4703857c1df8765 */
 function ccm_tools_perf_priority_hints_process_buffer( $html ) {
     $settings = ccm_tools_perf_get_settings();
     $selectors_raw = $settings['priority_hints_selectors'] ?? '';
@@ -2302,18 +1910,13 @@ function ccm_tools_perf_priority_hints_process_buffer( $html ) {
     return $html;
 }
 
-/**
- * Delay third-party scripts — start output buffer (v7.27.0)
- */
+/* 28b71b6fb5e83629 */
 function ccm_tools_perf_delay_third_party_start_buffer() {
     if ( is_admin() || is_feed() ) return;
     ob_start( 'ccm_tools_perf_delay_third_party_process_buffer' );
 }
 
-/**
- * Delay third-party scripts — process output buffer (v7.27.0)
- * Wraps matching external script tags to defer loading until first user interaction.
- */
+/* f0d7f112dcad7b79 */
 function ccm_tools_perf_delay_third_party_process_buffer( $html ) {
     $settings = ccm_tools_perf_get_settings();
     $domains = $settings['delay_third_party_domains'] ?? array();
@@ -2373,9 +1976,7 @@ function ccm_tools_perf_delay_third_party_process_buffer( $html ) {
     return $html;
 }
 
-/**
- * Disable Gutenberg block editor stylesheets on the frontend (v7.28.0)
- */
+/* 6d69814b4b64a13d */
 function ccm_tools_perf_disable_gutenberg_frontend() {
     // Same block-theme guard as disable_block_css — global-styles is theme.json-driven.
     if (function_exists('wp_is_block_theme') && wp_is_block_theme()) {
@@ -2389,13 +1990,7 @@ function ccm_tools_perf_disable_gutenberg_frontend() {
     wp_dequeue_style('classic-theme-styles');
 }
 
-/**
- * Whether the current request needs WooCommerce scripts/styles even though it isn't a
- * core WooCommerce template — e.g. a WooCommerce block or the [products]/[add_to_cart]
- * shortcode family embedded in a normal page, or an active cart/mini-cart widget.
- *
- * @return bool
- */
+/* 11011e4910d26dd1 */
 function ccm_tools_perf_page_needs_woo_scripts() {
     $post = get_post();
     if ($post instanceof WP_Post && is_string($post->post_content) && $post->post_content !== '') {
@@ -2427,9 +2022,7 @@ function ccm_tools_perf_page_needs_woo_scripts() {
     return false;
 }
 
-/**
- * Dequeue WooCommerce scripts/styles on non-shop pages (v7.28.0)
- */
+/* 50d378b56130ea6b */
 function ccm_tools_perf_woo_scripts_shop_only() {
     if (is_woocommerce() || is_cart() || is_checkout() || is_account_page()) {
         return;
@@ -2447,16 +2040,12 @@ function ccm_tools_perf_woo_scripts_shop_only() {
     wp_dequeue_style('woocommerce-smallscreen');
 }
 
-/**
- * Emit Cache-Control headers for logged-out, cookie-free WordPress HTML responses (v7.28.0)
- */
+/* 45b0a84f8ce6e346 */
 function ccm_tools_perf_cache_headers() {
     if (is_admin() || is_user_logged_in()) {
         return;
     }
-    // Search results are frequently near-unique per query string and are handled fine by
-    // normal browser caching; treating them as a shared "public" resource risks a proxy
-    // returning one visitor's results for another's query.
+    /* f0d5ba927716c320 */
     if (function_exists('is_search') && is_search()) {
         return;
     }
@@ -2465,9 +2054,7 @@ function ccm_tools_perf_cache_headers() {
         return;
     }
 
-    // Bail if a Set-Cookie header is already queued for this response (guest cart/session,
-    // comment-author cookies, etc). Sending `public` alongside a Set-Cookie lets any proxy
-    // that honours the origin's Cache-Control serve one guest's personalised HTML to the next.
+    /* a787d1e66b5b3158 */
     foreach (headers_list() as $sent_header) {
         if (stripos($sent_header, 'Set-Cookie:') === 0) {
             return;
@@ -2488,9 +2075,7 @@ function ccm_tools_perf_cache_headers() {
     }
     header('Cache-Control: ' . implode(', ', $parts));
 
-    // Vary on Cookie so any caching layer keys responses by cookie presence instead of
-    // treating every visitor's HTML as interchangeable. Merge with any Vary header a
-    // theme/plugin already queued rather than clobbering it.
+    /* 92394ee3e1d485b9 */
     $vary_values = array();
     foreach (headers_list() as $sent_header) {
         if (stripos($sent_header, 'Vary:') === 0) {
@@ -2508,10 +2093,7 @@ function ccm_tools_perf_cache_headers() {
     header('Vary: ' . implode(', ', $vary_values));
 }
 
-/**
- * 301-redirect all author archive pages to the homepage.
- * Eliminates thin/duplicate content and reduces crawl-budget waste.
- */
+/* dbf86c33b66941d7 */
 function ccm_tools_perf_disable_author_archives() {
     if (is_author()) {
         wp_redirect(home_url('/'), 301);
@@ -2519,13 +2101,7 @@ function ccm_tools_perf_disable_author_archives() {
     }
 }
 
-/**
- * Render one sub-field belonging to a toggle.
- *
- * @param array $field    Field spec from the catalogue.
- * @param array $settings Current settings.
- * @return void
- */
+/* 672833a445021752 */
 function ccm_tools_perf_render_field(array $field, array $settings): void {
     $key   = $field['key'];
     $id    = ccm_tools_perf_field_id($key);
@@ -2576,13 +2152,7 @@ function ccm_tools_perf_render_field(array $field, array $settings): void {
     <?php
 }
 
-/**
- * Render one toggle row.
- *
- * @param array $item     Catalogue item.
- * @param array $settings Current settings.
- * @return void
- */
+/* 060c61b29a8503f0 */
 function ccm_tools_perf_render_option(array $item, array $settings): void {
     $key  = $item['key'];
     $id   = ccm_tools_perf_field_id($key);
@@ -2636,15 +2206,7 @@ function ccm_tools_perf_render_option(array $item, array $settings): void {
     <?php
 }
 
-/**
- * Render the Performance Optimizer admin page.
- *
- * The page is generated from ccm_tools_perf_catalogue(). Adding a setting means
- * adding one array entry, not forty lines of copied markup, and every option is
- * laid out and labelled the same way by construction.
- *
- * @return void
- */
+/* 63e2bbda53bfa043 */
 function ccm_tools_render_perf_page() {
     if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -2692,7 +2254,7 @@ function ccm_tools_render_perf_page() {
                             <span class="ccm-toggle-slider"></span>
                         </label>
                     </span>
-                    <button type="button" id="save-perf-settings" class="ccm-button ccm-button-primary">
+                    <button type="button" id="save-perf-settings" class="ccm-button ccm-button-primary ccm-savebar__proxy">
                         <?php _e('Save settings', 'ccm-tools'); ?>
                     </button>
                 </div>
@@ -2768,14 +2330,7 @@ function ccm_tools_render_perf_page() {
                 <div class="ccm-row">
                     <button type="button" id="export-perf-settings" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Export', 'ccm-tools'); ?></button>
                     <?php
-                    /*
-                     * Three ids, because js/main.js drives a three-step flow:
-                     * -btn opens the picker, the file input reports the chosen
-                     * name into -file-name, and only then is the real Import
-                     * button revealed. It reveals it with an inline
-                     * style.display, which cannot beat .ccm-hide's
-                     * `display: none !important`, so this one hides inline.
-                     */
+                    /* 409d3258c70a4d50 */
                     ?>
                     <button type="button" id="import-perf-settings-btn" class="ccm-button ccm-button-secondary ccm-button-small"><?php _e('Choose a file', 'ccm-tools'); ?></button>
                     <input type="file" id="import-perf-file" accept="application/json" class="ccm-hide" aria-label="<?php esc_attr_e('Choose a performance settings file to import', 'ccm-tools'); ?>">
@@ -2812,12 +2367,7 @@ function ccm_tools_render_perf_page() {
                         </button>
                     </div>
                     <?php
-                    /*
-                     * js/main.js reveals each of these with an inline
-                     * style.display, which loses to .ccm-hide's !important, so
-                     * they start hidden inline instead. Scanning fills the
-                     * matching textarea in the Resource hints group above.
-                     */
+                    /* ad4baa0cf17df039 */
                     ?>
                     <div id="detected-scripts-result" style="display: none; margin-top: var(--ccm-space-md);"></div>
                     <div id="detected-delay-scripts-result" style="display: none; margin-top: var(--ccm-space-md);"></div>
@@ -2829,12 +2379,7 @@ function ccm_tools_render_perf_page() {
         </div>
 
         <?php
-        /*
-         * Floating save bar. The page is long enough that a Save button pinned
-         * to the top or the bottom means scrolling past sixty rows to commit a
-         * single toggle, or forgetting entirely. js/ui.js watches the controls,
-         * counts what changed, and proxies this button to the real one above.
-         */
+        /* 5a15529ac9875866 */
         ?>
         <div class="ccm-savebar" data-ccm-savebar data-savebar-target="#save-perf-settings">
             <span class="ccm-savebar__dot" aria-hidden="true"></span>

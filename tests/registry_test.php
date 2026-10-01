@@ -467,10 +467,116 @@ check(
     is_array($info) && $info['version'] === '8.11.0'
 );
 
+// ── The address does not appear on the panel ───────────────────
+//
+// Every admin on every client site can read the update panel, and the host
+// that serves our releases is not for them. The failure messages are what
+// carried it: WP_Error hands back "cURL error 6: Could not resolve host:
+// <host>", which the panel printed verbatim, so the address showed up exactly
+// when something was broken and somebody was reading the panel to find out
+// why.
+//
+// This is a lower profile, not a secret -- the host is in the plugin source
+// and in every outbound request. What it has to do is never be readable off a
+// screen, including from a row an older version stored.
+
+$svc_host = (string) wp_parse_url(ccm_tools_registry_endpoint(), PHP_URL_HOST);
+
+/*
+ * Guarded, so an older registry.php produces a readable failure instead of a
+ * fatal. A test that dies on the code it is meant to judge tells you only that
+ * it died.
+ */
+$has_redact = function_exists('ccm_tools_registry_redact');
+check('a redaction helper exists', $has_redact, 'nothing strips the host from a failure message');
+
+foreach ($has_redact ? array(
+    'cURL error 6: Could not resolve host: ' . $svc_host,
+    'Failed to connect to ' . ccm_tools_registry_endpoint() . '/v1/check port 443',
+    strtoupper($svc_host) . ' refused the connection',
+) : array() as $message) {
+    check(
+        sprintf('host redacted from %-34s', '"' . substr($message, 0, 32) . '"'),
+        stripos(ccm_tools_registry_redact($message), $svc_host) === false,
+        'a failed check would print the address on the panel'
+    );
+}
+
+if ($has_redact) {
+    check(
+        'a message carrying no address is left alone',
+        ccm_tools_registry_redact('cURL error 28: Operation timed out after 5000 ms')
+            === 'cURL error 28: Operation timed out after 5000 ms',
+        'redaction must not eat the part that is actually diagnostic'
+    );
+}
+
+// A row stored by a version that recorded the raw message, read back by this
+// one. The panel reads it on every load until the next check overwrites it.
+reset_state();
+$GLOBALS['__options'][CCM_TOOLS_REGISTRY_LAST] = array(
+    'at'     => time(),
+    'ok'     => false,
+    'detail' => 'cURL error 6: Could not resolve host: ' . $svc_host,
+);
+$read = ccm_tools_registry_last_attempt();
+check(
+    'a detail written before this change is redacted on the way out',
+    is_array($read) && stripos((string) $read['detail'], $svc_host) === false,
+    'got: ' . (is_array($read) ? (string) $read['detail'] : 'nothing')
+);
+
+if (function_exists('ccm_tools_registry_source_name')) {
+    check(
+        'the panel names a source instead of an address',
+        stripos(ccm_tools_registry_source_name(false), $svc_host) === false
+            && ccm_tools_registry_source_name(false) !== ccm_tools_registry_source_name(true),
+        'the two sources must be distinguishable without naming a host'
+    );
+} else {
+    check('a source-name helper exists', false, 'the panel has no name to show instead of a URL');
+}
+
+/*
+ * And the real check: render the panel and look at it. The three above test
+ * the helpers, which only exist because of this change -- against the version
+ * that had the fault they do not fail, they fatal, which proves nothing about
+ * what was on the screen. This one fails cleanly on the old markup, because
+ * the old markup printed the endpoint into a field.
+ */
+foreach (array(
+    'healthy'   => true,
+    'unhealthy' => false,
+) as $label => $healthy) {
+    reset_state();
+    if ($healthy) {
+        $GLOBALS['__next_http'] = ok_response(true, $sample_update);
+    } else {
+        $GLOBALS['__next_http'] = new WP_Error(
+            'http_request_failed',
+            'cURL error 6: Could not resolve host: ' . $svc_host
+        );
+    }
+    ccm_tools_registry_check(true);
+
+    ob_start();
+    ccm_tools_registry_render_panel();
+    $panel = (string) ob_get_clean();
+
+    check(
+        sprintf('the rendered panel (%s) carries no host', $label),
+        $panel !== '' && stripos($panel, $svc_host) === false,
+        $panel === ''
+            ? 'the panel rendered nothing, so this proved nothing'
+            : 'found it at offset ' . stripos($panel, $svc_host)
+    );
+}
+
 printf("
 ");
 if ($failures) {
     printf("%d check(s) failed\n", $failures);
     exit(1);
 }
-printf("entitlement fails open on every failure shape, and only an explicit answer blocks\n");
+printf("entitlement fails open on every failure shape, only an explicit answer blocks,\n");
+printf("and the service address never reaches the panel\n");

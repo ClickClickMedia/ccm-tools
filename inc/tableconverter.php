@@ -4,13 +4,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Validate that a table name exists in the current database
- * Security: Prevents SQL injection by validating against actual database tables
- * 
- * @param string $table_name The table name to validate
- * @return bool True if valid, false otherwise
- */
+/* 341b7e0a5376c449 */
 function ccm_tools_validate_table_name($table_name) {
     global $wpdb;
     
@@ -25,23 +19,12 @@ function ccm_tools_validate_table_name($table_name) {
     return in_array($table_name, $tables, true);
 }
 
-/**
- * Get appropriate collation for WordPress databases.
- *
- * Always returns utf8mb4_unicode_520_ci to match WordPress core default.
- * Using utf8mb4_0900_ai_ci on MySQL 8.0+ would cause "Illegal mix of collations"
- * errors when JOINing with tables created by WordPress/plugins using 520_ci.
- *
- * @param string $version_string MySQL/MariaDB version (accepted for backward compat, ignored)
- * @return string Always 'utf8mb4_unicode_520_ci'
- */
+/* 98de5539da231571 */
 function ccm_tools_get_appropriate_collation($version_string = '') {
     return 'utf8mb4_unicode_520_ci';
 }
 
-/**
- * Log database errors for debugging
- */
+/* 7f3440ed6c5b8299 */
 function ccm_tools_log_db_error($context, $wpdb_error = null) {
     global $wpdb;
     $error_message = $wpdb_error ?: $wpdb->last_error;
@@ -51,9 +34,7 @@ function ccm_tools_log_db_error($context, $wpdb_error = null) {
     return null;
 }
 
-/**
- * Get tables that need conversion
- */
+/* cbb411dd8f9095dc */
 function ccm_tools_get_tables_to_convert() {
     global $wpdb;
     
@@ -91,9 +72,7 @@ function ccm_tools_get_tables_to_convert() {
     ];
 }
 
-/**
- * Convert a single table
- */
+/* 41849f6bbee888da */
 function ccm_tools_convert_single_table($table_name) {
     global $wpdb;
     
@@ -379,10 +358,7 @@ function ccm_tools_convert_tables() {
 
         $result .= '</td><td>';
 
-        // Truthful status: a table that still doesn't match what we asked for
-        // (engine still not InnoDB, or collation still not the target) is a
-        // failure even when the re-read succeeded — this is what a failed
-        // ALTER that left values unchanged used to render as "up to date" for.
+        /* c469d5746b902207 */
         $still_wrong_engine = ($new_engine !== 'InnoDB');
         $still_wrong_collation = ($new_collation !== $collation);
         $has_row_errors = !empty($row_errors);

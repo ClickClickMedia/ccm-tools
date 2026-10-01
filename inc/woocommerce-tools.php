@@ -1,27 +1,17 @@
 <?php
-/**
- * WooCommerce Tools for CCM Tools
- * 
- * This file contains WooCommerce-related functionality including:
- * - Admin-only payment methods for testing
- * - Various WooCommerce utilities and tools
- */
+/* 51c6071fe9f39239 */
 
 // Exit if accessed directly
 if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Check if WooCommerce is active
- */
+/* ee582c0bb3645a53 */
 function ccm_tools_is_woocommerce_active() {
     return class_exists('WooCommerce');
 }
 
-/**
- * Get WooCommerce version
- */
+/* 9a74f6091edd16da */
 function ccm_tools_get_woocommerce_version() {
     if (!ccm_tools_is_woocommerce_active()) {
         return false;
@@ -30,9 +20,7 @@ function ccm_tools_get_woocommerce_version() {
     return defined('WC_VERSION') ? WC_VERSION : (function_exists('WC') ? WC()->version : '');
 }
 
-/**
- * Initialize WooCommerce Tools
- */
+/* 007e7b50e76f3ec9 */
 function ccm_tools_init_woocommerce() {
     if (!ccm_tools_is_woocommerce_active()) {
         return;
@@ -46,9 +34,7 @@ function ccm_tools_init_woocommerce() {
     }
 }
 
-/**
- * Filter payment gateways to show COD and BACS only for admins
- */
+/* 63dc5617ef98bdeb */
 function ccm_tools_filter_payment_gateways_for_admin($gateways) {
     // Only apply this filter if the setting is enabled
     $admin_payment_enabled = get_option('ccm_woo_admin_payment_enabled', 'no');
@@ -78,9 +64,7 @@ function ccm_tools_filter_payment_gateways_for_admin($gateways) {
     return $gateways;
 }
 
-/**
- * Get WooCommerce store information
- */
+/* eae63b9a4328e09a */
 function ccm_tools_get_woocommerce_info() {
     if (!ccm_tools_is_woocommerce_active()) {
         return false;
@@ -171,17 +155,7 @@ function ccm_tools_get_woocommerce_info() {
     );
 }
 
-/**
- * Check if COD and BACS gateways are available
- *
- * Uses payment_gateways() (ALL registered gateways) rather than
- * get_available_payment_gateways(), which only ever returns gateways that
- * are already enabled - that made cod_enabled always equal cod_available,
- * so the "available but disabled" UI state could never be reached. Calling
- * get_available_payment_gateways() here also runs every gateway's
- * is_available(), including third-party ones, against a null WC()->cart in
- * wp-admin, which some gateways fatal on.
- */
+/* 5ad594931aac81ee */
 function ccm_tools_check_payment_gateways() {
     if (!ccm_tools_is_woocommerce_active()) {
         return false;

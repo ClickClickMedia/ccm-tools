@@ -4,11 +4,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Check if Redis is available on the server
- * 
- * @return array Redis status information
- */
+/* 38dfa3988bb1cf9c */
 function ccm_tools_check_redis_status(): array {
     $status = array(
         'server_available' => false,
@@ -73,11 +69,7 @@ function ccm_tools_check_redis_status(): array {
     return $status;
 }
 
-/**
- * Check if Redis configuration exists in wp-config.php
- * 
- * @return array Redis configuration status
- */
+/* 1e0511e228ead4bc */
 function ccm_tools_check_redis_configuration(): array {
     $config_status = array(
         'configured' => false,
@@ -234,17 +226,11 @@ function ccm_tools_check_redis_configuration(): array {
 }
 
 
-/**
- * Check if WordPress core needs an update
- * 
- * @return array Update status information
- */
+/* eb6c5f8ad79c2350 */
 function ccm_tools_check_wordpress_updates(): array {
     global $wp_version;
     
-    // Check for WP core updates. Not forced: wp_version_check() only hits
-    // api.wordpress.org when its own cache is stale, so this no longer POSTs
-    // (and, on failure, GET-retries) to WordPress.org on every dashboard load.
+    /* 69ef4a0765d32afa */
     wp_version_check();
     
     // Get the update data
@@ -315,13 +301,7 @@ function ccm_tools_check_wordpress_updates(): array {
 
 
 
-/**
- * Format file size to human-readable format
- * 
- * @param int $bytes File size in bytes
- * @param int $precision Decimal precision
- * @return string Formatted file size
- */
+/* c00d172805e0503f */
 function ccm_tools_format_file_size($bytes, $precision = 2): string {
     $units = array('B', 'KB', 'MB', 'GB', 'TB');
     
@@ -334,11 +314,7 @@ function ccm_tools_format_file_size($bytes, $precision = 2): string {
     return round($bytes, $precision) . ' ' . $units[$pow];
 }
 
-/**
- * Get WordPress database size
- * 
- * @return array Database size information
- */
+/* 7f0dd18bf9c07908 */
 function ccm_tools_get_database_size(): array {
     global $wpdb;
     
@@ -359,11 +335,7 @@ function ccm_tools_get_database_size(): array {
     );
 }
 
-/**
- * Enhanced TTFB measurement function with improved baseline strategy
- * This is the main function that should be called for TTFB measurement
- * @return array Enhanced TTFB measurement results
- */
+/* 8edfb9ff0c855f00 */
 function ccm_tools_measure_ttfb_enhanced(): array {
     // Strategy: Measure fresh first to "warm up" the server, then baseline
     // This eliminates the cold start advantage that fresh measurements were getting
@@ -442,12 +414,7 @@ function ccm_tools_measure_ttfb_enhanced(): array {
     return $primary_result;
 }
 
-/**
- * Improved TTFB measurement with multiple attempts and better accuracy
- * @param bool $use_cache Whether to allow cached responses for more realistic measurement
- * @param int $attempts Number of attempts to average for more accurate results
- * @return array TTFB measurement results
- */
+/* 2f642f5d203c34dd */
 function ccm_tools_measure_ttfb_improved($use_cache = true, $attempts = 3): array {
     $result = array(
         'success' => false,
@@ -503,13 +470,7 @@ function ccm_tools_measure_ttfb_improved($use_cache = true, $attempts = 3): arra
     return $result;
 }
 
-/**
- * Perform a single TTFB measurement with improved handling for baseline vs fresh
- * @param string $url URL to measure
- * @param bool $use_cache Whether to allow cached responses
- * @param int $attempt_number Current attempt number for cache busting
- * @return array Single measurement result
- */
+/* 0537020dda438baf */
 function ccm_tools_single_ttfb_measurement($url, $use_cache, $attempt_number): array {
     $result = array(
         'success' => false,
@@ -653,7 +614,4 @@ function ccm_tools_single_ttfb_measurement($url, $use_cache, $attempt_number): a
     return $result;
 }
 
-// Remove direct HTML output from this file. Only output HTML when rendering the admin page, not after AJAX or function code.
-// The following block should only be included in the actual admin page rendering, not after wp_send_json_success or any AJAX handler.
-// If you need to render the admin page, do it in a dedicated function or template, not at the end of this file.
-// (Removed stray HTML navigation markup)
+/* 0ed92b7f3c6f8022 */

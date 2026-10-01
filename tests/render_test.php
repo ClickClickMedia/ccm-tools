@@ -346,9 +346,67 @@ class wpdb {
     public $comments = 'wp_comments';
     public $term_relationships = 'wp_term_relationships';
     public $last_error = '';
-    public function get_results($q, $o = OBJECT) { return array(); }
+    /*
+     * Answer the handful of shapes the pages actually ask for, so a preview
+     * shows a plausible site rather than a wall of zeroes. A render test only
+     * needs the page not to fatal; a preview needs it to look like something.
+     * Anything unrecognised still returns the old empty answer.
+     */
+    public function get_results($q, $o = OBJECT) {
+        if (stripos($q, 'information_schema.TABLES') !== false && stripos($q, 'TABLE_ROWS') !== false) {
+            $rows = array(
+                array('wp_postmeta',       'InnoDB', 'utf8mb4_unicode_520_ci', 184320,  61341696, 4194304),
+                array('wp_posts',          'InnoDB', 'utf8mb4_unicode_520_ci',  12480,  24117248,  524288),
+                array('wp_options',        'InnoDB', 'utf8mb4_unicode_520_ci',   3104,   9437184, 1048576),
+                array('wp_comments',       'InnoDB', 'utf8mb4_unicode_520_ci',   8192,   6291456,       0),
+                array('wp_commentmeta',    'InnoDB', 'utf8mb4_unicode_520_ci',  21504,   4194304,       0),
+                array('wp_term_relationships', 'InnoDB', 'utf8mb4_unicode_520_ci', 9216, 2097152,     0),
+                array('wp_wc_order_stats', 'MyISAM', 'utf8mb4_general_ci',       2048,   1572864,  262144),
+                array('legacy_crm_leads',  'MyISAM', 'latin1_swedish_ci',         640,    786432,       0),
+            );
+            $out = array();
+            foreach ($rows as $r) {
+                $o2 = new stdClass();
+                $o2->TABLE_NAME = $r[0];
+                $o2->ENGINE = $r[1];
+                $o2->TABLE_COLLATION = $r[2];
+                $o2->TABLE_ROWS = $r[3];
+                $o2->total_bytes = $r[4];
+                $o2->free_bytes = $r[5];
+                $out[] = $o2;
+            }
+            return $out;
+        }
+
+        if (stripos($q, 'autoload') !== false && stripos($q, 'ORDER BY bytes') !== false) {
+            $out = array();
+            foreach (array(
+                array('elementor_remote_info_library', 612000),
+                array('rewrite_rules', 184000),
+                array('wpseo_titles', 96000),
+            ) as $r) {
+                $o2 = new stdClass();
+                $o2->option_name = $r[0];
+                $o2->bytes = $r[1];
+                $out[] = $o2;
+            }
+            return $out;
+        }
+
+        return array();
+    }
+
     public function get_var($q) { return null; }
-    public function get_row($q, $o = OBJECT) { return null; }
+
+    public function get_row($q, $o = OBJECT) {
+        if (stripos($q, 'autoload') !== false) {
+            $o2 = new stdClass();
+            $o2->n = 318;
+            $o2->bytes = 1186000;   // enough to trip the warning, which is the point
+            return $o2;
+        }
+        return null;
+    }
     public function get_col($q) { return array(); }
     public function query($q) { return 0; }
     public function prepare($q) { return $q; }
