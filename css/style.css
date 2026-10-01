@@ -260,13 +260,8 @@ html[data-ccm-theme="light"] {
 /* ===================================
    Base Reset & Typography
    =================================== */
-.ccm-tools {
-    font-family: var(--ccm-font-sans);
-    font-size: var(--ccm-text-base);
-    line-height: 1.6;
-    color: var(--ccm-text);
-    background: var(--ccm-bg);
-    min-height: 100vh;
+.ccm-tools {    font-size: var(--ccm-text-base);
+    line-height: 1.6;    min-height: 100vh;
     box-sizing: border-box;
 }
 
@@ -279,106 +274,18 @@ html[data-ccm-theme="light"] {
 /* ===================================
    Header & Navigation
    =================================== */
-.ccm-header {
-    background: linear-gradient(135deg, var(--ccm-bg-dark) 0%, #1e293b 100%);
-    padding: var(--ccm-space-lg) var(--ccm-space-xl);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--ccm-space-xl);
-    position: sticky;
-    top: 32px; /* WordPress admin bar offset */
-    z-index: 100;
-    box-shadow: var(--ccm-shadow-lg);
-}
+.ccm-header {    justify-content: space-between;}
 
-.ccm-header-logo img {
-    height: 40px;
-    width: auto;
-    transition: transform var(--ccm-transition);
+.ccm-header-logo img {    transition: transform var(--ccm-transition);
 }
 
 .ccm-header-logo:hover img {
     transform: scale(1.05);
 }
-
-.ccm-header-title h1 {
-    margin: 0;
-    font-size: var(--ccm-text-xl);
-    font-weight: 600;
-    color: var(--ccm-text-inverse);
-    letter-spacing: -0.025em;
-}
-
-/* Navigation Tabs */
-.ccm-tabs {
-    display: flex;
-    gap: var(--ccm-space-xs);
-    background: rgba(255, 255, 255, 0.05);
-    padding: var(--ccm-space-xs);
-    border-radius: var(--ccm-radius-lg);
-}
-
 .ccm-tab {
-    position: relative;
-    padding: var(--ccm-space-sm) var(--ccm-space-lg);
-    color: var(--ccm-text-light);
-    text-decoration: none;
-    font-size: var(--ccm-text-sm);
-    font-weight: 500;
-    border-radius: var(--ccm-radius-md);
-    transition: all var(--ccm-transition);
-    white-space: nowrap;
-}
-
-.ccm-tab:hover {
-    color: var(--ccm-text-inverse);
-    background: rgba(255, 255, 255, 0.1);
-}
-
-.ccm-tab.active {
-    color: var(--ccm-primary);
-    background: var(--ccm-surface);
-    box-shadow: var(--ccm-shadow-sm);
-}
-
-/* ===================================
-   Main Content Area
-   =================================== */
-.ccm-content {
-    padding: var(--ccm-space-xl);
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-/* ===================================
-   Cards
-   =================================== */
-.ccm-card {
-    background: var(--ccm-surface);
-    border-radius: var(--ccm-radius-xl);
-    padding: var(--ccm-space-xl);
-    margin-bottom: var(--ccm-space-lg);
-    box-shadow: var(--ccm-shadow);
-    border: 1px solid var(--ccm-border);
-    transition: box-shadow var(--ccm-transition);
-}
-
-.ccm-card:hover {
-    box-shadow: var(--ccm-shadow-md);
-}
-
-.ccm-card h2 {
-    margin: 0 0 var(--ccm-space-lg) 0;
-    font-size: var(--ccm-text-xl);
-    font-weight: 600;
-    color: var(--ccm-text);
-    padding-bottom: var(--ccm-space-md);
-    border-bottom: 2px solid var(--ccm-border);
-    display: flex;
-    align-items: center;
-    gap: var(--ccm-space-sm);
-}
+    position: relative;}
+.ccm-card h2 {    padding-bottom: var(--ccm-space-md);
+    border-bottom: 2px solid var(--ccm-border);}
 
 .ccm-card h2::before {
     content: '';
@@ -396,35 +303,12 @@ html[data-ccm-theme="light"] {
 /* ===================================
    Buttons
    =================================== */
-.ccm-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--ccm-space-sm);
-    margin: var(--ccm-space-lg) 0;
+.ccm-buttons {    margin: var(--ccm-space-lg) 0;
 }
 
-.ccm-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--ccm-space-sm);
-    padding: var(--ccm-space-sm) var(--ccm-space-lg);
-    font-family: inherit;
-    font-size: var(--ccm-text-sm);
-    font-weight: 500;
-    color: var(--ccm-text-inverse);
-    background: linear-gradient(135deg, var(--ccm-primary) 0%, var(--ccm-primary-hover) 100%);
-    border: none;
-    border-radius: var(--ccm-radius-md);
-    cursor: pointer;
-    transition: all var(--ccm-transition);
-    text-decoration: none;
-    box-shadow: var(--ccm-shadow-sm);
-}
+.ccm-button {    background: linear-gradient(135deg, var(--ccm-primary) 0%, var(--ccm-primary-hover) 100%);}
 
-.ccm-button:hover {
-    transform: translateY(-1px);
-    box-shadow: var(--ccm-shadow-md);
+.ccm-button:hover {    box-shadow: var(--ccm-shadow-md);
     filter: brightness(1.1);
 }
 
@@ -436,38 +320,15 @@ html[data-ccm-theme="light"] {
     outline: 2px solid var(--ccm-primary);
     outline-offset: 2px;
 }
-
-.ccm-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-}
-
 .ccm-button-success {
     background: linear-gradient(135deg, var(--ccm-success) 0%, #16a34a 100%);
 }
-
-.ccm-button-danger {
-    background: linear-gradient(135deg, var(--ccm-error) 0%, #dc2626 100%);
-}
-
 .ccm-button-secondary {
-    background: var(--ccm-surface);
-    color: var(--ccm-text);
-    border: 1px solid var(--ccm-border);
+    background: var(--ccm-surface);    border: 1px solid var(--ccm-border);
 }
 
 .ccm-button-secondary:hover {
-    background: var(--ccm-bg);
-    border-color: var(--ccm-primary);
-    color: var(--ccm-primary);
-}
-
-.ccm-button-small {
-    padding: var(--ccm-space-xs) var(--ccm-space-md);
-    font-size: var(--ccm-text-xs);
-}
-
+    background: var(--ccm-bg);}
 /* Button Icons */
 .ccm-button-icon {
     display: inline-flex;
@@ -480,16 +341,11 @@ html[data-ccm-theme="light"] {
 /* ===================================
    Optimization Options
    =================================== */
-.ccm-optimization-options {
-    display: flex;
-    flex-direction: column;
-    gap: var(--ccm-space-lg);
-    margin: var(--ccm-space-lg) 0;
+.ccm-optimization-options {    flex-direction: column;    margin: var(--ccm-space-lg) 0;
 }
 
 /* The Database page renders the shared .ccm-optgroup / .ccm-opt card now,
    so its own row component has gone, along with the rules for it. */
-
 
 /* Optimization Progress */
 .ccm-optimization-progress {
@@ -577,30 +433,7 @@ html[data-ccm-theme="light"] {
 .ccm-status-error {
     color: var(--ccm-error);
 }
-
-/* Small inline spinner */
-/* ===================================
-   Tables
-   =================================== */
-.ccm-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: var(--ccm-space-md) 0;
-    font-size: var(--ccm-text-sm);
-}
-
-.ccm-table th,
-.ccm-table td {
-    padding: var(--ccm-space-md);
-    text-align: left;
-    border-bottom: 1px solid var(--ccm-border);
-}
-
-.ccm-table th {
-    font-weight: 600;
-    color: var(--ccm-text);
-    background: var(--ccm-bg);
-    white-space: nowrap;
+.ccm-table th {    white-space: nowrap;
     width: 30%;
 }
 
@@ -636,54 +469,6 @@ html[data-ccm-theme="light"] {
     border-radius: var(--ccm-radius-full);
     margin-right: var(--ccm-space-sm);
 }
-
-.ccm-success {
-    color: var(--ccm-success);
-}
-
-.ccm-warning {
-    color: var(--ccm-warning);
-}
-
-.ccm-error {
-    color: var(--ccm-error);
-}
-
-.ccm-info {
-    color: var(--ccm-info);
-}
-
-/* Status Badges */
-.ccm-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--ccm-space-xs);
-    padding: var(--ccm-space-xs) var(--ccm-space-sm);
-    font-size: var(--ccm-text-xs);
-    font-weight: 500;
-    border-radius: var(--ccm-radius-full);
-}
-
-.ccm-badge-success {
-    background: var(--ccm-success-bg);
-    color: var(--ccm-success);
-}
-
-.ccm-badge-warning {
-    background: var(--ccm-warning-bg);
-    color: var(--ccm-warning);
-}
-
-.ccm-badge-error {
-    background: var(--ccm-error-bg);
-    color: var(--ccm-error);
-}
-
-.ccm-badge-info {
-    background: var(--ccm-info-bg);
-    color: var(--ccm-info);
-}
-
 /* ===================================
    Forms & Inputs
    =================================== */
@@ -788,21 +573,8 @@ html[data-ccm-theme="light"] {
 }
 
 /* Alert/Notice Boxes */
-.ccm-alert {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--ccm-space-md);
-    padding: var(--ccm-space-md) var(--ccm-space-lg);
-    border-radius: var(--ccm-radius-lg);
-    margin: var(--ccm-space-md) 0;
+.ccm-alert {    margin: var(--ccm-space-md) 0;
 }
-
-
-
-.ccm-alert-error {
-    background: var(--ccm-error-bg);
-}
-
 
 /* ===================================
    Loading Spinner
@@ -813,50 +585,20 @@ html[data-ccm-theme="light"] {
         transform: rotate(360deg);
     }
 }
-
-/* ===================================
-   Notifications (Toast Messages)
-   =================================== */
-.ccm-notification {
-    position: fixed;
-    top: 32px;
-    right: 20px;
-    z-index: 99999;
-    display: flex;
-    align-items: center;
-    gap: var(--ccm-space-sm);
-    padding: var(--ccm-space-md) var(--ccm-space-lg);
-    background: var(--ccm-surface);
-    border-radius: var(--ccm-radius-lg);
-    box-shadow: var(--ccm-shadow-lg);
-    border: 1px solid var(--ccm-border);
-    transform: translateX(120%);
-    transition: transform var(--ccm-transition-slow) ease;
-    max-width: 400px;
-}
-
 .ccm-notification-show {
     transform: translateX(0);
 }
 
-.ccm-notification-success {
-    border-color: var(--ccm-success);
-    background: var(--ccm-success-bg);
+.ccm-notification-success {    background: var(--ccm-success-bg);
 }
 
-.ccm-notification-error {
-    border-color: var(--ccm-error);
-    background: var(--ccm-error-bg);
+.ccm-notification-error {    background: var(--ccm-error-bg);
 }
 
-.ccm-notification-warning {
-    border-color: var(--ccm-warning);
-    background: var(--ccm-warning-bg);
+.ccm-notification-warning {    background: var(--ccm-warning-bg);
 }
 
-.ccm-notification-info {
-    border-color: var(--ccm-info);
-    background: var(--ccm-info-bg);
+.ccm-notification-info {    background: var(--ccm-info-bg);
 }
 
 .ccm-notification .ccm-icon {
@@ -986,7 +728,6 @@ html[data-ccm-theme="light"] {
     transition: width var(--ccm-transition);
 }
 
-
 #progress-info p {
     margin: var(--ccm-space-sm) 0;
     font-weight: 500;
@@ -996,41 +737,15 @@ html[data-ccm-theme="light"] {
 /* ===================================
    PHP Extensions Grid
    =================================== */
-.ccm-extensions-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: var(--ccm-space-md);
-    margin-top: var(--ccm-space-lg);
-}
+.ccm-extensions-grid {    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));}
 
-.ccm-extension-item {
-    display: flex;
-    flex-direction: column;
-    gap: var(--ccm-space-sm);
-    padding: var(--ccm-space-md);
-    background: var(--ccm-bg);
-    border-radius: var(--ccm-radius-md);
-    border: 1px solid var(--ccm-border);
-    font-size: var(--ccm-text-sm);
-    overflow: hidden;
+.ccm-extension-item {    overflow: hidden;
 }
 
 /* A present extension tints its own chip; a missing one is outlined. Neither
    needs a rail. */
-.ccm-extension-item.ccm-success {
-    border-color: color-mix(in srgb, var(--ccm-success) 40%, var(--ccm-border));
-    background: color-mix(in srgb, var(--ccm-success) 8%, transparent);
+.ccm-extension-item.ccm-success {    background: color-mix(in srgb, var(--ccm-success) 8%, transparent);
 }
-
-.ccm-extension-item.ccm-error {
-    border-color: color-mix(in srgb, var(--ccm-error) 40%, var(--ccm-border));
-    background: color-mix(in srgb, var(--ccm-error) 8%, transparent);
-}
-
-.ccm-extension-item strong {
-    color: var(--ccm-text);
-}
-
 /* ===================================
    Error Log Viewer
    =================================== */
@@ -1501,29 +1216,14 @@ tr.ccm-front-page-row {
     }
 }
 
-@media screen and (max-width: 782px) {
-    .ccm-header {
-        top: 46px; /* Mobile admin bar */
-    }
-    
+@media screen and (max-width: 782px) {    
     .ccm-content {
         padding: var(--ccm-space-md);
     }
     
     .ccm-card {
         padding: var(--ccm-space-md);
-    }
-    
-    .ccm-tabs {
-        flex-direction: column;
-        width: 100%;
-    }
-    
-    .ccm-tab {
-        text-align: center;
-        padding: var(--ccm-space-md);
-    }
-    
+    }    
     .ccm-table th,
     .ccm-table td {
         padding: var(--ccm-space-sm);
@@ -1601,18 +1301,6 @@ tr.ccm-front-page-row {
 .ccm-hidden {
     display: none !important;
 }
-
-.ccm-visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    border: 0;
-}
-
 /* WordPress Admin Compatibility */
 .ccm-tools .dashicons {
     display: none; /* Hide dashicons, we use pure CSS icons */
@@ -1623,22 +1311,13 @@ tr.ccm-front-page-row {
    =================================== */
 
 /* Experimental Badge */
-.ccm-badge {
-    display: inline-block;
-    padding: 0.15em 0.6em;
-    font-size: var(--ccm-text-xs);
-    font-weight: 600;
-    border-radius: var(--ccm-radius-full);
-    text-transform: uppercase;
+.ccm-badge {    text-transform: uppercase;
     letter-spacing: 0.05em;
     vertical-align: middle;
     margin-left: var(--ccm-space-sm);
 }
 
-.ccm-badge-warning {
-    background: var(--ccm-warning-bg);
-    color: var(--ccm-warning);
-    border: 1px solid var(--ccm-warning);
+.ccm-badge-warning {    border: 1px solid var(--ccm-warning);
 }
 
 .ccm-badge-primary {
@@ -1647,10 +1326,7 @@ tr.ccm-front-page-row {
     border: 1px solid var(--ccm-primary);
 }
 
-.ccm-badge-success {
-    background: var(--ccm-success-bg);
-    color: var(--ccm-success);
-    border: 1px solid var(--ccm-success);
+.ccm-badge-success {    border: 1px solid var(--ccm-success);
 }
 
 /* Warning Card */
@@ -1659,13 +1335,7 @@ tr.ccm-front-page-row {
 }
 
 /* Alert Box */
-.ccm-alert {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--ccm-space-md);
-    padding: var(--ccm-space-md);
-    border-radius: var(--ccm-radius-md);
-    margin-bottom: var(--ccm-space-md);
+.ccm-alert {    margin-bottom: var(--ccm-space-md);
 }
 
 .ccm-alert .ccm-icon {
@@ -1786,59 +1456,6 @@ tr.ccm-front-page-row {
 .ccm-form-table td {
     padding: var(--ccm-space-md);
 }
-
-/* Toggle Switch */
-.ccm-toggle {
-    position: relative;
-    display: inline-block;
-    width: 50px;
-    height: 26px;
-}
-
-.ccm-toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.ccm-toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--ccm-border);
-    transition: var(--ccm-transition);
-    border-radius: var(--ccm-radius-full);
-}
-
-.ccm-toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 20px;
-    width: 20px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: var(--ccm-transition);
-    border-radius: 50%;
-    box-shadow: var(--ccm-shadow-sm);
-}
-
-.ccm-toggle input:checked + .ccm-toggle-slider {
-    background-color: var(--ccm-primary);
-}
-
-.ccm-toggle input:checked + .ccm-toggle-slider:before {
-    transform: translateX(24px);
-}
-
-.ccm-toggle input:disabled + .ccm-toggle-slider {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 /* Range Control */
 .ccm-range-control {
     display: flex;
@@ -1925,10 +1542,7 @@ tr.ccm-front-page-row {
 
 /* Form Actions */
 .ccm-form-actions {
-    margin-top: var(--ccm-space-xl);
-    padding-top: var(--ccm-space-lg);
-    border-top: 1px solid var(--ccm-border);
-}
+    margin-top: var(--ccm-space-xl);}
 
 /* Bulk Actions */
 .ccm-bulk-actions {
@@ -1938,9 +1552,7 @@ tr.ccm-front-page-row {
 }
 
 .ccm-button-danger {
-    background: var(--ccm-error);
-    color: white;
-}
+    background: var(--ccm-error);}
 
 .ccm-button-danger:hover {
     background: #dc2626;
@@ -2068,31 +1680,14 @@ tr.ccm-front-page-row {
    =================================== */
 
 /* Toggle Switch */
-.ccm-toggle {
-    position: relative;
-    display: inline-block;
-    width: 52px;
-    height: 28px;
-    flex-shrink: 0;
+.ccm-toggle {    flex-shrink: 0;
 }
-
-.ccm-toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.ccm-toggle-slider {
-    position: absolute;
-    cursor: pointer;
+.ccm-toggle-slider {    cursor: pointer;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: var(--ccm-border);
-    border-radius: var(--ccm-radius-full);
-    transition: var(--ccm-transition);
-}
+    background-color: var(--ccm-border);}
 
 .ccm-toggle-slider:before {
     position: absolute;
@@ -2121,10 +1716,7 @@ tr.ccm-front-page-row {
 
 /* Disabled state */
 .ccm-toggle input:disabled + .ccm-toggle-slider {
-    background-color: var(--ccm-border);
-    cursor: not-allowed;
-    opacity: 0.5;
-}
+    background-color: var(--ccm-border);}
 
 /* Performance Setting Rows */
 .ccm-setting-row {
@@ -2144,25 +1736,8 @@ tr.ccm-front-page-row {
 }
 
 /* Input and Textarea Styles */
-.ccm-input {
-    width: 100%;
-    padding: var(--ccm-space-sm) var(--ccm-space-md);
-    border: 1px solid var(--ccm-border);
-    border-radius: var(--ccm-radius-md);
-    font-family: var(--ccm-font-sans);
-    font-size: var(--ccm-text-base);
-    color: var(--ccm-text);
-    background: var(--ccm-surface);
-    transition: var(--ccm-transition);
-    margin-top: var(--ccm-space-xs);
+.ccm-input {    background: var(--ccm-surface);    margin-top: var(--ccm-space-xs);
 }
-
-.ccm-input:focus {
-    outline: none;
-    border-color: var(--ccm-primary);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-}
-
 .ccm-textarea {
     width: 100%;
     padding: var(--ccm-space-md);
@@ -2185,9 +1760,7 @@ tr.ccm-front-page-row {
 }
 
 /* Text muted helper */
-.ccm-text-muted {
-    color: var(--ccm-text-muted);
-    font-size: var(--ccm-text-sm);
+.ccm-text-muted {    font-size: var(--ccm-text-sm);
     margin: var(--ccm-space-xs) 0;
 }
 
@@ -2244,14 +1817,6 @@ tr.ccm-front-page-row {
         grid-template-columns: 1fr;
     }
 }
-
-/* Form field */
-.ccm-form-field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--ccm-space-xs);
-}
-
 .ccm-form-field-wide {
     grid-column: span 2;
 }
@@ -2265,13 +1830,6 @@ tr.ccm-front-page-row {
         grid-column: span 1;
     }
 }
-
-.ccm-form-field label {
-    font-weight: 500;
-    font-size: var(--ccm-text-sm);
-    color: var(--ccm-text);
-}
-
 .ccm-form-field input,
 .ccm-form-field select {
     width: 100%;
@@ -2528,14 +2086,6 @@ tr.ccm-front-page-row {
     background: var(--ccm-bg, #fff);
     transition: border-color 0.3s ease, background-color 0.3s ease;
 }
-/* --ccm-danger is not a token this stylesheet defines, so this was falling
-   back to a hardcoded red, over a hardcoded pink that stayed pink in dark
-   theme. Both come from the palette now. */
-.ccm-cf-under-attack-active {
-    border-color: var(--ccm-error);
-    background: color-mix(in srgb, var(--ccm-error) 10%, transparent);
-}
-
 /* ===================================
    Cloudflare Analytics Dashboard
    =================================== */
@@ -2619,25 +2169,7 @@ tr.ccm-front-page-row {
     letter-spacing: 0.5px;
     background: var(--ccm-bg-alt, #f1f5f9);
     color: var(--ccm-text, #1e293b);
-}
-.ccm-cf-dns-type-a,
-.ccm-cf-dns-type-aaaa {
-    background: #dbeafe;
-    color: #1d4ed8;
-}
-.ccm-cf-dns-type-cname {
-    background: #dcfce7;
-    color: #166534;
-}
-.ccm-cf-dns-type-mx {
-    background: #fef3c7;
-    color: #92400e;
-}
-.ccm-cf-dns-type-txt {
-    background: #f3e8ff;
-    color: #6b21a8;
-}
-.ccm-cf-proxy-badge {
+}.ccm-cf-proxy-badge {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -2646,16 +2178,7 @@ tr.ccm-front-page-row {
     font-size: 0.75rem;
     font-weight: 600;
     white-space: nowrap;
-}
-.ccm-cf-proxy-on {
-    background: #fff7ed;
-    color: #f97316;
-}
-.ccm-cf-proxy-off {
-    background: var(--ccm-bg-alt, #f1f5f9);
-    color: var(--ccm-text-muted, #64748b);
-}
-/* ═══════════════════════════════════════════════════════════════
+}/* ═══════════════════════════════════════════════════════════════
    GLASS DECK LAYER
 
    Appended last on purpose. Everything above is the original component
@@ -2923,7 +2446,6 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
 }
 
 .ccm-stat-tile__value--brand { color: var(--ccm-primary); }
-
 
 .ccm-stat-tile__value small {
     font-size: 0.95rem;
@@ -4104,7 +3626,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-stack   { display: grid; gap: var(--ccm-space-lg); }
 .ccm-stack--sm { gap: var(--ccm-space-md); }
 .ccm-row     { display: flex; gap: var(--ccm-space-sm); align-items: center; flex-wrap: wrap; }
-.ccm-grid-2  { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: var(--ccm-space-md); align-items: start; }
+.ccm-grid-2  { display: grid;gap: var(--ccm-space-md); align-items: start; }
 .ccm-grid-3  { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: var(--ccm-space-md); align-items: start; }
 .ccm-hide    { display: none !important; }
 
@@ -4450,7 +3972,6 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
    rather than changing the JavaScript and risking the run logic. */
 
 .ccm-optimization-options { display: grid; gap: var(--ccm-space-lg); }
-
 
 /* ── Narrow screens ────────────────────────────────────────────
    The tab bar has ten items. Letting it wrap puts each on its own line and
@@ -4894,7 +4415,6 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
    one. Hidden, not removed: HTMLElement.click() fires on a display:none
    element, so the bar still works exactly as before. */
 .ccm-savebar__proxy { display: none !important; }
-
 
 /* ── Focused control ───────────────────────────────────────────
    Marks the one setting somebody was sent here to change, from a link on the
