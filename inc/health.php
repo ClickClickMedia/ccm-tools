@@ -1,44 +1,11 @@
 <?php
-/**
- * Site health: the state of everything this plugin brings together.
- *
- * The page this feeds used to be a PageSpeed score and nothing else, which is
- * a measurement of one page on one run, not the health of a site. The plugin
- * already knows whether the object cache is connected, how much of the media
- * library has been converted, what the optimiser has switched on, what is in
- * the .htaccess block, how big the autoload is and which PHP it is all running
- * on. None of that was surfaced anywhere you could see it together.
- *
- * Each check answers three things: what is true, whether that is good, and
- * where to go and change it. The last one matters most — a health page that
- * tells you something is wrong and leaves you to find the setting is only half
- * a page, so every check that can be acted on carries a link straight to the
- * control, which the target page then scrolls to and highlights.
- *
- * Cost: one information_schema query, one options query, whatever the Redis
- * ping costs, and some option reads. Everything expensive is either already
- * cached by the module that owns it or skipped when that module is off.
- *
- * @package CCM_Tools
- * @since 8.12.0
- */
+/* 2eabd4dba2537e80 */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Build one check.
- *
- * @param string $id
- * @param string $label
- * @param string $status good|warn|bad|off
- * @param string $value  The short answer, shown on the right.
- * @param string $detail One sentence: what it means, or what to do.
- * @param array  $link   ['page' => slug, 'anchor' => id, 'label' => text]
- * @param int    $weight How much this counts toward the score.
- * @return array
- */
+/* 796647d11787068f */
 function ccm_tools_health_check($id, $label, $status, $value, $detail = '', $link = array(), $weight = 1) {
     return array(
         'id'     => $id,
@@ -51,38 +18,8 @@ function ccm_tools_health_check($id, $label, $status, $value, $detail = '', $lin
     );
 }
 
-/**
- * A deep link to a control on another page.
- *
- * The anchor is the element id on the target page. ccm_tools_focus_target()
- * in js/ui.js reads it from the hash, scrolls it into view and highlights it,
- * so "turn that on" lands on the actual switch rather than the top of a long
- * settings screen.
- *
- * @param string $page   Admin page slug, without the ccm-tools- prefix.
- * @param string $anchor Element id on that page.
- * @param string $label
- * @return array
- */
-/**
- * A link to the setting behind a check, or nothing if there is no such page.
- *
- * Half this plugin's screens register conditionally: Redis only when the
- * extension is loaded, WebP only with an image library, Cloudflare only when
- * its module is present. A check can run and have something to say about a
- * feature whose page was never registered on this site, and linking there
- * drops the person on WordPress's "Sorry, you are not allowed to access this
- * page" — which reads as a permissions problem, which it is not.
- *
- * So the slug is checked against the menu that actually got built. If the
- * menu has not been built yet we are not on an admin screen, and the link is
- * handed out unchanged rather than silently dropped.
- *
- * @param string $page   Slug after `ccm-tools-`, or '' for the main screen.
- * @param string $anchor Element id to scroll to and mark, if any.
- * @param string $label  Button text.
- * @return array {url, label}, or empty if that page does not exist here.
- */
+/* de4ccb92d2678a8c */
+/* d61a2b17f7d116d2 */
 function ccm_tools_health_link($page, $anchor = '', $label = '') {
     $slug = ($page === '') ? 'ccm-tools' : 'ccm-tools-' . $page;
 
@@ -97,12 +34,7 @@ function ccm_tools_health_link($page, $anchor = '', $label = '') {
     return array('url' => $url, 'label' => $label !== '' ? $label : __('Open', 'ccm-tools'));
 }
 
-/**
- * Was this admin page actually registered on this site?
- *
- * Reads the built menu rather than re-testing each page's own condition,
- * so it cannot drift out of step with the registrations in ccm.php.
- */
+/* 17f93ca2038c9354 */
 function ccm_tools_health_page_exists($slug) {
     global $submenu;
 
@@ -335,12 +267,7 @@ function ccm_tools_health_database(): array {
 function ccm_tools_health_platform(): array {
     $checks = array();
 
-    /*
-     * PHP support dates, from php.net. A version past its security-support date
-     * stops getting fixes for anything, including flaws found in it later, and
-     * this is the kind of thing nobody notices until a host forces the upgrade
-     * at an inconvenient moment.
-     */
+    /* 5a147deaac7316d3 */
     $php_eol = array(
         '7.4' => '2022-11-28', '8.0' => '2023-11-26', '8.1' => '2025-12-31',
         '8.2' => '2026-12-31', '8.3' => '2027-12-31', '8.4' => '2028-12-31',
@@ -405,11 +332,7 @@ function ccm_tools_health_platform(): array {
 
 /* ───────────────────────── Assembly ───────────────────────── */
 
-/**
- * Every group, every check, plus the overall score.
- *
- * @return array
- */
+/* 2d7221cee0e1bb70 */
 function ccm_tools_health_report(): array {
     $groups = array(
         'caching'  => array('name' => __('Caching', 'ccm-tools'),   'checks' => ccm_tools_health_caching()),
@@ -418,12 +341,7 @@ function ccm_tools_health_report(): array {
         'platform' => array('name' => __('Platform', 'ccm-tools'),  'checks' => ccm_tools_health_platform()),
     );
 
-    /*
-     * Weighted, and 'off' counts as a miss rather than being skipped: a site
-     * with no object cache is not neutral on caching, it is a site paying for
-     * every query twice. 'info' carries no weight because there is no better
-     * or worse answer to it.
-     */
+    /* abf4b28bff0006d9 */
     $earned = 0.0;
     $possible = 0.0;
     $counts = array('good' => 0, 'warn' => 0, 'bad' => 0, 'off' => 0, 'info' => 0);

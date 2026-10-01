@@ -1,13 +1,4 @@
-/**
- * CCM Tools — Site Health
- *
- * Renders PageSpeed Insights results as gauges, threshold bars and ranked
- * findings. Read-only by design: there is no code path in this file that
- * writes a performance setting, which is the whole difference between it and
- * the AI optimiser it replaced.
- *
- * @since 8.0.0
- */
+/* dc3dc77771b12a95 */
 (function () {
     'use strict';
 
@@ -21,15 +12,7 @@
 
     var latest = { mobile: null, desktop: null };
 
-    /*
-     * A run being looked at instead of the newest one.
-     *
-     * The history kept four numbers per run, so a past run could be seen on a
-     * trend line and never opened: you could tell that performance fell eleven
-     * points in March and not what was blamed for it. Runs now carry their
-     * findings, and this is what the renderers read through so one set of
-     * renderers draws both the current run and an old one.
-     */
+    /* 9e29ce3ace734cea */
     var viewing = null;
 
     /** The run the page is currently showing. */
@@ -115,20 +98,10 @@
         var el = $('#sh-status');
         if (!el) { return; }
         if (!html) { el.innerHTML = ''; return; }
-        /*
-         * The house .ccm-alert, not a toolbar with an inline accent rail.
-         * The stripe down the left of this banner was the last one left in
-         * the plugin and it was built here in JavaScript, which is why it
-         * survived a sweep of the stylesheet. Severity is carried by the
-         * tinted ground and the dot, the same as every other notice.
-         */
+        /* 3993f4fc5f0f4b5f */
         var variant = kind === 'error' ? ' ccm-alert--bad'
             : kind === 'success' ? ' ccm-alert--good' : '';
-        /*
-         * A dot only where it says something. The neutral "running" state had
-         * one too, which is a grey circle next to a message that already has a
-         * spinner in it - decoration pretending to be status.
-         */
+        /* 61dcfe3c79fb7c23 */
         var dot = kind === 'error' ? '<span class="ccm-dot ccm-dot-bad" aria-hidden="true"></span>'
             : kind === 'success' ? '<span class="ccm-dot ccm-dot-ok" aria-hidden="true"></span>'
             : '';
@@ -387,11 +360,7 @@
             (now === null ? '&ndash;' : esc(now)) + '</div>' + spark + '</div>';
     }
 
-    /**
-     * Show a run from the log, or return to the newest.
-     *
-     * @param {number|null} index Index into history, or null for the latest.
-     */
+    /* ee11d6291e2e8116 */
     function viewRun(index) {
         viewing = (index === null) ? null : (history[index] || null);
 
@@ -615,14 +584,7 @@
         });
     }
 
-    /**
-     * Ask the way the rest of the plugin asks.
-     *
-     * main.js owns the styled modal and is a declared dependency of this
-     * file, so it is there. If it ever is not, the browser's own dialog still
-     * asks the question -- a confirm button that silently does nothing is a
-     * worse failure than an unstyled one.
-     */
+    /* 7b19aef547cc9204 */
     function ask(message, verb) {
         return window.ccmConfirm
             ? window.ccmConfirm(message, verb)

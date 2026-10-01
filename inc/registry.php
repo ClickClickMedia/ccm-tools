@@ -1,32 +1,5 @@
 <?php
-/**
- * Site registry and update entitlement.
- *
- * CCM Tools is free for sites belonging to an active Click Click Media
- * customer. This file is the site's half of that arrangement: it registers the
- * domain with the update service and asks, periodically, whether this site is
- * still entitled to updates.
- *
- * What a block does, and just as importantly what it does not do:
- *
- *   It stops the site being offered new versions, and it says so plainly in
- *   wp-admin. It does not disable a single feature, remove a single file or
- *   change one byte of the site's behaviour. The .htaccess rules stay, the
- *   Redis drop-in stays, the converted images stay, every optimiser filter
- *   keeps running. A site whose entitlement lapses keeps working exactly as it
- *   did the day before, it simply stops improving.
- *
- * The service is never allowed to break this site. Every failure path here -
- * no network, DNS gone, a 500, a timeout, unparseable JSON, the whole service
- * deleted - results in the plugin carrying on silently as though nothing had
- * been asked. Entitlement is only ever revoked by an explicit, successfully
- * parsed answer saying so, which is why the last good answer is kept in an
- * option rather than only in a transient: a service outage must not be able to
- * produce a nag on 186 client sites at once.
- *
- * @package CCM_Tools
- * @since 8.10.0
- */
+/* 5fa835e72bb6f048 */
 
 if (!defined('ABSPATH')) {
     exit;
@@ -46,13 +19,7 @@ const CCM_TOOLS_REGISTRY_OPTION   = 'ccm_tools_registry_state';
 const CCM_TOOLS_REGISTRY_BACKOFF  = 'ccm_tools_registry_backoff';
 const CCM_TOOLS_REGISTRY_LAST     = 'ccm_tools_registry_last_attempt';
 
-/**
- * Record how the most recent attempt went, for the updater's fallback decision
- * and for the diagnostics panel.
- *
- * @param bool   $ok
- * @param string $detail
- */
+/* bf07fa05f5935711 */
 function ccm_tools_registry_note_attempt(bool $ok, string $detail = ''): void {
     update_option(CCM_TOOLS_REGISTRY_LAST, array(
         'at'     => time(),
@@ -61,26 +28,13 @@ function ccm_tools_registry_note_attempt(bool $ok, string $detail = ''): void {
     ), false);
 }
 
-/**
- * The most recent attempt, whatever its outcome.
- *
- * @return array{at:int,ok:bool,detail:string}|null
- */
+/* a3950b52e10e06e0 */
 function ccm_tools_registry_last_attempt() {
     $last = get_option(CCM_TOOLS_REGISTRY_LAST);
     return is_array($last) ? $last : null;
 }
 
-/**
- * Is the update service currently not answering us?
- *
- * True when we have never had an answer, or when the most recent attempt
- * failed. The updater uses this to decide whether falling back to GitHub is
- * legitimate: while the service is answering it is the only authority, and a
- * fallback would let a blocked site help itself to updates anyway.
- *
- * @return bool
- */
+/* bbe7ece414ad7104 */
 function ccm_tools_registry_is_degraded(): bool {
     $state = ccm_tools_registry_state();
     if ($state === null) {
@@ -92,18 +46,7 @@ function ccm_tools_registry_is_degraded(): bool {
         return empty($last['ok']);
     }
 
-    /*
-     * A stored answer but no record of the attempt that produced it.
-     *
-     * That is every site upgrading into the first version that records
-     * attempts: the answer was written by the version before, which did not
-     * keep one. Reading the absence as failure told those sites the service
-     * was unreachable when it was fine, put "GitHub (fallback)" on the panel,
-     * and would have had the updater prefer GitHub over the authority.
-     *
-     * The stored answer is only ever written after a check that succeeded, so
-     * its existence IS the evidence. Judge it by its own age instead.
-     */
+    /* afa852c1b31754cd */
     $checked_at = isset($state['checked_at']) ? (int) $state['checked_at'] : 0;
     if ($checked_at <= 0) {
         return true;
@@ -112,14 +55,7 @@ function ccm_tools_registry_is_degraded(): bool {
     return (time() - $checked_at) > (2 * CCM_TOOLS_REGISTRY_TTL);
 }
 
-/**
- * When the service last gave us an answer, however we know it.
- *
- * Falls back to the stored answer's own timestamp, so a site that has upgraded
- * into attempt-recording does not report "never".
- *
- * @return int Unix time, or 0 if we have nothing.
- */
+/* 56970e44a7d0385d */
 function ccm_tools_registry_last_checked_at(): int {
     $last = ccm_tools_registry_last_attempt();
     if ($last !== null && !empty($last['at'])) {
@@ -129,14 +65,7 @@ function ccm_tools_registry_last_checked_at(): int {
     return is_array($state) && !empty($state['checked_at']) ? (int) $state['checked_at'] : 0;
 }
 
-/**
- * Base URL of the update service.
- *
- * Overridable with a constant so a staging site can be pointed somewhere else
- * without touching the plugin.
- *
- * @return string
- */
+/* aff9b1c288c5951a */
 function ccm_tools_registry_endpoint(): string {
     if (defined('CCM_TOOLS_UPDATE_API') && CCM_TOOLS_UPDATE_API) {
         return rtrim(CCM_TOOLS_UPDATE_API, '/');
@@ -144,25 +73,13 @@ function ccm_tools_registry_endpoint(): string {
     return 'https://updates.clickclick.media';
 }
 
-/**
- * The last answer we successfully got, whatever its age.
- *
- * @return array{entitled:bool,notice:string,update:array|null,checked_at:int}|null
- */
+/* fcda3ef50b11790e */
 function ccm_tools_registry_state() {
     $state = get_option(CCM_TOOLS_REGISTRY_OPTION);
     return is_array($state) ? $state : null;
 }
 
-/**
- * Whether this site may be offered updates.
- *
- * Unknown means yes. A site we have never managed to ask about, or whose
- * answer we have lost, is treated as entitled: refusing on no information
- * would turn any outage into a fleet-wide block.
- *
- * @return bool
- */
+/* d94b15270de18cf0 */
 function ccm_tools_registry_is_entitled(): bool {
     $state = ccm_tools_registry_state();
     if ($state === null || !isset($state['entitled'])) {
@@ -171,12 +88,7 @@ function ccm_tools_registry_is_entitled(): bool {
     return (bool) $state['entitled'];
 }
 
-/**
- * Ask the service about this site, honouring the cache.
- *
- * @param bool $force Ignore the cache and the failure backoff.
- * @return array|null The parsed answer, or null if we could not get one.
- */
+/* 68d0855eadf14af8 */
 function ccm_tools_registry_check(bool $force = false) {
     $state = ccm_tools_registry_state();
 
@@ -244,11 +156,7 @@ function ccm_tools_registry_check(bool $force = false) {
     return $new;
 }
 
-/**
- * The update on offer, if any.
- *
- * @return array|null
- */
+/* 9956f7cfdbade4d2 */
 function ccm_tools_registry_update_info() {
     $state = ccm_tools_registry_check();
     if (!is_array($state) || empty($state['update']) || !is_array($state['update'])) {
@@ -260,17 +168,7 @@ function ccm_tools_registry_update_info() {
         return null;
     }
 
-    /*
-     * The package must be on the update service's own host.
-     *
-     * Without this, a service that had been compromised could answer with a
-     * package URL on any host it liked. The integrity gate in inc/update.php
-     * only recognises our own hosts, and on anything else it stood down and
-     * let WordPress install the file unverified — so a single bad answer was
-     * arbitrary code on every site that took it. Refusing the URL here means
-     * such an answer never reaches WordPress at all, rather than relying on a
-     * downstream gate to notice.
-     */
+    /* f0223027cfeb33e1 */
     if (!ccm_tools_registry_package_is_ours((string) $update['package'])) {
         return null;
     }
@@ -278,16 +176,7 @@ function ccm_tools_registry_update_info() {
     return $update;
 }
 
-/**
- * Mark what we know as stale, so the very next request asks again.
- *
- * Used immediately after an upgrade. A check cannot usefully be forced at that
- * moment: the new files are on disk but the running process still holds the old
- * code, so CCM_HELPER_VERSION is the version being replaced and the register
- * would be told the site is still on it. Entitlement is deliberately left
- * alone - only its freshness is dropped - so an upgrade can never be a way to
- * shed a block.
- */
+/* 66e9c2a9583235af */
 function ccm_tools_registry_invalidate(): void {
     delete_transient(CCM_TOOLS_REGISTRY_BACKOFF);
 
@@ -298,16 +187,7 @@ function ccm_tools_registry_invalidate(): void {
     }
 }
 
-/**
- * Is this package URL one we are prepared to download from?
- *
- * https only, and only the update service's own hostname. This is the boundary
- * the rest of the updater trusts: anything that gets past here is treated as
- * ours.
- *
- * @param string $url
- * @return bool
- */
+/* 34d0bc95fb2b370d */
 function ccm_tools_registry_package_is_ours(string $url): bool {
     if ($url === '') {
         return false;
@@ -325,23 +205,13 @@ function ccm_tools_registry_package_is_ours(string $url): bool {
     return $ours !== '' && strtolower($parts['host']) === $ours;
 }
 
-/**
- * Register the site the moment the plugin is switched on, rather than waiting
- * for the first scheduled update check.
- */
+/* f33efb3ca0cf27c7 */
 function ccm_tools_registry_on_activate(): void {
     delete_transient(CCM_TOOLS_REGISTRY_BACKOFF);
     ccm_tools_registry_check(true);
 }
 
-/**
- * Tell an administrator, once they are somewhere it makes sense to read it,
- * that this site is no longer being offered updates and what to do about it.
- *
- * Only on the plugin's own screens and the Plugins screen: a notice on every
- * admin page of a site we no longer have a relationship with would be nagging,
- * and the point is to be informative rather than annoying.
- */
+/* 5b54bb9a0a7bbdaa */
 function ccm_tools_registry_admin_notice(): void {
     if (!function_exists('ccm_tools_user_is_admin') || !ccm_tools_user_is_admin()) {
         return;
@@ -371,14 +241,7 @@ function ccm_tools_registry_admin_notice(): void {
     );
 }
 
-/**
- * Surface the same thing on the Plugins screen row, where someone looking at
- * versions will actually be looking.
- *
- * @param array  $plugin_meta
- * @param string $plugin_file
- * @return array
- */
+/* 037cf1bf63a693ab */
 function ccm_tools_registry_plugin_row_meta(array $plugin_meta, string $plugin_file): array {
     if (!defined('CCM_HELPER_BASENAME') || $plugin_file !== CCM_HELPER_BASENAME) {
         return $plugin_meta;
@@ -394,15 +257,7 @@ function ccm_tools_registry_plugin_row_meta(array $plugin_meta, string $plugin_f
     return $plugin_meta;
 }
 
-/**
- * Render the update channel panel.
- *
- * Exists so the crossover can be watched rather than guessed at. It answers,
- * on the site itself: did we reach the service, what did it say, which source
- * would an update come from right now, and when was it last asked. Without
- * this the only way to tell a working fallback from a broken one is to wait
- * and see whether an update ever arrives.
- */
+/* 18fc9f734e5814ed */
 function ccm_tools_registry_render_panel(): void {
     if (!function_exists('ccm_tools_user_is_admin') || !ccm_tools_user_is_admin()) {
         return;
@@ -421,9 +276,7 @@ function ccm_tools_registry_render_panel(): void {
         $source_tone = 'warn';
     } elseif (!$degraded) {
         $source      = __('Update service', 'ccm-tools');
-        // 'good', not 'ok': the chip modifiers are --good/--warn/--bad/--info,
-        // and a name that is not one of them renders as bare text with no pill,
-        // which is exactly what the healthy state did.
+        /* 5fcf3ca388c129f2 */
         $source_tone = 'good';
     } elseif ($fallback_on) {
         $source      = __('GitHub (fallback)', 'ccm-tools');
@@ -505,9 +358,7 @@ function ccm_tools_registry_render_panel(): void {
     <?php
 }
 
-/**
- * Force a fresh check from the panel.
- */
+/* 3a0658fe48dafa8d */
 function ccm_tools_ajax_registry_recheck(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!ccm_tools_user_is_admin()) {

@@ -1,23 +1,12 @@
 <?php
-/**
- * WebP Image Converter
- * 
- * Converts uploaded images to WebP format and serves them on the frontend.
- * 
- * @package CCM_Tools
- * @since 7.3.0
- */
+/* 33d742f6d7ee175a */
 
 // Prevent direct file access
 if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Check which image processing extensions are available
- * 
- * @return array Array of available extensions with their capabilities
- */
+/* d1c4407445d65e46 */
 function ccm_tools_webp_get_available_extensions() {
     $extensions = array();
     
@@ -53,11 +42,7 @@ function ccm_tools_webp_get_available_extensions() {
     return $extensions;
 }
 
-/**
- * Check if WebP conversion is possible
- * 
- * @return bool True if at least one extension supports WebP
- */
+/* a6c3e5ecf28186b9 */
 function ccm_tools_webp_is_available() {
     $extensions = ccm_tools_webp_get_available_extensions();
     
@@ -70,11 +55,7 @@ function ccm_tools_webp_is_available() {
     return false;
 }
 
-/**
- * Get the best available extension for WebP conversion
- * 
- * @return string|false Extension name or false if none available
- */
+/* 4505cff9ac31452e */
 function ccm_tools_webp_get_best_extension() {
     $extensions = ccm_tools_webp_get_available_extensions();
     $best = null;
@@ -90,13 +71,7 @@ function ccm_tools_webp_get_best_extension() {
     return $best;
 }
 
-/**
- * Canonical defaults for WebP converter settings. Shared by the getter and
- * the save-time sanitiser below so there is exactly one place that defines
- * what a setting is and what its default is.
- *
- * @return array Defaults, keyed by setting name
- */
+/* 0c4887103129dca0 */
 function ccm_tools_webp_get_default_settings() {
     return array(
         'enabled' => false,
@@ -112,11 +87,7 @@ function ccm_tools_webp_get_default_settings() {
     );
 }
 
-/**
- * Get WebP converter settings
- *
- * @return array Settings array
- */
+/* 2d88a551f5bd9123 */
 function ccm_tools_webp_get_settings() {
     $defaults = ccm_tools_webp_get_default_settings();
 
@@ -124,30 +95,13 @@ function ccm_tools_webp_get_settings() {
     return wp_parse_args($settings, $defaults);
 }
 
-/**
- * Save WebP converter settings
- *
- * Settings are whitelist-sanitised against the defaults array before
- * saving: unknown keys are dropped, booleans are cast, and quality is
- * clamped to 1-100, so a malformed payload can't smuggle arbitrary data
- * into the ccm_tools_webp_settings option.
- *
- * @param array $settings Settings to save
- * @return bool Success
- */
+/* b520611775414d11 */
 function ccm_tools_webp_save_settings($settings) {
     $settings = ccm_tools_webp_sanitize_settings($settings);
     return update_option('ccm_tools_webp_settings', $settings);
 }
 
-/**
- * Whitelist-sanitise WebP settings against the canonical defaults: only
- * known keys survive, booleans are cast, quality is clamped to 1-100, and
- * preferred_extension is restricted to a known value.
- *
- * @param array $settings Raw settings (e.g. from an AJAX request or import)
- * @return array Sanitised settings containing only known keys
- */
+/* f6d019a3d31a5502 */
 function ccm_tools_webp_sanitize_settings($settings) {
     $defaults = ccm_tools_webp_get_default_settings();
 
@@ -182,27 +136,7 @@ function ccm_tools_webp_sanitize_settings($settings) {
     return $clean;
 }
 
-/**
- * Convert an image URL to a filesystem path inside the uploads directory,
- * with containment enforced via realpath().
- *
- * Security: prevents path traversal. Without this, a URL such as
- * /wp-content/uploads/../../../../etc/passwd.jpg would resolve (via naive
- * str_replace/regex path building) to a path outside the uploads tree,
- * giving an anonymous visitor a file read (source) or file write
- * (destination) anywhere the webserver user can reach — including other
- * customer accounts on shared hosting. EVERY URL-to-path conversion in this
- * file must go through this function instead of building paths by hand.
- *
- * @param string $url        The image URL (absolute or a /wp-content/uploads/ relative path)
- * @param array  $upload_dir wp_upload_dir() result
- * @param bool   $must_exist Whether the resolved path is expected to already exist on
- *                            disk (e.g. a source image being read). When true, realpath()
- *                            must succeed. When false (e.g. a .webp destination that is
- *                            about to be created), the parent directory is resolved and
- *                            validated instead, and the leaf filename is rebuilt on top of it.
- * @return string|false Absolute, contained filesystem path, or false if unsafe/invalid.
- */
+/* aa201af3f0f74ea9 */
 function ccm_tools_webp_url_to_safe_path($url, $upload_dir, $must_exist = false) {
     $url = trim($url);
     if ($url === '') {
@@ -240,9 +174,7 @@ function ccm_tools_webp_url_to_safe_path($url, $upload_dir, $must_exist = false)
     $real_basedir_prefix = rtrim($real_basedir, '/\\') . DIRECTORY_SEPARATOR;
 
     if ($must_exist) {
-        // realpath() resolves any ../ traversal AND requires the target to
-        // exist, so a traversal attempt that escapes basedir and a path that
-        // simply doesn't exist both come back false here.
+        /* 74374c26ea533290 */
         $real_path = realpath($raw_path);
         if ($real_path === false) {
             return false;
@@ -253,9 +185,7 @@ function ccm_tools_webp_url_to_safe_path($url, $upload_dir, $must_exist = false)
         return $real_path;
     }
 
-    // The path may not exist yet (e.g. a .webp destination we're about to
-    // write). realpath() can't validate a nonexistent leaf, so resolve and
-    // validate the parent directory instead, then rebuild the leaf on top.
+    /* 011d38138d68c0a0 */
     $dir = dirname($raw_path);
     $basename = basename($raw_path);
 
@@ -274,15 +204,7 @@ function ccm_tools_webp_url_to_safe_path($url, $upload_dir, $must_exist = false)
     return $real_dir . DIRECTORY_SEPARATOR . $basename;
 }
 
-/**
- * Convert an image to WebP format
- * 
- * @param string $source_path Path to source image
- * @param string $dest_path Path to destination WebP file (optional)
- * @param int $quality Compression quality (1-100)
- * @param string $extension Which extension to use (auto, gd, imagick)
- * @return array Result with success status, path, and file sizes
- */
+/* c3e75fe571b89f6f */
 function ccm_tools_webp_convert_image($source_path, $dest_path = '', $quality = 82, $extension = 'auto') {
     $result = array(
         'success' => false,
@@ -367,11 +289,7 @@ function ccm_tools_webp_convert_image($source_path, $dest_path = '', $quality = 
     return $result;
 }
 
-/**
- * Get the PHP memory_limit in bytes.
- *
- * @return int Bytes, or 0 if the limit is unlimited/unreadable (nothing to compare against)
- */
+/* ac5b0ca1dd27e113 */
 function ccm_tools_webp_get_memory_limit_bytes() {
     $limit = ini_get('memory_limit');
     if ($limit === false || trim((string) $limit) === '-1') {
@@ -380,17 +298,7 @@ function ccm_tools_webp_get_memory_limit_bytes() {
     return (int) wp_convert_hr_to_bytes($limit);
 }
 
-/**
- * Image-bomb guard: read dimensions via getimagesize() (cheap — only the
- * header, not the pixel data) and refuse to decode anything whose pixel
- * count exceeds a sane, filterable cap, or whose estimated decoded memory
- * need won't fit in what PHP has available. Call this BEFORE
- * imagecreatefromjpeg/png/gif() or `new Imagick()` — those decode the
- * entire image into memory regardless of the final output size.
- *
- * @param string $source_path Path to the source image (already containment-checked)
- * @return true|string True if safe to decode, or a human-readable error message if not.
- */
+/* b9af947feb542397 */
 function ccm_tools_webp_check_image_bomb_guard($source_path) {
     $info = @getimagesize($source_path);
     if ($info === false) {
@@ -414,9 +322,7 @@ function ccm_tools_webp_check_image_bomb_guard($source_path) {
         );
     }
 
-    // Rough estimate of decoded memory need: width * height * channels *
-    // bytes-per-channel * 2 (decode buffer + working copy) — the same rule
-    // of thumb used by GD/Imagick sizing guidance.
+    /* 47f8775c58ec68d0 */
     $channels = (!empty($info['channels']) && $info['channels'] > 0) ? (int) $info['channels'] : 4;
     $bits_per_channel = !empty($info['bits']) ? (int) $info['bits'] : 8;
     $bytes_per_channel = max(1, (int) ceil($bits_per_channel / 8));
@@ -436,9 +342,7 @@ function ccm_tools_webp_check_image_bomb_guard($source_path) {
     return true;
 }
 
-/**
- * Convert image using ImageMagick
- */
+/* 0f7a7490981ca85a */
 function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality, $result) {
     // Guard against image-bomb inputs before asking ImageMagick to decode
     // anything — getimagesize() above only reads the header.
@@ -515,9 +419,7 @@ function ccm_tools_webp_convert_with_imagick($source_path, $dest_path, $quality,
     return $result;
 }
 
-/**
- * Convert image using GD Library
- */
+/* 8d7acf39f6b6e243 */
 function ccm_tools_webp_convert_with_gd($source_path, $dest_path, $quality, $result) {
     // Guard against image-bomb inputs before decoding the full pixel buffer.
     $bomb_check = ccm_tools_webp_check_image_bomb_guard($source_path);
@@ -572,9 +474,7 @@ function ccm_tools_webp_convert_with_gd($source_path, $dest_path, $quality, $res
 
 
 
-/**
- * Hook into WordPress upload to convert images automatically
- */
+/* 9a80cf01ac88eb7b */
 function ccm_tools_webp_handle_upload($metadata, $attachment_id) {
     $settings = ccm_tools_webp_get_settings();
     
@@ -640,9 +540,7 @@ function ccm_tools_webp_handle_upload($metadata, $attachment_id) {
     return $metadata;
 }
 
-/**
- * Filter image URLs on frontend to serve WebP versions
- */
+/* dca4b9eef7e2150a */
 function ccm_tools_webp_filter_image_srcset($sources, $size_array, $image_src, $image_meta, $attachment_id) {
     $settings = ccm_tools_webp_get_settings();
     
@@ -671,14 +569,7 @@ function ccm_tools_webp_filter_image_srcset($sources, $size_array, $image_src, $
     return $sources;
 }
 
-/**
- * Filter content to convert <img>/<source> URLs to WebP.
- * This runs AFTER WordPress has generated srcset, so it won't break srcset.
- * Mainly a safety net for content that never reaches the output buffer.
- *
- * @param string $content The content to filter
- * @return string Content with WebP src/srcset URLs
- */
+/* 32659532d7809a03 */
 function ccm_tools_webp_filter_content_src($content) {
     $settings = ccm_tools_webp_get_settings();
 
@@ -700,10 +591,7 @@ function ccm_tools_webp_filter_content_src($content) {
     return ccm_tools_webp_process_img_tags($content, wp_upload_dir());
 }
 
-/**
- * Start output buffering to capture entire page HTML for background image conversion
- * This catches ALL HTML output including theme templates that don't use the_content filter
- */
+/* b9da5870116162c1 */
 function ccm_tools_webp_start_output_buffer() {
     // Don't buffer admin, feeds, REST API, or AJAX requests
     if (is_admin() || is_feed() || wp_doing_ajax() || (defined('REST_REQUEST') && REST_REQUEST)) {
@@ -718,36 +606,24 @@ function ccm_tools_webp_start_output_buffer() {
     ob_start('ccm_tools_webp_process_output_buffer');
 }
 
-/**
- * End output buffering and flush
- */
+/* 032f883770b2539c */
 function ccm_tools_webp_end_output_buffer() {
     if (ob_get_level() > 0) {
         ob_end_flush();
     }
 }
 
-/**
- * Process the output buffer to convert images to WebP
- * Handles: background-image URLs, <img> tags (picture tag conversion or src replacement)
- * 
- * @param string $html The entire HTML output
- * @return string Modified HTML with WebP images
- */
+/* 8d1a118198e77bbf */
 function ccm_tools_webp_process_output_buffer($html) {
     $settings = ccm_tools_webp_get_settings();
     $upload_dir = wp_upload_dir();
 
-    // Process background-image URLs if enabled. Off by default; when on,
-    // scoped to <style> blocks and style="" attributes only (see
-    // ccm_tools_webp_convert_bg_images_in_html() docblock for why).
+    /* ef9cb52c4c37c551 */
     if (!empty($settings['convert_bg_images'])) {
         $html = ccm_tools_webp_convert_bg_images_in_html($html);
     }
 
-    // Serve WebP by rewriting <img> and <source> src/srcset in the final HTML.
-    // This catches images in theme templates, page builders, and hand-coded
-    // <picture> elements that bypass WordPress's srcset filters.
+    /* 44dc08b544de43d6 */
     if (!empty($settings['serve_webp'])) {
         $html = ccm_tools_webp_process_img_tags($html, $upload_dir);
     }
@@ -755,17 +631,7 @@ function ccm_tools_webp_process_output_buffer($html) {
     return $html;
 }
 
-/**
- * Convert a local uploads image URL to its WebP counterpart when available.
- *
- * Returns the original URL unchanged when no WebP exists (and can't be created)
- * or when the URL isn't a convertible local upload, so it is always safe to
- * splice back into markup — no broken images.
- *
- * @param string $url       The original image URL
- * @param bool   $on_demand Whether to allow on-demand conversion / queueing
- * @return string WebP URL if available, otherwise the original URL
- */
+/* cf0d6654722d02b5 */
 function ccm_tools_webp_maybe_webp_url($url, $on_demand = true) {
     $url = trim($url);
     if ($url === '') {
@@ -778,16 +644,7 @@ function ccm_tools_webp_maybe_webp_url($url, $on_demand = true) {
     return ($webp && $webp !== $url) ? $webp : $url;
 }
 
-/**
- * Rewrite every URL in a srcset attribute value to WebP where available.
- *
- * Preserves each candidate's descriptor (e.g. "300w", "2x") and keeps the
- * original URL for any candidate that has no WebP version.
- *
- * @param string $srcset    The srcset attribute value
- * @param bool   $on_demand Whether to allow on-demand conversion / queueing
- * @return string Rewritten srcset value
- */
+/* 9514d2281356f74b */
 function ccm_tools_webp_rewrite_srcset($srcset, $on_demand = true) {
     $entries = preg_split('/,\s*/', trim($srcset));
     $out = array();
@@ -810,16 +667,7 @@ function ccm_tools_webp_rewrite_srcset($srcset, $on_demand = true) {
     return implode(', ', $out);
 }
 
-/**
- * Rewrite the src/srcset of a single <img> or <source> tag to WebP.
- *
- * All other attributes are left untouched. When the tag carries an explicit
- * image type= hint (e.g. <source type="image/png">) and we swap in WebP, the
- * hint is updated to image/webp so browser source-selection stays correct.
- *
- * @param string $tag A single <img ...> or <source ...> tag
- * @return string The tag with WebP URLs where available
- */
+/* 64e85f50e4d972ae */
 function ccm_tools_webp_rewrite_media_tag($tag) {
     $changed = false;
 
@@ -849,19 +697,7 @@ function ccm_tools_webp_rewrite_media_tag($tag) {
     return $tag;
 }
 
-/**
- * Rewrite <img> and <source> tags in HTML to serve WebP (src + srcset).
- *
- * Used by both the output buffer (whole page) and the content filters. Only
- * local uploads with an available WebP are swapped; everything else is left
- * exactly as-is, and the pass is idempotent (already-WebP URLs are skipped),
- * so running it twice is harmless.
- *
- * @param string $html        The HTML content
- * @param array  $upload_dir  The WordPress upload directory info (unused; kept
- *                            for backwards-compatible call sites)
- * @return string Modified HTML with WebP URLs
- */
+/* 13c674ece0038bad */
 function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
     if (stripos($html, '<img') === false && stripos($html, '<source') === false) {
         return $html;
@@ -873,9 +709,7 @@ function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
     }, $html);
     if (null !== $out) { $html = $out; }
 
-    // <source> tags — rewrite src + srcset. This is what fixes hand-coded
-    // <picture> elements: the browser picks a matching <source>, not the <img>,
-    // so the <source> URLs are the ones that actually need to be WebP.
+    /* 863ea731189830ef */
     $out = preg_replace_callback('/<source\b[^>]*>/i', function($matches) {
         return ccm_tools_webp_rewrite_media_tag($matches[0]);
     }, $html);
@@ -884,38 +718,16 @@ function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
     return $html;
 }
 
-/**
- * Rewrite background-image url(...) references to WebP, scoped to <style>
- * blocks and style="" attributes only.
- *
- * The previous implementation ran its url() regex over the ENTIRE raw page
- * HTML, so a url(x.jpg)-shaped substring inside an inline <script> string
- * literal or SVG <defs> would be silently rewritten too. Restricting the
- * pass to actual CSS contexts (style blocks + style attributes) means it
- * only ever touches real CSS.
- *
- * @param string $html The HTML content
- * @return string HTML with WebP background-image URLs where available
- */
+/* 4eefe5aa0e98778b */
 function ccm_tools_webp_convert_bg_images_in_html($html) {
     if (stripos($html, 'url(') === false) {
         return $html;
     }
 
-    // Pattern matches url() containing image URLs — supports both absolute
-    // URLs (https://example.com/...) and relative paths
-    // (/wp-content/uploads/...). Captures: 1=opening quote (if any), 2=URL
+    /* 82be1dc45ec5e8d3 */
     $url_pattern = '/url\s*\(\s*(["\']?)([^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
 
-    /*
-     * Every preg_* in this output path falls back to its untouched input.
-     * PCRE returns null once it hits pcre.backtrack_limit, and the <style>
-     * pattern below backtracks once per character, so a page over about a
-     * megabyte containing the substring "<style" exhausts it. Passing that
-     * null on hands the output buffer nothing and every visitor gets a blank
-     * page — which an administrator never sees, because this whole filter is
-     * skipped for them.
-     */
+    /* 936a987cc90f1705 */
     $rewrite_css_urls = function($css) use ($url_pattern) {
         $out = preg_replace_callback($url_pattern, function($matches) {
             $quote = $matches[1]; // Preserve original quote style (empty, ', or ")
@@ -953,11 +765,7 @@ function ccm_tools_webp_convert_bg_images_in_html($html) {
     return $html;
 }
 
-/**
- * Check if browser supports WebP
- * 
- * @return bool
- */
+/* bc82b0b84d4310cf */
 function ccm_tools_webp_browser_supports_webp() {
     // Check Accept header
     if (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'image/webp') !== false) {
@@ -967,13 +775,7 @@ function ccm_tools_webp_browser_supports_webp() {
     return false;
 }
 
-/**
- * Queue an image for background WebP conversion
- * This adds the image to a queue that will be processed asynchronously
- * 
- * @param string $original_url The original image URL
- * @return void
- */
+/* 79d36692bc075225 */
 function ccm_tools_webp_queue_for_conversion($original_url) {
     $settings = ccm_tools_webp_get_settings();
     
@@ -994,9 +796,7 @@ function ccm_tools_webp_queue_for_conversion($original_url) {
     
     $upload_dir = wp_upload_dir();
 
-    // Resolve to a real, contained filesystem path — rejects traversal
-    // attempts and anything outside the uploads directory. $must_exist=true
-    // because there's nothing to queue if the source file isn't real.
+    /* b8acccfb1de982d7 */
     $original_path = ccm_tools_webp_url_to_safe_path($original_url, $upload_dir, true);
     if ($original_path === false) {
         return;
@@ -1031,15 +831,7 @@ function ccm_tools_webp_queue_for_conversion($original_url) {
     }
 }
 
-/**
- * Get or create WebP version of an image URL
- * Now queues for background conversion instead of blocking
- * Returns the WebP URL if it exists, otherwise returns false and queues conversion
- * 
- * @param string $original_url The original image URL
- * @param bool $queue_if_missing Whether to queue for conversion if WebP doesn't exist
- * @return string|false WebP URL or false if not available
- */
+/* ec2de92e767f8578 */
 function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     // Skip if already WebP
     if (preg_match('/\.webp$/i', $original_url)) {
@@ -1054,11 +846,7 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     $upload_dir = wp_upload_dir();
     $settings = ccm_tools_webp_get_settings();
 
-    // Resolve to a real, contained filesystem path — rejects traversal
-    // attempts and anything outside the uploads directory. This is the
-    // anonymous-request path (wp_calculate_image_srcset + the output
-    // buffer), so containment here is what stops a crafted <img src="">
-    // anywhere on the site from reading/writing outside uploads.
+    /* 22bd15bb9154ef84 */
     $original_path = ccm_tools_webp_url_to_safe_path($original_url, $upload_dir, true);
     if ($original_path === false) {
         return false;
@@ -1078,15 +866,9 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
         $failed_key = 'ccm_webp_failed_' . md5($original_path);
         $lock_key = 'ccm_webp_lock_' . md5($original_path);
 
-        // Per-file in-progress marker: if another request is already
-        // converting this exact file, don't pile on — fall through to the
-        // queue/original below instead of doing a second decode+encode.
+        /* 8f2ef4fc265da07b */
         if (!get_transient($failed_key) && !get_transient($lock_key)) {
-            // Site-wide rate limit: cap on-demand conversions per minute so
-            // an anonymous crawl of a large media library can't force
-            // unlimited full decode+encode cycles in-request. Once over the
-            // cap for this minute, fall back to serving the original and
-            // queue for background processing instead.
+            /* 9ec38df0cb98d5ba */
             $rate_key = 'ccm_webp_ondemand_count_' . gmdate('YmdHi');
             $count = (int) get_transient($rate_key);
             $max_per_minute = (int) apply_filters('ccm_tools_webp_max_conversions_per_minute', 20);
@@ -1120,22 +902,13 @@ function ccm_tools_webp_get_or_create($original_url, $queue_if_missing = true) {
     return false;
 }
 
-/**
- * Add WebP as allowed upload type
- */
+/* d7a0766b256326b7 */
 function ccm_tools_webp_allowed_mimes($mimes) {
     $mimes['webp'] = 'image/webp';
     return $mimes;
 }
 
-/**
- * Get conversion statistics
- * 
- * Checks actual WebP files on disk for all image sizes (full + thumbnails).
- * This ensures accurate stats even if WebP files were created externally.
- * 
- * @return array Statistics
- */
+/* 64a88910305d2d12 */
 function ccm_tools_webp_get_statistics() {
     global $wpdb;
     
@@ -1228,9 +1001,7 @@ function ccm_tools_webp_get_statistics() {
     return $stats;
 }
 
-/**
- * Initialize WebP converter hooks when enabled
- */
+/* a5f72d95032afaf6 */
 function ccm_tools_webp_init() {
     $settings = ccm_tools_webp_get_settings();
     
@@ -1249,23 +1020,15 @@ function ccm_tools_webp_init() {
     // Hook into frontend image display
     if (!empty($settings['serve_webp'])) {
         add_filter('wp_calculate_image_srcset', 'ccm_tools_webp_filter_image_srcset', 10, 5);
-        // NOTE: Removed wp_get_attachment_image_src filter
-        // Changing src before srcset calculation breaks WordPress's srcset generation
-        // because WordPress compares src to metadata and returns empty srcset if they don't match
-        // Instead, we convert URLs in the final HTML output via the filters below + output buffer
+        /* 16315c3d2d104f73 */
 
-        // Rewrite <img>/<source> src + srcset to WebP in rendered content.
-        // Runs AFTER WordPress has generated the srcset. The output buffer below
-        // covers the whole page; these filters also catch content that renders
-        // outside the main buffer (e.g. AJAX-loaded fragments).
+        /* 2e2b70b0e867523e */
         add_filter('the_content', 'ccm_tools_webp_filter_content_src', 1000);
         add_filter('widget_text', 'ccm_tools_webp_filter_content_src', 1000);
         add_filter('widget_block_content', 'ccm_tools_webp_filter_content_src', 1000);
     }
 
-    // Use output buffering to catch ALL HTML including theme templates
-    // This is necessary because images in page builders, custom themes, etc. don't go through the_content filter
-    // Enable when either serve_webp or convert_bg_images is enabled
+    /* d3a888e74c80342b */
     if (!empty($settings['serve_webp']) || !empty($settings['convert_bg_images'])) {
         add_action('template_redirect', 'ccm_tools_webp_start_output_buffer', 1);
         add_action('shutdown', 'ccm_tools_webp_end_output_buffer', 0);
@@ -1285,10 +1048,7 @@ function ccm_tools_webp_init() {
 }
 add_action('init', 'ccm_tools_webp_init');
 
-/**
- * Output JavaScript for background WebP queue processing
- * This runs after page load to convert queued images without blocking
- */
+/* cc2ed954b2fdc15e */
 function ccm_tools_webp_background_queue_script() {
     // Check if there's anything in the queue
     $queue = get_transient('ccm_webp_conversion_queue');
@@ -1334,38 +1094,8 @@ function ccm_tools_webp_background_queue_script() {
     <?php
 }
 
-/**
- * Render the WebP Converter admin page
- *
- * Reading order: the hero says what will do the converting and whether WebP
- * is actually being served right now; the stat grid gives the one number
- * anyone actually wants (how much this has saved); bulk conversion and
- * settings are the two things this page exists to operate; everything else
- * (which library is doing the work, a one-image test, import/export, an
- * uploads backup) is detail needed rarely, so it stays compact or tucked
- * into a disclosure.
- *
- * Containers: settings are one `.ccm-optgroup` card, the same component the
- * .htaccess and Performance pages use, with the group name, its one line of
- * context and the live count all in the card header rather than floating
- * above the list. Bulk conversion keeps a full-width `.ccm-panel` because it
- * is the primary action here. The two reference blocks — which library is
- * present, and the one-image test — share a `.ccm-grid-2` row, which drops
- * to one column on a narrow screen.
- *
- * @return void
- */
-/**
- * Trim an image library's version down to the actual version number.
- *
- * Imagick::getVersion() returns a whole sentence, e.g. "ImageMagick 7.1.1-29
- * Q16-HDRI x86_64 22128 https://imagemagick.org". Printing that after the
- * library name gives "ImageMagick ImageMagick 7.1.1-29 Q16-HDRI ..." and a URL
- * in the page heading, so pull out the number and drop the rest.
- *
- * @param string $version Raw version string as the extension reported it.
- * @return string Just the version number, or '' when none can be found.
- */
+/* a69c1043df7ddce6 */
+/* 1349569c69c8eccf */
 function ccm_tools_webp_clean_version($version) {
     $version = trim((string) $version);
     if ($version === '' || strtolower($version) === 'unknown') {
@@ -1377,12 +1107,7 @@ function ccm_tools_webp_clean_version($version) {
     return $version;
 }
 
-/**
- * Render an image library as "Name 7.1.1-29", with no repeated name.
- *
- * @param array $ext One entry from ccm_tools_webp_get_available_extensions().
- * @return string
- */
+/* a670f21c9b7160e4 */
 function ccm_tools_webp_library_label($ext) {
     $name    = isset($ext['name']) ? trim((string) $ext['name']) : '';
     $version = ccm_tools_webp_clean_version(isset($ext['version']) ? $ext['version'] : '');

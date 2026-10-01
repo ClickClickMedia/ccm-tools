@@ -1,45 +1,16 @@
 <?php
-/**
- * Performance Optimizer — the setting catalogue.
- *
- * Every toggle on the Performance page is described here as data, and one
- * renderer draws them all. Before this, the page was eleven hundred lines of
- * hand-written markup: each group styled slightly differently, each risky
- * option warned about in its own words or not at all, and a new setting meant
- * copying forty lines of HTML and hoping you matched the last one.
- *
- * The element id for a setting is always `perf-` plus its key with underscores
- * turned into hyphens. That is not cosmetic: js/main.js reads every value by
- * that exact id, so the convention is the contract between the two files.
- *
- * Risk levels:
- *   safe   No effect on layout or behaviour. Fine anywhere without testing.
- *   test   Usually fine, but check the site afterwards.
- *   risky  Known to break real sites in specific, named ways.
- *
- * @package CCM_Tools
- * @since 8.1.0
- */
+/* c5dabffef8467db6 */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * The element id for a setting key.
- *
- * @param string $key Setting key.
- * @return string
- */
+/* 06660fd30135a474 */
 function ccm_tools_perf_field_id(string $key): string {
     return 'perf-' . str_replace('_', '-', $key);
 }
 
-/**
- * Every performance setting, grouped.
- *
- * @return array
- */
+/* a4267294c2afcf0b */
 function ccm_tools_perf_catalogue(): array {
     $woo = class_exists('WooCommerce');
 
@@ -337,11 +308,7 @@ function ccm_tools_perf_catalogue(): array {
     return $groups;
 }
 
-/**
- * Flat list of every setting key that is a plain on/off toggle.
- *
- * @return array
- */
+/* 59b4678f44d07203 */
 function ccm_tools_perf_toggle_keys(): array {
     $keys = array();
     foreach (ccm_tools_perf_catalogue() as $group) {
@@ -352,12 +319,7 @@ function ccm_tools_perf_toggle_keys(): array {
     return $keys;
 }
 
-/**
- * Count how many toggles are on.
- *
- * @param array $settings Current settings.
- * @return array{on:int,total:int,risky:int}
- */
+/* 15424146bb2a6b50 */
 function ccm_tools_perf_tally(array $settings): array {
     $on = 0; $total = 0; $risky = 0;
     foreach (ccm_tools_perf_catalogue() as $group) {

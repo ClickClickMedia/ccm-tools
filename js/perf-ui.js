@@ -1,12 +1,4 @@
-/**
- * CCM Tools — Performance page interactions.
- *
- * Search, filtering, sub-field reveal and the live counters. Kept apart from
- * main.js, which still owns saving: this file never builds the payload or
- * talks to admin-ajax, so the two cannot disagree about what a setting is.
- *
- * @since 8.1.0
- */
+/* 3862a7e570b93c85 */
 (function () {
     'use strict';
 
@@ -28,9 +20,7 @@
         $$('.ccm-optgroup').forEach(function (group) {
             var rows = $$('.ccm-opt', group);
             var n = rows.filter(function (o) { return o.dataset.state === 'on'; }).length;
-            // The live count moved into the group card's header. The old
-            // eyebrow selector is kept as a fallback so a page that has not
-            // been converted yet still updates.
+            /* 2990a307d2f5233a */
             var count = $('[data-group-count]', group) || $('.ccm-section__eyebrow', group);
             if (count) { count.textContent = n + ' of ' + rows.length + ' on'; }
         });
@@ -55,11 +45,7 @@
         });
     });
 
-    // ── Prerequisites ───────────────────────────────────────────
-    //
-    // Deferring stylesheets without critical CSS pasted in guarantees a flash
-    // of unstyled content, so the toggle stays disabled until there is some.
-    // Enforced server side too; this only keeps the interface honest.
+    /* 3734bafaa3573101 */
 
     var criticalBox = $('#perf-critical-css-code');
     var preloadCss  = $('#perf-preload-css');

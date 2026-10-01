@@ -1,19 +1,4 @@
-/**
- * CCM Tools — UI layer
- *
- * Two jobs, both deliberately kept out of main.js so they apply to every
- * admin page regardless of what else is loaded:
- *
- *   1. The light/dark theme toggle.
- *   2. Upgrading spinners to the shared CCM brand mark.
- *
- * The spinner upgrade is done with an observer rather than by rewriting the
- * forty-odd call sites that build markup as template strings. Any element
- * with class ccm-spinner that is not already the SVG gets swapped for the
- * real mark, whether it was rendered by PHP or injected by JavaScript.
- *
- * @since 8.0.0
- */
+/* ea3522e22bb8f06d */
 (function () {
     'use strict';
 
@@ -52,16 +37,7 @@
         [180, 's4', 'g'], [240, 's5', 'g'], [300, 's6', 'w']
     ];
 
-    /**
-     * Build the CCM spinner as an HTML string.
-     *
-     * Below 32px the regular spokes fall under two pixels and the mark
-     * shimmers rather than spins, so anything smaller gets the --sm drawing.
-     *
-     * @param {number} size Pixel size. Default 20.
-     * @param {Object} opts cls, style, id, label.
-     * @return {string}
-     */
+    /* e6f7e1c1a4669940 */
     function ccmSpinner(size, opts) {
         opts = opts || {};
         size = Math.max(8, parseInt(size, 10) || 20);
@@ -70,9 +46,7 @@
         if (size < 32) { classes.push('ccm-spinner--sm'); }
         if (opts.cls) { classes.push(opts.cls); }
 
-        // A label is only correct where the spinner is the sole announcement
-        // of the wait. Beside visible text it must stay hidden, or a screen
-        // reader reads the wait out twice.
+        /* 67bd4e9cbb4c9988 */
         var a11y = opts.label
             ? 'role="img" aria-label="' + esc(opts.label) + '"'
             : 'aria-hidden="true"';
@@ -92,12 +66,7 @@
             '<g class="ccm-rotor">' + body + '</g></svg>';
     }
 
-    /**
-     * The same mark as a real DOM node.
-     *
-     * document.createElement cannot parse SVG, so this goes through a
-     * template element rather than createElementNS by hand.
-     */
+    /* 0aa66724597ce7f6 */
     function ccmSpinnerEl(size, opts) {
         var tpl = document.createElement('template');
         tpl.innerHTML = ccmSpinner(size, opts).trim();
@@ -113,11 +82,7 @@
             .replace(/'/g, '&#39;');
     }
 
-    /**
-     * Replace one legacy spinner element with the brand mark.
-     *
-     * @param {Element} el A .ccm-spinner that is not already an SVG.
-     */
+    /* 469b3fc42fa9f5dd */
     function upgrade(el) {
         if (el.tagName.toLowerCase() === 'svg') { return; }
         if (el.getAttribute('data-ccm-upgraded') === '1') { return; }
@@ -178,17 +143,7 @@
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
-    // ── Save bar ────────────────────────────────────────────────
-    //
-    // A page opts in by rendering one element:
-    //
-    //   <div class="ccm-savebar" data-ccm-savebar data-savebar-target="#save-perf-settings">
-    //
-    // This watches every form control on the page, tracks whether anything
-    // differs from what was loaded, and proxies its Save button to the page's
-    // real one. It deliberately does NOT know how to save: that logic stays
-    // wherever it already lives, so the two can never disagree about what a
-    // setting is.
+    /* 0eb56af7c329e2ce */
 
     function initSaveBar() {
         var bar = document.querySelector('[data-ccm-savebar]');
@@ -256,17 +211,7 @@
                 if (msg) { msg.textContent = 'Saving…'; }
                 target.click();
 
-                /*
-                 * Only say "Saved" when the save actually succeeded.
-                 *
-                 * This used to infer completion from the page's own button
-                 * going disabled and back, but every save routine re-enables
-                 * its button in a finally block, so a request that 500'd or
-                 * hit an expired nonce re-enabled it too and the bar cheerfully
-                 * reported "No unsaved changes" over settings that were never
-                 * stored. js/main.js now dispatches ccm:save on the button it
-                 * was given, carrying whether the request succeeded.
-                 */
+                /* f287b3eeee9a2e01 */
                 var settled = false;
                 var done = function (ok) {
                     if (settled) { return; }
@@ -300,13 +245,7 @@
                 };
                 target.addEventListener('ccm:save', onResult);
 
-                /*
-                 * A page that has not been wired to dispatch the event yet, or
-                 * a request that never returns, must not leave the bar saying
-                 * "Saving…" forever. Time out as a failure rather than as a
-                 * success, because an unreported save is the thing that costs
-                 * someone their work.
-                 */
+                /* 094f97c6ec49ee57 */
                 window.setTimeout(function () {
                     target.removeEventListener('ccm:save', onResult);
                     done(false);
@@ -316,12 +255,7 @@
 
         if (discardBtn) {
             discardBtn.addEventListener('click', function () {
-                /*
-                 * main.js owns the styled modal and is enqueued after this
-                 * file, so it is read at click time, not at load time. The
-                 * native dialog stands in if it is somehow absent, because a
-                 * discard button that does nothing is the worse failure.
-                 */
+                /* 5b803ea26b959bda */
                 var asked = window.ccmConfirm
                     ? window.ccmConfirm('Discard your unsaved changes and reload?', 'Discard changes')
                     : Promise.resolve(window.confirm('Discard your unsaved changes and reload?'));
@@ -342,28 +276,7 @@
         refresh();
     }
 
-    // ── Run panel ───────────────────────────────────────────────
-    //
-    // Owns a batch action from the first task to the summary.
-    //
-    // The pattern it replaces rendered progress into a box at the foot of the
-    // page. On the database screen that box sat below twenty rows of
-    // checkboxes, while the Run button lived up in the hero, so the normal
-    // journey was: tick things at the bottom, scroll to the top, click, and
-    // watch nothing happen. The work was running the whole time, just off
-    // screen. Anything that takes more than an instant has to show itself.
-    //
-    // The caller drives it and owns the actual work:
-    //
-    //   var run = ccmRunPanel.open({ title: 'Database optimisation',
-    //                                tasks: [{ key: 'x', label: 'Clear transients' }] });
-    //   run.start('x');
-    //   run.finish('x', { ok: true, message: 'Removed', count: 412 });
-    //   run.done();
-    //
-    // done() is what turns the panel from "in flight" to dismissable, so a
-    // caller that throws leaves the panel open and honest rather than quietly
-    // closing on a half-finished job.
+    /* 6326bc77c1d3812c */
 
     var ccmRunPanel = (function () {
 
@@ -462,12 +375,7 @@
                 closeHandlers = [];
             }
 
-            /*
-             * Escape and a click on the backdrop are both live only once the
-             * run has finished. Mid-flight they do nothing: the work carries
-             * on server-side whatever the page does, so letting someone
-             * dismiss the panel would hide a running job rather than stop it.
-             */
+            /* dff96d6dac49dec6 */
             function onKey(e) {
                 if (e.key === 'Escape' && isDone) { close(); }
             }
@@ -504,11 +412,7 @@
                     if (entry) { entry.meta.textContent = text; }
                 },
 
-                /**
-                 * Record a finished task.
-                 * @param {string} key
-                 * @param {object} result {ok, message, count, skipped}
-                 */
+                /* bff44de873044dec */
                 finish: function (key, result) {
                     var entry = rows[key];
                     result = result || {};
@@ -566,19 +470,7 @@
         return { open: open };
     })();
 
-    // ── Action bar ──────────────────────────────────────────────
-    //
-    // The save bar's sibling, for a page whose primary control runs something
-    // rather than saving something. A page opts in with one element:
-    //
-    //   <div class="ccm-savebar ccm-savebar--action" data-ccm-actionbar
-    //        data-actionbar-target="#run-optimizations"
-    //        data-actionbar-watch="#optimization-options">
-    //
-    // It counts the ticked boxes inside the watched container, says so, and
-    // proxies its Run button to the page's real one. Like the save bar it
-    // deliberately does not know how to run anything: that stays where it
-    // already lives, so the two can never disagree about what the action is.
+    /* 8d666336258361e5 */
 
     function initActionBar() {
         var bar = document.querySelector('[data-ccm-actionbar]');
@@ -611,12 +503,7 @@
             msg.textContent = n === 1 ? '1 ' + noun + ' selected' : n + ' ' + noun + 's selected';
         }
 
-        /*
-         * The watched list is rendered by JavaScript once its counts come
-         * back, and re-rendered after every run, so the checkboxes this bar
-         * reports on do not exist yet when it is wired up. Delegate the change
-         * event and observe the container rather than binding to the boxes.
-         */
+        /* f40c834040ac497a */
         watch.addEventListener('change', function (e) {
             if (e.target && e.target.type === 'checkbox') { refresh(); }
         });
@@ -642,13 +529,7 @@
             });
         }
 
-        /*
-         * The page says when a run starts and stops. The bar does not try to
-         * infer either from the target button's disabled attribute, which is
-         * the mistake the save bar had to be corrected for: every run routine
-         * re-enables its button in a finally block, so a failed run looks
-         * exactly like a successful one from the outside.
-         */
+        /* 9d6913c7ae10000a */
         document.addEventListener('ccm:run-start', function () { bar.classList.add('is-running'); });
         document.addEventListener('ccm:run-end', function () {
             bar.classList.remove('is-running');
@@ -658,15 +539,7 @@
         refresh();
     }
 
-    // ── Sliders ─────────────────────────────────────────────────
-    //
-    // A range input cannot draw its own filled portion in WebKit, so the
-    // percentage is handed to CSS as --ccm-slider-pos and the track is painted
-    // with a gradient. Firefox has ::-moz-range-progress and ignores all this.
-    //
-    // The readout is an <output>, not a second input, so there is exactly one
-    // form control named for the setting and nothing can disagree about its
-    // value.
+    /* 0e783a666c06a7f8 */
 
     function initSliders(scope) {
         var ranges = (scope || document).querySelectorAll('.ccm-slider__range');
@@ -697,18 +570,7 @@
         });
     }
 
-    // ── Focus a control somebody was sent to ────────────────────
-    //
-    // The health page links straight at individual settings, as
-    // `...page=ccm-tools-redis#ccm-focus-redis-enable`. Telling somebody a
-    // setting is wrong and then dropping them at the top of a sixty-row
-    // settings screen is half an answer, so the target page finds the control,
-    // opens whatever it is folded inside, scrolls to it and marks it.
-    //
-    // The prefix matters: a bare `#redis-enable` would make the browser do its
-    // own jump before any of this runs, landing the element under the sticky
-    // header with no indication of why. `#ccm-focus-` means nothing to the
-    // browser, so the page stays where it is until this positions it properly.
+    /* 71757c2f9da403e4 */
 
     var FOCUS_PREFIX = '#ccm-focus-';
 
@@ -716,12 +578,7 @@
         var el = document.getElementById(id);
 
         if (!el) {
-            /*
-             * Several of these lists are rendered by JavaScript after their
-             * counts come back, so the element genuinely does not exist yet on
-             * first look. Try again a few times rather than giving up and
-             * leaving the link looking broken.
-             */
+            /* 3415f95fe2baa65d */
             if ((attempt || 0) < 20) {
                 window.setTimeout(function () { focusTarget(id, (attempt || 0) + 1); }, 150);
             }

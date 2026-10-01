@@ -1,38 +1,14 @@
-/**
- * CCM Tools - Glass Deck
- *
- * frikwork's design language (tokens, type, glass surfaces, gradient buttons)
- * vendored into the plugin's own stylesheet. Nothing is fetched from
- * frikwork.com: a client site may run HSTS, a strict CSP or simply be offline
- * from our CDN, and an admin screen that half-loads is worse than a plain one.
- *
- * The token names are the original --ccm-* ones on purpose. Every rule further
- * down this file already reads them, so redefining the values here re-themes
- * the whole plugin without touching two thousand lines of component CSS.
- *
- * Version: 8.2.0
- */
+/* d3b9d294ae03a8da */
 
-/* ===================================
-   CSS Custom Properties (Variables)
-   =================================== */
+/* 8a7dacc2be4bb89e */
 
-/* Light is the base palette. Dark is applied by the two blocks below:
-   the media query for "follow the OS", the attribute for an explicit choice.
-   color-scheme is pinned per branch, never "dark light" - letting the browser
-   pick means an OS-light user who chose dark gets native date pickers and
-   select arrows painted dark on a dark field, i.e. invisible. */
+/* a5663584478a4d47 */
 :root {
     color-scheme: light;
 
-    /* Brand. --ccm-primary is the INK brand colour, used for text, borders and
-       active states, so it must pass contrast on the page background. Raw brand
-       green does not in light, hence the deeper green here. --ccm-brand-raw is
-       the untouched mark colour, for tints and the spinner. */
+    /* a5d83174ed150be5 */
     --ccm-primary: #5c8a1e;
-    /* --ccm-primary is the brand green tuned for fills and large type. On a
-    light surface it only reaches 3.7:1, which fails the 4.5:1 that small
-    uppercase labels need, so small brand-coloured TEXT uses this instead. */
+    /* 913e7b6a6d58f933 */
     --ccm-primary-on-surface: #48690f;
     --ccm-primary-hover: #4a7018;
     --ccm-primary-light: rgba(148, 200, 62, 0.12);
@@ -257,9 +233,7 @@ html[data-ccm-theme="light"] {
     color-scheme: light;
 }
 
-/* ===================================
-   Base Reset & Typography
-   =================================== */
+/* f5cd1a27d667909b */
 .ccm-tools {    font-size: var(--ccm-text-base);
     line-height: 1.6;    min-height: 100vh;
     box-sizing: border-box;
@@ -271,9 +245,7 @@ html[data-ccm-theme="light"] {
     box-sizing: inherit;
 }
 
-/* ===================================
-   Header & Navigation
-   =================================== */
+/* 1ac9d55413b444eb */
 .ccm-header {    justify-content: space-between;}
 
 .ccm-header-logo img {    transition: transform var(--ccm-transition);
@@ -300,9 +272,7 @@ html[data-ccm-theme="light"] {
     margin: 0 0 var(--ccm-space-md) 0;
 }
 
-/* ===================================
-   Buttons
-   =================================== */
+/* a1b3d9a1626b5327 */
 .ccm-buttons {    margin: var(--ccm-space-lg) 0;
 }
 
@@ -338,9 +308,7 @@ html[data-ccm-theme="light"] {
     height: 1.25em;
 }
 
-/* ===================================
-   Optimization Options
-   =================================== */
+/* bdcdce0d7ab31f05 */
 .ccm-optimization-options {    flex-direction: column;    margin: var(--ccm-space-lg) 0;
 }
 
@@ -455,9 +423,7 @@ html[data-ccm-theme="light"] {
     background: var(--ccm-error-bg);
 }
 
-/* ===================================
-   Status Icons & Indicators
-   =================================== */
+/* 7582acfa88f48625 */
 .ccm-icon {
     display: inline-flex;
     align-items: center;
@@ -469,9 +435,7 @@ html[data-ccm-theme="light"] {
     border-radius: var(--ccm-radius-full);
     margin-right: var(--ccm-space-sm);
 }
-/* ===================================
-   Forms & Inputs
-   =================================== */
+/* f8ead165e885881f */
 .ccm-input,
 .ccm-select {
     padding: var(--ccm-space-sm) var(--ccm-space-md);
@@ -519,9 +483,7 @@ html[data-ccm-theme="light"] {
     cursor: pointer;
 }
 
-/* ===================================
-   Config Controls
-   =================================== */
+/* ad445ec2fd3bab4e */
 .ccm-config-control {
     display: flex;
     align-items: center;
@@ -542,9 +504,7 @@ html[data-ccm-theme="light"] {
     gap: var(--ccm-space-sm);
 }
 
-/* ===================================
-   Result & Info Boxes
-   =================================== */
+/* 302f3ddb19f31330 */
 .ccm-info-box,
 .ccm-result-box {
     margin-top: var(--ccm-space-lg);
@@ -576,9 +536,7 @@ html[data-ccm-theme="light"] {
 .ccm-alert {    margin: var(--ccm-space-md) 0;
 }
 
-/* ===================================
-   Loading Spinner
-   =================================== */
+/* bad4cc9f7d5ab58b */
 
 @keyframes ccm-spin {
     to {
@@ -643,9 +601,7 @@ html[data-ccm-theme="light"] {
     opacity: 1;
 }
 
-/* ===================================
-   Confirmation Modal
-   =================================== */
+/* 8dc8aa7196c0c44c */
 .ccm-modal-overlay {
     position: fixed;
     top: 0;
@@ -690,12 +646,7 @@ html[data-ccm-theme="light"] {
     font-size: 15px;
     line-height: 1.5;
     color: var(--ccm-text);
-    /*
-     * These messages were written for the browser's own dialog, and a couple
-     * lay out a short list with newlines: what is being imported, from where,
-     * exported when. HTML would collapse those into one run-on sentence,
-     * which reads worse than the dialog this replaces.
-     */
+    /* f7203c79c45f9033 */
     white-space: pre-line;
 }
 
@@ -709,9 +660,7 @@ html[data-ccm-theme="light"] {
     border-radius: 0 0 var(--ccm-radius-lg) var(--ccm-radius-lg);
 }
 
-/* ===================================
-   Progress Bar
-   =================================== */
+/* ba16076b19373307 */
 .ccm-progress-bar {
     width: 100%;
     height: 8px;
@@ -734,9 +683,7 @@ html[data-ccm-theme="light"] {
     color: var(--ccm-text);
 }
 
-/* ===================================
-   PHP Extensions Grid
-   =================================== */
+/* a6ec564607aef3fa */
 .ccm-extensions-grid {    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));}
 
 .ccm-extension-item {    overflow: hidden;
@@ -746,9 +693,7 @@ html[data-ccm-theme="light"] {
    needs a rail. */
 .ccm-extension-item.ccm-success {    background: color-mix(in srgb, var(--ccm-success) 8%, transparent);
 }
-/* ===================================
-   Error Log Viewer
-   =================================== */
+/* fc0f2541f49ae45b */
 .ccm-error-log-controls {
     margin-bottom: var(--ccm-space-lg);
 }
@@ -787,14 +732,8 @@ html[data-ccm-theme="light"] {
     overflow-y: auto;
 }
 
-/* Qualified with .ccm-tools so this beats the generic `.ccm-tools pre`
-   rule defined later in this file. Without it that rule repaints the
-   background and text, which in light theme puts terminal-coloured
-   syntax spans on a near-white box and the log becomes unreadable.
-   The dark surface here is deliberate and the same in both themes. */
-/* The viewer is a fixed dark surface in both themes, so anything written into
-   it has to be light. Without this, a failed load prints the light theme's
-   dark red on a near-black ground and cannot be read at all. */
+/* 9bf69e34bd2388a5 */
+/* f7cf19ace06f9d7a */
 .ccm-tools .ccm-error-log-viewer,
 .ccm-tools .ccm-htaccess-viewer {
     color: #e2e8f0;
@@ -823,9 +762,7 @@ html[data-ccm-theme="light"] {
     border: none;
 }
 
-/* The log filter rewraps each line in a span so it can be hidden one line at
-   a time. That rewrap consumes the newlines, so without an explicit block the
-   whole log collapses onto a single run-on line the moment anyone types. */
+/* 70f36b05afed6ee3 */
 .ccm-tools .ccm-error-log-viewer pre .ccm-log-line {
     display: block;
     min-height: 1.6em;
@@ -885,9 +822,7 @@ html[data-ccm-theme="light"] {
     margin: 0;
 }
 
-/* ===================================
-   htaccess Content
-   =================================== */
+/* f08e547c0a90dcbb */
 .ccm-htaccess-viewer {
     background: #1e293b;
     border-radius: var(--ccm-radius-lg);
@@ -896,11 +831,7 @@ html[data-ccm-theme="light"] {
     overflow-y: auto;
 }
 
-/* Qualified with .ccm-tools so this beats the generic `.ccm-tools pre`
-   rule defined later in this file. Without it that rule repaints the
-   background and text, which in light theme puts terminal-coloured
-   syntax spans on a near-white box and the log becomes unreadable.
-   The dark surface here is deliberate and the same in both themes. */
+/* 9bf69e34bd2388a5 */
 .ccm-tools .ccm-htaccess-viewer pre {
     margin: 0;
     padding: var(--ccm-space-lg);
@@ -934,9 +865,7 @@ html[data-ccm-theme="light"] {
     color: #4ade80;
 }
 
-/* ===================================
-   WooCommerce Specific
-   =================================== */
+/* dd5b7273057bf742 */
 .ccm-gateway-status {
     background: var(--ccm-info-bg);
     padding: var(--ccm-space-lg);
@@ -963,9 +892,7 @@ html[data-ccm-theme="light"] {
     font-weight: 500;
 }
 
-/* ===================================
-   Update Link
-   =================================== */
+/* 0dd77ccca2438707 */
 .ccm-update-link {
     display: inline-flex;
     align-items: center;
@@ -986,9 +913,7 @@ html[data-ccm-theme="light"] {
     color: white;
 }
 
-/* ===================================
-   Notes & Tooltips
-   =================================== */
+/* 363f04dbccf158d6 */
 small.ccm-note {
     display: block;
     color: var(--ccm-text-muted);
@@ -1003,20 +928,7 @@ small.ccm-warning {
     margin-top: var(--ccm-space-xs);
 }
 
-/*
- * A note that only matters once, behind an (i).
- *
- * Several tiles carried a paragraph explaining a caveat — what restoring a
- * backup actually overwrites, what removing the CCM block stops protecting.
- * True, worth saying, and read once; after that it is a wall of small grey
- * text sitting permanently inside a tile whose job is to show one number.
- *
- * Hover is not the only way in: the icon is a real button, so it opens on
- * keyboard focus and on tap as well, and it carries the note as its
- * accessible name so a screen reader gets it without the hover ever
- * happening. Nothing load-bearing goes in here — only what someone can
- * afford not to see.
- */
+/* befa59dffbe36300 */
 .ccm-hint {
     position: relative;
     display: inline-flex;
@@ -1058,11 +970,7 @@ small.ccm-warning {
     top: calc(100% + 8px);
     left: 50%;
     z-index: 40;
-    /*
-     * Anchored to the icon's centre but pulled back so the bubble opens
-     * inward: these icons sit at the right-hand end of a label, and a bubble
-     * growing rightward from there runs off a narrow screen.
-     */
+    /* e64df369bd930022 */
     transform: translateX(-85%);
     width: max-content;
     max-width: min(24rem, 72vw);
@@ -1099,9 +1007,7 @@ small.ccm-warning {
     }
 }
 
-/* ===================================
-   Empty State
-   =================================== */
+/* 72b50c0b94a2958a */
 .empty-log-message {
     text-align: center;
     padding: var(--ccm-space-2xl);
@@ -1121,9 +1027,7 @@ small.ccm-warning {
     color: var(--ccm-text-light);
 }
 
-/* ===================================
-   Checkbox Labels
-   =================================== */
+/* 5e83c8eea705ec19 */
 label[for="ht_hardening"],
 label:has(#ht_hardening) {
     display: inline-flex;
@@ -1138,9 +1042,7 @@ label:has(#ht_hardening):hover {
     color: var(--ccm-primary);
 }
 
-/* ===================================
-   Front Page Indicator
-   =================================== */
+/* 86ab6e8f794e641c */
 .ccm-front-page-indicator {
     display: inline-flex;
     align-items: center;
@@ -1154,9 +1056,7 @@ tr.ccm-front-page-row {
     background: var(--ccm-primary-light) !important;
 }
 
-/* ===================================
-   Refresh Timer
-   =================================== */
+/* 207ef5bbebf5062a */
 .ccm-refresh-timer {
     position: relative;
     height: 32px;
@@ -1172,9 +1072,7 @@ tr.ccm-front-page-row {
     display: flex;
     align-items: center;
     justify-content: center;
-    /* The countdown span sits between two words. Flex discards the
-       whitespace-only text nodes around it, so without a gap the line
-       reads "Auto-refreshes in30seconds". */
+    /* 4c1738f14cab9d03 */
     gap: 0.35ch;
     margin: 0;
     font-size: var(--ccm-text-sm);
@@ -1196,9 +1094,7 @@ tr.ccm-front-page-row {
     background: linear-gradient(90deg, var(--ccm-primary), var(--ccm-accent));
 }
 
-/* ===================================
-   Responsive Design
-   =================================== */
+/* c4154b9d6d52889d */
 @media screen and (max-width: 1024px) {
     .ccm-header {
         flex-direction: column;
@@ -1277,9 +1173,7 @@ tr.ccm-front-page-row {
     }
 }
 
-/* ===================================
-   Utility Classes
-   =================================== */
+/* cea59f2b417d2913 */
 .ccm-text-center {
     text-align: center;
 }
@@ -1306,9 +1200,7 @@ tr.ccm-front-page-row {
     display: none; /* Hide dashicons, we use pure CSS icons */
 }
 
-/* ===================================
-   WebP Converter Styles
-   =================================== */
+/* 3651074ac9f46503 */
 
 /* Experimental Badge */
 .ccm-badge {    text-transform: uppercase;
@@ -1653,9 +1545,7 @@ tr.ccm-front-page-row {
     margin-bottom: 0;
 }
 
-/* ===================================
-   Print Styles
-   =================================== */
+/* d80ecdd04dd0b5f8 */
 @media print {
     .ccm-header {
         position: static;
@@ -1675,9 +1565,7 @@ tr.ccm-front-page-row {
     }
 }
 
-/* ===================================
-   Performance Optimizer Styles
-   =================================== */
+/* 500ff6e7c97cc0b4 */
 
 /* Toggle Switch */
 .ccm-toggle {    flex-shrink: 0;
@@ -2043,9 +1931,7 @@ tr.ccm-front-page-row {
     opacity: 0.5;
     cursor: not-allowed;
 }
-/* ===================================
-   Cloudflare Connection Accordion
-   =================================== */
+/* d33ed7262ad0d239 */
 .ccm-cf-connection-details {
     border: 1px solid var(--ccm-border, #e2e8f0);
     border-radius: var(--ccm-radius, 8px);
@@ -2072,9 +1958,7 @@ tr.ccm-front-page-row {
     transform: rotate(90deg);
 }
 
-/* ===================================
-   Cloudflare Under Attack Mode
-   =================================== */
+/* 32788fc059dfd045 */
 .ccm-cf-under-attack {
     display: flex;
     align-items: center;
@@ -2086,9 +1970,7 @@ tr.ccm-front-page-row {
     background: var(--ccm-bg, #fff);
     transition: border-color 0.3s ease, background-color 0.3s ease;
 }
-/* ===================================
-   Cloudflare Analytics Dashboard
-   =================================== */
+/* 14ecd405361fbcb5 */
 .ccm-cf-analytics-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -2136,9 +2018,7 @@ tr.ccm-front-page-row {
     transition: width 0.5s ease;
 }
 
-/* ===================================
-   Cloudflare DNS Records Table
-   =================================== */
+/* db815c904cad90fb */
 .ccm-cf-dns-table-wrap {
     overflow-x: auto;
     margin-top: var(--ccm-space-md, 1rem);
@@ -2178,15 +2058,7 @@ tr.ccm-front-page-row {
     font-size: 0.75rem;
     font-weight: 600;
     white-space: nowrap;
-}/* ═══════════════════════════════════════════════════════════════
-   GLASS DECK LAYER
-
-   Appended last on purpose. Everything above is the original component
-   CSS, which already reads the --ccm-* tokens and so picks up the new
-   palette for free. This layer restyles only the surfaces that carry the
-   look: the header, cards, buttons, controls and the spinner. Later in
-   the file means it wins ties without an arms race of !important.
-   ═══════════════════════════════════════════════════════════════ */
+}/* 9c89fd4d23ac5d7a */
 
 /* ── Shell ─────────────────────────────────────────────────────── */
 
@@ -2254,10 +2126,7 @@ tr.ccm-front-page-row {
     display: block;
 }
 
-/* The wordmark is drawn light, for a dark bar. The light theme's header is
-   pale, so it vanishes there. Give it back a dark ground rather than running
-   a filter over the artwork, which would also shift the brand green. The
-   default below is the light case; both dark selectors switch it back off. */
+/* b04935e69c334434 */
 .ccm-header-logo {
     background: #1d232b;
     padding: 0.3rem 0.6rem;
@@ -2691,9 +2560,7 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
     transition: border-color var(--ccm-transition), box-shadow var(--ccm-transition);
 }
 
-/* Text fields fill their container. A <select> must NOT: several of them sit
-   inline beside a label or a "Requires Pro+" note, and stretching one to the
-   full row width pushes its neighbour onto the next line. */
+/* cfd390f2b0744c46 */
 .ccm-input,
 .ccm-tools textarea,
 .ccm-tools input[type="text"],
@@ -2704,14 +2571,7 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
     width: 100%;
 }
 
-/* Selects carry their own arrow.
-   The background above is deliberately background-COLOR, not the `background`
-   shorthand. The shorthand resets background-repeat to its initial `repeat`,
-   and wp-admin then re-applies only its own arrow image on top, with no repeat
-   of its own to restore. The arrow therefore tiled across the whole control:
-   a select stretched to 950px showed dozens of chevrons in two rows. Setting
-   the image and `no-repeat` here means neither the shorthand nor wp-admin can
-   produce that again. */
+/* 5d1c51d6b3d56414 */
 .ccm-tools select {
     width: auto;
     min-width: 11rem;
@@ -2729,13 +2589,7 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
    inline control, so it fills its container like the text inputs do. */
 .ccm-tools select.ccm-input { width: 100%; }
 
-/* The options inside the native dropdown need their own colours.
-   The <select> itself is styled, but its <option> children are drawn by the
-   operating system in a separate popup window and do not inherit the control's
-   colour. Left alone they take the platform default, which on a dark theme is
-   dark text on the dark popup the browser paints from color-scheme — unreadable
-   except for whichever row happens to be highlighted. Both are stated here so
-   neither theme can leave an option invisible. */
+/* 6aa37dfe033c56a6 */
 .ccm-tools select option,
 .ccm-tools select optgroup {
     background-color: var(--ccm-surface);
@@ -2882,18 +2736,7 @@ html[data-ccm-theme="dark"] .ccm-tools select {
     .ccm-stat-tile:hover { transform: none; }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   CCM SPINNER
-
-   Vendored verbatim from the ccm-spinner repo (ClickClickMedia/ccm-spinner).
-   Do NOT edit this block: fix it upstream and copy it across, or the copies
-   in ccm-tools, ServerWatch and WebWatch drift and each app inherits the bug
-   separately.
-
-   Knobs inherit, so they can be set on any ancestor:
-     --ccm-size 48px · --ccm-lap 2.6s · --ccm-pace 1
-     --ccm-green #94C83E · --ccm-alt #FFFFFF · --ccm-tile #1F1F1F
-   ═══════════════════════════════════════════════════════════════ */
+/* cf3ba0bc1e42a5da */
 
 .ccm-spinner {
     display: inline-block;
@@ -2926,9 +2769,7 @@ html[data-ccm-theme="dark"] .ccm-tools select {
 .ccm-spinner .ccm-s5 { animation-duration: calc(2.90s * var(--ccm-pace, 1)); animation-delay: calc(-2.05s * var(--ccm-pace, 1)); }
 .ccm-spinner .ccm-s6 { animation-duration: calc(2.10s * var(--ccm-pace, 1)); animation-delay: calc(-0.55s * var(--ccm-pace, 1)); }
 
-/* Below about 32px the regular spokes fall under 2px and the mark shimmers
-   instead of spinning, so --sm is a second drawing: thicker spokes, pushed
-   further off the hub so they clear each other at the centre. */
+/* 58c7ad081fcb10e5 */
 .ccm-spinner--sm { --ccm-weight: 1.85; --ccm-inset: 4px; }
 
 @keyframes ccm-spin { to { transform: rotate(360deg); } }
@@ -2946,9 +2787,7 @@ html[data-ccm-theme="dark"] .ccm-tools select {
     .ccm-spinner .ccm-rotor { animation-duration: 6s; }
 }
 
-/* The bare variant's second colour defaults to charcoal, because bare is drawn
-   for light backgrounds. On a dark theme that makes half the mark invisible,
-   so bind it to the page ink. Every adopter of ccm-spinner needs this. */
+/* e20f83ed0cf1bea8 */
 .ccm-tools .ccm-spinner--bare { --ccm-alt: var(--ccm-text); }
 
 /* Centred block spinner, the common "loading this panel" case. */
@@ -2957,12 +2796,7 @@ html[data-ccm-theme="dark"] .ccm-tools select {
     margin: var(--ccm-space-lg) auto;
 }
 
-/* ── Theme corrections ─────────────────────────────────────────
-
-   A handful of older rules hardcode light pastel backgrounds. They stay
-   readable on a dark theme because each sets its own ink too, but they read
-   as bright patches on a dark page. Re-express them as tints of the status
-   tokens so both themes resolve as one set. */
+/* dd14e2939a059883 */
 
 .ccm-cf-under-attack-active {
     background: var(--ccm-error-bg);
@@ -2977,10 +2811,7 @@ html[data-ccm-theme="dark"] .ccm-tools select {
 .ccm-cf-proxy-on       { background: var(--ccm-warning-bg); color: var(--ccm-warning); }
 .ccm-cf-proxy-off      { background: var(--ccm-bg-secondary); color: var(--ccm-text-muted); }
 
-/* Transitional: a legacy <div class="ccm-spinner"> rendered by PHP is upgraded
-   to the real mark by js/ui.js, but that runs from the footer. This keeps the
-   placeholder visible in the gap, and covers the no-JavaScript case. An SVG
-   spinner is excluded, so it never double-draws. */
+/* afb2d29b92dc4a38 */
 div.ccm-spinner,
 span.ccm-spinner {
     box-sizing: border-box;
@@ -2998,22 +2829,9 @@ span.ccm-spinner-small { --ccm-size: 16px; }
 
 div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
-/* ═══════════════════════════════════════════════════════════════
-   UI KIT
+/* e6ec96b0a4c60a26 */
 
-   Real components, not just recoloured boxes. The first pass of the
-   v8 restyle swapped the palette and left every page as a card with a
-   table in it, which is why it still read as the old plugin. These are
-   the pieces pages are rebuilt FROM: gauges, metric bars, finding rows,
-   section heads, segmented controls, sparklines, disclosures.
-
-   Everything here is presentational and page-agnostic. If a rule only
-   makes sense on one screen it belongs with that screen, not here.
-   ═══════════════════════════════════════════════════════════════ */
-
-/* ── Page hero ─────────────────────────────────────────────────
-   Title, one line of context, and the page's primary action. Replaces
-   the old pattern of burying the main action in the third card down. */
+/* 9a7f362c3b2171fb */
 
 .ccm-hero {
     display: flex;
@@ -3058,9 +2876,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     flex-wrap: wrap;
 }
 
-/* ── Section head ──────────────────────────────────────────────
-   An eyebrow plus a title, with an optional action on the right. Gives
-   a long page rhythm without wrapping every group in another card. */
+/* 3ff61a91f49b277e */
 
 .ccm-section {
     display: flex;
@@ -3098,10 +2914,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     max-width: 68ch;
 }
 
-/* ── Score gauge ───────────────────────────────────────────────
-   An SVG ring. The dash offset is set inline from the score so there is
-   no JS animation loop to keep in sync, and it still reads correctly
-   with JavaScript disabled. */
+/* 76f5a9b2db6ae30c */
 
 .ccm-gauges {
     display: grid;
@@ -3181,15 +2994,9 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-gauge--bad  { --ccm-gauge-colour: var(--ccm-error); }
 .ccm-gauge--none { --ccm-gauge-colour: var(--ccm-text-light); }
 
-/* ── Metric with a threshold bar ───────────────────────────────
-   For anything with published good / needs-work / poor bands, like Core
-   Web Vitals. The bands are drawn to scale and a marker sits where the
-   measured value actually falls, which a number on its own cannot show. */
+/* 7edf62e56dd02580 */
 
-/* There are always exactly six lab metrics, so the column count is set rather
-   than fitted. auto-fit was choosing five and stranding Server Response Time
-   alone on a second row. Every step below divides six evenly, so no width ever
-   leaves a tile on its own. */
+/* 2684eed40511070c */
 .ccm-metrics {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3295,9 +3102,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-metric--ok   { --ccm-metric-colour: var(--ccm-warning); }
 .ccm-metric--bad  { --ccm-metric-colour: var(--ccm-error); }
 
-/* ── Finding ───────────────────────────────────────────────────
-   A ranked recommendation. The impact bar is relative to the worst item
-   in the list, so the eye sorts them before the numbers are read. */
+/* 7150d5269253f7b6 */
 
 .ccm-findings { display: grid; gap: 1px; background: var(--ccm-border); border-radius: var(--ccm-radius-lg); overflow: hidden; border: 1px solid var(--ccm-border); }
 
@@ -3393,9 +3198,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     .ccm-finding__impact { grid-column: 2; padding: 0 var(--ccm-space-md) 0.85rem 0; text-align: left; }
 }
 
-/* ── Segmented control ─────────────────────────────────────────
-   Radio inputs, not buttons, so it is keyboard and screen reader
-   correct without any JavaScript. */
+/* 3532252f88ae22aa */
 
 .ccm-seg {
     display: inline-flex;
@@ -3423,9 +3226,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-seg input:checked + label { background: var(--ccm-primary-light); color: var(--ccm-primary-on-surface); }
 .ccm-seg input:focus-visible + label { outline: 2px solid var(--ccm-brand-raw); outline-offset: 2px; }
 
-/* ── Sparkline ─────────────────────────────────────────────────
-   A trend needs a shape, not a column of numbers. Drawn as inline SVG
-   so it inherits currentColor and needs no chart library. */
+/* f4b1a1825ab01dde */
 
 .ccm-spark {
     display: block;
@@ -3463,9 +3264,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 .ccm-trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--ccm-space-md); }
 
-/* ── Disclosure ────────────────────────────────────────────────
-   For setup and configuration that matters once. Uses native
-   details/summary so it works before any script runs. */
+/* e75144194098a031 */
 
 .ccm-disclose {
     border: 1px solid var(--ccm-border);
@@ -3542,9 +3341,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-chip--bad  { background: var(--ccm-error-bg);   color: var(--ccm-error); }
 .ccm-chip--info { background: var(--ccm-info-bg);    color: var(--ccm-info); }
 
-/* ── Flat panel ────────────────────────────────────────────────
-   Dense content that should not read as another floating card. Glass on
-   glass gets muddy fast, so nested groups use this instead. */
+/* 15f0dbe767b090e1 */
 
 .ccm-panel {
     border: 1px solid var(--ccm-border);
@@ -3644,10 +3441,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     border: 0;
 }
 
-/* ── Option rows ───────────────────────────────────────────────
-   The Performance page is sixty-odd toggles. They are generated from one
-   catalogue through one renderer, so they are identical by construction
-   rather than by sixty copies of the same markup staying in step. */
+/* 919e8a0ea4397cd3 */
 
 .ccm-optgroup { margin-bottom: var(--ccm-space-xl); scroll-margin-top: 150px; }
 
@@ -3689,25 +3483,16 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     line-height: 1.55;
 }
 
-/* No accent bar on an enabled row. A coloured edge down the left of every
-   card is the single most recognisable generated-UI tic, and the switch on
-   the right already says what is on. An enabled row lifts its own surface
-   instead, which reads at a glance without drawing a stripe. */
+/* d13fd6a5f708d9b0 */
 .ccm-opt.is-on { background: var(--ccm-opt-on-bg); }
 .ccm-opt.is-on:hover { background: var(--ccm-opt-on-bg-hover); }
 
-/* A task with nothing left to run cannot be actioned, so it recedes. The
-   checkbox is already disabled; this stops a finished row competing for
-   attention with the ones you can still do something about. */
+/* 90cea5dd41272160 */
 .ccm-opt.is-done { background: transparent; }
 .ccm-opt.is-done .ccm-opt__label { color: var(--ccm-text-muted); font-weight: 600; }
 .ccm-opt.is-done:hover { background: var(--ccm-bg-secondary); }
 
-/* ── Option group ──────────────────────────────────────────────
-   One container per group, with the group's name and its live count in the
-   header, rather than a floating eyebrow and heading above a borderless list.
-   Every settings page uses this, so the pages stop reading as variations on
-   each other. */
+/* 52073f065f36b5d2 */
 
 .ccm-optgroup {
     border: 1px solid var(--ccm-border);
@@ -3765,28 +3550,14 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     background: var(--ccm-bg-secondary);
 }
 
-/* [hidden] is a user-agent rule, so any class rule with a display outranks it
-   and the element stays visible. Every block here that sets display must
-   therefore restate it. This is the same trap frikwork has. */
+/* 97d77b4ab58c00f3 */
 .ccm-opt__fields[hidden] { display: none; }
 
 /* Blanket version of the same, so a future component that sets display cannot
    quietly reintroduce the bug. */
 .ccm-tools [hidden] { display: none !important; }
 
-/* ── Field grid ────────────────────────────────────────────────
-   One grid for every field in a settings card, so the column edge is a single
-   straight line down the whole card.
-
-   Before this, one card could hold three different layout mechanisms: a
-   two-column grid for the first pair, a flex row with a 2:1 ratio for the
-   second, and full-width fields under both. Every row therefore chose its own
-   split point, the boundary moved by tens of pixels between rows, and the eye
-   caught it immediately.
-
-   The columns are fixed at two and equal. They do not auto-fit, because
-   auto-fit lets content decide the count and that is the drift being removed.
-   Below the breakpoint everything becomes one column at the same gap. */
+/* 4411c9a49d289e20 */
 .ccm-fieldgrid {
     display: grid;
     grid-template-columns: 1fr;
@@ -3802,9 +3573,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
    left outside the grid to find its own edge. */
 .ccm-fieldgrid > .ccm-fieldgrid__wide { grid-column: 1 / -1; }
 
-/* A wrapper the page shows and hides, whose children should still sit in the
-   grid above it rather than forming a row of their own. js/main.js toggles
-   these between `contents` and `none`. */
+/* ba12dd3459c50ddd */
 .ccm-fieldgrid > .ccm-fieldgrid__passthrough { display: contents; }
 
 /* Inside a field grid a field fills its column; the 46rem cap is for a field
@@ -3844,9 +3613,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     align-items: flex-start;
     padding: 0.8rem var(--ccm-space-md);
     border: 1px solid var(--ccm-border);
-    /* No left accent rail here either. The tinted ground and the coloured
-       dot already carry the severity, and a stripe down every notice is the
-       same generated-UI tic as the one on the option rows. */
+    /* 9bfa2740993b08e9 */
     border-color: color-mix(in srgb, var(--ccm-alert-accent, var(--ccm-info)) 28%, var(--ccm-border));
     border-radius: var(--ccm-radius);
     background: color-mix(in srgb, var(--ccm-alert-accent, var(--ccm-info)) 7%, var(--ccm-surface));
@@ -3860,9 +3627,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-alert--bad  { --ccm-alert-accent: var(--ccm-error); }
 .ccm-alert--good { --ccm-alert-accent: var(--ccm-success); }
 
-/* ── Sticky toolbar ────────────────────────────────────────────
-   Search, filters and Save stay reachable on a page this long. Offset by the
-   WordPress admin bar plus the plugin's own sticky header. */
+/* 2a90ca08a4da2daf */
 
 .ccm-toolbar--sticky {
     position: sticky;
@@ -3879,12 +3644,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     .ccm-toolbar--sticky { position: static; }
 }
 
-/* ── Save bar ──────────────────────────────────────────────────
-   Docked to the bottom of the viewport on any settings page. The old pattern
-   put Save at the bottom of a very long page, so on the Performance screen you
-   changed one toggle near the top and then scrolled past sixty rows to commit
-   it, or forgot and lost the change. This is always reachable and says plainly
-   whether there is anything to save. */
+/* dd566a1b468de8de */
 
 .ccm-savebar {
     position: fixed;
@@ -3966,22 +3726,14 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 /* Room so the bar never sits on top of the last thing on the page. */
 .ccm-tools.has-savebar .ccm-content { padding-bottom: 6rem; }
 
-/* ── Database optimisation options ─────────────────────────────
-   Rendered by js/main.js, so the markup is fixed. These map its existing
-   class names onto the same visual language as .ccm-opt rows elsewhere,
-   rather than changing the JavaScript and risking the run logic. */
+/* ff0e307ba4a833c6 */
 
 .ccm-optimization-options { display: grid; gap: var(--ccm-space-lg); }
 
-/* ── Narrow screens ────────────────────────────────────────────
-   The tab bar has ten items. Letting it wrap puts each on its own line and
-   the whole first screen of a phone is navigation. Scroll it sideways
-   instead, which is what every app does with a long tab strip. */
+/* d99b2631d3ac290a */
 
 @media screen and (max-width: 782px) {
-    /* A few genuinely tabular readouts are wider than a phone. Let them
-       scroll inside their own card rather than widening the document, so
-       the rest of the page still reads normally. */
+    /* 33b9f9888797b88a */
     .ccm-tools .ccm-card,
     .ccm-tools .ccm-panel {
         overflow-x: auto;
@@ -3999,11 +3751,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     .ccm-header-logo img { height: 24px; }
 
     .ccm-header-menu {
-        /* The 1024px block above turns .ccm-header into a COLUMN, so the
-           horizontal size is the cross axis: flex and min-width do nothing to
-           it and the strip sizes to its ten tabs, widening the whole document.
-           align-self and max-width are what actually constrain it, and they
-           are correct whichever direction wins. */
+        /* ca24df5a98ec7770 */
         flex: 1 1 auto;
         align-self: stretch;
         min-width: 0;
@@ -4083,13 +3831,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 .ccm-extension-item.ccm-error .ccm-icon,
 .ccm-extension-item.ccm-error strong { color: var(--ccm-error); }
 
-/* ── Action bar ────────────────────────────────────────────────
-   The save bar's sibling, for a page whose primary control is an action
-   rather than a save. Same chrome deliberately: one floating dock is one
-   idea, and a second visual language for "the button that matters" would
-   just be noise. It reports what is selected and proxies the click to the
-   page's own button, so like the save bar it never holds a second opinion
-   about what the action does. */
+/* 05c46380308d164a */
 
 .ccm-savebar--action .ccm-savebar__dot { background: var(--ccm-brand-raw); }
 
@@ -4115,12 +3857,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     opacity: 0.6;
 }
 
-/* ── Run panel ─────────────────────────────────────────────────
-   A batch action used to render its progress into a box at the foot of the
-   page, which on the database screen sat below twenty rows of checkboxes and
-   a Run button that lived up in the hero. You clicked Run and nothing you
-   could see changed. This takes the run out of the page flow entirely: the
-   thing you started is the thing in front of you, from first task to summary. */
+/* 6c935b6fb867d886 */
 
 .ccm-runpanel {
     display: flex;
@@ -4282,14 +4019,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     .ccm-runpanel__foot [data-runpanel-close] { width: 100%; }
 }
 
-/* ── Slider ────────────────────────────────────────────────────
-   For a bounded numeric setting where the exact figure matters less than
-   where it sits between the two ends. A number box made you know that 82 is
-   "good" and 40 is "bad" before you could choose; the track shows it.
-
-   Sized and centred to sit on the same line as the toggles in the rows above
-   and below, because the row it lives in is a flex row with everything else
-   aligned to the top. */
+/* df5c8062ae08fbcf */
 
 .ccm-slider {
     display: inline-flex;
@@ -4297,10 +4027,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     gap: var(--ccm-space-md);
     min-height: 26px; /* the toggle's height, so the rows line up */
 
-    /* The unfilled part of the track has to read as "the rest of the range",
-       so it cannot use --ccm-border: that token is tuned for hairlines and
-       measured about 1.3:1 against the row in both themes, which left the
-       track invisible and the control looking half drawn. */
+    /* f7a06f70f6a64c84 */
     --ccm-slider-track: color-mix(in srgb, var(--ccm-text-muted) 60%, transparent);
 }
 
@@ -4316,9 +4043,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     cursor: pointer;
 }
 
-/* Track and fill. The fill percentage comes from --ccm-slider-pos, which
-   js/ui.js keeps in step with the value; Firefox draws its own with
-   ::-moz-range-progress and needs no help. */
+/* d674c68e8744ba85 */
 .ccm-slider__range::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: var(--ccm-radius-full, 999px);
@@ -4408,18 +4133,10 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     .ccm-slider__range { width: 8rem; }
 }
 
-/* The save bar's proxy target.
-   The bar does not know how to save: it clicks the page's own save button, so
-   that button has to exist. It does not have to be SEEN, and having both meant
-   two Save controls on one screen with the floating one as the only reliable
-   one. Hidden, not removed: HTMLElement.click() fires on a display:none
-   element, so the bar still works exactly as before. */
+/* 2ee6ae1415dc71ae */
 .ccm-savebar__proxy { display: none !important; }
 
-/* ── Focused control ───────────────────────────────────────────
-   Marks the one setting somebody was sent here to change, from a link on the
-   health page. Two seconds of obvious, then gone: long enough to find it,
-   short enough not to live on the page. */
+/* 27df0c9412c4adf1 */
 
 .ccm-focus {
     animation: ccm-focus-pulse 2.6s var(--ccm-ease-settle, ease) 1;
@@ -4446,10 +4163,7 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     }
 }
 
-/* ── Health check row ──────────────────────────────────────────
-   A check reuses .ccm-opt, because it IS the same shape as a settings row:
-   label, one line of explanation, and something on the right. What sits on
-   the right is the answer plus the way to act on it. */
+/* c1ce43d675df38de */
 
 .ccm-check__right {
     display: inline-flex;

@@ -1,5 +1,32 @@
 # CCM Tools — Changelog
 
+## v8.13.2 — The reasoning comes out of the shipped code
+
+No functional change. This plugin installs on client servers, and about a
+fifth of what it put there was commentary explaining why the code is the way
+it is — useful to us, nobody else's business, and read by anyone with file
+access.
+
+- **842 long comments moved out**, leaving a short hash where each one was:
+  `/* 86160b4aa7654620 */`. 5,139 lines and 220 KB off the shipped payload,
+  14% of it. Comments shorter than three lines stay — a hash would be longer
+  than the comment and tell you less.
+- **What stayed**, because it does a job beyond explaining: the plugin header
+  WordPress parses, every `translators:` note the i18n tooling reads, and any
+  tool directive. Tests and docs are untouched; they never ship.
+- **The CSS a later rule had already overridden is gone.** The Glass Deck
+  redesign appended its rules rather than replacing the originals, leaving two
+  definitions of `.ccm-button`, three of `.ccm-toggle-slider` and 86 other
+  selectors declared more than once. 259 declarations and 47 whole blocks that
+  never applied: 10.5 KB, 480 lines.
+
+The stylesheet was checked by re-parsing it independently and comparing the
+value every (context, selector, property) finally resolves to — 2,663 before,
+2,663 after, all identical. That check paid for itself immediately: the first
+attempt treated `.ccm-input, .ccm-select { ... }` as dead because everything
+in it was overridden later for `.ccm-input`, and would have taken ten live
+declarations off `.ccm-select`.
+
 ## v8.13.1 — Button size follows the place, not the page
 
 There are two button sizes. Which one a button gets should depend only on the

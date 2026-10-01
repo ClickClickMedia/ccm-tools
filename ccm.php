@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.13.1
+ * Version: 8.13.2
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -19,16 +19,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Bail if this file is being included a second time within the same request.
-// WP-Cron auto-updates silently deactivate the plugin via the upgrader's
-// `active_before` filter, extract new files, then call `activate_plugin()` to
-// re-activate. That triggers `plugin_sandbox_scrape()` which does a raw
-// `include` of this file — but the OLD copy was already loaded at the start of
-// the request, so the unguarded global function/class definitions below would
-// fatal with "Cannot redeclare …". WP's fatal handler then catches it, pauses
-// the plugin, and shows a generic error with no entry in debug.log unless
-// WP_DEBUG_LOG is on. The sentinel below cleanly short-circuits the second
-// include so the activation completes without the fatal.
+/* 86160b4aa7654620 */
 if (defined('CCM_TOOLS_FILE_LOADED')) {
     return;
 }
@@ -36,26 +27,10 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.13.1');
+    define('CCM_HELPER_VERSION', '8.13.2');
 }
 
-/**
- * Whether the current user may see and use CCM Tools at all.
- *
- * `manage_options` on its own is not a good enough gate here. Plenty of live
- * sites hand that capability to something other than an administrator: a shop
- * manager role, a client role built by a membership plugin, a "site manager"
- * invented by a page builder. This plugin rewrites wp-config.php, .htaccess
- * and the object cache drop-in, and can permanently delete rows from the
- * database. Being able to open it is an administrator's business.
- *
- * Multisite super admins pass regardless of their role on the current site,
- * because a super admin frequently has no role on a subsite at all and would
- * otherwise be locked out of a site they own.
- *
- * @since 8.9.0
- * @return bool
- */
+/* d26b05b6b0d907df */
 function ccm_tools_user_is_admin(): bool {
     // A super admin may hold no role on this particular site, so this has to
     // come first, before any role inspection.
@@ -78,19 +53,7 @@ function ccm_tools_user_is_admin(): bool {
 // Better duplicate detection mechanism that only checks active plugins
 $ccm_is_duplicate = false;
 
-/**
- * Convert a PHP ini size string to bytes.
- *
- * Declared at file scope. It used to be nested inside create_dashboard_page(),
- * which meant it only existed once execution had passed its declaration part
- * way down that method: anything earlier on the page that called it died with
- * "call to undefined function".
- *
- * Returns -1 unchanged for an unlimited memory_limit, since -1 is numeric.
- *
- * @param string|int $size e.g. "512M", "1G", "-1".
- * @return int Bytes.
- */
+/* 1623db185647e961 */
 if (!function_exists('ccm_tools_convert_php_size_to_bytes')) {
     function ccm_tools_convert_php_size_to_bytes($size) {
         if (is_numeric($size)) {
@@ -123,10 +86,7 @@ if (!function_exists('ccm_tools_convert_php_size_to_bytes')) {
 
 if (!function_exists('ccm_check_for_duplicates')) {
     function ccm_check_for_duplicates() {
-        // Use get_option() directly — do NOT apply_filters('active_plugins')
-        // here because this runs at file-include time (before plugins_loaded).
-        // Firing that filter can trigger theme resolution in other plugins,
-        // causing a fatal "tried to allocate 4 GB" in theme.php.
+        /* 511182a69cdcb017 */
         $active_plugins = (array) get_option('active_plugins', array());
         $current_plugin = plugin_basename(__FILE__);
         
@@ -145,10 +105,7 @@ $ccm_is_duplicate = ccm_check_for_duplicates();
 // Suppress all admin notices on CCM Tools pages
 add_action('admin_notices', 'ccm_tools_hide_all_notices', 0);
 
-/**
- * Remove all admin notices on CCM Tools pages
- * This ensures a clean interface without WordPress notifications
- */
+/* e674f1a0bb6c3f9a */
 function ccm_tools_hide_all_notices() {
     global $plugin_page;
     
@@ -161,25 +118,12 @@ function ccm_tools_hide_all_notices() {
     }
 }
 
-/**
- * Add back only CCM Tools specific notices
- * Allows our plugin to still show its own notifications
- */
+/* 6839ac441bc8f5d0 */
 function ccm_tools_custom_admin_notices() {
-    // Duplicate installs are now resolved automatically (the canonical
-    // /ccm-tools/ install is kept and version-suffixed copies are removed), so
-    // the old "please deactivate the other instance" warning is no longer shown.
-    // This hook remains as the single allowed admin_notices callback on CCM
-    // Tools pages after remove_all_actions(); intentionally left as a no-op.
+    /* eaf65d6969f2d1a7 */
 }
 
-// ── Resolve duplicate installs ───────────────────────────────────────────
-// A manual upload of a version-suffixed release zip (e.g. ccm-tools-7.42.0.zip)
-// makes WordPress create wp-content/plugins/ccm-tools-7.42.0/ ALONGSIDE the
-// canonical ccm-tools/. Two active copies used to make this plugin deactivate
-// ITSELF (frequently the good one — whichever loaded first), which is the
-// "plugin deactivated itself after update" symptom. Instead: always keep the
-// canonical /ccm-tools/ install and clean up the version-suffixed duplicate(s).
+/* ad9969df6f4d1fd3 */
 if ($ccm_is_duplicate) {
     $ccm_current_dir = dirname(plugin_basename(__FILE__));
 
@@ -187,13 +131,7 @@ if ($ccm_is_duplicate) {
         // We are the canonical install — stay active and remove the duplicates.
         add_action('admin_init', 'ccm_tools_cleanup_duplicate_installs');
     } elseif (file_exists(WP_PLUGIN_DIR . '/ccm-tools/ccm.php')) {
-        // We are a version-suffixed copy and the canonical exists (checking
-        // file_exists() on ccm.php itself, not just is_dir() on the folder —
-        // a leftover EMPTY ccm-tools/ directory from a failed upgrade used to
-        // satisfy is_dir() and fall into this branch with no working
-        // canonical to hand off to). Make sure the canonical is active, stand
-        // down quietly (silent = NO teardown hooks), and stop loading. The
-        // canonical instance deletes our folder on its next admin load.
+        /* 599c634addd16374 */
         add_action('admin_init', function () {
             if (!function_exists('activate_plugin') || !function_exists('is_plugin_active')) {
                 require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -203,32 +141,19 @@ if ($ccm_is_duplicate) {
                 $activate_result = activate_plugin('ccm-tools/ccm.php');
                 $canonical_active = !is_wp_error($activate_result) && is_plugin_active('ccm-tools/ccm.php');
             }
-            // Only self-deactivate once the canonical copy is confirmed
-            // active. Previously activate_plugin()'s WP_Error return was
-            // silenced with @ and ignored, so a broken canonical install
-            // (e.g. that empty leftover folder) plus a failed activation
-            // still deactivated this — the only working — copy, making the
-            // plugin disappear entirely.
+            /* a1679da1bd2154cd */
             if ($canonical_active) {
                 deactivate_plugins(plugin_basename(__FILE__), true); // silent: no deactivation hooks
             }
         });
         return; // stop loading this duplicate copy
     } else {
-        // Version-suffixed copy with NO canonical present — it is the only
-        // install, so keep running (never self-delete) and just warn the admin
-        // to reinstall into /ccm-tools/.
+        /* 09ca59b3ef3592b7 */
         add_action('admin_notices', 'ccm_tools_nonstandard_folder_notice');
     }
 }
 
-/**
- * Remove version-suffixed duplicate CCM Tools folders (e.g. ccm-tools-7.42.0)
- * left behind by a manual zip upload. Runs from the canonical /ccm-tools/
- * install only. Deactivates duplicates silently (no teardown) and deletes the
- * folder via the filesystem API (no uninstall hooks), so shared options, the
- * wp-config Redis block and the object-cache drop-in are never touched.
- */
+/* c0f4e33b61261db8 */
 function ccm_tools_cleanup_duplicate_installs() {
     if (!current_user_can('activate_plugins')) {
         return;
@@ -279,9 +204,7 @@ function ccm_tools_cleanup_duplicate_installs() {
     }
 }
 
-/**
- * Notice shown after duplicate folders are cleaned up.
- */
+/* b4b3cfc7d3845e79 */
 add_action('admin_notices', 'ccm_tools_duplicate_cleanup_notice');
 function ccm_tools_duplicate_cleanup_notice() {
     if (!current_user_can('activate_plugins')) {
@@ -301,10 +224,7 @@ function ccm_tools_duplicate_cleanup_notice() {
     echo '</p></div>';
 }
 
-/**
- * Notice shown when CCM Tools is running from a non-standard (version-suffixed)
- * folder with no canonical /ccm-tools/ present.
- */
+/* 3361f0b324d3c443 */
 function ccm_tools_nonstandard_folder_notice() {
     if (!current_user_can('activate_plugins')) {
         return;
@@ -335,13 +255,7 @@ if (!defined('CCM_HELPER_BASENAME')) {
     define('CCM_HELPER_BASENAME', plugin_basename(__FILE__));
 }
 
-/* ────────────────────────────────────────────────────────────────
- *  One-time cleanup: dead data left behind by the Premium and AI
- *  Performance Hub modules (inc/premium.php, inc/ai-hub.php), both
- *  removed entirely — every formerly-premium feature is now standard.
- *  Guarded by the 'ccm_tools_cleanup_version' option so it only does
- *  its work once per site no matter how many times admin_init fires.
- * ──────────────────────────────────────────────────────────────── */
+/* a1661f9ead7a1e78 */
 add_action('admin_init', 'ccm_tools_cleanup_removed_modules');
 
 function ccm_tools_cleanup_removed_modules() {
@@ -368,9 +282,7 @@ function ccm_tools_cleanup_removed_modules() {
     delete_transient('ccm_tools_premium_pricing');
     delete_transient('ccm_tools_perf_snapshot');
 
-    // ccm_tools_perf_settings survives (it's not premium/AI-specific), but it
-    // had a 'warn_dom_size' key that belonged to the removed AI Hub — drop
-    // just that key and keep the rest of the option intact.
+    /* d6d0821b3aee81cf */
     $perf_settings = get_option('ccm_tools_perf_settings');
     if (is_array($perf_settings) && array_key_exists('warn_dom_size', $perf_settings)) {
         unset($perf_settings['warn_dom_size']);
@@ -380,30 +292,13 @@ function ccm_tools_cleanup_removed_modules() {
     update_option('ccm_tools_cleanup_version', $cleanup_marker);
 }
 
-/* ────────────────────────────────────────────────────────────────
- *  Redis drop-in lifecycle (activation / deactivation)
- *
- *  Registered against the MAIN plugin file so they fire on genuine
- *  user-initiated (de)activation. WordPress deactivates SILENTLY during
- *  plugin updates ($silent = true), so these do NOT run mid-update — the
- *  drop-in is instead refreshed by upgrader_process_complete / admin_init
- *  in inc/redis-object-cache.php.
- * ──────────────────────────────────────────────────────────────── */
+/* 45a3ce1c9b015054 */
 register_activation_hook(__FILE__, 'ccm_tools_on_activate');
 register_deactivation_hook(__FILE__, 'ccm_tools_on_deactivate');
 
-/**
- * On (re)activation: if Redis was previously enabled, make sure the deployed
- * drop-in is present and current. Covers the update deactivate→reactivate
- * dance leaving a stale or missing drop-in.
- */
+/* a47c5f6bcb72a063 */
 function ccm_tools_on_activate() {
-    /*
-     * Register the domain straight away rather than waiting for the first
-     * scheduled update check, so a new install appears in the register the
-     * moment it is switched on. It cannot fail in a way that matters: the
-     * check swallows every error and the plugin carries on regardless.
-     */
+    /* f0832a21a75d019a */
     require_once CCM_HELPER_ROOT_DIR . 'inc/registry.php';
     if (function_exists('ccm_tools_registry_on_activate')) {
         ccm_tools_registry_on_activate();
@@ -419,10 +314,7 @@ function ccm_tools_on_activate() {
     }
 }
 
-/**
- * On deactivation: remove our object-cache.php drop-in and strip the managed
- * Redis block from wp-config.php (clean teardown). Only touches files we own.
- */
+/* 91f2f5b3bdee14ed */
 function ccm_tools_on_deactivate() {
     require_once CCM_HELPER_ROOT_DIR . 'inc/redis-object-cache.php';
     if (function_exists('ccm_tools_redis_uninstall_dropin')) {
@@ -441,9 +333,7 @@ add_filter('plugin_row_meta', 'ccm_tools_registry_plugin_row_meta', 10, 2);
 
 add_action('init', 'ccmtools_load_textdomain');
 
-/**
- * Load plugin text domain for translations
- */
+/* 92006dfeccdc2af1 */
 function ccmtools_load_textdomain() {
     load_plugin_textdomain('ccm-tools', false, dirname(plugin_basename(__FILE__)) . '/languages');
 }
@@ -452,20 +342,7 @@ function ccmtools_load_textdomain() {
 // Main plugin initialization - AFTER PLUGINS_LOADED HOOK
 add_action('plugins_loaded', 'ccm_initialize_plugin', 10);
 
-/**
- * Initialize the plugin after all plugins are loaded
- * This prevents early initialization issues
- *
- * NOTE: This used to skip loading entirely on REST API requests as a minor
- * performance optimisation. That short-circuit was removed: it matched the
- * REST prefix against the raw REQUEST_URI (including the query string), so a
- * request like /checkout/?x=/wp-json/ was misdetected as a REST request and
- * skipped ALL 12 includes — including inc/woocommerce-tools.php, which is
- * what enforces the admin-only COD/BACS restriction. That let an unpaid order
- * be placed on any request crafted to look like a REST hit, and the real
- * WooCommerce Store API endpoints defeated it with no trick at all. Loading
- * the includes unconditionally (they're cheap under OPcache) closes that gap.
- */
+/* 52e97bd8bb6cc622 */
 function ccm_initialize_plugin() {
     define('CCM_TOOLS_INITIALIZING', true);
     
@@ -492,12 +369,7 @@ function ccm_initialize_plugin() {
     $ccm_tools = new CCMSettings();
 }
 
-/**
- * Render the CCM Tools header navigation menu
- * 
- * @param string $active_page The current active page slug (e.g., 'ccm-tools', 'ccm-tools-database')
- * @return void
- */
+/* 8cf5c042635ffd03 */
 function ccm_tools_render_header_nav($active_page = '') {
     $webp_available = function_exists('ccm_tools_webp_is_available') && ccm_tools_webp_is_available();
     $redis_available = function_exists('ccm_tools_redis_extension_available') && ccm_tools_redis_extension_available();
@@ -543,9 +415,7 @@ function ccm_tools_render_header_nav($active_page = '') {
     <?php
 }
 
-/**
- * Main plugin settings class
- */
+/* ded9dd2e5b0795f9 */
 class CCMSettings {
     public function __construct() {
         // Add admin hooks - admin_menu is called after init, so it's safe
@@ -561,15 +431,7 @@ class CCMSettings {
     }
     
     public function add_plugin_page(): void {
-        /*
-         * Nothing is registered at all for anyone who is not an administrator.
-         * The `manage_options` capability passed to each add_*_page() call
-         * below stays, because WordPress checks it again when the screen is
-         * requested, but it is not the gate on its own: a site that has handed
-         * that capability to a shop manager or a client role would otherwise
-         * put a menu item in front of them for a tool that rewrites
-         * wp-config.php and deletes database rows.
-         */
+        /* 5f26ec48680d1ff6 */
         if (!ccm_tools_user_is_admin()) {
             return;
         }
@@ -704,16 +566,7 @@ class CCMSettings {
         }
     }
     
-    /**
-     * Stamp the chosen theme on <html> before anything paints.
-     *
-     * Has to be inline and in the head: a deferred script would let the page
-     * render in the wrong palette first and then snap, which is worse than
-     * either theme on its own. Falls back to the operating system preference
-     * when the viewer has never chosen, and survives blocked storage.
-     *
-     * @return void
-     */
+    /* 4631ebfdca8c7f04 */
     public function print_theme_stamp(): void {
         $screen = function_exists('get_current_screen') ? get_current_screen() : null;
         if (!$screen || strpos((string) $screen->id, 'ccm-tools') === false) {
@@ -804,20 +657,14 @@ class CCMSettings {
         return $links;
     }
     
-    /**
-     * Initialize front page prioritization hooks
-     */
+    /* 75ca1f54d2c3642f */
     public function init_front_page_prioritization(): void {
         // Add hooks for front page prioritization
         add_action('pre_get_posts', array($this, 'prioritize_front_page_in_admin'));
         add_filter('posts_orderby', array($this, 'modify_posts_orderby_for_front_page'), 10, 2);
     }
     
-    /**
-     * Prioritize Front Page in admin post/page lists
-     * 
-     * @param WP_Query $query The WordPress query object
-     */
+    /* 1de0972f0188dca9 */
     public function prioritize_front_page_in_admin($query): void {
         // Only modify admin queries
         if (!is_admin() || !$query->is_main_query()) {
@@ -859,9 +706,7 @@ class CCMSettings {
         $query->set('ccm_front_page_id', $front_page_id);
     }
     
-    /**
-     * Debug function to check front page settings
-     */
+    /* b77fe18a6e5cd31c */
     public function debug_front_page_settings(): array {
         return array(
             'page_on_front' => get_option('page_on_front'),
@@ -873,19 +718,11 @@ class CCMSettings {
         );
     }
     
-    /**
-     * Modify the ORDER BY clause to prioritize the front page
-     * 
-     * @param string $orderby The ORDER BY clause
-     * @param WP_Query $query The WordPress query object
-     * @return string Modified ORDER BY clause
-     */
+    /* 591aa1505bc06e1e */
     public function modify_posts_orderby_for_front_page($orderby, $query): string {
         global $wpdb;
 
-        // Coerce to string up front: an earlier posts_orderby filter can hand
-        // us null, and this method's `: string` return type would otherwise
-        // fatal with a TypeError when that null is returned as-is below.
+        /* eaa7819c9c933040 */
         $orderby = (string) $orderby;
 
         // Only apply our custom ordering if it's marked for front page prioritization
@@ -898,22 +735,13 @@ class CCMSettings {
             return $orderby;
         }
 
-        // Put the front page first, then fall back to WordPress's own
-        // ordering instead of discarding it. For hierarchical post types
-        // (e.g. Pages) WordPress passes "menu_order title" here — overwriting
-        // it outright silently turned the Pages list into date-DESC order.
+        /* 6b7fa957803f88da */
         $front_page_case = "CASE WHEN {$wpdb->posts}.ID = " . intval($front_page_id) . " THEN 0 ELSE 1 END ASC";
 
         return $orderby !== '' ? $front_page_case . ', ' . $orderby : $front_page_case;
     }
     
-    /**
-     * Add a visual indicator for the front page in admin lists
-     * 
-     * @param array $actions Row actions for the post
-     * @param WP_Post $post The post object
-     * @return array Modified actions array
-     */
+    /* 5e9116855b393d6b */
     public function add_front_page_indicator($actions, $post): array {
         // Check if this is the front page
         $front_page_id = get_option('page_on_front');
@@ -929,9 +757,7 @@ class CCMSettings {
         return $actions;
     }
     
-    /**
-     * Add CSS styles for front page indicator in admin
-     */
+    /* efcba26c8dce162d */
     public function add_front_page_admin_styles(): void {
         global $pagenow;
         
@@ -982,9 +808,7 @@ class CCMSettings {
         <?php
     }
     
-    /**
-     * Dashboard page callback
-     */
+    /* c7f1b203062ba66f */
     public function create_dashboard_page(): void {
         if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -1016,11 +840,7 @@ class CCMSettings {
         $debug_log_enabled = defined('WP_DEBUG_LOG') && WP_DEBUG_LOG;
         $debug_display_enabled = defined('WP_DEBUG_DISPLAY') && WP_DEBUG_DISPLAY;
         
-        // Double-check against the file content. Anchored to a line start
-        // that is not itself indented under a comment marker, so a
-        // define('WP_DEBUG', ...) sitting inside a // or /* */ comment can no
-        // longer be picked up as the live value (previously the FIRST match
-        // anywhere in the file won, including commented-out ones).
+        /* 13afa34a7a772b84 */
         if (!empty($wp_config_content)) {
             if (preg_match('/^[ \t]*define\s*\(\s*[\'"]WP_DEBUG[\'"]\s*,\s*(true|false)\s*\)/mi', $wp_config_content, $matches)) {
                 $debug_mode_enabled = strtolower($matches[1]) === 'true';
@@ -1058,14 +878,7 @@ class CCMSettings {
                 $config_status_class = 'ccm-info';
             }
             
-            // Object cache status.
-            //
-            // Read this from the drop-in actually installed at
-            // wp-content/object-cache.php, NOT from whether the third-party
-            // "Redis Object Cache" plugin happens to be present. CCM Tools
-            // ships its own drop-in and replaces that plugin, so checking for
-            // it reported "Not Available" on every site where our own cache
-            // was connected and serving.
+            /* 616fda091cc3c8cb */
             $dropin = function_exists('ccm_tools_redis_dropin_status')
                 ? ccm_tools_redis_dropin_status()
                 : array('exists' => false, 'is_ccm' => false, 'is_other' => false, 'other_plugin' => '', 'version' => '');
@@ -1126,9 +939,7 @@ class CCMSettings {
                 }
                 $perf_master = !empty($perf_now['enabled']);
 
-                // Read these here rather than borrowing the PHP card's variables:
-                // that card renders further down the page, so at this point they
-                // do not exist yet.
+                /* d74b36624b1be311 */
                 $tile_memory_limit = ini_get('memory_limit');
                 $tile_memory_bytes = ccm_tools_convert_php_size_to_bytes($tile_memory_limit);
                 $tile_memory_unlimited = ($tile_memory_bytes < 0);
@@ -1182,12 +993,7 @@ class CCMSettings {
                 </div>
 
                 <?php
-                /*
-                 * Reference material below, paired two-up. Each pair gets its
-                 * OWN .ccm-grid-2: the grid auto-fits, so one grid holding four
-                 * panels opens a third column on a wide screen and strands the
-                 * fourth panel half-width on a row by itself.
-                 */
+                /* a95f99149953006d */
                 $db_info = ccm_tools_get_database_size();
                 ?>
                 <div class="ccm-stack">
@@ -1282,11 +1088,7 @@ class CCMSettings {
                     $upload_size_threshold = 62 * 1024 * 1024; // 62MB
                     $input_vars_threshold = 10000;
 
-                    // Determine status classes and suggestions.
-                    // -1 means "unlimited" for memory_limit — it's numeric, so
-                    // without this check it reads as less than the 256M
-                    // threshold and renders a red "Recommend: 512M or higher"
-                    // for the best possible setting.
+                    /* b827876bd507db7c */
                     $memory_limit_unlimited = ($memory_limit_bytes < 0);
                     $memory_class = ($memory_limit_unlimited || $memory_limit_bytes >= $memory_limit_threshold) ? 'ccm-success' : 'ccm-error';
                     $memory_suggestion = ($memory_limit_unlimited || $memory_limit_bytes >= $memory_limit_threshold) ? '' : __('Recommend: 512M or higher', 'ccm-tools');
@@ -1308,9 +1110,7 @@ class CCMSettings {
                     $display_errors_class = $display_errors ? 'ccm-warning' : 'ccm-success';
                     $display_errors_suggestion = $display_errors ? __('Recommend: Disable for production sites', 'ccm-tools') : '';
 
-                    // The chip in the panel header carries the severity that a
-                    // coloured edge used to: it says how many settings sit under
-                    // the house recommendation, without drawing a rail.
+                    /* 814e13a9bfb607c5 */
                     $php_below = 0;
                     foreach (array($memory_suggestion, $execution_suggestion, $post_suggestion, $upload_suggestion, $vars_suggestion) as $php_sugg) {
                         if ($php_sugg !== '') {
@@ -1425,11 +1225,7 @@ class CCMSettings {
                     }
                     $ext_total = count($required_extensions);
 
-                    /*
-                     * Full width on purpose, not a card stranded at half width:
-                     * the extensions are a wrapping row of chips, so they read
-                     * better across the page than stacked in one column.
-                     */
+                    /* b8561c415639c358 */
                     ?>
                     <div class="ccm-panel">
                         <div class="ccm-panel__head">
@@ -1444,9 +1240,7 @@ class CCMSettings {
                                 <?php
                                 foreach ($required_extensions as $ext => $desc) {
                                     $loaded = extension_loaded($ext);
-                                    // The description is the tooltip, not the label: twelve
-                                    // extensions each spelling out why they exist filled a
-                                    // whole screen to say "all present".
+                                    /* 016ab0543d1a94fd */
                                     echo '<div class="ccm-extension-item ' . ($loaded ? 'ccm-success' : 'ccm-error') . '"'
                                         . ' title="' . esc_attr($desc) . '">';
                                     echo '<span class="ccm-icon" aria-hidden="true">' . ($loaded ? '✓' : '✗') . '</span>';
@@ -1542,12 +1336,7 @@ class CCMSettings {
                     </section>
 
                     <?php
-                    /*
-                     * Where this site's updates come from. Visible while the
-                     * fleet crosses over from GitHub to the update service, so
-                     * a working fallback can be told apart from a broken one
-                     * without waiting to see whether an update ever turns up.
-                     */
+                    /* 0290df24e805817a */
                     if (function_exists('ccm_tools_registry_render_panel')) {
                         ccm_tools_registry_render_panel();
                     }
@@ -1559,9 +1348,7 @@ class CCMSettings {
         <?php
     }
 
-    /**
-     * Database tools page callback
-     */
+    /* 2bf1f8fa8b9f0261 */
     public function create_database_page(): void {
         if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -1603,30 +1390,13 @@ class CCMSettings {
                 </div>
 
                 <?php
-                /*
-                 * The record of the last run, directly under the hero rather
-                 * than at the foot of the page. The live progress belongs to
-                 * the run panel; this is what is left to read afterwards, and
-                 * it needs to be where the eye already is when the panel
-                 * closes, not twenty rows of checkboxes further down.
-                 */
+                /* 0c0bb70516a309e9 */
                 ?>
                 <div id="optimization-results" class="ccm-result-box" style="display: none;"></div>
 
                 <!-- At a glance -->
                 <?php
-                /*
-                 * The state of the database, before the list of things you
-                 * could do to it.
-                 *
-                 * Bare, directly under the hero, exactly as the Redis page does
-                 * it: a stat grid, then one muted caption line pulled up tight
-                 * beneath. Two earlier attempts got this wrong - the first
-                 * invented its own stat component, the second used the right
-                 * tiles but wrapped them in a card, which no other page does.
-                 * Tone lives in a dot on the sub line, not in a coloured
-                 * number, for the same reason.
-                 */
+                /* 819f421112e782c1 */
                 $overview = function_exists('ccm_tools_db_overview') ? ccm_tools_db_overview() : null;
                 if ($overview) :
                     $fmt = static function ($bytes) {
@@ -1638,11 +1408,7 @@ class CCMSettings {
                         if (strtoupper((string) $engine) !== 'INNODB') { $myisam += (int) $n; }
                     }
 
-                    // Every autoloaded option is read on every request, so this
-                    // is the one figure here that costs on each page view
-                    // rather than only when somebody opens this screen. The
-                    // bands are a judgement call: past a megabyte it is a
-                    // measurable drag on every request the site serves.
+                    /* c35705e9d6f38dbe */
                     $autoload_kb  = $overview['autoload_bytes'] / 1024;
                     $autoload_dot = $autoload_kb > 1024 ? 'ccm-dot-bad'
                                   : ($autoload_kb > 512 ? 'ccm-dot-warn' : 'ccm-dot-ok');
@@ -1788,18 +1554,7 @@ class CCMSettings {
                 </div>
 
                 <?php
-                /*
-                 * The heading and the quick-select buttons are one contained
-                 * group, the same shape every other settings page uses. The
-                 * list itself stays exactly where it was: js/main.js replaces
-                 * the innerHTML of #optimization-options and renders its own
-                 * bordered groups, so it is deliberately NOT nested inside this
-                 * card — that would be cards inside a card.
-                 *
-                 * .ccm-panel__body is here only for its padding.
-                 * .ccm-optgroup__body has none of its own, because it normally
-                 * holds .ccm-opt rows that pad themselves.
-                 */
+                /* eb4a69e32d34f84d */
                 ?>
                 <section class="ccm-optgroup">
                     <header class="ccm-optgroup__head">
@@ -1831,13 +1586,7 @@ class CCMSettings {
                 </div>
 
                 <?php
-                /*
-                 * Run is in the hero, and the list below it is long enough that
-                 * the button is off screen by the time you have finished
-                 * ticking. This dock keeps the action with the selection. It
-                 * proxies the hero button rather than duplicating the run
-                 * logic, so the two cannot disagree.
-                 */
+                /* 92812d33ebb9f14c */
                 ?>
                 <div class="ccm-savebar ccm-savebar--action"
                      data-ccm-actionbar
@@ -1859,9 +1608,7 @@ class CCMSettings {
         <?php
     }
 
-    /**
-     * .htaccess tools page callback
-     */
+    /* c22c1028601d06d9 */
     public function create_htaccess_page(): void {
         if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -1871,12 +1618,7 @@ class CCMSettings {
             <?php ccm_tools_render_header_nav('ccm-tools-htaccess'); ?>
             <div class="ccm-content">
                 <?php
-                /*
-                 * ccm_tools_display_htaccess() returns the whole page body now,
-                 * built from the component kit, rather than a blob to drop in a
-                 * card. The two boxes below are kept because js/main.js writes
-                 * its status messages into them by id.
-                 */
+                /* 53ef920195c1ba5f */
                 ?>
                 <div id="infoBox" class="ccm-info-box"></div>
                 <div id="resultBox"><?php echo ccm_tools_display_htaccess(); ?></div>
@@ -1885,12 +1627,8 @@ class CCMSettings {
         <?php
     }
 
-    /**
-     * Error Log viewer page callback
-     */
-    /**
-     * WooCommerce tools page callback
-     */
+    /* 571496331fa8db22 */
+    /* 7aa01833c031528d */
     public function create_woocommerce_page(): void {
         if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -1996,15 +1734,7 @@ class CCMSettings {
                                     <p class="ccm-opt__desc"><?php _e('Applies at the classic checkout and in the block cart. Stripe and PayPal are unaffected.', 'ccm-tools'); ?></p>
                                 </div>
                                 <?php
-                                /*
-                                 * js/main.js reads data-enabled to decide which way to
-                                 * flip this. The attribute was never emitted, so it read
-                                 * as false every time and the button always sent
-                                 * enable: true — meaning the restriction could be turned
-                                 * on but never off, and Cash on Delivery and Bank
-                                 * Transfer stayed hidden from real customers after
-                                 * testing was finished.
-                                 */
+                                /* 5491121864d45739 */
                                 ?>
                                 <button type="button" id="toggle-admin-payment"
                                         data-enabled="<?php echo $admin_payment_enabled ? 'true' : 'false'; ?>"
@@ -2078,9 +1808,7 @@ class CCMSettings {
         <?php
     }
     
-    /**
-     * Debug page callback
-     */
+    /* b02f4ae654e9ace1 */
     public function create_debug_page(): void {
         if (!ccm_tools_user_is_admin()) {
             wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -2092,12 +1820,7 @@ class CCMSettings {
             <h1>Front Page Debug Information</h1>
 
             <?php
-            /*
-             * Two short reference panels side by side, then the steps full
-             * width. The grid auto-fits, so when there is no front page set and
-             * the second panel is absent, the first one simply spans the row
-             * rather than sitting stranded at half width.
-             */
+            /* 4cc2745ab1c2816e */
             ?>
             <div class="ccm-stack">
 

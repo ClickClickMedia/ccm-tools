@@ -1,20 +1,11 @@
-/**
- * CCM Tools - Modern Vanilla JavaScript
- * Pure JS without jQuery or other dependencies
- * Version: 8.2.0
- */
+/* 6a7fee14cbc20ff4 */
 
 (function() {
     'use strict';
 
-    // ===================================
-    // Utility Functions
-    // ===================================
+    /* 10468677ccae0341 */
     
-    /**
-     * DOM Ready handler
-     * @param {Function} fn - Callback function
-     */
+    /* 1010844b746bc0be */
     function ready(fn) {
         if (document.readyState !== 'loading') {
             fn();
@@ -23,33 +14,17 @@
         }
     }
 
-    /**
-     * Simple DOM selector (shorthand for querySelector)
-     * @param {string} selector - CSS selector
-     * @param {Element} context - Context element
-     * @returns {Element|null}
-     */
+    /* c8a2d8cd74d66bb9 */
     function $(selector, context = document) {
         return context.querySelector(selector);
     }
 
-    /**
-     * Select all elements
-     * @param {string} selector - CSS selector
-     * @param {Element} context - Context element
-     * @returns {NodeList}
-     */
+    /* 188d6cc0ec5641c0 */
     function $$(selector, context = document) {
         return context.querySelectorAll(selector);
     }
 
-    /**
-     * Create element with attributes and content
-     * @param {string} tag - HTML tag name
-     * @param {Object} attrs - Attributes object
-     * @param {string|Element|Array} children - Child content
-     * @returns {Element}
-     */
+    /* 69337092bbc6fa61 */
     function createElement(tag, attrs = {}, children = null) {
         const el = document.createElement(tag);
         
@@ -86,10 +61,7 @@
         return el;
     }
 
-    /**
-     * Remove existing spinners from element
-     * @param {Element|string} target - Target element or selector
-     */
+    /* 7ffd1ca3f35a8453 */
     function removeSpinner(target) {
         const el = typeof target === 'string' ? $(target) : target;
         if (el) {
@@ -98,12 +70,7 @@
         }
     }
 
-    /**
-     * Show inline notification (replaces alerts)
-     * @param {string} message - Message to display
-     * @param {string} type - Message type (success, error, info, warning)
-     * @param {number} duration - Auto-hide duration in ms (0 = no auto-hide)
-     */
+    /* bdb17b9352e6cf0d */
     function showNotification(message, type = 'info', duration = 5000) {
         // Remove existing notifications
         const existingNotifications = $$('.ccm-notification');
@@ -149,13 +116,7 @@
         }
     }
 
-    /**
-     * Show confirmation modal (replaces confirm())
-     * @param {string} message - Message to display
-     * @param {Function} onConfirm - Callback when confirmed
-     * @param {string} confirmText - Text for confirm button (default: 'Confirm')
-     * @param {string} cancelText - Text for cancel button (default: 'Cancel')
-     */
+    /* 067f052d944f22b6 */
     function showConfirmModal(message, onConfirm, confirmText = 'Confirm', cancelText = 'Cancel', onCancel = null) {
         // Remove any existing modal
         const existingModal = $('.ccm-modal-overlay');
@@ -190,11 +151,7 @@
             setTimeout(() => modal.remove(), 200);
         };
 
-        /*
-         * Every dismissal path reports the cancel, not just the Cancel button,
-         * so an awaited confirm resolves however it was dismissed rather than
-         * leaving its caller hanging on a promise that never settles.
-         */
+        /* 66732160eb6b8de9 */
         const dismiss = () => {
             closeModal();
             if (typeof onCancel === 'function') {
@@ -229,16 +186,7 @@
         document.addEventListener('keydown', handleEscape);
     }
 
-    /**
-     * Reveal a panel the user has just triggered, and bring it to them.
-     *
-     * Several actions here render into a box further down the page than the
-     * button that starts them, so the click produced no visible change and the
-     * only way to tell anything had happened was to go looking for it.
-     * Un-hiding the box is not enough on its own: it has to come into view.
-     *
-     * @param {Element|null} el
-     */
+    /* be60b31be50589ba */
     function revealPanel(el) {
         if (!el) return;
 
@@ -256,12 +204,7 @@
         el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
     }
 
-    /**
-     * Escape HTML special characters, including quotes, so the result is
-     * safe to insert into text content AND into HTML attribute values.
-     * @param {string} str - String to escape
-     * @returns {string}
-     */
+    /* 39bb0b7d146af33e */
     function escapeHtml(str) {
         if (str === null || str === undefined) return '';
         return String(str).replace(/[&<>"']/g, (c) => ({
@@ -277,28 +220,10 @@
     // integration code; kept as an alias so no call site has to change.
     const escHtml = escapeHtml;
 
-    // ===================================
-    // AJAX Handler
-    // ===================================
+    /* 3cc803872c4dd2af */
 
-    /**
-     * Make AJAX request to WordPress admin-ajax.php
-     * @param {string} action - WordPress action name
-     * @param {Object} data - Additional data to send
-     * @param {Object} options - Request options
-     * @returns {Promise}
-     */
-    /**
-     * Tell the floating save bar whether a save actually succeeded.
-     *
-     * The bar used to infer this from the button going disabled and back, but
-     * every routine here re-enables its button in a finally block, so a failed
-     * request looked exactly like a successful one and the bar reported
-     * "Saved" over settings that were never stored.
-     *
-     * @param {HTMLElement|null} button The save button the bar is proxying.
-     * @param {boolean} ok Whether the request succeeded.
-     */
+    /* 467297a590c14a4d */
+    /* 8a3e25df5c8176ac */
     function reportSaveResult(button, ok) {
         if (!button || typeof CustomEvent !== 'function') { return; }
         button.dispatchEvent(new CustomEvent('ccm:save', {
@@ -337,13 +262,7 @@
             clearTimeout(timeoutId);
             
             if (!response.ok) {
-                /*
-                 * Say what the status actually means. "HTTP error! status: 403"
-                 * is true and useless: a 403 from admin-ajax is almost always
-                 * check_ajax_referer() refusing a nonce that has expired, which
-                 * the person reading it can fix in one reload. Leaving them to
-                 * guess turned a stale tab into a reported bug.
-                 */
+                /* cce4d9ef665dd0cb */
                 if (response.status === 403) {
                     throw new Error(
                         'This page has been open too long and its security token has expired. ' +
@@ -364,9 +283,7 @@
             if (result && result.success) {
                 return result;
             } else {
-                // result.data can be a string, an object with a message key, or
-                // absent entirely. Never pass a raw object into Error() — that
-                // renders as the useless string "[object Object]".
+                /* c53543e94553fe67 */
                 const data = result?.data;
                 const message = (data && typeof data === 'object' && data.message)
                     ? data.message
@@ -381,12 +298,7 @@
         }
     }
 
-    /**
-     * Make AJAX request with UI feedback
-     * @param {string} action - WordPress action name
-     * @param {Function} callback - Success callback
-     * @param {Object} data - Additional data to send
-     */
+    /* 7e8afd93007dbf0e */
     async function makeAjaxRequest(action, callback = null, data = {}) {
         const resultBox = $('#resultBox');
         
@@ -422,11 +334,7 @@
     /** Cache of the most recently loaded optimization option metadata, used by the button handlers in initOptimizationOptions() */
     let currentOptimizationOptions = null;
 
-    /**
-     * Load optimization options and stats into the options panel.
-     * Safe to call repeatedly (e.g. to refresh stats after a run) — unlike
-     * initOptimizationOptions(), it never (re)binds any button handlers.
-     */
+    /* 4c35f04c31ae2700 */
     async function loadOptimizationOptions() {
         const optionsContainer = $('#optimization-options');
         const runButton = $('#run-optimizations');
@@ -445,10 +353,7 @@
             const { options, stats } = response.data;
             currentOptimizationOptions = options;
 
-            // Group options by risk level
-            // No emoji markers. The risk is the group's name and the note
-            // under it says what that means, which is the same shape every
-            // other settings page uses.
+            /* fb658502b835f20e */
             const groups = {
                 safe: { label: 'Safe', items: [],
                         note: 'Routine housekeeping. Nothing here deletes anything you would miss.' },
@@ -486,13 +391,7 @@
 
                 for (const item of group.items) {
                     const stat = getStatForOption(item.key, stats);
-                    /*
-                     * The kit's modifiers are --good/--warn/--bad/--info. This
-                     * asked for `warning` and `has-items`, neither of which is
-                     * defined anywhere, so the count badge on the risky groups
-                     * has never actually been tinted - it rendered as a plain
-                     * chip and nothing said otherwise.
-                     */
+                    /* 1e870ac81f233088 */
                     const statClass = stat > 0
                         ? (riskLevel === 'high' ? 'ccm-chip--warn' : 'ccm-chip--info')
                         : '';
@@ -551,10 +450,7 @@
                 if (descEl) {
                     descEl.textContent = 'Already done, nothing to run.';
                 }
-                // The chip is only rendered when the task has a count to show,
-                // and the five index tasks never do. Without this they were the
-                // only finished rows with no Done marker, which read as though
-                // they had been missed.
+                /* 8ace81b1c98f5062 */
                 if (row) {
                     let statEl = row.querySelector('[data-opt-stat]');
                     if (!statEl) {
@@ -582,13 +478,7 @@
         }
     }
 
-    /**
-     * Initialize the optimization options panel and bind its buttons.
-     * Binds #run-optimizations, #select-all-safe and #deselect-all exactly
-     * once. loadOptimizationOptions() only ever replaces optionsContainer's
-     * own innerHTML — never these buttons — so it's called separately (and
-     * repeatedly, e.g. to refresh stats after a run) without rebinding them.
-     */
+    /* e4b9a2c2b02fad73 */
     function initOptimizationOptions() {
         const optionsContainer = $('#optimization-options');
         const runButton = $('#run-optimizations');
@@ -628,9 +518,7 @@
         loadOptimizationOptions();
     }
     
-    /**
-     * Get the statistic value for an optimization option
-     */
+    /* a9787ac11950b857 */
     function getStatForOption(optKey, stats) {
         const mapping = {
             'clear_transients': stats.transients,
@@ -657,13 +545,7 @@
         return mapping.hasOwnProperty(optKey) ? mapping[optKey] : null;
     }
     
-    /**
-     * showConfirmModal() as a promise, so an async routine can await a
-     * decision without inverting itself into callbacks.
-     * @param {string} message
-     * @param {string} confirmText
-     * @returns {Promise<boolean>}
-     */
+    /* 69ed6efd2fe40573 */
     function confirmAction(message, confirmText = 'Confirm') {
         return new Promise((resolve) => {
             showConfirmModal(
@@ -676,23 +558,10 @@
         });
     }
 
-    /*
-     * The other scripts get the same confirmation the rest of the plugin uses.
-     * ui.js is enqueued ahead of this file, so it reads this at click time
-     * rather than at load time.
-     */
+    /* 6f29d950ae3bcfec */
     window.ccmConfirm = confirmAction;
 
-    /**
-     * Run the selected optimization tasks, one at a time, inside the run panel.
-     *
-     * The panel opens before the first request goes out, so the click and the
-     * visible response are the same event. What this replaces rendered its
-     * progress into a box at the foot of the page while the button that
-     * started it sat up in the hero, so the normal journey — tick boxes at the
-     * bottom, scroll up, click — ended with no visible change at all, and the
-     * only way to tell it was working was to scroll back down and find it.
-     */
+    /* d32ff9eb2bd0625d */
     async function runSelectedOptimizations() {
         const optionsContainer = $('#optimization-options');
         const resultsBox = $('#optimization-results');
@@ -715,13 +584,7 @@
             return;
         }
 
-        /*
-         * High-risk tasks get the plugin's own confirm rather than the
-         * browser's. The native dialog looked nothing like the rest of the
-         * screen and, on a page whose whole point is being careful about
-         * irreversible deletes, the one dialog that matters should not be the
-         * one that looks bolted on.
-         */
+        /* 719fdb652aa583aa */
         const highRisk = selected.filter(opt => {
             const checkbox = optionsContainer.querySelector(`#opt-${opt.key}`);
             return checkbox && checkbox.closest('.ccm-optgroup[data-group="high"]');
@@ -869,11 +732,7 @@
             }
         }
 
-        /*
-         * Whatever happens, the panel gets closed out and the page unlocked.
-         * A run that throws half way leaves the panel open showing exactly how
-         * far it got, which is the honest thing to show.
-         */
+        /* 33488c8706062591 */
         try {
             for (const task of regularTasks) {
                 await processRegularTask(task);
@@ -915,25 +774,11 @@
             successCount === record.length ? 'success' : 'warning'
         );
 
-        /*
-         * Refresh the counts once the panel is dismissed, not on a timer.
-         * Re-rendering the list underneath a panel the user is still reading
-         * throws away the selection they can still see.
-         *
-         * loadOptimizationOptions(), not initOptimizationOptions() — the latter
-         * would rebind the run/select buttons on top of their existing
-         * listeners, so a second click would start two concurrent runs.
-         */
+        /* 4b7f03042696931b */
         panel.onClose(() => loadOptimizationOptions());
     }
 
-    /**
-     * "Check now" on the update channel panel.
-     *
-     * Delegated from document because the panel is rendered by PHP on one page
-     * only; binding directly would mean knowing whether that page is the one
-     * being viewed.
-     */
+    /* 4eea771e72153831 */
     document.addEventListener('click', async (e) => {
         const btn = e.target && e.target.closest ? e.target.closest('#ccm-registry-recheck') : null;
         if (!btn) return;
@@ -973,17 +818,9 @@
         }
     });
 
-    /**
-     * Initialize .htaccess options and event handlers
-     */
+    /* 0f816d3f99d84387 */
     function initHtaccessOptions() {
-        // Status chips on the htaccess checkboxes, delegated from document for
-        // the same reason the buttons below are: every .htaccess write returns
-        // a fresh copy of the page body and we replace #resultBox with it, so
-        // the old #htaccess-options node — and any listener bound to it — is
-        // thrown away. Bound to the node the chips froze after the first save,
-        // and the label whose whole job is to say what saving will do started
-        // lying about it.
+        /* bafcff0b0c5964d7 */
         document.addEventListener('change', (e) => {
             const target = e.target;
             if (!target || typeof target.matches !== 'function') return;
@@ -1046,14 +883,9 @@
         });
     }
 
-    /**
-     * Update the status indicator for a htaccess option based on checkbox state
-     * @param {HTMLInputElement} checkbox - The checkbox element
-     */
+    /* 0235fea5158c86e4 */
     function updateHtaccessOptionStatus(checkbox) {
-        // Says what saving would actually do to this directive, which is not
-        // the same as whether the switch is on: a directive already in the
-        // file and now switched off is going to be REMOVED on save.
+        /* 0f9d1297507f4b24 */
         const row = checkbox.closest('.ccm-opt');
         if (!row) return;
 
@@ -1087,9 +919,7 @@
         row.classList.toggle('is-on', on);
     }
     
-    /**
-     * Get selected htaccess options from checkboxes
-     */
+    /* 0d86a3b8ddf7eae5 */
     function getSelectedHtaccessOptions() {
         const options = [];
         const checkboxes = document.querySelectorAll('#htaccess-options input[name="htaccess_options[]"]:checked');
@@ -1099,13 +929,9 @@
         return options;
     }
 
-    // ===================================
-    // Event Handlers Setup
-    // ===================================
+    /* 4cd5ef5f1f9b974b */
 
-    /**
-     * Initialize all event handlers
-     */
+    /* abe46757674f9b61 */
     function initEventHandlers() {
         // Initialize optimization options if on database page
         initOptimizationOptions();
@@ -1132,9 +958,7 @@
         initErrorLogControls();
     }
 
-    /**
-     * Initialize debug mode toggles
-     */
+    /* 0b8d79b4e15a1dfe */
     function initDebugToggles() {
         const debugToggle = $('#toggle-debug');
         const debugLogToggle = $('#toggle-debug-log');
@@ -1243,9 +1067,7 @@
         }
     }
 
-    /**
-     * Initialize Redis controls
-     */
+    /* 8535f3b3812fdf29 */
     function initRedisControls() {
         const configureRedis = $('#configure-redis');
         const installRedisPlugin = $('#install-redis-plugin');
@@ -1338,9 +1160,7 @@
         }
     }
 
-    /**
-     * Initialize memory limit control
-     */
+    /* 72a9f2c74ad06627 */
     function initMemoryLimit() {
         const updateMemoryLimit = $('#update-memory-limit');
         
@@ -1379,16 +1199,12 @@
         }
     }
 
-    /**
-     * Initialize TTFB refresh and auto-load
-     */
+    /* 0b5e9a3055655bda */
     function initTTFBRefresh() {
         const refreshTTFB = $('#refresh-ttfb');
         const ttfbResult = $('#ttfb-result');
         
-        /**
-         * Load TTFB measurement via AJAX
-         */
+        /* f8a810a94cd2ec53 */
         async function loadTTFB() {
             if (!ttfbResult) return;
             
@@ -1441,9 +1257,7 @@
         }
     }
 
-    /**
-     * Initialize WooCommerce controls
-     */
+    /* d3bc0992e1b87495 */
     function initWooCommerceControls() {
         const toggleAdminPayment = $('#toggle-admin-payment');
         
@@ -1478,9 +1292,7 @@
         }
     }
 
-    /**
-     * Initialize Error Log controls
-     */
+    /* 8fecda701233104d */
     function initErrorLogControls() {
         // Log file selector
         const logFileSelect = $('#log-file-select');
@@ -1528,10 +1340,7 @@
             });
         }
 
-        // Number of lines to show. loadErrorLog() reads #log-lines when it
-        // runs, but nothing made it run: without this the pick sat there doing
-        // nothing until the 30-second auto-refresh happened to fire, which
-        // reads as a broken control.
+        /* 228ee7351b605a54 */
         const logLines = $('#log-lines');
         if (logLines) {
             logLines.addEventListener('change', () => {
@@ -1612,10 +1421,7 @@
         });
     }
 
-    /**
-     * Load error log content
-     * @param {string} logFile - Log file path
-     */
+    /* a0ff86defb7d66e1 */
     async function loadErrorLog(logFile) {
         const logViewer = $('.ccm-error-log-viewer');
         if (!logViewer) return;
@@ -1636,9 +1442,7 @@
             const data = response.data;
             
             if (data.formatted_content) {
-                // Only ever render the server-escaped version. Never fall back
-                // to the raw data.content field — that field is unescaped log
-                // text and rendering it here would be a stored XSS hole.
+                /* 581a8588060da82f */
                 const highlightClass = highlightEnabled ? 'highlight-enabled' : '';
                 logViewer.innerHTML = `<pre id="error-log-content" class="${highlightClass}">${data.formatted_content}</pre>`;
             } else if (data.error) {
@@ -1670,18 +1474,12 @@
         }
     }
 
-    // ===================================
-    // Auto-refresh Functionality
-    // ===================================
+    /* 7f787a8c97425c54 */
 
     let refreshInterval = null;
     let refreshCountdown = 0;
 
-    /**
-     * Start auto-refresh timer
-     * @param {number} seconds - Refresh interval in seconds
-     * @param {Function} callback - Refresh callback
-     */
+    /* 7be8aa57fab0d90b */
     function startAutoRefresh(seconds, callback) {
         stopAutoRefresh();
         
@@ -1716,9 +1514,7 @@
         refreshInterval = setInterval(updateTimer, 1000);
     }
 
-    /**
-     * Stop auto-refresh timer
-     */
+    /* f1f0c9f8dd3dd8be */
     function stopAutoRefresh() {
         if (refreshInterval) {
             clearInterval(refreshInterval);
@@ -1726,18 +1522,13 @@
         }
     }
 
-    // ===================================
-    // WebP Converter Handlers
-    // ===================================
+    /* ca9365d630371838 */
 
     let webpConversionRunning = false;
     let webpConversionStopped = false;
     let webpStatsRefreshInterval = null;
 
-    /**
-     * Refresh WebP conversion statistics
-     * Called periodically to keep stats current
-     */
+    /* 111863b16fef563e */
     async function refreshWebPStats() {
         try {
             const response = await ajax('ccm_tools_get_webp_stats', {});
@@ -1802,9 +1593,7 @@
         }
     }
 
-    /**
-     * Start WebP stats auto-refresh (every 30 seconds)
-     */
+    /* c26f06e4ca611294 */
     function startWebPStatsRefresh() {
         // Only start if we're on the WebP page
         if (!$('#webp-stats-card')) return;
@@ -1818,9 +1607,7 @@
         webpStatsRefreshInterval = setInterval(refreshWebPStats, 30000);
     }
 
-    /**
-     * Initialize WebP converter event handlers
-     */
+    /* 5b2de1c86f548fe3 */
     function initWebPConverterHandlers() {
         // Start stats auto-refresh
         startWebPStatsRefresh();
@@ -2041,9 +1828,7 @@
         }
     }
 
-    /**
-     * Save WebP settings
-     */
+    /* 3a2442204a936948 */
     async function saveWebPSettings() {
         const saveBtn = $('#save-webp-settings');
         if (saveBtn) {
@@ -2078,9 +1863,7 @@
         }
     }
 
-    /**
-     * Run test conversion
-     */
+    /* 1d40dd2e52d83521 */
     async function runTestConversion() {
         const testInput = $('#test-image-upload');
         const runTestBtn = $('#run-test-conversion');
@@ -2158,9 +1941,7 @@
         }
     }
 
-    /**
-     * Start bulk conversion
-     */
+    /* aef0e419ca1f34e2 */
     async function startBulkConversion() {
         const startBtn = $('#start-bulk-conversion');
         const stopBtn = $('#stop-bulk-conversion');
@@ -2186,18 +1967,7 @@
         let totalConverted = 0;
         let totalErrors = 0;
 
-        // The server only records an image as converted once a file actually
-        // converted, so anything that fails is still "unconverted" and comes
-        // straight back in the next batch. Asking from offset 0 every pass and
-        // only stopping on an empty batch meant one CMYK JPEG — or an uploads
-        // directory we cannot write to — spun admin-ajax forever, with a log
-        // entry per attempt until the tab died.
-        //
-        // attemptedIds is what ends the run: one go per attachment, so a batch
-        // the server keeps handing back is filtered down to nothing and the
-        // loop breaks. failedIds is the subset that failed, which is both what
-        // the summary reports and how far the offset has to step to get past
-        // the stuck rows at the front of the server's list.
+        /* 7d08bc44fe78fc6b */
         const attemptedIds = new Set();
         const failedIds = new Set();
         const failedLabels = [];
@@ -2219,17 +1989,12 @@
             let processedCount = 0;
             
             while (!webpConversionStopped) {
-                // The failures stay in the server's list, ordered by ID with
-                // everything converted dropped out, so they are exactly the
-                // rows at the front of what is left: stepping the offset past
-                // them is what lets the rest of the library still be reached.
+                /* 51f7c7ade9984bc1 */
                 const batchResponse = await ajax('ccm_tools_get_unconverted_images', { offset: failedIds.size, limit: batchSize });
                 const images = (batchResponse.data?.images || [])
                     .filter(image => !attemptedIds.has(String(image.id)));
 
-                // Nothing left, or nothing left that has not already had its go
-                // this run. Either way there is no more work to do, and this is
-                // the break that the old empty-batch test never reached.
+                /* b8e25d1b264f858b */
                 if (images.length === 0) {
                     break;
                 }
@@ -2276,9 +2041,7 @@
                 : `Conversion complete. Converted: ${totalConverted}, Errors: ${totalErrors}`;
             addLogEntry(logBox, summaryMsg, summaryType);
 
-            // Name the ones that were skipped. A run that quietly stops short
-            // looks the same as a run with nothing left to do, and these images
-            // will be skipped again on every run until someone looks at them.
+            /* d2e4838b6664d111 */
             if (failedIds.size > 0) {
                 const shown = failedLabels.slice(0, 10).join(', ');
                 const rest = failedLabels.length > 10 ? `, and ${failedLabels.length - 10} more` : '';
@@ -2297,9 +2060,7 @@
         }
     }
 
-    /**
-     * Add entry to log box
-     */
+    /* f667701d015889e1 */
     function addLogEntry(logBox, message, type = 'info') {
         if (!logBox) return;
         
@@ -2310,13 +2071,9 @@
         logBox.scrollTop = logBox.scrollHeight;
     }
 
-    // ===================================
-    // Performance Optimizer Handlers
-    // ===================================
+    /* 9dabc0cc4c092ec7 */
     
-    /**
-     * Initialize performance optimizer event handlers
-     */
+    /* 38eb460eecff00c6 */
     function initPerfOptimizerHandlers() {
         // Toggle visibility of setting details when checkboxes change
         const toggleSettings = [
@@ -2467,10 +2224,7 @@
         }
     }
     
-    /**
-     * Detect scripts on the homepage and categorize them
-     * @param {string} target - 'defer' or 'delay'
-     */
+    /* 4b551abd68becc90 */
     async function detectScripts(target = 'defer') {
         const isDefer = target === 'defer';
         const detectBtn = isDefer ? $('#detect-scripts-btn') : $('#detect-delay-scripts-btn');
@@ -2677,9 +2431,7 @@
         }
     }
 
-    /**
-     * Save performance optimizer settings
-     */
+    /* 3b63f7374ffeae4c */
     async function savePerfSettings() {
         const saveBtn = $('#save-perf-settings');
         const statusEl = $('#perf-save-status');
@@ -2804,9 +2556,7 @@
         }
     }
     
-    /**
-     * Export performance settings to JSON file
-     */
+    /* 0dff2177f8882bae */
     async function exportPerfSettings() {
         const exportBtn = $('#export-perf-settings');
         
@@ -2853,9 +2603,7 @@
         }
     }
     
-    /**
-     * Handle file selection for import
-     */
+    /* 7cce2c8ceff1893f */
     function handleImportFileSelect(e) {
         const file = e.target.files[0];
         const fileNameSpan = $('#import-file-name');
@@ -2878,9 +2626,7 @@
         }
     }
     
-    /**
-     * Import performance settings from JSON file
-     */
+    /* f20c5f02a8f24520 */
     async function importPerfSettings() {
         const importBtn = $('#import-perf-settings');
         const fileInput = $('#import-perf-file');
@@ -2956,10 +2702,7 @@
         }
     }
     
-    /**
-     * Detect external origins from the site's homepage
-     * @param {string} target - 'preconnect' or 'dns-prefetch'
-     */
+    /* 9da2f32ef9120c59 */
     async function detectExternalOrigins(target = 'preconnect') {
         const isPreconnect = target === 'preconnect';
         const detectBtn = isPreconnect ? $('#detect-external-origins') : $('#detect-dns-prefetch-origins');
@@ -3198,9 +2941,7 @@
         }
     }
 
-    // ===================================
-    // Initialize
-    // ===================================
+    /* 9f8ece333aac2b99 */
 
     ready(() => {
         // Check if we're on CCM Tools page
@@ -3254,9 +2995,7 @@
         } catch (e) { console.error('CCM: Cloudflare init error', e); }
     });
     
-    // ===================================
-    // Cloudflare Integration Handlers
-    // ===================================
+    /* 98d5877625373a01 */
 
     function initCloudflareHandlers() {
         const connectBtn    = $('#cf-connect-btn');
@@ -3465,9 +3204,7 @@
         }
     }
 
-    /**
-     * Load Cloudflare zone status and render the status panel with toggleable controls.
-     */
+    /* d86f4699ee965a5a */
     async function loadCloudflareStatus(container, devToggle) {
         try {
             const res = await ajax('ccm_tools_cf_get_status');
@@ -3480,11 +3217,7 @@
             const features = res.data.features || {};
             const isFreePlan = !zone.plan_id || zone.plan_id === 'free';
 
-            // Identity first, as plain key/value. Everything that can be
-            // changed is a switch row underneath, in the same component the
-            // settings pages use. This panel used to be a bare table with the
-            // controls jammed against the right edge, which is why the page
-            // read as a different product to the rest of the plugin.
+            /* 6dc7ad0012e30fb3 */
             let html = '<div class="ccm-kv">';
             html += cfKvRow('Zone', escHtml(zone.name || '\u2014'));
             html += cfKvRow('Zone ID', '<code class="ccm-mono">' + escHtml(zone.id) + '</code>');
@@ -3519,9 +3252,7 @@
                 html += cfOptRow(item.label, item.desc, cfToggle(item.key, val === 'on', false), val === 'on');
             }
 
-            // Cloudflare only lets a paid plan change these three. On Free the
-            // control is disabled and the reason sits as a chip beside the
-            // name, rather than as loose text crowding the control itself.
+            /* 9aee6a32f3ec358f */
             const proNote = isFreePlan ? 'Needs a paid plan' : '';
 
             if (features.webp !== undefined) {
@@ -3571,9 +3302,7 @@
 
             html += '</div>';
 
-            // Both Cloudflare and this plugin can convert images. Running both
-            // wastes work and makes it harder to tell which one caused a
-            // problem, so say so where the setting is.
+            /* 3b05248d8c02fe8b */
             if ((features.polish !== undefined && features.polish !== 'off') || features.webp === 'on') {
                 html += '<div class="ccm-alert ccm-alert--warn" style="margin: var(--ccm-space-md);">';
                 html += '<span class="ccm-dot ccm-dot-warn"></span>';
@@ -3629,18 +3358,11 @@
         }
     }
 
-    /**
-     * Bind change events to all CF setting controls in the zone status panel.
-     */
+    /* 524d904cd2fd4289 */
     function bindCfSettingControls(container) {
         // On/off toggle switches (rocket_loader, always_online, webp)
         container.querySelectorAll('[data-cf-setting]').forEach(el => {
-            // Remember what the control read before it was touched. change
-            // fires after the value has already moved, so a cancelled
-            // confirmation has nothing to put back unless we keep it. Recorded
-            // again on focus, because the Under Attack toggle sets the
-            // security_level dropdown from code and that would leave this
-            // stale.
+            /* fc0dfbbce511dcf7 */
             el.dataset.cfPrevious = cfControlValue(el);
             el.addEventListener('focus', function () {
                 this.dataset.cfPrevious = cfControlValue(this);
@@ -3653,9 +3375,7 @@
                 const previous = this.dataset.cfPrevious;
                 const newValue = cfControlValue(this);
 
-                // A wrong pick on some of these is felt by every visitor
-                // within seconds, so ask first — the same way the "I'm Under
-                // Attack" toggle beside them already does.
+                /* d62396a6a053827f */
                 const question = cfConfirmMessage(setting, newValue);
                 if (question && !(await confirmAction(question, 'Apply the change'))) {
                     cfRestoreControl(this, previous);
@@ -3691,17 +3411,13 @@
 
     }
 
-    /**
-     * Read a CF setting control as the value the API would be sent.
-     */
+    /* c1dc11e157df4834 */
     function cfControlValue(el) {
         if (el.type === 'checkbox') return el.checked ? 'on' : 'off';
         return el.value;
     }
 
-    /**
-     * Put a CF setting control back to the value it held before it was changed.
-     */
+    /* 16025ab0673bf238 */
     function cfRestoreControl(el, previous) {
         if (previous === undefined) return;
         if (el.type === 'checkbox') {
@@ -3711,11 +3427,7 @@
         }
     }
 
-    /**
-     * The confirmation text for a CF setting change, or null when the setting
-     * does not need one. Each line says what actually goes wrong, because
-     * "are you sure" tells an operator nothing they can act on.
-     */
+    /* 9704c2bc078ec213 */
     function cfConfirmMessage(setting, value) {
         if (setting === 'ssl') {
             switch (value) {
@@ -3750,12 +3462,7 @@
         return null;
     }
 
-    /*
-     * The Cloudflare panels used to build their own tables, which is why this
-     * page looked like a different product to every other settings page. These
-     * four emit exactly the markup the PHP pages emit, so the components, the
-     * spacing and both themes come along for free.
-     */
+    /* 5a904f5ba3f70700 */
 
     function cfKvRow(label, valueHtml) {
         return '<div><span class="ccm-kv__k">' + escHtml(label) + '</span>'
@@ -3803,9 +3510,7 @@
             : '';
     }
 
-    /**
-     * Render Security Settings panel from zone features data.
-     */
+    /* d280f3e515bea67d */
     function renderCfSecurityPanel(features) {
         const container = $('#cf-security-settings');
         if (!container) return;
@@ -3875,9 +3580,7 @@
         bindCfSettingControls(container);
     }
 
-    /**
-     * Render SSL/TLS & Network Settings panel from zone features data.
-     */
+    /* 1cee5f1b5f1234c9 */
     function renderCfNetworkPanel(features) {
         const container = $('#cf-network-settings');
         if (!container) return;
@@ -3935,9 +3638,7 @@
         bindCfSettingControls(container);
     }
 
-    /**
-     * Load and render Cloudflare zone analytics.
-     */
+    /* 2a82439e2af4a549 */
     async function loadCfAnalytics(container) {
         try {
             const res = await ajax('ccm_tools_cf_analytics');
@@ -3948,10 +3649,7 @@
             const cacheRatio = req.all > 0 ? Math.round((req.cached / req.all) * 100) : 0;
             const bwCacheRatio = bw.all > 0 ? Math.round((bw.cached / bw.all) * 100) : 0;
 
-            // The same stat tiles every other page uses, rather than a
-            // Cloudflare-only card. Six of them, because seven left one
-            // stranded on a row of its own; the HTTPS share now sits under
-            // the request count it belongs to.
+            /* 1c4fa4cfedc34755 */
             const sslPct = req.all > 0 ? Math.round((req.ssl / req.all) * 100) : 0;
             const threats = d.threats || 0;
 
@@ -4003,9 +3701,7 @@
         }
     }
 
-    /**
-     * Load and render Cloudflare DNS records table.
-     */
+    /* a446503028419eb4 */
     async function loadCfDnsRecords(container) {
         try {
             const res = await ajax('ccm_tools_cf_dns_records');
@@ -4047,9 +3743,7 @@
         }
     }
 
-    /**
-     * Format bytes into human-readable string.
-     */
+    /* d74e1102d921b227 */
     function formatBytes(bytes) {
         if (bytes === 0) return '0 B';
         const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -4057,16 +3751,12 @@
         return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
     }
 
-    /**
-     * Format large numbers with commas.
-     */
+    /* 2b2049177c337666 */
     function formatNumber(n) {
         return Number(n).toLocaleString();
     }
 
-    /**
-     * Format TTL seconds into human-readable string.
-     */
+    /* 635c1f93528b0a27 */
     function formatTtl(seconds) {
         if (seconds < 60) return seconds + 's';
         if (seconds < 3600) return Math.round(seconds / 60) + 'm';
@@ -4074,13 +3764,9 @@
         return Math.round(seconds / 86400) + 'd';
     }
 
-    // ===================================
-    // Redis Object Cache Functions
-    // ===================================
+    /* ac5c42c383368c6d */
     
-    /**
-     * Refresh Redis cache statistics display
-     */
+    /* 733689b5684bd060 */
     async function refreshRedisStats() {
         const keysEl = $('#redis-stat-keys');
         const memoryEl = $('#redis-stat-memory');
@@ -4114,10 +3800,7 @@
         }
     }
     
-    /**
-     * Live-update the Active Configuration table from AJAX response data.
-     * @param {Object} config  Keys are constant names, values are {value, defined}
-     */
+    /* b3fcfa1aeba31ca7 */
     function updateRedisActiveConfigTable(config) {
         const table = document.getElementById('redis-active-config-table');
         if (!table) return;
@@ -4146,9 +3829,7 @@
         tbody.innerHTML = html;
     }
 
-    /**
-     * Initialize Redis Object Cache page handlers
-     */
+    /* e423bdad63906140 */
     function initRedisObjectCacheHandlers() {
         const enableBtn = $('#redis-enable');
         const disableBtn = $('#redis-disable');
@@ -4250,9 +3931,7 @@
         // Flush Redis Cache
         if (flushBtn) {
             flushBtn.addEventListener('click', async () => {
-                // Sits in the same row as Disable, which asks first, and empties
-                // more than Disable does: this drops every cached value on a
-                // live site in one click.
+                /* 7265692a8efa479e */
                 if (!(await confirmAction('Flush the whole Redis object cache? Every cached value for this site is dropped straight away, so the next visitors rebuild it all from the database and the site runs slower and the database busier until it fills again.', 'Flush the cache'))) {
                     return;
                 }
@@ -4300,15 +3979,7 @@
             
             const updateSchemeVisibility = () => {
                 const scheme = schemeSelect.value;
-                /*
-                 * 'contents', not 'flex' or 'block'. These two wrappers exist
-                 * only so this function can flip between them; their fields
-                 * belong to the card's own field grid, so the wrapper must
-                 * disappear from layout rather than become a box of its own.
-                 * Setting flex here made Host and Port a flex row inside one
-                 * grid cell, which is why their column edge did not line up
-                 * with the rows above and below.
-                 */
+                /* 85a0bb6af3edc8df */
                 if (tcpSettings) tcpSettings.style.display = scheme === 'unix' ? 'none' : 'contents';
                 if (unixSettings) unixSettings.style.display = scheme === 'unix' ? 'contents' : 'none';
             };
@@ -4409,15 +4080,11 @@
         }
     }
     
-    // ===================================
-    // Uploads Backup Functions
-    // ===================================
+    /* 7f29a1968e25d800 */
     
     let backupStopped = false;
     
-    /**
-     * Initialize uploads backup event handlers
-     */
+    /* b103f745c4ef6878 */
     function initUploadsBackupHandlers() {
         const startBtn = $('#start-uploads-backup');
         const cancelBtn = $('#cancel-uploads-backup');
@@ -4458,9 +4125,7 @@
         }
     }
     
-    /**
-     * Load uploads folder information
-     */
+    /* e1c5e2189d341be0 */
     async function loadUploadsInfo() {
         const infoEl = $('#backup-info');
         if (!infoEl) return;
@@ -4481,9 +4146,7 @@
         }
     }
     
-    /**
-     * Check for existing backup status
-     */
+    /* 7d6294f0790094b4 */
     async function checkBackupStatus() {
         try {
             const response = await ajax('ccm_tools_get_backup_status');
@@ -4492,17 +4155,13 @@
             if (data.status === 'complete' && data.download_ready) {
                 showBackupComplete(data.backup_size);
             }
-            // Note: We no longer auto-resume in_progress backups on page load
-            // User must click "Create Backup" to start a new backup
-            // This prevents unexpected backup resumption from stale state
+            /* 5814ce6974cb5bbd */
         } catch (error) {
             console.error('Error checking backup status:', error);
         }
     }
     
-    /**
-     * Start uploads backup
-     */
+    /* 863cd3817f83bb9b */
     async function startUploadsBackup() {
         const startBtn = $('#start-uploads-backup');
         const cancelBtn = $('#cancel-uploads-backup');
@@ -4541,9 +4200,7 @@
         }
     }
     
-    /**
-     * Process backup batch
-     */
+    /* 432818e519d6d0f2 */
     async function processBackupBatch() {
         if (backupStopped) {
             return;
@@ -4578,9 +4235,7 @@
         }
     }
     
-    /**
-     * Show backup progress UI
-     */
+    /* 4700f64bc76df78f */
     function showBackupProgress() {
         const progressEl = $('#backup-progress');
         const completeEl = $('#backup-complete');
@@ -4589,9 +4244,7 @@
         if (completeEl) completeEl.style.display = 'none';
     }
     
-    /**
-     * Show backup complete UI
-     */
+    /* 5e6d12faaf3c45ad */
     function showBackupComplete(size) {
         const progressEl = $('#backup-progress');
         const completeEl = $('#backup-complete');
@@ -4606,9 +4259,7 @@
         if (sizeEl) sizeEl.textContent = size;
     }
     
-    /**
-     * Reset backup UI to initial state
-     */
+    /* d24028c5d342e6f6 */
     function resetBackupUI() {
         const progressEl = $('#backup-progress');
         const completeEl = $('#backup-complete');
@@ -4635,9 +4286,7 @@
         if (progressBar) progressBar.style.width = '0%';
     }
     
-    /**
-     * Cancel backup (during processing)
-     */
+    /* b9457fb5a12df427 */
     async function cancelBackup() {
         backupStopped = true;
         
@@ -4658,9 +4307,7 @@
         resetBackupUI();
     }
     
-    /**
-     * Delete completed backup
-     */
+    /* 472991d63000e4af */
     async function deleteBackup() {
         const deleteBtn = $('#delete-backup');
         if (deleteBtn) {
@@ -4682,9 +4329,7 @@
         }
     }
     
-    /**
-     * Download backup file
-     */
+    /* 45b0d9edc57e3106 */
     function downloadBackup() {
         // Create a form to submit download request with nonce
         const form = document.createElement('form');

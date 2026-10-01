@@ -4,36 +4,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Atomically write content to a config file (used for wp-config.php).
- *
- * Takes a timestamped backup of the existing file (if any), writes the new
- * content to a temp file in the SAME directory, verifies the full byte count
- * was written, then renames the temp file into place. A plain
- * file_put_contents() can leave the file truncated if the worker is killed
- * mid-write or a second admin writes concurrently - for wp-config.php that
- * is a sitewide white screen with no way into wp-admin to fix it.
- *
- * Note file_put_contents() returns the byte count on a partial write (not
- * false), so a naive `=== false` check does not catch a full disk - this
- * helper checks the byte count against strlen($content) instead.
- *
- * @param string $path    Absolute path to the file to write.
- * @param string $content New full file content.
- * @return bool True on success. On failure the original file is left
- *              untouched and the temp file is cleaned up.
- */
+/* ef3c237f77dd50a3 */
 function ccm_tools_write_wp_config($path, $content) {
-    /*
-     * Refuse an empty write outright.
-     *
-     * The byte-count check below passes for a zero-byte write, because
-     * file_put_contents returns 0 and 0 === strlen('') — so a rename put an
-     * empty file over wp-config.php and the site white-screened with no way
-     * into wp-admin to fix it, which is the exact outage this function exists
-     * to prevent. Callers reach it with '' when file_get_contents() fails or a
-     * preg_replace hits its backtrack limit and returns null.
-     */
+    /* 7c1f7da7cf9016ff */
     if (!is_string($content) || trim($content) === '') {
         return false;
     }
@@ -43,12 +16,7 @@ function ccm_tools_write_wp_config($path, $content) {
         $backup_path = $path . '.ccm-backup-' . gmdate('YmdHis') . '-' . wp_generate_password(6, false, false);
         @copy($path, $backup_path);
 
-        /*
-         * Keep the five most recent and delete the rest. These accumulate one
-         * per debug toggle, memory-limit change and Redis config write, and
-         * each one is a full copy of wp-config.php sitting in the document
-         * root with the database password and every salt in it.
-         */
+        /* 462502231cf26076 */
         $existing = glob($path . '.ccm-backup-*');
         if (is_array($existing) && count($existing) > 5) {
             usort($existing, function ($a, $b) {
@@ -89,20 +57,7 @@ function ccm_tools_write_wp_config($path, $content) {
     return true;
 }
 
-/**
- * Inspect a wp-config.php constant definition and report whether it is a
- * literal true/false this plugin can safely toggle.
- *
- * A host using define('WP_DEBUG', getenv('WP_DEBUG')) or a ternary is a
- * real, supported wp-config pattern. Matching only a bare true|false meant
- * that pattern was invisible to this plugin, which then inserted a SECOND
- * define() for the same constant - a hard "Constant already defined" PHP
- * notice/fatal on every later request.
- *
- * @param string $constant       Constant name, e.g. WP_DEBUG.
- * @param string $config_content Current wp-config.php contents.
- * @return array{defined: bool, is_bool_literal: bool, is_true: bool}
- */
+/* e5bafbc1e557157a */
 function ccm_tools_wp_config_constant_state($constant, $config_content) {
     $state = array('defined' => false, 'is_bool_literal' => false, 'is_true' => false);
 
@@ -208,10 +163,7 @@ function ccm_tools_ajax_get_optimization_options(): void {
     ));
 }
 
-/**
- * AJAX handler to run a single optimization task
- * This allows progressive execution with live feedback
- */
+/* 88c5db4d513c57a7 */
 add_action('wp_ajax_ccm_tools_run_single_optimization', 'ccm_tools_ajax_run_single_optimization');
 function ccm_tools_ajax_run_single_optimization(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -265,10 +217,7 @@ function ccm_tools_ajax_optimize_single_table(): void {
     wp_send_json_success($result);
 }
 
-/**
- * AJAX handler to optimize a single table (lightweight — OPTIMIZE TABLE only)
- * Used by the progressive optimization flow to avoid timeouts on large databases
- */
+/* 8f445763654d230c */
 add_action('wp_ajax_ccm_tools_optimize_table_task', 'ccm_tools_ajax_optimize_table_task');
 function ccm_tools_ajax_optimize_table_task(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -368,9 +317,7 @@ function ccm_tools_ajax_optimize_table_task(): void {
     ));
 }
 
-/**
- * Helper function to parse htaccess options from POST
- */
+/* d0827d6058d31550 */
 function ccm_tools_parse_htaccess_options(): array {
     $options = array();
     $valid_options = array(
@@ -467,20 +414,7 @@ function ccm_tools_ajax_remove_htaccess(): void {
 }
 
 add_action('wp_ajax_ccm_tools_restore_htaccess', 'ccm_tools_ajax_restore_htaccess');
-/**
- * Put the most recent .htaccess backup back.
- *
- * The plugin has taken a backup before every write for a long time and the
- * page says so, but nothing could restore one. That matters most in the case
- * the backups exist for: a directive this tool wrote is refused by the host,
- * Apache returns 500 on every request including /wp-admin/, and the only tool
- * that could undo it is the one behind the 500. A restore that can be run from
- * a working admin screen turns "call the host" into one click, and for the
- * locked-out case the backup is at least a known file to hand to whoever has
- * SFTP.
- *
- * @return void
- */
+/* 1bb94aef3686f855 */
 function ccm_tools_ajax_restore_htaccess(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
     if (!ccm_tools_user_is_admin()) {
@@ -509,9 +443,7 @@ function ccm_tools_ajax_restore_htaccess(): void {
     wp_send_json_error('<p class="ccm-error"><span class="ccm-icon">✗</span>' . esc_html($result['message']) . '</p>');
 }
 
-/**
- * Update WordPress debug mode setting
- */
+/* c6004245f7e76633 */
 add_action('wp_ajax_ccm_tools_update_debug_mode', 'ccm_tools_ajax_update_debug_mode');
 function ccm_tools_ajax_update_debug_mode(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -532,9 +464,7 @@ function ccm_tools_ajax_update_debug_mode(): void {
     // Read the config file
     $config_content = file_get_contents($wp_config_path);
 
-    // A wp-config using define('WP_DEBUG', getenv('WP_DEBUG')) or a ternary
-    // is a real, supported pattern on managed hosts. Refuse rather than
-    // insert a second define() for the same constant.
+    /* ebbe55474d0cf7a2 */
     $wp_debug_state = ccm_tools_wp_config_constant_state('WP_DEBUG', $config_content);
     if ($wp_debug_state['defined'] && !$wp_debug_state['is_bool_literal']) {
         wp_send_json_error(__('WP_DEBUG is defined in wp-config.php using a non-boolean expression (e.g. getenv() or a ternary). This plugin cannot safely toggle it without risking a duplicate constant definition. Please edit wp-config.php manually.', 'ccm-tools'));
@@ -626,9 +556,7 @@ function ccm_tools_ajax_update_debug_mode(): void {
     }
 }
 
-/**
- * Update WordPress debug display setting
- */
+/* ff43a678f4575da0 */
 add_action('wp_ajax_ccm_tools_update_debug_display', 'ccm_tools_ajax_update_debug_display');
 function ccm_tools_ajax_update_debug_display(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -655,9 +583,7 @@ function ccm_tools_ajax_update_debug_display(): void {
     // Read the config file
     $config_content = file_get_contents($wp_config_path);
 
-    // A wp-config using a non-literal value (getenv(), a ternary, etc.) for
-    // WP_DEBUG_DISPLAY is a real, supported pattern. Refuse rather than
-    // insert a second define() for the same constant.
+    /* 10ecf69439748e1c */
     $wp_debug_display_state = ccm_tools_wp_config_constant_state('WP_DEBUG_DISPLAY', $config_content);
     if ($wp_debug_display_state['defined'] && !$wp_debug_display_state['is_bool_literal']) {
         wp_send_json_error(__('WP_DEBUG_DISPLAY is defined in wp-config.php using a non-boolean expression. This plugin cannot safely toggle it without risking a duplicate constant definition. Please edit wp-config.php manually.', 'ccm-tools'));
@@ -706,9 +632,7 @@ function ccm_tools_ajax_update_debug_display(): void {
     }
 }
 
-/**
- * Update WordPress debug log setting
- */
+/* a2195f62ee7fdf97 */
 add_action('wp_ajax_ccm_tools_update_debug_log', 'ccm_tools_ajax_update_debug_log');
 function ccm_tools_ajax_update_debug_log(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -735,9 +659,7 @@ function ccm_tools_ajax_update_debug_log(): void {
     // Read the config file
     $config_content = file_get_contents($wp_config_path);
 
-    // A wp-config using a non-literal value for WP_DEBUG_LOG (getenv(), a
-    // ternary, or a file path string per WP's own docs) is a real,
-    // supported pattern. Refuse rather than insert a second define().
+    /* 1122990c30082acc */
     $wp_debug_log_state = ccm_tools_wp_config_constant_state('WP_DEBUG_LOG', $config_content);
     if ($wp_debug_log_state['defined'] && !$wp_debug_log_state['is_bool_literal']) {
         wp_send_json_error(__('WP_DEBUG_LOG is defined in wp-config.php using a non-boolean expression (e.g. a custom log file path, getenv(), or a ternary). This plugin cannot safely toggle it without risking a duplicate constant definition. Please edit wp-config.php manually.', 'ccm-tools'));
@@ -785,9 +707,7 @@ function ccm_tools_ajax_update_debug_log(): void {
     }
 }
 
-/**
- * Update WordPress memory limit
- */
+/* 1f999863b2b799f3 */
 add_action('wp_ajax_ccm_tools_update_memory_limit', 'ccm_tools_ajax_update_memory_limit');
 function ccm_tools_ajax_update_memory_limit(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1000,9 +920,7 @@ function ccm_tools_ajax_update_memory_limit(): void {
     }
 }
 
-/**
- * AJAX handler for Redis configuration
- */
+/* 0b54a54b47439ca1 */
 add_action('wp_ajax_ccm_tools_configure_redis', 'ccm_tools_ajax_configure_redis');
 function ccm_tools_ajax_configure_redis(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1010,10 +928,7 @@ function ccm_tools_ajax_configure_redis(): void {
         wp_send_json_error(__('You do not have permission to perform this action.', 'ccm-tools'));
     }
 
-    // ccm_tools_add_redis_configuration() lived in system-info.php, which has
-    // been removed - this legacy "Add to wp-config.php" button is repointed
-    // at the current redis-object-cache.php implementation, using the same
-    // settings -> config-array builder the one-step Save flow uses.
+    /* a2af783043eb4729 */
     if (!function_exists('ccm_tools_redis_add_config') || !function_exists('ccm_tools_redis_build_config_array') || !function_exists('ccm_tools_redis_get_settings')) {
         wp_send_json_error(__('Redis module not loaded.', 'ccm-tools'));
         return;
@@ -1032,9 +947,7 @@ function ccm_tools_ajax_configure_redis(): void {
     }
 }
 
-/**
- * AJAX handler to install Redis Cache plugin
- */
+/* fcef6945ada0ffc7 */
 add_action('wp_ajax_ccm_tools_install_redis_plugin', 'ccm_tools_ajax_install_redis_plugin');
 function ccm_tools_ajax_install_redis_plugin(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1126,9 +1039,7 @@ function ccm_tools_ajax_install_redis_plugin(): void {
     ));
 }
 
-/**
- * AJAX handler to enable Redis object cache
- */
+/* b0feae404180f33a */
 add_action('wp_ajax_ccm_tools_enable_redis_cache', 'ccm_tools_ajax_enable_redis_cache');
 function ccm_tools_ajax_enable_redis_cache(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1242,9 +1153,7 @@ function ccm_tools_ajax_enable_redis_cache(): void {
     }
 }
 
-/**
- * AJAX handler to disable Redis object cache
- */
+/* 8df1303ba496272e */
 add_action('wp_ajax_ccm_tools_disable_redis_cache', 'ccm_tools_ajax_disable_redis_cache');
 function ccm_tools_ajax_disable_redis_cache(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1330,9 +1239,7 @@ function ccm_tools_ajax_disable_redis_cache(): void {
     }
 }
 
-/**
- * AJAX handler to measure TTFB with enhanced accuracy
- */
+/* ca7a06474ee75e58 */
 add_action('wp_ajax_ccm_tools_measure_ttfb', 'ccm_tools_ajax_measure_ttfb');
 function ccm_tools_ajax_measure_ttfb(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1438,9 +1345,7 @@ function ccm_tools_ajax_toggle_admin_payment(): void {
     ));
 }
 
-// ==========================================
-// WebP Converter AJAX Handlers
-// ==========================================
+/* 3ce830097a7764cb */
 
 // Save WebP Settings
 add_action('wp_ajax_ccm_tools_save_webp_settings', 'ccm_tools_ajax_save_webp_settings');
@@ -1450,14 +1355,7 @@ function ccm_tools_ajax_save_webp_settings(): void {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
-    /*
-     * Merge onto what is already stored rather than rebuilding the array from
-     * the eight fields this screen owns. exclude_sizes is not on this screen —
-     * it arrives through a settings import and is read when converting, at
-     * inc/webp-converter.php — so rebuilding from scratch silently erased it
-     * the next time anyone pressed Save, and the excluded sizes started being
-     * converted again with no sign anything had changed.
-     */
+    /* 60917da2284f436c */
     $defaults = function_exists('ccm_tools_webp_get_default_settings')
         ? ccm_tools_webp_get_default_settings()
         : array();
@@ -1504,9 +1402,7 @@ function ccm_tools_ajax_get_webp_stats(): void {
     wp_send_json_success($stats);
 }
 
-/**
- * Export WebP converter settings as JSON
- */
+/* 13f07adbf83c4b7f */
 add_action('wp_ajax_ccm_tools_export_webp_settings', 'ccm_tools_ajax_export_webp_settings');
 function ccm_tools_ajax_export_webp_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1530,9 +1426,7 @@ function ccm_tools_ajax_export_webp_settings(): void {
     wp_send_json_success($export_data);
 }
 
-/**
- * Import WebP converter settings from JSON
- */
+/* 83e519b7454976d7 */
 add_action('wp_ajax_ccm_tools_import_webp_settings', 'ccm_tools_ajax_import_webp_settings');
 function ccm_tools_ajax_import_webp_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -1856,18 +1750,12 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
     $deleted_files = 0;
     $reset_count = 0;
 
-    // Read the recorded conversions BEFORE the metadata is cleared below -
-    // this is the only source of truth for which WebP files this plugin
-    // actually created.
+    /* 6726171291672646 */
     $converted_rows = $wpdb->get_results(
         "SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_ccm_webp_converted'"
     );
 
-    // Delete only the paths this plugin recorded creating - never by
-    // filename inference. Walking the uploads tree and unlinking any
-    // "same basename, .webp extension" file also deletes WebP images a
-    // designer hand-uploaded alongside the original (e.g. hero.png +
-    // hero.webp both uploaded deliberately), permanently and by accident.
+    /* 08f3cb80ef51e44d */
     if ($delete_files) {
         foreach ($converted_rows as $row) {
             $converted = maybe_unserialize($row->meta_value);
@@ -1928,10 +1816,7 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
     ));
 }
 
-/**
- * Process background WebP conversion queue
- * This is called via AJAX from the frontend to convert queued images
- */
+/* fbe3a3915c7ecfe6 */
 add_action('wp_ajax_ccm_tools_process_webp_queue', 'ccm_tools_ajax_process_webp_queue');
 function ccm_tools_ajax_process_webp_queue(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2035,13 +1920,9 @@ function ccm_tools_ajax_process_webp_queue(): void {
     ));
 }
 
-// ===================================
-// Performance Optimizer AJAX Handlers
-// ===================================
+/* f1087461f0f85aa9 */
 
-/**
- * Save performance optimizer settings
- */
+/* 3b63f7374ffeae4c */
 add_action('wp_ajax_ccm_tools_save_perf_settings', 'ccm_tools_ajax_save_perf_settings');
 function ccm_tools_ajax_save_perf_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2144,9 +2025,7 @@ function ccm_tools_ajax_save_perf_settings(): void {
 }
 
 
-/**
- * Export performance optimizer settings as JSON
- */
+/* 3d0305a46d3511dd */
 add_action('wp_ajax_ccm_tools_export_perf_settings', 'ccm_tools_ajax_export_perf_settings');
 function ccm_tools_ajax_export_perf_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2169,9 +2048,7 @@ function ccm_tools_ajax_export_perf_settings(): void {
     wp_send_json_success($export_data);
 }
 
-/**
- * Import performance optimizer settings from JSON
- */
+/* fe0894faafe69158 */
 add_action('wp_ajax_ccm_tools_import_perf_settings', 'ccm_tools_ajax_import_perf_settings');
 function ccm_tools_ajax_import_perf_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2234,11 +2111,7 @@ function ccm_tools_ajax_import_perf_settings(): void {
         $sanitized_settings[$key] = isset($imported_settings[$key]) ? (bool) $imported_settings[$key] : $defaults[$key];
     }
     
-    // Array settings (comma-separated lists of script/style handles).
-    // sanitize_text_field is used here rather than sanitize_key - handles can
-    // legitimately contain dots and mixed case (e.g. 'jquery.validate'),
-    // and sanitize_key would lowercase and strip those characters, silently
-    // breaking every future match against the real handle.
+    /* 80279380b3d9b83d */
     $array_keys = array('defer_js_excludes', 'delay_js_excludes', 'preload_css_excludes');
     foreach ($array_keys as $key) {
         if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
@@ -2248,10 +2121,7 @@ function ccm_tools_ajax_import_perf_settings(): void {
         }
     }
 
-    // URL array settings. preload_key_urls belongs here, not in the handle
-    // list above - sanitize_key would mangle a URL (lowercase it and strip
-    // everything but [a-z0-9_-]), turning "https://x.com/f.woff2" into
-    // "httpsxcomfwoff2" and breaking every preload link it generates.
+    /* eb4a62ccd8085bb4 */
     $url_array_keys = array('preconnect_urls', 'dns_prefetch_urls', 'preload_key_urls');
     foreach ($url_array_keys as $key) {
         if (isset($imported_settings[$key]) && is_array($imported_settings[$key])) {
@@ -2308,33 +2178,13 @@ function ccm_tools_ajax_import_perf_settings(): void {
     ));
 }
 
-/**
- * Sanitize comma-separated list of handles
- * 
- * @param string $input Comma-separated list
- * @return array Array of sanitized handles
- */
+/* 54f6d3be76c838f6 */
 function ccm_tools_perf_sanitize_list($input) {
     if (empty($input)) {
         return array();
     }
     
-    /*
-     * Split on newlines as well as commas, and do not use sanitize_key().
-     *
-     * The renderer writes these lists into a textarea joined by newlines, so
-     * a comma-only split saw the whole box as one item. sanitize_key() then
-     * stripped the newlines and fused it: the shipped default of jquery,
-     * jquery-core and jquery-migrate became the single handle
-     * "jqueryjquery-corejquery-migrate" the first time anyone pressed Save,
-     * and it can never match a real handle again. sanitize_key() also
-     * lowercases and drops dots, so a hand-added "jquery.validate" became
-     * "jqueryvalidate" and stopped excluding anything. The matcher is a
-     * case-sensitive substring test, so both are silent failures.
-     *
-     * The import path already does it this way and says why in its own
-     * comment; this is the same rule.
-     */
+    /* 73baf9de16acee4f */
     $items = preg_split('/[
 ,]+/', (string) $input);
     $sanitized = array();
@@ -2349,12 +2199,7 @@ function ccm_tools_perf_sanitize_list($input) {
     return array_unique($sanitized);
 }
 
-/**
- * Sanitize newline-separated list of URLs
- * 
- * @param string $input Newline-separated URLs
- * @return array Array of sanitized URLs
- */
+/* c9721a87747f8d08 */
 function ccm_tools_perf_sanitize_urls($input) {
     if (empty($input)) {
         return array();
@@ -2373,9 +2218,7 @@ function ccm_tools_perf_sanitize_urls($input) {
     return array_unique($sanitized);
 }
 
-/**
- * Detect scripts on the homepage and categorize them for defer/exclude recommendations
- */
+/* 7aca0f0fa6ad8b09 */
 add_action('wp_ajax_ccm_tools_detect_scripts', 'ccm_tools_ajax_detect_scripts');
 function ccm_tools_ajax_detect_scripts(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2591,9 +2434,7 @@ function ccm_tools_ajax_detect_scripts(): void {
     ));
 }
 
-/**
- * Extract a readable handle/identifier from a script URL
- */
+/* 8658cf69ef7d284b */
 function ccm_tools_extract_script_handle($src) {
     // Remove query strings
     $src = strtok($src, '?');
@@ -2621,10 +2462,7 @@ function ccm_tools_extract_script_handle($src) {
     return $handle;
 }
 
-/**
- * Detect external origins by fetching the site's homepage
- * Uses wp_remote_get to fetch the page and parses for external resources
- */
+/* ba0fcbfabbc37e32 */
 add_action('wp_ajax_ccm_tools_detect_external_origins', 'ccm_tools_ajax_detect_external_origins');
 function ccm_tools_ajax_detect_external_origins(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2757,13 +2595,9 @@ function ccm_tools_ajax_detect_external_origins(): void {
     ));
 }
 
-// ===================================
-// Uploads Backup AJAX Handlers
-// ===================================
+/* 916f6b8595bb380a */
 
-/**
- * Check if ZipArchive is available
- */
+/* 9d2bcc4c1b2111e0 */
 add_action('wp_ajax_ccm_tools_check_zip_available', 'ccm_tools_ajax_check_zip_available');
 function ccm_tools_ajax_check_zip_available(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2796,10 +2630,7 @@ function ccm_tools_ajax_check_zip_available(): void {
     ));
 }
 
-/**
- * Get directory size and file count in one pass (more efficient)
- * Has a time limit to prevent timeouts on massive folders
- */
+/* ce02cdedea7db3a3 */
 function ccm_tools_get_directory_stats($path, $max_time = 10) {
     $size = 0;
     $count = 0;
@@ -2839,9 +2670,7 @@ function ccm_tools_get_directory_stats($path, $max_time = 10) {
     return array('size' => $size, 'count' => $count, 'complete' => true);
 }
 
-/**
- * Start uploads backup process
- */
+/* a7c26baa4d873de0 */
 add_action('wp_ajax_ccm_tools_start_uploads_backup', 'ccm_tools_ajax_start_uploads_backup');
 function ccm_tools_ajax_start_uploads_backup(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2878,9 +2707,7 @@ function ccm_tools_ajax_start_uploads_backup(): void {
     $backup_path = $backup_dir . '/' . $backup_filename;
     $file_list_path = $backup_dir . '/' . $backup_filename . '.filelist.json';
 
-    // Get all files to process. Time-capped so a very large uploads folder
-    // can't stall the request indefinitely - an incomplete walk still starts
-    // a backup covering whatever was found within the time budget.
+    /* 2d20228b7bb41c6e */
     $files = array();
     $walk_start = time();
     $max_walk_seconds = 20;
@@ -2914,12 +2741,7 @@ function ccm_tools_ajax_start_uploads_backup(): void {
         $walk_complete = false;
     }
 
-    // Persist the (potentially very large) file list to a file inside the
-    // backup directory rather than a wp_options row. A large media library
-    // can run to tens of thousands of paths - storing that in an option
-    // either exceeds max_allowed_packet on the first write or turns every
-    // 50-file batch update into a multi-megabyte DB write. The backup
-    // directory already has a deny-all .htaccess protecting it.
+    /* ca9e72db21a7bcc2 */
     if (file_put_contents($file_list_path, wp_json_encode($files)) === false) {
         wp_send_json_error(array('message' => __('Failed to write the backup file list.', 'ccm-tools')));
     }
@@ -2950,9 +2772,7 @@ function ccm_tools_ajax_start_uploads_backup(): void {
     ));
 }
 
-/**
- * Process a batch of files for backup
- */
+/* e16f42e8bf4799b7 */
 add_action('wp_ajax_ccm_tools_process_backup_batch', 'ccm_tools_ajax_process_backup_batch');
 function ccm_tools_ajax_process_backup_batch(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -2987,10 +2807,7 @@ function ccm_tools_ajax_process_backup_batch(): void {
 
     try {
         $zip = new ZipArchive();
-        // ZipArchive::RDWR does not exist (only RDONLY does - verified on
-        // PHP 8.4 with ext/zip). CREATE re-opens an existing archive for
-        // appending without truncating it, so it is correct for every batch
-        // after the first too.
+        /* 44cde5cefd675082 */
         $open_flag = ($start_index === 0) ? (ZipArchive::CREATE | ZipArchive::OVERWRITE) : ZipArchive::CREATE;
 
         if ($zip->open($state['backup_path'], $open_flag) !== true) {
@@ -3043,11 +2860,7 @@ function ccm_tools_ajax_process_backup_batch(): void {
         ));
 
     } catch (Throwable $e) {
-        // Widened from Exception: ZipArchive::RDWR used to throw a fatal
-        // Error (not an Exception) on batches after the first, which this
-        // catch could not see - admin-ajax then 500'd and the job stuck in
-        // "in_progress" forever. Catching Throwable means any future Error
-        // is reported through the normal error response instead.
+        /* 3634cc9b0018203b */
         $state['status'] = 'error';
         $state['error'] = $e->getMessage();
         update_option('ccm_tools_backup_state', $state, false);
@@ -3056,9 +2869,7 @@ function ccm_tools_ajax_process_backup_batch(): void {
     }
 }
 
-/**
- * Get backup status
- */
+/* 94bc36ccb4e53fff */
 add_action('wp_ajax_ccm_tools_get_backup_status', 'ccm_tools_ajax_get_backup_status');
 function ccm_tools_ajax_get_backup_status(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3092,9 +2903,7 @@ function ccm_tools_ajax_get_backup_status(): void {
     wp_send_json_success($response);
 }
 
-/**
- * Download backup file
- */
+/* 45b0d9edc57e3106 */
 add_action('wp_ajax_ccm_tools_download_backup', 'ccm_tools_ajax_download_backup');
 function ccm_tools_ajax_download_backup(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3142,9 +2951,7 @@ function ccm_tools_ajax_download_backup(): void {
     exit;
 }
 
-/**
- * Cancel/reset backup
- */
+/* a2175111f25dc9d0 */
 add_action('wp_ajax_ccm_tools_cancel_backup', 'ccm_tools_ajax_cancel_backup');
 function ccm_tools_ajax_cancel_backup(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3169,9 +2976,7 @@ function ccm_tools_ajax_cancel_backup(): void {
     wp_send_json_success(array('message' => __('Backup cancelled.', 'ccm-tools')));
 }
 
-/**
- * Clean up old backup files
- */
+/* d3b3c0fbe98f547d */
 function ccm_tools_cleanup_old_backups($backup_dir, $max_age_hours = 24) {
     if (!is_dir($backup_dir)) {
         return;
@@ -3191,15 +2996,9 @@ function ccm_tools_cleanup_old_backups($backup_dir, $max_age_hours = 24) {
     }
 }
 
-/**
- * =================================================================
- * Redis Object Cache AJAX Handlers
- * =================================================================
- */
+/* 4db1c7ff84742eac */
 
-/**
- * AJAX handler to enable Redis object cache
- */
+/* b0feae404180f33a */
 add_action('wp_ajax_ccm_tools_redis_enable', 'ccm_tools_ajax_redis_enable');
 function ccm_tools_ajax_redis_enable(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3232,9 +3031,7 @@ function ccm_tools_ajax_redis_enable(): void {
     }
 }
 
-/**
- * AJAX handler to disable Redis object cache
- */
+/* 8df1303ba496272e */
 add_action('wp_ajax_ccm_tools_redis_disable', 'ccm_tools_ajax_redis_disable');
 function ccm_tools_ajax_redis_disable(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3265,9 +3062,7 @@ function ccm_tools_ajax_redis_disable(): void {
     }
 }
 
-/**
- * AJAX handler to flush Redis cache
- */
+/* ce9230d8af89d10d */
 add_action('wp_ajax_ccm_tools_redis_flush', 'ccm_tools_ajax_redis_flush');
 function ccm_tools_ajax_redis_flush(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3299,9 +3094,7 @@ function ccm_tools_ajax_redis_flush(): void {
     }
 }
 
-/**
- * AJAX handler to test Redis connection
- */
+/* 9e28b36d0b2550a3 */
 add_action('wp_ajax_ccm_tools_redis_test', 'ccm_tools_ajax_redis_test');
 function ccm_tools_ajax_redis_test(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3338,9 +3131,7 @@ function ccm_tools_ajax_redis_test(): void {
     }
 }
 
-/**
- * AJAX handler to save Redis settings
- */
+/* efa731d20942fdb5 */
 add_action('wp_ajax_ccm_tools_redis_save_settings', 'ccm_tools_ajax_redis_save_settings');
 function ccm_tools_ajax_redis_save_settings(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3407,10 +3198,7 @@ function ccm_tools_ajax_redis_save_settings(): void {
         }
         // Use wp_unslash to handle escaped characters properly
         $raw_password = (string) wp_unslash($_POST['password']);
-        // Reject quotes/backslash/control chars: this value is later written
-        // into wp-config.php as a define() literal, so bad input must never
-        // be allowed to reach that code path (defense in depth alongside
-        // ccm_tools_redis_config_line()'s var_export()-based escaping).
+        /* f62baf6c6dc169fd */
         if ($raw_password !== '' && preg_match('/[\'"\\\\\x00-\x1F]/', $raw_password)) {
             wp_send_json_error(array('message' => __('Password contains disallowed characters (quotes, backslash, or control characters).', 'ccm-tools')));
             return;
@@ -3548,10 +3336,7 @@ function ccm_tools_ajax_redis_save_settings(): void {
         }
     }
 
-    // One-step Save: when Redis is actually live (our drop-in is installed),
-    // push the same settings to wp-config.php and make sure the deployed
-    // drop-in is current — so saving is no longer a two-step process that
-    // leaves wp-config out of sync. Skipped when Redis isn't enabled.
+    /* 7a4a626d960eff8c */
     $config_written = false;
     $dropin_synced  = false;
     $dropin_status  = function_exists('ccm_tools_redis_dropin_status') ? ccm_tools_redis_dropin_status() : array('is_ccm' => false);
@@ -3614,9 +3399,7 @@ function ccm_tools_ajax_redis_save_settings(): void {
     ));
 }
 
-/**
- * AJAX handler to add Redis config to wp-config.php
- */
+/* 17a6ccf2545dce19 */
 add_action('wp_ajax_ccm_tools_redis_add_config', 'ccm_tools_ajax_redis_add_config');
 function ccm_tools_ajax_redis_add_config(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3640,10 +3423,7 @@ function ccm_tools_ajax_redis_add_config(): void {
     $settings = ccm_tools_redis_get_settings();
     $config   = ccm_tools_redis_build_config_array($settings);
 
-    // Detect serializer/compression changes — must flush BEFORE writing wp-config.php
-    // because the current drop-in still uses the OLD serializer and can talk to Redis.
-    // After wp-config changes, the next PHP process would use the NEW serializer but
-    // find data encoded with the OLD one → deserialization failures → 500 errors.
+    /* 395131efed29220a */
     $flush_reason = '';
     $old_serializer  = defined('WP_REDIS_SERIALIZER')  ? strtolower(WP_REDIS_SERIALIZER)  : 'php';
     $old_compression = defined('WP_REDIS_COMPRESSION') ? strtolower(WP_REDIS_COMPRESSION) : 'none';
@@ -3704,9 +3484,7 @@ function ccm_tools_ajax_redis_add_config(): void {
     }
 }
 
-/**
- * AJAX handler to get Redis stats
- */
+/* 666572fcaba73260 */
 add_action('wp_ajax_ccm_tools_redis_get_stats', 'ccm_tools_ajax_redis_get_stats');
 function ccm_tools_ajax_redis_get_stats(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3734,9 +3512,7 @@ function ccm_tools_ajax_redis_get_stats(): void {
 
 // Search pages/posts/CPTs for AI URL picker
 
-// ===================================
-// Cloudflare AJAX Handlers
-// ===================================
+/* 73d536f90cb15773 */
 
 add_action('wp_ajax_ccm_tools_cf_connect', 'ccm_tools_ajax_cf_connect');
 function ccm_tools_ajax_cf_connect(): void {
@@ -3748,14 +3524,7 @@ function ccm_tools_ajax_cf_connect(): void {
     $token   = isset($_POST['api_token']) ? trim(wp_unslash($_POST['api_token'])) : '';
     $zone_id = sanitize_text_field($_POST['zone_id'] ?? '');
 
-    /*
-     * The field is pre-filled with bullets when a token is already stored, so
-     * a value containing one means "leave the token alone" — the same rule the
-     * Site Health key field uses. Without this, changing only the Zone ID was
-     * impossible: the bullets fall outside the printable-ASCII test below and
-     * the operator was told their token format was invalid, which blamed them
-     * for a value the page itself had put there.
-     */
+    /* de4f6c89bcd32171 */
     $existing = ccm_tools_cf_get_settings();
     if ($token !== '' && strpos($token, "â¢") !== false) {
         $token = isset($existing['api_token']) ? (string) $existing['api_token'] : '';
@@ -3899,9 +3668,7 @@ function ccm_tools_ajax_cf_dev_mode(): void {
     ));
 }
 
-// ──────────────────────────────────────────────
-// Cloudflare: Update Zone Setting
-// ──────────────────────────────────────────────
+/* 95436e891da471cd */
 add_action('wp_ajax_ccm_tools_cf_update_setting', 'ccm_tools_ajax_cf_update_setting');
 function ccm_tools_ajax_cf_update_setting(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -3988,9 +3755,7 @@ function ccm_tools_ajax_cf_update_setting(): void {
     ));
 }
 
-// ──────────────────────────────────────────────
-// Cloudflare: Apply Recommended Settings
-// ──────────────────────────────────────────────
+/* 44087c41a603d4d2 */
 add_action('wp_ajax_ccm_tools_cf_apply_recommended', 'ccm_tools_ajax_cf_apply_recommended');
 function ccm_tools_ajax_cf_apply_recommended(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -4014,9 +3779,7 @@ function ccm_tools_ajax_cf_apply_recommended(): void {
     }
 }
 
-// ──────────────────────────────────────────────
-// Cloudflare: Auto-Purge Toggle
-// ──────────────────────────────────────────────
+/* 3648aec666dee6c9 */
 add_action('wp_ajax_ccm_tools_cf_auto_purge', 'ccm_tools_ajax_cf_auto_purge');
 function ccm_tools_ajax_cf_auto_purge(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -4037,9 +3800,7 @@ function ccm_tools_ajax_cf_auto_purge(): void {
     ));
 }
 
-// ──────────────────────────────────────────────
-// Cloudflare: Zone Analytics
-// ──────────────────────────────────────────────
+/* 06fb75d051eed843 */
 add_action('wp_ajax_ccm_tools_cf_analytics', 'ccm_tools_ajax_cf_analytics');
 function ccm_tools_ajax_cf_analytics(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');
@@ -4060,9 +3821,7 @@ function ccm_tools_ajax_cf_analytics(): void {
     wp_send_json_success($analytics);
 }
 
-// ──────────────────────────────────────────────
-// Cloudflare: DNS Records
-// ──────────────────────────────────────────────
+/* 4a574ffdebad4012 */
 add_action('wp_ajax_ccm_tools_cf_dns_records', 'ccm_tools_ajax_cf_dns_records');
 function ccm_tools_ajax_cf_dns_records(): void {
     check_ajax_referer('ccm-tools-nonce', 'nonce');

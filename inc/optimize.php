@@ -4,104 +4,38 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Database Optimization Functions for CCM Tools
- * 
- * @package CCM Tools
- * @since 7.1.0
- */
+/* c045137c46cbe031 */
 
-/**
- * Get safe index prefix length for meta_key columns
- * MySQL/MariaDB with utf8mb4 has max key length constraints
- * 191 chars is safe for all utf8mb4 configurations
- */
+/* 84af77c2ef1dfe13 */
 function ccm_tools_get_safe_index_length() {
     return 191; // Safe for utf8mb4 (191 * 4 = 764 bytes, under 767 byte limit)
 }
 
-/**
- * Validate that a table name exists in the current database.
- *
- * Thin wrapper around the canonical ccm_tools_validate_table_name() in
- * tableconverter.php (both files are loaded together by ccm.php, so it's
- * always available by call time). Kept under this name — rather than
- * deleted and replaced — because ajax-handlers.php and other code in this
- * file already call it directly; renaming would be a breaking change for
- * callers this agent doesn't own.
- *
- * @param string $table_name The table name to validate
- * @return bool True if valid, false otherwise
- */
+/* 3497b3af94e2c0de */
 function ccm_tools_validate_table_name_optimize($table_name) {
     return ccm_tools_validate_table_name($table_name);
 }
 
-/**
- * Get appropriate collation for WordPress databases.
- *
- * Thin wrapper around the canonical ccm_tools_get_appropriate_collation()
- * in tableconverter.php — see ccm_tools_validate_table_name_optimize()
- * above for why the wrapper exists rather than a straight delete.
- *
- * @param string $version_string MySQL/MariaDB version (accepted for backward compat, ignored)
- * @return string Always 'utf8mb4_unicode_520_ci'
- */
+/* db71b7688fa654e0 */
 function ccm_tools_get_appropriate_collation_optimize($version_string = '') {
     return ccm_tools_get_appropriate_collation($version_string);
 }
 
-/**
- * =====================================================
- * SHARED SAFETY HELPERS
- * =====================================================
- */
+/* a141f445c3b06567 */
 
-/**
- * How many posts the trash and auto-draft sweeps delete per call.
- *
- * wp_delete_post() is far slower than a raw DELETE because it runs the whole
- * deletion path — attachments, child posts, revisions, comments, commentmeta,
- * term relationships and every hook other plugins hang off. That cost is the
- * point of using it, but it does mean a site with tens of thousands of trashed
- * rows cannot be cleared inside one PHP request. The sweeps therefore take a
- * bounded batch and report what is left, so they can simply be run again.
- *
- * @return int
- */
+/* 14cad9a669dd4751 */
 function ccm_tools_get_post_delete_batch_size() {
     $size = (int) apply_filters('ccm_tools_post_delete_batch_size', 200);
 
     return $size > 0 ? $size : 200;
 }
 
-/**
- * Reject anything that is not a bare SQL identifier.
- *
- * Table, column and index names cannot be parameterised, so the only safe
- * source for them is $wpdb or the SHOW TABLES whitelist. This is a
- * belt-and-braces check on top of that, never a substitute for it.
- *
- * @param string $identifier
- * @return bool
- */
+/* 94eb26ab7f621d4c */
 function ccm_tools_is_safe_sql_identifier($identifier) {
     return is_string($identifier) && $identifier !== '' && preg_match('/^[A-Za-z0-9_]+$/', $identifier) === 1;
 }
 
-/**
- * Group a SHOW INDEX result set by index name.
- *
- * SHOW INDEX returns ONE ROW PER INDEX PART, not one row per index. A
- * composite index on (meta_key, meta_value(191), post_id) comes back as three
- * rows that share a Key_name, and a query narrowed to
- * "WHERE Column_name = 'meta_key'" shows only the first of the three — which
- * looks exactly like a dedicated single-column index and is not one. Grouping
- * is the only way to tell the two apart.
- *
- * @param array $rows Rows from SHOW INDEX.
- * @return array Map of Key_name => array of its part rows.
- */
+/* d871a5c6291090cf */
 function ccm_tools_group_index_rows($rows) {
     $grouped = array();
 
@@ -119,13 +53,7 @@ function ccm_tools_group_index_rows($rows) {
     return $grouped;
 }
 
-/**
- * True only when an index has exactly one part and that part is $column.
- *
- * @param array  $parts  Part rows for a single index, from ccm_tools_group_index_rows().
- * @param string $column Column the index is expected to cover on its own.
- * @return bool
- */
+/* 2e4a332d567b643e */
 function ccm_tools_index_is_single_column($parts, $column) {
     if (!is_array($parts) || count($parts) !== 1) {
         return false;
@@ -138,25 +66,7 @@ function ccm_tools_index_is_single_column($parts, $column) {
         && (string) $part->Column_name === (string) $column;
 }
 
-/**
- * Work out which indexes may be dropped in favour of the one we maintain.
- *
- * An index is a candidate ONLY when it has exactly one part and that part is
- * the column being indexed. Everything else is left where it is:
- *
- *  - PRIMARY is never dropped.
- *  - A composite index that merely contains this column is never dropped.
- *    Dropping on the strength of a SHOW INDEX row is how "Add postmeta index"
- *    used to silently destroy the composite index that "Add postmeta composite
- *    index" had just spent twenty minutes building on the same page, along
- *    with any index a performance plugin or a DBA had added, with no record
- *    and no undo.
- *
- * @param array  $rows       Rows from an unfiltered SHOW INDEX FROM `table`.
- * @param string $column     The column being indexed.
- * @param array  $keep_names Index names to preserve regardless.
- * @return array List of index names that are safe to drop.
- */
+/* 264b72e50d8fac00 */
 function ccm_tools_find_droppable_indexes($rows, $column, $keep_names = array()) {
     $keep = array();
     foreach ((array) $keep_names as $name) {
@@ -178,23 +88,7 @@ function ccm_tools_find_droppable_indexes($rows, $column, $keep_names = array())
     return $droppable;
 }
 
-/**
- * Delete rows by id in bounded chunks, and report what actually went.
- *
- * One DELETE ... WHERE id IN (...) built from an unbounded set is not a
- * deletion, it is a gamble. A site with 400,000 revisions builds a statement
- * of roughly 3MB and shared hosts commonly cap max_allowed_packet at 4MB.
- * MySQL rejects the statement, $wpdb->query() returns false, and a caller that
- * counted the ids rather than the affected rows reports a purge that never
- * happened.
- *
- * @param string $table      Table name — from $wpdb, never from input.
- * @param string $column     Column holding the id.
- * @param array  $ids        Ids to delete.
- * @param int    $chunk_size Ids per statement.
- * @return array array('affected' => int, 'failed' => int) where affected is
- *               real affected rows and failed counts ids in rejected chunks.
- */
+/* 8b770ed020c9145d */
 function ccm_tools_delete_ids_in_chunks($table, $column, $ids, $chunk_size = 500) {
     global $wpdb;
 
@@ -233,23 +127,7 @@ function ccm_tools_delete_ids_in_chunks($table, $column, $ids, $chunk_size = 500
     return $report;
 }
 
-/**
- * Delete a bounded batch of posts through wp_delete_post().
- *
- * A raw DELETE against wp_posts leaves wreckage that nothing ever clears up:
- * attachments and child posts keep a post_parent pointing at a row that is
- * gone (an attachment is post_status 'inherit', so it never matches a
- * post_status = 'trash' sweep in the first place), commentmeta is orphaned,
- * and because no hook fires, WooCommerce keeps its order items, order itemmeta
- * and product meta lookup rows for ever while search index plugins never learn
- * the post has gone. wp_delete_post() is the only thing that tells the rest of
- * the stack.
- *
- * @param string $post_status         Status to purge, e.g. 'trash'.
- * @param string $modified_before_gmt GMT cut-off compared against post_modified.
- * @param int    $batch_size          Maximum posts this call may delete.
- * @return array array('matched' => int, 'deleted' => int, 'failed' => int, 'remaining' => int)
- */
+/* 1cd2226ca210326e */
 function ccm_tools_delete_posts_by_status_batch($post_status, $modified_before_gmt, $batch_size = 0) {
     global $wpdb;
 
@@ -289,10 +167,7 @@ function ccm_tools_delete_posts_by_status_batch($post_status, $modified_before_g
         )
     );
 
-    // Defer the recounts across the batch, then switch back. It is switching
-    // BACK to false that runs the deferred update — calling false on its own,
-    // as this code used to, counts nothing and leaves every affected category
-    // and tag overstated.
+    /* db25ed167016c787 */
     $defer_terms = function_exists('wp_defer_term_counting');
     $defer_comments = function_exists('wp_defer_comment_counting');
     if ($defer_terms) {
@@ -323,14 +198,7 @@ function ccm_tools_delete_posts_by_status_batch($post_status, $modified_before_g
     return $report;
 }
 
-/**
- * Bring the ccm_meta_key index on wp_postmeta to its target shape.
- *
- * Shared by the two whole-database routines so the composite-safe drop rule
- * lives in exactly one place.
- *
- * @return array List of array('ok' => bool, 'message' => string) steps.
- */
+/* 6b263fe12030787d */
 function ccm_tools_ensure_postmeta_meta_key_index() {
     global $wpdb;
 
@@ -356,9 +224,7 @@ function ccm_tools_ensure_postmeta_meta_key_index() {
     }
 
     if ($ours_exists && !$ours_is_ours) {
-        // Something other than this plugin owns that name and it covers more
-        // than meta_key. Dropping it is exactly the mistake this code was
-        // fixed to stop making.
+        /* 6f17bf134b5dd696 */
         $steps[] = array(
             'ok' => false,
             'message' => sprintf(
@@ -371,9 +237,7 @@ function ccm_tools_ensure_postmeta_meta_key_index() {
         return $steps;
     }
 
-    // Redundant single-column indexes on meta_key only. This is what clears
-    // out the core meta_key index and the legacy ccm_index; a composite is
-    // never a candidate, whatever column it happens to start with.
+    /* cc6cf593fb11e0ba */
     $droppable = ccm_tools_find_droppable_indexes($index_rows, $column, array($index_name));
 
     if ($ours_exists && !$ours_correct) {
@@ -437,9 +301,7 @@ function ccm_tools_ensure_postmeta_meta_key_index() {
     return $steps;
 }
 
-/**
- * Get available optimization options with their default states
- */
+/* 100b699535171b89 */
 function ccm_tools_get_optimization_options() {
     return array(
         // Safe options - checked by default
@@ -631,9 +493,7 @@ function ccm_tools_get_tables_to_optimize($do_optimize = true, $do_collation = f
     }
 }
 
-/**
- * Remove all transients (standard and site) from the database and cache.
- */
+/* ca6a3b6b29f1ced6 */
 function ccm_tools_clear_all_transients() {
     global $wpdb;
 
@@ -695,9 +555,7 @@ function ccm_tools_clear_all_transients() {
     return $report;
 }
 
-/**
- * Optimize a single table
- */
+/* c37258f1a664222d */
 function ccm_tools_optimize_single_table($table_name) {
     global $wpdb;
     
@@ -778,18 +636,13 @@ function ccm_tools_optimize_single_table($table_name) {
     }
 }
 
-/**
- * Handle initial optimization setup (indexes and transients)
- */
+/* f7e71c554214bdfc */
 function ccm_tools_optimize_initial_setup() {
     global $wpdb;
     $results = [];
     
     try {
-        // Bring the meta_key index up to shape. The helper groups the
-        // SHOW INDEX rows by Key_name so a composite index that merely
-        // contains meta_key is never mistaken for a redundant single-column
-        // index and dropped.
+        /* 9b12734800f4a8b5 */
         $index_failed = false;
         foreach (ccm_tools_ensure_postmeta_meta_key_index() as $step) {
             $results[] = $step['message'];
@@ -832,9 +685,7 @@ function ccm_tools_optimize_database() {
     $mysql_version = $wpdb->get_var("SELECT VERSION()");
     $collation = ccm_tools_get_appropriate_collation_optimize($mysql_version);
 
-    // Bring the meta_key index up to shape. The helper groups the SHOW INDEX
-    // rows by Key_name so a composite index that merely contains meta_key is
-    // never mistaken for a redundant single-column index and dropped.
+    /* 8358cf66761400fb */
     foreach (ccm_tools_ensure_postmeta_meta_key_index() as $step) {
         if (empty($step['ok'])) {
             $errors[] = $step['message'];
@@ -921,18 +772,9 @@ function ccm_tools_optimize_database() {
     return $result;
 }
 
-/**
- * =====================================================
- * NEW CLEANUP FUNCTIONS FOR SELECTIVE OPTIMIZATION
- * =====================================================
- */
+/* 0ae8b939bc9d7386 */
 
-/**
- * Run selected optimization tasks
- * 
- * @param array $selected_options Array of option keys to run
- * @return array Results of each operation
- */
+/* b095ba5032b61464 */
 function ccm_tools_run_selected_optimizations($selected_options) {
     $results = array();
     $available_options = ccm_tools_get_optimization_options();
@@ -951,9 +793,7 @@ function ccm_tools_run_selected_optimizations($selected_options) {
     return $results;
 }
 
-/**
- * Clear expired transients
- */
+/* d5a1e8911b30c833 */
 function ccm_tools_optimization_clear_transients() {
     $report = ccm_tools_clear_all_transients();
     return array(
@@ -963,19 +803,12 @@ function ccm_tools_optimization_clear_transients() {
     );
 }
 
-/**
- * SQL condition for tables with meaningful fragmentation.
- * InnoDB retains some Data_free after OPTIMIZE TABLE, so we use a ratio:
- * overhead must be >20% of table size AND >5MB absolute.
- */
+/* f6a3096b08a2bf10 */
 function ccm_tools_optimize_fragmentation_condition() {
     return '(Data_free > 5242880 AND Data_free > 0.2 * (Data_length + Index_length))';
 }
 
-/**
- * Optimize database tables that have significant fragmentation.
- * Uses ratio-based detection and saves a cooldown timestamp.
- */
+/* d9ef06ad74835060 */
 function ccm_tools_optimization_optimize_tables() {
     global $wpdb;
     
@@ -1025,9 +858,7 @@ function ccm_tools_optimization_optimize_tables() {
     );
 }
 
-/**
- * Convert non-InnoDB tables to InnoDB engine
- */
+/* 2a84fca54288a5bd */
 function ccm_tools_optimization_convert_innodb() {
     global $wpdb;
     
@@ -1073,9 +904,7 @@ function ccm_tools_optimization_convert_innodb() {
     );
 }
 
-/**
- * Update table collations to utf8mb4
- */
+/* c32ae77bcd1dc90d */
 function ccm_tools_optimization_update_collation() {
     global $wpdb;
     
@@ -1116,22 +945,11 @@ function ccm_tools_optimization_update_collation() {
     );
 }
 
-/**
- * Delete spam comments
- */
+/* 51bb24ff6c30bb1a */
 function ccm_tools_optimization_clean_spam_comments() {
     global $wpdb;
 
-    /*
-     * Collect the ids first, then delete their meta by id.
-     *
-     * This used to finish with a site-wide
-     * "DELETE FROM commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM comments)",
-     * which removes every orphaned row on the site, not just the ones belonging
-     * to the comments it had removed. That is offered separately as its own
-     * option, graded moderate and off by default — so a safe, default-on
-     * cleanup was quietly doing the work of a riskier one nobody had ticked.
-     */
+    /* 3ade401ab5874b1f */
     $ids = $wpdb->get_col("SELECT comment_ID FROM {$wpdb->comments} WHERE comment_approved = 'spam'");
 
     if (empty($ids)) {
@@ -1157,17 +975,11 @@ function ccm_tools_optimization_clean_spam_comments() {
     );
 }
 
-/**
- * Delete trashed comments older than 30 days
- */
+/* d8ff3668c971c788 */
 function ccm_tools_optimization_clean_trashed_comments() {
     global $wpdb;
     
-    /*
-     * Same rule as the spam sweep: take these rows' meta by id, never the
-     * site-wide orphan purge, which is a separate option graded moderate and
-     * off by default.
-     */
+    /* 6db15b7e5ca16e5e */
     $ids = $wpdb->get_col(
         $wpdb->prepare(
             "SELECT comment_ID FROM {$wpdb->comments} WHERE comment_approved = 'trash' AND comment_date < %s",
@@ -1197,17 +1009,7 @@ function ccm_tools_optimization_clean_trashed_comments() {
     );
 }
 
-/**
- * Build the result array shared by the batched post sweeps.
- *
- * Keeps the same shape every other optimisation returns — success, message,
- * count — so the AJAX handler and the JS carry on working, and adds
- * 'remaining' for anything that wants to drive a second pass.
- *
- * @param array  $report        Report from ccm_tools_delete_posts_by_status_batch().
- * @param string $deleted_label Already-translated "%d x deleted" sentence.
- * @return array
- */
+/* 75c1cc6b645022aa */
 function ccm_tools_format_post_sweep_result($report, $deleted_label) {
     $message = $deleted_label;
 
@@ -1229,13 +1031,7 @@ function ccm_tools_format_post_sweep_result($report, $deleted_label) {
     );
 }
 
-/**
- * Delete trashed posts older than 30 days.
- *
- * Deletes in bounded batches through wp_delete_post() and reports how many are
- * left, so it is safe — and expected — to run repeatedly until 'remaining'
- * reaches zero.
- */
+/* ad6fa4ccb7cf54b7 */
 function ccm_tools_optimization_clean_trashed_posts() {
     $report = ccm_tools_delete_posts_by_status_batch(
         'trash',
@@ -1248,13 +1044,7 @@ function ccm_tools_optimization_clean_trashed_posts() {
     );
 }
 
-/**
- * Delete auto-drafts older than 7 days.
- *
- * Same batched treatment as the trash sweep, and for the same reason: media
- * uploaded into a new post before its first save is parented to the auto-draft,
- * so a raw DELETE strands the attachment rows and leaves their files on disk.
- */
+/* 931bc966e8d2fab3 */
 function ccm_tools_optimization_clean_auto_drafts() {
     $report = ccm_tools_delete_posts_by_status_batch(
         'auto-draft',
@@ -1267,9 +1057,7 @@ function ccm_tools_optimization_clean_auto_drafts() {
     );
 }
 
-/**
- * Add optimized index to postmeta table
- */
+/* df485a09409a4623 */
 function ccm_tools_optimization_add_postmeta_index() {
     global $wpdb;
     
@@ -1279,9 +1067,7 @@ function ccm_tools_optimization_add_postmeta_index() {
     return ccm_tools_add_meta_index($wpdb->postmeta, 'meta_key', $index_name, $index_length);
 }
 
-/**
- * Add optimized index to usermeta table
- */
+/* 1e37436383e51ee6 */
 function ccm_tools_optimization_add_usermeta_index() {
     global $wpdb;
     
@@ -1291,9 +1077,7 @@ function ccm_tools_optimization_add_usermeta_index() {
     return ccm_tools_add_meta_index($wpdb->usermeta, 'meta_key', $index_name, $index_length);
 }
 
-/**
- * Add optimized index to commentmeta table
- */
+/* dabe1634dd585d34 */
 function ccm_tools_optimization_add_commentmeta_index() {
     global $wpdb;
     
@@ -1303,9 +1087,7 @@ function ccm_tools_optimization_add_commentmeta_index() {
     return ccm_tools_add_meta_index($wpdb->commentmeta, 'meta_key', $index_name, $index_length);
 }
 
-/**
- * Add optimized index to termmeta table
- */
+/* e981099a3289eb10 */
 function ccm_tools_optimization_add_termmeta_index() {
     global $wpdb;
     
@@ -1315,10 +1097,7 @@ function ccm_tools_optimization_add_termmeta_index() {
     return ccm_tools_add_meta_index($wpdb->termmeta, 'meta_key', $index_name, $index_length);
 }
 
-/**
- * Add composite index to postmeta table (meta_key, meta_value, post_id)
- * Massive performance improvement for meta queries, especially WooCommerce
- */
+/* 6550cbba602028bc */
 function ccm_tools_optimization_add_postmeta_composite_index() {
     global $wpdb;
 
@@ -1357,17 +1136,7 @@ function ccm_tools_optimization_add_postmeta_composite_index() {
     );
 }
 
-/**
- * Helper function to add an index to a meta table.
- *
- * The drop step here is the dangerous one. SHOW INDEX returns one row per
- * index PART, so the old "SHOW INDEX ... WHERE Column_name = 'meta_key'" read
- * listed a composite index on (meta_key, meta_value(191), post_id) as a single
- * row indistinguishable from a dedicated single-column index — and then
- * dropped it. Ticking "Add postmeta composite index", waiting twenty minutes
- * for it to build, then ticking "Add postmeta index" silently destroyed it,
- * along with anything a performance plugin or a DBA had added.
- */
+/* 3e9ccc6d48080824 */
 function ccm_tools_add_meta_index($table, $column, $index_name, $index_length) {
     global $wpdb;
 
@@ -1490,9 +1259,7 @@ function ccm_tools_add_meta_index($table, $column, $index_name, $index_length) {
     );
 }
 
-/**
- * Delete orphaned postmeta
- */
+/* 2715016907447fb9 */
 function ccm_tools_optimization_clean_orphaned_postmeta() {
     global $wpdb;
     
@@ -1509,9 +1276,7 @@ function ccm_tools_optimization_clean_orphaned_postmeta() {
     );
 }
 
-/**
- * Delete orphaned commentmeta
- */
+/* a3083d0f280b2346 */
 function ccm_tools_optimization_clean_orphaned_commentmeta() {
     global $wpdb;
     
@@ -1528,15 +1293,7 @@ function ccm_tools_optimization_clean_orphaned_commentmeta() {
     );
 }
 
-/**
- * Clear oEmbed cache from postmeta.
- *
- * Anchored to the start of the key. WordPress writes its own oEmbed cache as
- * _oembed_{hash} and _oembed_time_{hash}, and it regenerates on demand. The
- * leading wildcard this used to carry also matched _elementor_oembed_data,
- * wpb_oembed_cache and _yoast_oembed_x — other plugins' data, which does not
- * come back.
- */
+/* b9f30f4b39dc6b8c */
 function ccm_tools_optimization_clean_oembed_cache() {
     global $wpdb;
 
@@ -1554,9 +1311,7 @@ function ccm_tools_optimization_clean_oembed_cache() {
     );
 }
 
-/**
- * Limit post revisions to 5 per post
- */
+/* 2593bcce365cadc9 */
 function ccm_tools_optimization_limit_revisions() {
     global $wpdb;
     
@@ -1592,9 +1347,7 @@ function ccm_tools_optimization_limit_revisions() {
         }
     }
 
-    // Collected across every parent, then deleted in chunks. One IN() list
-    // holding every excess revision on a busy site is large enough to be
-    // rejected outright, and a rejected statement deletes nothing.
+    /* 9c8457842d055cc6 */
     $posts_report = ccm_tools_delete_ids_in_chunks($wpdb->posts, 'ID', $to_delete);
     $meta_report = ccm_tools_delete_ids_in_chunks($wpdb->postmeta, 'post_id', $to_delete);
 
@@ -1615,14 +1368,7 @@ function ccm_tools_optimization_limit_revisions() {
     );
 }
 
-/**
- * Delete ALL post revisions.
- *
- * Chunked. A site with 400,000 revisions used to build a single DELETE of
- * roughly 3MB; shared hosts commonly cap max_allowed_packet at 4MB, so MySQL
- * rejected the statement, $wpdb->query() returned false, and the tool reported
- * "400000 revisions permanently deleted" having deleted nothing at all.
- */
+/* 0261dbc21e55c5ea */
 function ccm_tools_optimization_delete_all_revisions() {
     global $wpdb;
 
@@ -1654,9 +1400,7 @@ function ccm_tools_optimization_delete_all_revisions() {
     );
 }
 
-/**
- * Delete orphaned termmeta
- */
+/* 6ca633779b6563de */
 function ccm_tools_optimization_clean_orphaned_termmeta() {
     global $wpdb;
     
@@ -1673,30 +1417,11 @@ function ccm_tools_optimization_clean_orphaned_termmeta() {
     );
 }
 
-/**
- * Delete orphaned term relationships
- */
+/* 70282dd8dcd95310 */
 function ccm_tools_optimization_clean_orphaned_relationships() {
     global $wpdb;
     
-    /*
-     * object_id is not always a post id.
-     *
-     * term_relationships stores whichever object type the taxonomy was
-     * registered against. WordPress core's own link_category taxonomy keeps
-     * wp_links.link_id there; BuddyPress member and group types keep user and
-     * group ids; any "user taxonomy" plugin does the same. Joining
-     * term_relationships to wp_posts and deleting every row that does not
-     * match therefore wiped every one of those assignments in a single
-     * statement, on a screen that describes itself as removing relationships
-     * for deleted posts.
-     *
-     * Restricting to taxonomies actually registered against a post type makes
-     * the query do what the label says. It also means the sweep only ever
-     * considers taxonomies the running site has registered, so a plugin that
-     * is deactivated at the time is left alone rather than having its data
-     * treated as orphaned.
-     */
+    /* f71880fe58fba4eb */
     $taxonomies = function_exists('get_object_taxonomies') && function_exists('get_post_types')
         ? get_object_taxonomies(get_post_types(array(), 'names'), 'names')
         : array();
@@ -1732,19 +1457,7 @@ function ccm_tools_optimization_clean_orphaned_relationships() {
     );
 }
 
-/**
- * The database overview, for the dashboard at the top of the Database page.
- *
- * The page used to open with a list of cleanup tasks and nothing else, so the
- * only question it could answer was "is there anything to tick". It could not
- * answer "what is actually in here", which is the question you have before you
- * decide whether any of it is worth running.
- *
- * Everything here is one pass over information_schema plus two counts, so it
- * costs about the same as the task list it sits above.
- *
- * @return array
- */
+/* 9aa809cb7dcd9fe0 */
 function ccm_tools_db_overview(): array {
     global $wpdb;
 
@@ -1765,13 +1478,7 @@ function ccm_tools_db_overview(): array {
     $version = $wpdb->get_var('SELECT VERSION()');
     $out['server'] = is_string($version) ? $version : '';
 
-    /*
-     * One query for every table in this schema. DATA_FREE is the reclaimable
-     * space OPTIMIZE would return; on InnoDB without file-per-table it is
-     * reported against the shared tablespace and is not meaningful per table,
-     * which is why the fragmentation check elsewhere uses a ratio rather than
-     * a raw figure.
-     */
+    /* 8e2281aaab158ec1 */
     $tables = $wpdb->get_results(
         "SELECT TABLE_NAME, ENGINE, TABLE_COLLATION, TABLE_ROWS,
                 (DATA_LENGTH + INDEX_LENGTH) AS total_bytes,
@@ -1814,13 +1521,7 @@ function ccm_tools_db_overview(): array {
         }
     }
 
-    /*
-     * Autoloaded options. Every one of these is read on EVERY request, so this
-     * is the single number on the page that costs something on every page view
-     * rather than only when somebody looks. Anything over about 800KB is worth
-     * investigating; a megabyte of autoload is a measurable slowdown on every
-     * request the site serves.
-     */
+    /* cfeeb42f721d7bb3 */
     $autoload = $wpdb->get_row(
         "SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(option_value)), 0) AS bytes
            FROM {$wpdb->options}
@@ -1834,13 +1535,7 @@ function ccm_tools_db_overview(): array {
     return $out;
 }
 
-/**
- * The biggest autoloaded options, which is what you actually act on once the
- * total looks wrong.
- *
- * @param int $limit
- * @return array
- */
+/* 4efc1391db0f1666 */
 function ccm_tools_db_autoload_worst(int $limit = 5): array {
     global $wpdb;
 
@@ -1858,35 +1553,17 @@ function ccm_tools_db_autoload_worst(int $limit = 5): array {
     return is_array($rows) ? $rows : array();
 }
 
-/**
- * Get database statistics for optimization preview
- */
+/* d69f8a0e37d6efc5 */
 function ccm_tools_get_optimization_stats() {
     global $wpdb;
     
     $stats = array();
     
     // Transients count
-    /*
-     * Count exactly what Clear Transients deletes, which is the anchored
-     * `_transient_%` and `_site_transient_%` prefixes. This counted
-     * `%_transient_%` instead: wildcards at both ends, and an unescaped
-     * underscore, which SQL LIKE reads as a single-character wildcard. It
-     * matched keys like `my_plugin_transients_list` that the button never
-     * touches, so the figure shown before the click overstated it.
-     */
+    /* 06d80fb87a2a0324 */
     $stats['transients'] = (int) $wpdb->get_var(
         $wpdb->prepare(
-            /*
-             * Four backslashes, not two. PHP collapses `\\` to one backslash,
-             * so MySQL received ESCAPE '\' — a string whose own closing quote
-             * is escaped, leaving the statement unterminated. MySQL rejected
-             * the whole query, get_var() returned null, this cast it to 0, and
-             * the Database page reported "0 transients" on every site while
-             * logging a SQL error behind it. Four reach MySQL as ESCAPE '\\',
-             * which is the single backslash meant, and match the delete query
-             * in clear_transients that this figure is supposed to agree with.
-             */
+            /* 3952787a0856997a */
             "SELECT COUNT(*) FROM {$wpdb->options}"
             . " WHERE option_name LIKE %s ESCAPE '\\\\' OR option_name LIKE %s ESCAPE '\\\\'",
             '\_transient\_%',
@@ -1937,9 +1614,7 @@ function ccm_tools_get_optimization_stats() {
         WHERE c.comment_ID IS NULL"
     );
     
-    // oEmbed cache entries. Must match ccm_tools_optimization_clean_oembed_cache()
-    // exactly, or the number shown before the click is not the number the
-    // click will delete.
+    /* dc1fad8460f8a96a */
     $stats['oembed_cache'] = (int) $wpdb->get_var(
         $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key LIKE %s",

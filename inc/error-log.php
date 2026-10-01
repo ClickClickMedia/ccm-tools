@@ -1,18 +1,12 @@
 <?php
-/**
- * Error Log Viewer functionality
- */
+/* b574fd35c9cb873a */
 
 // Exit if accessed directly
 if (!defined('ABSPATH')) {
     exit;
 }
 
-/**
- * Get possible error log locations
- *
- * @return array List of possible log file paths
- */
+/* ec66a4760a2ecb20 */
 function ccm_tools_get_error_log_locations() {
     $locations = array();
     $unique_paths = array(); // Track unique paths
@@ -31,12 +25,7 @@ function ccm_tools_get_error_log_locations() {
         ABSPATH . 'wp-content/debug.log'
     );
     
-    // Try to get error log path from PHP configuration.
-    // Only trust it when it resolves inside THIS site's own directory tree.
-    // On a shared PHP pool, ini_get('error_log') can point at a server-wide
-    // file that other tenants also log to and that the PHP user can write
-    // to; whitelisting it unconditionally would let this site's admin read
-    // (and, via the "clear log" action, truncate) every other tenant's log.
+    /* 27934ac40bd2a1d5 */
     $php_error_log = ini_get('error_log');
     if (!empty($php_error_log) && $php_error_log !== 'syslog' && ccm_tools_path_is_within_site($php_error_log)) {
         array_unshift($possible_locations, $php_error_log);
@@ -61,17 +50,7 @@ function ccm_tools_get_error_log_locations() {
     return $locations;
 }
 
-/**
- * Check whether a (possibly not-yet-existing) path resolves to somewhere
- * inside this site's own directory tree (ABSPATH or its parent directory).
- *
- * Used to keep host-wide configuration (like PHP's ini "error_log" setting)
- * from being whitelisted when it points outside the site, which on a shared
- * pool can be a file other tenants also use.
- *
- * @param string $path Path to check.
- * @return bool
- */
+/* 33112684c9aa2de8 */
 function ccm_tools_path_is_within_site($path) {
     if (empty($path)) {
         return false;
@@ -100,12 +79,7 @@ if (!defined('CCM_TOOLS_LOG_DOWNLOAD_TTL')) {
     define('CCM_TOOLS_LOG_DOWNLOAD_TTL', 5 * MINUTE_IN_SECONDS);
 }
 
-/**
- * Validate a requested log file path against the known whitelist.
- *
- * @param string $path Raw path provided by the requester.
- * @return string Validated absolute path or empty string when invalid.
- */
+/* 0e95d6ff99cfd370 */
 function ccm_tools_validate_log_file_path($path) {
     if (empty($path)) {
         return '';
@@ -121,24 +95,13 @@ function ccm_tools_validate_log_file_path($path) {
     return in_array($real_path, $allowed_paths, true) ? $real_path : '';
 }
 
-/**
- * Helper to fetch the first available log file path from the whitelist.
- *
- * @return string
- */
+/* 133909f6010ae9bd */
 function ccm_tools_get_default_log_file_path() {
     $locations = ccm_tools_get_error_log_locations();
     return $locations[0] ?? '';
 }
 
-/**
- * Read error log file content with pagination
- *
- * @param string $log_file Path to the log file
- * @param int $lines Number of lines to read (default: 100)
- * @param int $offset Number of lines to skip from the end (default: 0)
- * @return array Log content and metadata
- */
+/* f84c85ebb3cde8c8 */
 function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
     $log_file = ccm_tools_validate_log_file_path($log_file);
     if (empty($log_file)) {
@@ -234,11 +197,7 @@ function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
 
     return array(
         'content' => $content,
-        // Always build an escaped, highlighted rendering alongside the raw content.
-        // The raw log can contain attacker-controlled text (a plugin logging request
-        // data, a PHP warning quoting user input); the JS viewer renders
-        // formatted_content into innerHTML on every auto-refresh, so this must never
-        // be skipped or left to fall back to unescaped raw content.
+        /* a2479dccdb560381 */
         'formatted_content' => ccm_tools_format_error_log($content),
         'file_size' => size_format($filesize, 2),
         'last_modified' => human_time_diff($last_modified) . ' ' . __('ago', 'ccm-tools'),
@@ -246,9 +205,7 @@ function ccm_tools_read_error_log($log_file, $lines = 100, $offset = 0) {
     );
 }
 
-/**
- * AJAX handler for fetching error log content
- */
+/* e52b58c3e86b1046 */
 function ccm_tools_ajax_get_error_log() {
     // Check permissions and nonce
     if (!ccm_tools_user_is_admin() || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
@@ -337,9 +294,7 @@ function ccm_tools_ajax_get_error_log() {
 }
 add_action('wp_ajax_ccm_tools_get_error_log', 'ccm_tools_ajax_get_error_log');
 
-/**
- * AJAX handler for clearing error log
- */
+/* 63ff5df29f48b624 */
 function ccm_tools_ajax_clear_error_log() {
     // Check permissions and nonce
     if (!ccm_tools_user_is_admin() || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
@@ -378,9 +333,7 @@ function ccm_tools_ajax_clear_error_log() {
 }
 add_action('wp_ajax_ccm_tools_clear_error_log', 'ccm_tools_ajax_clear_error_log');
 
-/**
- * AJAX handler for downloading error log
- */
+/* 77af014b56110a66 */
 function ccm_tools_ajax_download_error_log() {
     // Check permissions and nonce
     if (!ccm_tools_user_is_admin() || !check_ajax_referer('ccm-tools-nonce', 'nonce', false)) {
@@ -427,9 +380,7 @@ function ccm_tools_ajax_download_error_log() {
 }
 add_action('wp_ajax_ccm_tools_download_error_log', 'ccm_tools_ajax_download_error_log');
 
-/**
- * Securely streams a zipped error log to the browser.
- */
+/* a5f8b3e52369bf5c */
 function ccm_tools_ajax_download_error_log_file() {
     if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have permission to perform this action.', 'ccm-tools'), __('Permission denied', 'ccm-tools'), array('response' => 403));
@@ -487,12 +438,7 @@ function ccm_tools_ajax_download_error_log_file() {
 }
 add_action('wp_ajax_ccm_tools_download_error_log_file', 'ccm_tools_ajax_download_error_log_file');
 
-/**
- * Filter error log content to show only errors and stack traces
- * 
- * @param string $content Raw log content
- * @return string Filtered log content containing only errors and stack traces
- */
+/* 8aebe2d4a930fc31 */
 function ccm_tools_filter_errors_only($content) {
     if (empty($content)) {
         return $content;
@@ -552,12 +498,7 @@ function ccm_tools_filter_errors_only($content) {
     return implode("\n", $filtered_lines);
 }
 
-/**
- * Format the error log content to highlight fatal errors and stack traces
- * 
- * @param string $content Raw log content
- * @return string Formatted log content with highlighted errors
- */
+/* 645bb3e1010f4b4b */
 function ccm_tools_format_error_log($content) {
     if (empty($content)) {
         return $content;
@@ -594,9 +535,7 @@ function ccm_tools_format_error_log($content) {
         $content
     );
 
-    // preg_replace() returns null on a regex engine failure (e.g. hitting the
-    // PCRE backtrack limit on a very large stack trace). Fall back to the
-    // already-escaped, unhighlighted content rather than blanking the viewer.
+    /* 335d5fd514dd2669 */
     if ($formatted === null) {
         return $content;
     }
@@ -604,14 +543,7 @@ function ccm_tools_format_error_log($content) {
     return $formatted;
 }
 
-/**
- * Convert UTC timestamps in error log content to the site's configured
- * timezone (via wp_timezone() / WordPress's Timezone setting), not a
- * hardcoded zone.
- *
- * @param string $content Raw log content
- * @return string Log content with converted timestamps
- */
+/* c8dcba669e7cf10f */
 function ccm_tools_convert_error_log_timestamps($content) {
     if (empty($content)) {
         return $content;
@@ -648,27 +580,7 @@ function ccm_tools_convert_error_log_timestamps($content) {
     return $converted;
 }
 
-/**
- * Summarise the log text already loaded for the viewer: counts for the
- * at-a-glance stat tiles, the severity of the most recent entry, and a
- * ranked list of recurring problems for the findings summary.
- *
- * Deliberately works from the same (already line-limited) text the page
- * already reads for the raw viewer below it — no extra file read and no
- * extra AJAX call. This only ever reads $content; it never echoes it back.
- * Callers must still esc_html() every fragment this returns before output,
- * the same as any other value pulled out of log text.
- *
- * @param string $content Raw (unescaped) log text, already limited to the visible window.
- * @return array {
- *     @type int        fatal         Fatal / parse error lines.
- *     @type int        warning       Warning + deprecated lines.
- *     @type string     last_severity Severity of the last recognised line: fatal|warning|deprecated|notice|''.
- *     @type array[]    findings      Ranked array of array('severity','message','file','count'), highest count first.
- *     @type array|null top_plugin    array('slug','count','total') when one plugin accounts for at least half
- *                                    of the fatals found, otherwise null.
- * }
- */
+/* 8baa57ea250b4aec */
 function ccm_tools_error_log_analyze($content) {
     $result = array(
         'fatal'         => 0,
@@ -717,9 +629,7 @@ function ccm_tools_error_log_analyze($content) {
         $result['last_severity'] = $severity;
         $message = trim($message);
 
-        // Pull the file out of "... in /path/file.php:23" or
-        // "... in /path/file.php on line 23" so the same bug from the same
-        // file groups together even when the reported line number moves.
+        /* 1124b128425fb9b2 */
         $file = '';
         if (preg_match('#\sin\s(/\S+?\.php)(?::\d+)?#i', $message, $fm)) {
             $file    = $fm[1];
@@ -773,15 +683,7 @@ function ccm_tools_error_log_analyze($content) {
     return $result;
 }
 
-/**
- * Shorten an absolute file path for display: relative to ABSPATH when it
- * lives inside this site (the common case), otherwise just its last few
- * segments, so a finding row stays on one line without spelling out the
- * full server path.
- *
- * @param string $path Absolute path pulled out of a log line.
- * @return string
- */
+/* 5cdc4d39a9cb593f */
 function ccm_tools_error_log_relative_path($path) {
     $normalized = wp_normalize_path($path);
     $abspath    = wp_normalize_path(ABSPATH);
@@ -794,9 +696,7 @@ function ccm_tools_error_log_relative_path($path) {
     return implode('/', array_slice($segments, -3));
 }
 
-/**
- * Render the error log viewer page
- */
+/* 2add994c78d806bb */
 function ccm_tools_render_error_log_page() {
     if (!ccm_tools_user_is_admin()) {
         wp_die(__('You do not have sufficient permissions to access this page.', 'ccm-tools'));
@@ -805,12 +705,7 @@ function ccm_tools_render_error_log_page() {
     $locations   = ccm_tools_get_error_log_locations();
     $default_log = !empty($locations) ? $locations[0] : '';
     $log_data    = !empty($default_log) ? ccm_tools_read_error_log($default_log) : array('content' => '', 'error' => __('No error logs found.', 'ccm-tools'));
-    // ccm_tools_read_error_log() already returns an escaped, highlighted
-    // formatted_content on every branch (including the empty-log message).
-    // Re-running that through ccm_tools_format_error_log() would
-    // htmlspecialchars() already-built HTML a second time, turning its tags
-    // into literal text, so only build formatted_content when it's missing
-    // (e.g. when no default log was found at all, above).
+    /* 9581f81438b0fa62 */
     if (isset($log_data['content']) && !isset($log_data['formatted_content'])) {
         // Convert UTC timestamps to the site's configured timezone (via wp_timezone()) before formatting
         $log_data['content'] = ccm_tools_convert_error_log_timestamps($log_data['content']);
@@ -820,25 +715,16 @@ function ccm_tools_render_error_log_page() {
     $has_locations  = !empty($locations);
     $has_read_error = isset($log_data['error']);
 
-    // Independent of $log_data — a direct filesystem check, so it stays
-    // correct even where the read helper's own numbers are placeholders
-    // (e.g. its "invalid selection" branch returns file_size => 0, not a
-    // real size).
+    /* a67d7c3148da8cc0 */
     $raw_size     = ($has_locations && file_exists($default_log)) ? @filesize($default_log) : false;
     $is_log_empty = $has_locations && $raw_size === 0;
 
-    // Everything below is derived from the text already loaded for the
-    // viewer above (the visible window) — no extra file read, no extra
-    // AJAX call. ccm_tools_error_log_analyze() only ever reads $content;
-    // the raw, unescaped text is never echoed, only short fragments pulled
-    // out of it, and every one of those is still esc_html()'d below.
+    /* 51226c85d4299dfa */
     $analysis = ($has_locations && !$has_read_error && isset($log_data['content']))
         ? ccm_tools_error_log_analyze($log_data['content'])
         : array('fatal' => 0, 'warning' => 0, 'last_severity' => '', 'findings' => array(), 'top_plugin' => null);
 
-    // empty() also excludes the read-error branches' placeholder 0/'' values
-    // (a real empty file reports file_size as the string "0 B", not 0), so
-    // this only ever shows a genuine reading.
+    /* 8f00c916eb89a99e */
     $file_size_label     = !empty($log_data['file_size']) ? $log_data['file_size'] : '';
     $last_modified_label = !empty($log_data['last_modified']) ? (string) $log_data['last_modified'] : '';
 
