@@ -194,7 +194,25 @@ function ccm_tools_registry_check(bool $force = false) {
     }
 
     $parsed = json_decode(wp_remote_retrieve_body($response), true);
-    if (!is_array($parsed) || !array_key_exists('entitled', $parsed)) {
+
+    /*
+     * is_bool, not just "the key is there". The rule this whole file exists to
+     * honour is that entitlement is revoked only by an explicit answer saying
+     * so — and `(bool) $parsed['entitled']` was not asking that. It asked
+     * "is this value falsy", which null, 0, "", "0" and [] all are. Those are
+     * not decisions; they are what a nullable column, an ORM default or a
+     * half-finished deploy returns. Every site on the fleet asks the same
+     * endpoint, so one response of that shape would tell all of them at once
+     * that they are no longer entitled, silently, with nobody having decided
+     * anything.
+     *
+     * Anything that is not a real boolean now takes the same branch as
+     * truncated JSON and a captive portal's HTML: we did not get an answer we
+     * understood, so nothing changes.
+     */
+    if (!is_array($parsed)
+        || !array_key_exists('entitled', $parsed)
+        || !is_bool($parsed['entitled'])) {
         set_transient(CCM_TOOLS_REGISTRY_BACKOFF, 1, CCM_TOOLS_REGISTRY_RETRY);
         ccm_tools_registry_note_attempt(false, 'the reply was not an answer we understood');
         return $state;
