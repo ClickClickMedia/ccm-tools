@@ -663,7 +663,7 @@ function ccm_tools_display_htaccess(): string {
         </div>
         <div class="ccm-hero__actions">
             <?php if ($has_optimizations) : ?>
-                <button type="button" id="htremove" class="ccm-button ccm-button-danger ccm-button-small">
+                <button type="button" id="htremove" class="ccm-button ccm-button-danger">
                     <?php _e('Remove CCM block', 'ccm-tools'); ?>
                 </button>
                 <button type="button" id="htupdate" class="ccm-button ccm-button-primary">

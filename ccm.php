@@ -3,7 +3,7 @@
  * Plugin Name: CCM Tools
  * Plugin URI: https://clickclickmedia.com.au/
  * Description: CCM Tools is a WordPress utility plugin that helps administrators monitor and optimize their WordPress installation. It provides system information, database tools, and .htaccess optimization features.
- * Version: 8.13.0
+ * Version: 8.13.1
  * Requires at least: 6.0
  * Tested up to: 6.8.2
  * Requires PHP: 7.4
@@ -36,7 +36,7 @@ define('CCM_TOOLS_FILE_LOADED', true);
 
 // Define plugin constants only if they don't already exist
 if (!defined('CCM_HELPER_VERSION')) {
-    define('CCM_HELPER_VERSION', '8.13.0');
+    define('CCM_HELPER_VERSION', '8.13.1');
 }
 
 /**
@@ -784,7 +784,7 @@ class CCMSettings {
                     'wooToggleFailed' => __('Failed to toggle setting.', 'ccm-tools'),
                     // Button labels swapped in while an action is in flight.
                     'saving' => __('Saving...', 'ccm-tools'),
-                    'saveSettings' => __('Save Settings', 'ccm-tools'),
+                    'saveSettings' => __('Save settings', 'ccm-tools'),
                     'testing' => __('Testing...', 'ccm-tools'),
                     'testConversion' => __('Test Conversion', 'ccm-tools'),
                     'stopping' => __('Stopping...', 'ccm-tools'),
@@ -1476,7 +1476,7 @@ class CCMSettings {
                                         <span class="ccm-chip <?php echo $debug_mode_enabled ? 'ccm-chip--warn' : 'ccm-chip--good'; ?>"><?php echo esc_html($debug_status); ?></span>
                                         <p class="ccm-opt__desc"><?php _e('Sets WP_DEBUG. Turn it on to chase a fault, then turn it back off — a live site should not be left running with it on.', 'ccm-tools'); ?></p>
                                     </div>
-                                    <button id="toggle-debug" class="ccm-button" data-enabled="<?php echo $debug_mode_enabled ? 'true' : 'false'; ?>">
+                                    <button id="toggle-debug" class="ccm-button ccm-button-small" data-enabled="<?php echo $debug_mode_enabled ? 'true' : 'false'; ?>">
                                         <?php echo $debug_mode_enabled ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
                                     </button>
                                 </div>
@@ -1490,7 +1490,7 @@ class CCMSettings {
                                             <span class="ccm-chip <?php echo $debug_log_status === 'Enabled' ? 'ccm-chip--info' : ''; ?>"><?php echo esc_html($debug_log_status); ?></span>
                                             <p class="ccm-opt__desc"><?php _e('Writes notices and warnings to wp-content/debug.log rather than showing them. This is the safe half of debugging.', 'ccm-tools'); ?></p>
                                         </div>
-                                        <button id="toggle-debug-log" class="ccm-button" data-enabled="<?php echo $debug_log_status === 'Enabled' ? 'true' : 'false'; ?>">
+                                        <button id="toggle-debug-log" class="ccm-button ccm-button-small" data-enabled="<?php echo $debug_log_status === 'Enabled' ? 'true' : 'false'; ?>">
                                             <?php echo $debug_log_status === 'Enabled' ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
                                         </button>
                                     </div>
@@ -1508,7 +1508,7 @@ class CCMSettings {
                                                 <?php endif; ?>
                                             </p>
                                         </div>
-                                        <button id="toggle-debug-display" class="ccm-button" data-enabled="<?php echo $debug_display_status === 'Enabled' ? 'true' : 'false'; ?>">
+                                        <button id="toggle-debug-display" class="ccm-button ccm-button-small" data-enabled="<?php echo $debug_display_status === 'Enabled' ? 'true' : 'false'; ?>">
                                             <?php echo $debug_display_status === 'Enabled' ? esc_html__('Disable', 'ccm-tools') : esc_html__('Enable', 'ccm-tools'); ?>
                                         </button>
                                     </div>
@@ -1531,7 +1531,7 @@ class CCMSettings {
                                             <option value="512M" <?php selected(WP_MEMORY_LIMIT, '512M'); ?>><?php _e('512M', 'ccm-tools'); ?></option>
                                             <option value="1024M" <?php selected(WP_MEMORY_LIMIT, '1024M'); ?>><?php _e('1024M', 'ccm-tools'); ?></option>
                                         </select>
-                                        <button id="update-memory-limit" class="ccm-button">
+                                        <button id="update-memory-limit" class="ccm-button ccm-button-small">
                                             <?php _e('Update', 'ccm-tools'); ?>
                                         </button>
                                     </div>

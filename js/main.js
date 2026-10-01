@@ -2073,7 +2073,7 @@
         } finally {
             if (saveBtn) {
                 saveBtn.disabled = false;
-                saveBtn.innerHTML = ccmToolsData.i18n?.saveSettings || 'Save Settings';
+                saveBtn.innerHTML = ccmToolsData.i18n?.saveSettings || 'Save settings';
             }
         }
     }
@@ -2392,7 +2392,7 @@
                         cb.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 });
-                showNotification('All safe optimisations enabled. Press Save Settings to apply.', 'success');
+                showNotification('All safe optimisations enabled. Press Save settings to apply.', 'success');
             });
         }
         if (disableAllSafe) {
@@ -2403,7 +2403,7 @@
                         cb.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 });
-                showNotification('All safe optimisations disabled. Press Save Settings to apply.', 'info');
+                showNotification('All safe optimisations disabled. Press Save settings to apply.', 'info');
             });
         }
         
@@ -2799,7 +2799,7 @@
         } finally {
             if (saveBtn) {
                 saveBtn.disabled = false;
-                saveBtn.innerHTML = 'Save Settings';
+                saveBtn.innerHTML = 'Save settings';
             }
         }
     }
@@ -4380,7 +4380,7 @@
                 } finally {
                     if (submitBtn) {
                         submitBtn.disabled = false;
-                        submitBtn.innerHTML = 'Save Settings';
+                        submitBtn.innerHTML = 'Save settings';
                     }
                 }
             });

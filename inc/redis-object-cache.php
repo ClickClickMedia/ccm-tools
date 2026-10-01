@@ -2379,7 +2379,7 @@ function ccm_tools_render_redis_page() {
                 </section>
 
                 <div class="ccm-row" style="margin-top: var(--ccm-space-xl);">
-                    <button type="submit" id="redis-save-settings" class="ccm-button ccm-button-primary ccm-savebar__proxy"><?php _e('Save Settings', 'ccm-tools'); ?></button>
+                    <button type="submit" id="redis-save-settings" class="ccm-button ccm-button-primary ccm-savebar__proxy"><?php _e('Save settings', 'ccm-tools'); ?></button>
                     <button type="button" id="add-to-wp-config" class="ccm-button ccm-button-secondary"><?php _e('Add to wp-config.php', 'ccm-tools'); ?></button>
                 </div>
 
@@ -2447,7 +2447,7 @@ function ccm_tools_render_redis_page() {
                     <?php _e('Discard', 'ccm-tools'); ?>
                 </button>
                 <button type="button" class="ccm-button ccm-button-primary" data-savebar-save>
-                    <?php _e('Save Settings', 'ccm-tools'); ?>
+                    <?php _e('Save settings', 'ccm-tools'); ?>
                 </button>
             </div>
 

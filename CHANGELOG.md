@@ -1,5 +1,29 @@
 # CCM Tools — Changelog
 
+## v8.13.1 — Button size follows the place, not the page
+
+There are two button sizes. Which one a button gets should depend only on the
+kind of container it sits in, so that nine screens read as one plugin. Two
+contexts had drifted, and the giveaway was two buttons side by side whose tops
+and bottoms did not line up.
+
+- **.htaccess "Remove CCM block" is full size.** It was the only small button
+  in any hero action bar, sitting next to a full-size "Update .htaccess". Size
+  is not what carries hierarchy up there — Refresh, Flush Cache and Disable
+  Object Cache are all full size on their own pages; tone does the work.
+- **The dashboard's four setting-row controls are small**, matching the same
+  row component on Cloudflare and on every one of the twelve health checks.
+- **"Save settings"**, everywhere. Redis said "Save Settings", as did four
+  strings in the JavaScript, two of which are notices telling you to press a
+  button whose label they then got wrong.
+
+`button_size_test` checks all three rules against the source: hero bars are
+full size, setting rows are small, and no two adjacent buttons differ. It
+finds the six faults above in the previous markup. The save bar is its one
+listed exception — a quiet Discard beside a prominent Save, written identically
+on all four pages that have one, so it stays a decision rather than becoming
+the precedent for the next mismatched pair.
+
 ## v8.13.0 — Three that were failing quietly
 
 Everything here was already broken in production. None of it announced itself:
