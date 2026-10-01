@@ -1,5 +1,27 @@
 # CCM Tools — Changelog
 
+## v8.13.5 — The run panel stops spelling task names vertically
+
+A task row is a three-column grid, and the last column was sized `auto` — to
+its content. That is right for "Waiting" or "Done", and wrong for Clear all
+transients, which returns a two-hundred-character sentence. The result took
+the width it asked for, grid squeezed the label column down to its own
+minimum, and because the label allowed a break between any two letters that
+minimum was one character. The task name came out written downwards.
+
+- The label column has a floor now. A `minmax()` minimum is hard: grid cannot
+  size a track below it, so a long result wraps inside its own column instead
+  of eating the one beside it.
+- The label breaks between words rather than anywhere, because breaking
+  anywhere is what made a one-character-wide column a legal layout.
+
+Two cases that were never exercised get the same protection: a long task name,
+and a long failure message.
+
+This shipped because the panel is assembled in JavaScript against live
+requests, so it appears in none of the static page renders that every other
+screen is checked with.
+
 ## v8.13.4 — The update panel names a source, not an address
 
 Every administrator on every site we install on could read the host that serves
