@@ -19,19 +19,79 @@ const CCM_TOOLS_REGISTRY_OPTION   = 'ccm_tools_registry_state';
 const CCM_TOOLS_REGISTRY_BACKOFF  = 'ccm_tools_registry_backoff';
 const CCM_TOOLS_REGISTRY_LAST     = 'ccm_tools_registry_last_attempt';
 
+/**
+ * What this site calls the place its updates come from.
+ *
+ * Every admin on every client site can read this panel, and the host that
+ * serves our releases is not something they need. The name is enough to answer
+ * the question the panel exists to answer -- who is giving this site updates --
+ * without publishing the address to everyone we have ever installed on.
+ *
+ * This is a lower profile, not a secret. The host is in the plugin source, in
+ * every outbound request, and in anything that logs HTTP. It stops the address
+ * being read off a screen; it does not hide it from anyone looking.
+ */
+function ccm_tools_registry_source_name(bool $fallback = false): string {
+    return $fallback
+        ? __('GitHub', 'ccm-tools')
+        : __('Click Click Media', 'ccm-tools');
+}
+
+/**
+ * Take the service host out of a message before it is stored or shown.
+ *
+ * The messages worth keeping are the ones from a failed request, and those are
+ * exactly the ones carrying the address: WP_Error hands back "cURL error 6:
+ * Could not resolve host: <host>", which this panel then printed verbatim --
+ * so the address appeared precisely when something was wrong and somebody was
+ * looking at the panel to find out why. The rest of the message is still the
+ * useful part, so only the address is replaced.
+ */
+function ccm_tools_registry_redact(string $text): string {
+    $endpoint = ccm_tools_registry_endpoint();
+    $host     = (string) wp_parse_url($endpoint, PHP_URL_HOST);
+
+    $replace = array();
+    if ($endpoint !== '') {
+        $replace[$endpoint] = ccm_tools_registry_source_name();
+    }
+    if ($host !== '') {
+        $replace[$host] = ccm_tools_registry_source_name();
+    }
+    if (!$replace) {
+        return $text;
+    }
+
+    return str_ireplace(array_keys($replace), array_values($replace), $text);
+}
+
 /* bf07fa05f5935711 */
 function ccm_tools_registry_note_attempt(bool $ok, string $detail = ''): void {
     update_option(CCM_TOOLS_REGISTRY_LAST, array(
         'at'     => time(),
         'ok'     => $ok,
-        'detail' => $detail,
+        'detail' => ccm_tools_registry_redact($detail),
     ), false);
 }
 
 /* a3950b52e10e06e0 */
 function ccm_tools_registry_last_attempt() {
     $last = get_option(CCM_TOOLS_REGISTRY_LAST);
-    return is_array($last) ? $last : null;
+    if (!is_array($last)) {
+        return null;
+    }
+
+    /*
+     * Redacted on the way out as well as on the way in. Sites that have been
+     * running this plugin already have a detail recorded by the version that
+     * stored the raw message, and that row is read on every page load of the
+     * panel until the next check overwrites it.
+     */
+    if (isset($last['detail'])) {
+        $last['detail'] = ccm_tools_registry_redact((string) $last['detail']);
+    }
+
+    return $last;
 }
 
 /* bbe7ece414ad7104 */
@@ -275,11 +335,17 @@ function ccm_tools_registry_render_panel(): void {
         $source      = __('Service (refused)', 'ccm-tools');
         $source_tone = 'warn';
     } elseif (!$degraded) {
-        $source      = __('Update service', 'ccm-tools');
+        // Same vocabulary as the "Updates from" field below; two names for one
+        // thing on one panel reads as two different things.
+        $source      = ccm_tools_registry_source_name();
         /* 5fcf3ca388c129f2 */
         $source_tone = 'good';
     } elseif ($fallback_on) {
-        $source      = __('GitHub (fallback)', 'ccm-tools');
+        $source      = sprintf(
+            /* translators: %s: the name of the update source, e.g. "GitHub" */
+            __('%s (fallback)', 'ccm-tools'),
+            ccm_tools_registry_source_name(true)
+        );
         $source_tone = 'warn';
     } else {
         $source      = __('None reachable', 'ccm-tools');
@@ -339,8 +405,17 @@ function ccm_tools_registry_render_panel(): void {
                     <p class="ccm-opt__desc"><?php echo esc_html($offered); ?></p>
                 </div>
                 <div class="ccm-optfield ccm-fieldgrid__wide">
-                    <span class="ccm-opt__label"><?php _e('Endpoint', 'ccm-tools'); ?></span>
-                    <p class="ccm-opt__desc ccm-mono"><?php echo esc_html(ccm_tools_registry_endpoint()); ?></p>
+                    <span class="ccm-opt__label"><?php _e('Updates from', 'ccm-tools'); ?></span>
+                    <?php
+                    /*
+                     * Which source a check right now would ACTUALLY use.
+                     * $fallback_on only says GitHub is allowed, not that it is
+                     * being used; passing it alone would name GitHub on a site
+                     * whose service checks are working perfectly well.
+                     */
+                    $using_github = $degraded && $fallback_on;
+                    ?>
+                    <p class="ccm-opt__desc"><?php echo esc_html(ccm_tools_registry_source_name($using_github)); ?></p>
                 </div>
             </div>
 

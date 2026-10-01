@@ -1,5 +1,36 @@
 # CCM Tools — Changelog
 
+## v8.13.4 — The update panel names a source, not an address
+
+Every administrator on every site we install on could read the host that serves
+our releases off the Update channel panel. The panel's job is to answer who is
+giving this site its updates and whether it is working; the address is not part
+of that answer.
+
+- **"Endpoint: https://…" is now "Updates from: Click Click Media"**, or GitHub
+  when the fallback is actually carrying the site — not merely when the
+  fallback is permitted, which is a different thing and would have named GitHub
+  on sites whose checks were working.
+- **The failure messages were the bigger leak.** `WP_Error` hands back "cURL
+  error 6: Could not resolve host: &lt;host&gt;", and the panel printed it
+  verbatim on the Last checked line — so the address appeared precisely when
+  something was broken and somebody was reading the panel to find out why. The
+  host is now taken out of the message as it is stored and again as it is read,
+  so a row written by an earlier version is covered too. The rest of the
+  message is untouched, because that is the part worth having.
+- The chip and the field use the same words. Two names for one thing on one
+  panel reads as two different things.
+
+Worth being plain about what this is: a lower profile, not a secret. The host
+is in the plugin source and in every outbound request, so anyone who goes
+looking will find it. What it stops is the address being read off a screen.
+
+`registry_test` renders the panel in both the healthy and the failed state and
+asserts the host appears in neither. Written that way on purpose — the first
+version tested the two new helpers, which against the old code did not fail,
+they fatalled, and a test that dies on the code it is judging has proved
+nothing about what was on the screen.
+
 ## v8.13.3 — The TTFB tile is a tile like the others
 
 It was writing its explanation into the slot that holds the number, with a
