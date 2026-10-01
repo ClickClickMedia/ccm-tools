@@ -3955,7 +3955,19 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
 
 .ccm-runrow {
     display: grid;
-    grid-template-columns: 1.25rem 1fr auto;
+    /*
+     * The third track was `auto`, which sizes to its content. A task's result
+     * is usually a word -- Waiting, Done, 11 -- but Clear all transients
+     * returns a two-hundred-character sentence, and `auto` took the width for
+     * it. Grid then squeezed the `1fr` label down to its own minimum, which
+     * with overflow-wrap: anywhere is ONE CHARACTER, so the task name came out
+     * spelled vertically down the side of the panel.
+     *
+     * A floor on the label is what prevents that: minmax() cannot be sized
+     * below its minimum, so a long result wraps inside its own track instead
+     * of eating the column next to it.
+     */
+    grid-template-columns: 1.25rem minmax(7rem, 1fr) minmax(0, 2fr);
     align-items: center;
     gap: var(--ccm-space-sm);
     padding: 0.55rem 0;
@@ -3977,7 +3989,12 @@ div.ccm-spinner:not(.ccm-spinner-small) { margin: var(--ccm-space-lg) auto; }
     color: var(--ccm-text);
     font-weight: 600;
     min-width: 0;
-    overflow-wrap: anywhere;
+    /*
+     * break-word, not anywhere: `anywhere` lets the browser break between any
+     * two letters, which is what made a one-character-wide column a legal way
+     * to lay this out. A task name breaks between words or not at all.
+     */
+    overflow-wrap: break-word;
 }
 
 .ccm-runrow__meta {
