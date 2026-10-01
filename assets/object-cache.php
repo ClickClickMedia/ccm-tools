@@ -8,7 +8,7 @@
  * wp_cache_remember(), HTML footnote, KEEPTTL on incr/decr.
  * 
  * @package CCM_Tools
- * @version 8.13.7
+ * @version 8.13.8
  *
  * This file should be placed in wp-content/object-cache.php
  */
@@ -657,13 +657,65 @@ class CCM_Redis_Object_Cache {
      * rawCommand so it bypasses OPT_SERIALIZER/OPT_COMPRESSION — otherwise the
      * detector would itself be subject to the corruption it's trying to catch.
      */
+    /**
+     * The encoding this connection is really using, not the one requested.
+     *
+     * getOption() reports what setOption() actually took, which is the only
+     * honest answer when the extension silently cannot do what wp-config
+     * asked for. Falls back to the configured names if the handle will not
+     * answer, which is no worse than the behaviour this replaced.
+     *
+     * @return string e.g. "ser=2|comp=0"
+     */
+    private function applied_encoding() {
+        // method_exists before calling: a missing method throws Error, not
+        // Exception, and an uncaught Error in a drop-in is every page on the
+        // site. Nothing in here is worth that.
+        if (!method_exists($this->redis, 'getOption')) {
+            return 'cfg=' . $this->serializer . '|' . $this->compression;
+        }
+
+        try {
+            $ser = $this->redis->getOption(Redis::OPT_SERIALIZER);
+
+            $comp = 'n/a';
+            if (defined('Redis::OPT_COMPRESSION')) {
+                $comp = $this->redis->getOption(Redis::OPT_COMPRESSION);
+            }
+
+            if ($ser !== false && $ser !== null) {
+                return 'ser=' . $ser . '|comp=' . $comp;
+            }
+        } catch (Exception $e) {
+            // Fall through to the configured names.
+        }
+
+        return 'cfg=' . $this->serializer . '|' . $this->compression;
+    }
+
     private function ensure_config_consistency() {
         if (!$this->redis_connected || !$this->redis) {
             return;
         }
 
-        $sentinel_key = $this->key_salt . '__ccm_dropin_config_v1';
-        $current      = $this->serializer . '|' . $this->compression;
+        // v2: the sentinel used to stamp $this->serializer -- the name asked
+        // for in wp-config. That is the one thing which never changes when
+        // this breaks. apply_serializer() falls back to SERIALIZER_PHP without
+        // comment when Redis::SERIALIZER_IGBINARY is not defined, so a PHP
+        // build whose phpredis lacks igbinary writes PHP-serialized values
+        // into a keyspace full of igbinary ones while the sentinel still reads
+        // "igbinary|none" and matches. Exactly that happened on
+        // clickclickmedia.com.au when the account moved from ea-php84
+        // (phpredis 6.1.0, no igbinary) to alt-php85 (6.3.0, with it): the
+        // workers still running the old interpreter poisoned the cache on
+        // their way out, and the guard meant to catch it could not see it.
+        //
+        // So stamp what the connection ACTUALLY applied, read back off the
+        // handle. The key name is versioned rather than reused, because the
+        // stored value's format changes here: a fresh key is absent on first
+        // read, which skips the flush branch and simply records the truth.
+        $sentinel_key = $this->key_salt . '__ccm_dropin_config_v2';
+        $current      = $this->applied_encoding();
 
         try {
             $stored = $this->redis->rawCommand('GET', $sentinel_key);

@@ -1,5 +1,33 @@
 # CCM Tools — Changelog
 
+## v8.13.8 — The cache notices when the server changes under it
+
+v8.13.7 stopped a mis-encoded value reaching WordPress. This stops the cache
+filling up with them in the first place.
+
+The drop-in has always had a guard meant to catch exactly this — its docblock
+promises to notice "a PHP extension being added or removed at the server
+level". It could not. It stamped the serializer *named in wp-config*, and that
+name is the one thing which never changes when this breaks: `apply_serializer()`
+falls back to the PHP serializer without comment when the running phpredis has
+no igbinary support, while the configured name stays "igbinary" either side.
+The sentinel compared "igbinary" with "igbinary", saw no change, and let every
+write go out in the wrong format.
+
+That is not hypothetical. A site moved between PHP builds whose phpredis
+differed — one with igbinary, one without — and the workers still running the
+old interpreter wrote PHP-serialized values into a keyspace of igbinary ones on
+their way out.
+
+- **The sentinel now records what the connection actually applied**, read back
+  off the handle, rather than what it was asked for.
+- The sentinel key is versioned rather than reused, so the first request after
+  this update simply records the truth instead of flushing every site's cache
+  once for a format change.
+- The read is guarded by `method_exists()` before it is attempted. A missing
+  method raises `Error`, not `Exception`, and an uncaught `Error` in a drop-in
+  is not one broken page — it is every page on the site.
+
 ## v8.13.7 — The object cache stops handing WordPress bytes it could not read
 
 A site that has ever run a different object cache can hold values written
