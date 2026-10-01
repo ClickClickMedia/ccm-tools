@@ -1877,8 +1877,18 @@ function ccm_tools_get_optimization_stats() {
      */
     $stats['transients'] = (int) $wpdb->get_var(
         $wpdb->prepare(
+            /*
+             * Four backslashes, not two. PHP collapses `\\` to one backslash,
+             * so MySQL received ESCAPE '\' — a string whose own closing quote
+             * is escaped, leaving the statement unterminated. MySQL rejected
+             * the whole query, get_var() returned null, this cast it to 0, and
+             * the Database page reported "0 transients" on every site while
+             * logging a SQL error behind it. Four reach MySQL as ESCAPE '\\',
+             * which is the single backslash meant, and match the delete query
+             * in clear_transients that this figure is supposed to agree with.
+             */
             "SELECT COUNT(*) FROM {$wpdb->options}"
-            . " WHERE option_name LIKE %s ESCAPE '\\' OR option_name LIKE %s ESCAPE '\\'",
+            . " WHERE option_name LIKE %s ESCAPE '\\\\' OR option_name LIKE %s ESCAPE '\\\\'",
             '\_transient\_%',
             '\_site_transient\_%'
         )

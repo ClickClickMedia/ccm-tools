@@ -316,8 +316,19 @@
 
         if (discardBtn) {
             discardBtn.addEventListener('click', function () {
-                if (!window.confirm('Discard your unsaved changes and reload?')) { return; }
-                window.location.reload();
+                /*
+                 * main.js owns the styled modal and is enqueued after this
+                 * file, so it is read at click time, not at load time. The
+                 * native dialog stands in if it is somehow absent, because a
+                 * discard button that does nothing is the worse failure.
+                 */
+                var asked = window.ccmConfirm
+                    ? window.ccmConfirm('Discard your unsaved changes and reload?', 'Discard changes')
+                    : Promise.resolve(window.confirm('Discard your unsaved changes and reload?'));
+
+                asked.then(function (ok) {
+                    if (ok) { window.location.reload(); }
+                });
             });
         }
 

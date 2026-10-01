@@ -676,6 +676,13 @@
         });
     }
 
+    /*
+     * The other scripts get the same confirmation the rest of the plugin uses.
+     * ui.js is enqueued ahead of this file, so it reads this at click time
+     * rather than at load time.
+     */
+    window.ccmConfirm = confirmAction;
+
     /**
      * Run the selected optimization tasks, one at a time, inside the run panel.
      *
@@ -1137,7 +1144,7 @@
             debugToggle.addEventListener('click', async () => {
                 const isEnabled = debugToggle.dataset.enabled === 'true';
                 
-                if (!isEnabled && !confirm(ccmToolsData.i18n.confirmEnableDebug)) {
+                if (!isEnabled && !(await confirmAction(ccmToolsData.i18n.confirmEnableDebug, 'Enable debug mode'))) {
                     return;
                 }
                 
@@ -1203,7 +1210,7 @@
             debugDisplayToggle.addEventListener('click', async () => {
                 const isEnabled = debugDisplayToggle.dataset.enabled === 'true';
                 
-                if (!isEnabled && !confirm(ccmToolsData.i18n.confirmEnableDebugDisplay)) {
+                if (!isEnabled && !(await confirmAction(ccmToolsData.i18n.confirmEnableDebugDisplay, 'Enable debug display'))) {
                     return;
                 }
                 
@@ -1248,7 +1255,7 @@
         
         if (configureRedis) {
             configureRedis.addEventListener('click', async () => {
-                if (!confirm(ccmToolsData.i18n.confirmRedisConfig)) return;
+                if (!(await confirmAction(ccmToolsData.i18n.confirmRedisConfig, 'Configure Redis'))) return;
                 
                 configureRedis.disabled = true;
                 configureRedis.textContent = 'Configuring...';
@@ -1541,7 +1548,7 @@
             if (e.target.id === 'clear-log' || e.target.closest('#clear-log')) {
                 e.preventDefault();
                 
-                if (!confirm(ccmToolsData.i18n.confirmClearLog || 'Are you sure you want to clear the log file?')) return;
+                if (!(await confirmAction(ccmToolsData.i18n.confirmClearLog || 'Are you sure you want to clear the log file?', 'Clear the log'))) return;
                 
                 const logFileSelect = $('#log-file-select');
                 const logFile = logFileSelect?.value;
@@ -1900,7 +1907,7 @@
         
         if (regenerateBtn) {
             regenerateBtn.addEventListener('click', async () => {
-                if (!confirm('This will delete all existing WebP images and mark them for re-conversion with the current quality settings.\n\nAre you sure you want to continue?')) {
+                if (!(await confirmAction('This will delete all existing WebP images and mark them for re-conversion with the current quality settings.\n\nAre you sure you want to continue?', 'Delete and re-convert'))) {
                     return;
                 }
                 
@@ -2000,7 +2007,7 @@
                         const sourceInfo = jsonData.site_url ? `from ${jsonData.site_url}` : '';
                         const dateInfo = jsonData.exported_at ? ` (exported: ${jsonData.exported_at})` : '';
                         
-                        if (!confirm(`Import WebP settings ${sourceInfo}${dateInfo}?\n\nThis will replace your current settings.`)) {
+                        if (!(await confirmAction(`Import WebP settings ${sourceInfo}${dateInfo}?\n\nThis will replace your current settings.`, 'Import settings'))) {
                             return;
                         }
                         
@@ -2913,12 +2920,13 @@
             }
             
             // Confirm import
-            const confirmed = confirm(
+            const confirmed = await confirmAction(
                 `Import settings from:\n` +
                 `Site: ${importData.site_url || 'Unknown'}\n` +
                 `Exported: ${importData.exported_at || 'Unknown'}\n` +
                 `Version: ${importData.version || 'Unknown'}\n\n` +
-                `This will overwrite your current settings. Continue?`
+                `This will overwrite your current settings. Continue?`,
+                'Import settings'
             );
             
             if (!confirmed) {
@@ -3308,7 +3316,7 @@
         // Disconnect
         if (disconnectBtn) {
             disconnectBtn.addEventListener('click', async () => {
-                if (!confirm('Disconnect from Cloudflare? This will remove your API token.')) return;
+                if (!(await confirmAction('Disconnect from Cloudflare? This will remove your API token.', 'Disconnect'))) return;
 
                 disconnectBtn.disabled = true;
                 try {
@@ -3333,7 +3341,7 @@
         const recommendedBtn = $('#cf-apply-recommended');
         if (recommendedBtn) {
             recommendedBtn.addEventListener('click', async () => {
-                if (!confirm('Apply Cloudflare\u2019s recommended settings for WordPress? This will change security, caching, and performance settings to optimal values.')) return;
+                if (!(await confirmAction('Apply Cloudflare\u2019s recommended settings for WordPress? This will change security, caching, and performance settings to optimal values.', 'Apply the settings'))) return;
 
                 recommendedBtn.disabled = true;
                 recommendedBtn.textContent = 'Applying\u2026';
@@ -3358,7 +3366,7 @@
         // Purge All Cache
         if (purgeAllBtn) {
             purgeAllBtn.addEventListener('click', async () => {
-                if (!confirm('Purge ALL Cloudflare cached files? This may temporarily slow your site.')) return;
+                if (!(await confirmAction('Purge ALL Cloudflare cached files? This may temporarily slow your site.', 'Purge everything'))) return;
 
                 purgeAllBtn.disabled = true;
                 purgeAllBtn.textContent = 'Purging…';
@@ -3590,7 +3598,7 @@
                     const box = $('#cf-under-attack-box');
                     this.disabled = true;
 
-                    if (enable && !confirm('Enable "I\'m Under Attack" mode? All visitors will see a challenge page for ~5 seconds.')) {
+                    if (enable && !(await confirmAction('Enable "I\'m Under Attack" mode? All visitors will see a challenge page for ~5 seconds.', 'Turn it on'))) {
                         this.checked = false;
                         this.disabled = false;
                         return;
@@ -3649,7 +3657,7 @@
                 // within seconds, so ask first — the same way the "I'm Under
                 // Attack" toggle beside them already does.
                 const question = cfConfirmMessage(setting, newValue);
-                if (question && !confirm(question)) {
+                if (question && !(await confirmAction(question, 'Apply the change'))) {
                     cfRestoreControl(this, previous);
                     return;
                 }
@@ -4194,7 +4202,7 @@
             enableBtn.addEventListener('click', async () => {
                 const force = enableBtn.dataset.force === 'true';
                 
-                if (force && !confirm('This will replace the existing object-cache.php from another plugin. Continue?')) {
+                if (force && !(await confirmAction('This will replace the existing object-cache.php from another plugin. Continue?', 'Replace it'))) {
                     return;
                 }
                 
@@ -4218,7 +4226,7 @@
         // Disable Redis Object Cache
         if (disableBtn) {
             disableBtn.addEventListener('click', async () => {
-                if (!confirm('Are you sure you want to disable the Redis Object Cache?')) {
+                if (!(await confirmAction('Are you sure you want to disable the Redis Object Cache?', 'Disable it'))) {
                     return;
                 }
                 
@@ -4245,7 +4253,7 @@
                 // Sits in the same row as Disable, which asks first, and empties
                 // more than Disable does: this drops every cached value on a
                 // live site in one click.
-                if (!confirm('Flush the whole Redis object cache? Every cached value for this site is dropped straight away, so the next visitors rebuild it all from the database and the site runs slower and the database busier until it fills again.')) {
+                if (!(await confirmAction('Flush the whole Redis object cache? Every cached value for this site is dropped straight away, so the next visitors rebuild it all from the database and the site runs slower and the database busier until it fills again.', 'Flush the cache'))) {
                     return;
                 }
 
@@ -4381,7 +4389,7 @@
         // Add to wp-config.php
         if (addConfigBtn) {
             addConfigBtn.addEventListener('click', async () => {
-                if (!confirm('This will add Redis configuration constants to your wp-config.php file. A backup will be created. Continue?')) {
+                if (!(await confirmAction('This will add Redis configuration constants to your wp-config.php file. A backup will be created. Continue?', 'Write to wp-config'))) {
                     return;
                 }
                 
@@ -4428,7 +4436,7 @@
         
         if (cancelBtn) {
             cancelBtn.addEventListener('click', async () => {
-                if (confirm('Are you sure you want to cancel the backup? The partial file will be deleted.')) {
+                if (await confirmAction('Are you sure you want to cancel the backup? The partial file will be deleted.', 'Stop and delete')) {
                     await cancelBackup();
                 }
             });
@@ -4443,7 +4451,7 @@
         
         if (deleteBtn) {
             deleteBtn.addEventListener('click', async () => {
-                if (confirm('Are you sure you want to delete this backup? This cannot be undone.')) {
+                if (await confirmAction('Are you sure you want to delete this backup? This cannot be undone.', 'Delete the backup')) {
                     await deleteBackup();
                 }
             });

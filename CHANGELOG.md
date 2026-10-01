@@ -1,5 +1,41 @@
 # CCM Tools — Changelog
 
+## v8.13.0 — Three that were failing quietly
+
+Everything here was already broken in production. None of it announced itself:
+a link that looked like a permissions error, a count that looked like a zero,
+and a dialog that looked like someone else's software.
+
+- **The Site Health links no longer land on "Sorry, you are not allowed to
+  access this page."** Debug output linked to the Front Page Debug screen,
+  which only registers when `CCM_DEBUG_FRONT_PAGE` is defined, so on a normal
+  site it did not exist — and WordPress answers an unregistered page with a
+  permissions message, sending you to look at roles. It now points at the debug
+  controls on the dashboard, which are the things it was talking about all
+  along. Redis, WebP and Cloudflare had the same fault waiting: all three pages
+  register conditionally, so any site without the extension would have hit it
+  too. The link helper now checks the menu that was actually built and withholds
+  a link to a page that is not there.
+- **The transient count on the Database page was always zero.** The query named
+  its LIKE escape character with one backslash, which escaped its own closing
+  quote, so MySQL rejected the whole statement and the null came back as 0. It
+  logged a database error on every page load and showed a plausible-looking
+  number regardless. Four backslashes in the source reach MySQL as the one it
+  needs.
+- **Confirmations use the plugin's own dialog.** Twenty actions still raised the
+  browser's `confirm()` — unstyled, headed "web.clickclick.media says", with
+  nothing but OK and Cancel. The plugin has had a styled confirmation all along,
+  used by seven other call sites. The rest now use it too, and each button says
+  what it will do: Flush the cache, Disable it, Write to wp-config.
+- **The caveat on the .htaccess backup tile moved behind an (i).** It was a
+  paragraph of small grey text, read once, sitting permanently inside a tile
+  whose job is to show a date. It opens on hover, on keyboard focus and on tap.
+
+Three tests were added or rebuilt around these. One of them, the deep-link
+test, was passing on the broken link the whole time: it asked whether the slug
+appeared anywhere in the plugin's PHP, and it did — inside the `if` that stops
+it registering. It now reads the registration calls themselves.
+
 ## v8.12.0 — Site Health is about the site now
 
 That page was a PageSpeed score with a nav tab. A PageSpeed score measures one

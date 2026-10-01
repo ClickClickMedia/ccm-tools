@@ -615,15 +615,32 @@
         });
     }
 
+    /**
+     * Ask the way the rest of the plugin asks.
+     *
+     * main.js owns the styled modal and is a declared dependency of this
+     * file, so it is there. If it ever is not, the browser's own dialog still
+     * asks the question -- a confirm button that silently does nothing is a
+     * worse failure than an unstyled one.
+     */
+    function ask(message, verb) {
+        return window.ccmConfirm
+            ? window.ccmConfirm(message, verb)
+            : Promise.resolve(window.confirm(message));
+    }
+
     var clearBtn = $('#sh-clear-history');
     if (clearBtn) {
         clearBtn.addEventListener('click', function () {
-            if (!window.confirm('Clear every recorded run? This cannot be undone.')) { return; }
-            clearBtn.disabled = true;
-            ajax('ccm_tools_sh_clear_history', {})
-                .then(function () { history = []; show('#sh-history-wrap', false); })
-                .catch(function (err) { status(esc(err.message), 'error'); })
-                .then(function () { clearBtn.disabled = false; });
+            ask('Clear every recorded run? This cannot be undone.', 'Clear history')
+                .then(function (ok) {
+                    if (!ok) { return; }
+                    clearBtn.disabled = true;
+                    return ajax('ccm_tools_sh_clear_history', {})
+                        .then(function () { history = []; show('#sh-history-wrap', false); })
+                        .catch(function (err) { status(esc(err.message), 'error'); })
+                        .then(function () { clearBtn.disabled = false; });
+                });
         });
     }
 

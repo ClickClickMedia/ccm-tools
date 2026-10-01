@@ -703,7 +703,24 @@ function ccm_tools_display_htaccess(): string {
         </div>
         <div class="ccm-stat-tile">
             <div class="ccm-stat-tile__value"><?php echo esc_html($last_backup_label); ?></div>
-            <div class="ccm-stat-tile__label"><?php _e('Last backup', 'ccm-tools'); ?></div>
+            <?php
+            /*
+             * The caveat about what restoring overwrites, and about the
+             * backups being left servable once the CCM block goes, used to sit
+             * in the tile as a paragraph of small grey text. It is read once
+             * and then it is clutter on a tile whose job is to show a date.
+             */
+            $backup_note = __('Restoring writes that file back over .htaccess, backing up the current one first. Note that removing the CCM block also removes the rule that stops Apache serving these backups, so do not leave them sitting in the site root without it.', 'ccm-tools');
+            ?>
+            <div class="ccm-stat-tile__label">
+                <?php _e('Last backup', 'ccm-tools'); ?>
+                <?php if ($latest_backup !== '') : ?>
+                    <span class="ccm-hint">
+                        <button type="button" class="ccm-info-icon" aria-label="<?php echo esc_attr($backup_note); ?>">i</button>
+                        <span class="ccm-hint__bubble" role="tooltip"><?php echo esc_html($backup_note); ?></span>
+                    </span>
+                <?php endif; ?>
+            </div>
             <div class="ccm-stat-tile__sub"><?php _e('Taken automatically before every write, 5 kept', 'ccm-tools'); ?></div>
             <?php if ($latest_backup !== '') : ?>
                 <div class="ccm-stat-tile__sub" style="flex-wrap: wrap; gap: var(--ccm-space-sm);">
@@ -713,9 +730,6 @@ function ccm_tools_display_htaccess(): string {
                     <span style="font-size: var(--ccm-text-xs);"><?php echo esc_html($latest_backup_at !== ''
                         ? $latest_backup_at
                         : __('timestamp unreadable', 'ccm-tools')); ?></span>
-                </div>
-                <div class="ccm-stat-tile__sub" style="font-size: var(--ccm-text-xs);">
-                    <?php _e('Restoring writes that file back over .htaccess, backing up the current one first. Note that removing the CCM block also removes the rule that stops Apache serving these backups, so do not leave them sitting in the site root without it.', 'ccm-tools'); ?>
                 </div>
             <?php endif; ?>
         </div>

@@ -948,6 +948,13 @@ html[data-ccm-theme="light"] {
     font-size: 15px;
     line-height: 1.5;
     color: var(--ccm-text);
+    /*
+     * These messages were written for the browser's own dialog, and a couple
+     * lay out a short list with newlines: what is being imported, from where,
+     * exported when. HTML would collapse those into one run-on sentence,
+     * which reads worse than the dialog this replaces.
+     */
+    white-space: pre-line;
 }
 
 .ccm-modal-footer {
@@ -1281,14 +1288,100 @@ small.ccm-warning {
     margin-top: var(--ccm-space-xs);
 }
 
+/*
+ * A note that only matters once, behind an (i).
+ *
+ * Several tiles carried a paragraph explaining a caveat — what restoring a
+ * backup actually overwrites, what removing the CCM block stops protecting.
+ * True, worth saying, and read once; after that it is a wall of small grey
+ * text sitting permanently inside a tile whose job is to show one number.
+ *
+ * Hover is not the only way in: the icon is a real button, so it opens on
+ * keyboard focus and on tap as well, and it carries the note as its
+ * accessible name so a screen reader gets it without the hover ever
+ * happening. Nothing load-bearing goes in here — only what someone can
+ * afford not to see.
+ */
+.ccm-hint {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+}
+
 .ccm-info-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 1.25rem;
     height: 1.25rem;
+    padding: 0;
+    border: 1px solid var(--ccm-border);
+    border-radius: 50%;
+    background: transparent;
     color: var(--ccm-text-muted);
+    font-size: 0.7rem;
+    font-style: italic;
+    font-weight: 700;
+    font-family: Georgia, 'Times New Roman', serif;
+    line-height: 1;
+    /* These sit inside stat tile labels, which are uppercased — without this
+     * the lowercase i the glyph depends on comes out as a capital. */
+    text-transform: none;
+    letter-spacing: 0;
     cursor: help;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.ccm-info-icon:hover,
+.ccm-info-icon:focus-visible {
+    color: var(--ccm-info);
+    border-color: var(--ccm-info);
+}
+
+.ccm-hint__bubble {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    z-index: 40;
+    /*
+     * Anchored to the icon's centre but pulled back so the bubble opens
+     * inward: these icons sit at the right-hand end of a label, and a bubble
+     * growing rightward from there runs off a narrow screen.
+     */
+    transform: translateX(-85%);
+    width: max-content;
+    max-width: min(24rem, 72vw);
+    padding: var(--ccm-space-sm) var(--ccm-space-md);
+    border: 1px solid var(--ccm-border);
+    border-radius: var(--ccm-radius-sm);
+    background: var(--ccm-surface);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    color: var(--ccm-text);
+    font-size: var(--ccm-text-xs);
+    font-weight: 400;
+    line-height: 1.5;
+    /* Inherited from the tile label otherwise, which would shout the note. */
+    text-transform: none;
+    letter-spacing: 0;
+    text-align: left;
+    white-space: normal;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease;
+}
+
+.ccm-info-icon:hover + .ccm-hint__bubble,
+.ccm-info-icon:focus-visible + .ccm-hint__bubble,
+.ccm-hint:hover .ccm-hint__bubble {
+    opacity: 1;
+    visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ccm-info-icon,
+    .ccm-hint__bubble {
+        transition: none;
+    }
 }
 
 /* ===================================

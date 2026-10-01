@@ -64,12 +64,59 @@ function ccm_tools_health_check($id, $label, $status, $value, $detail = '', $lin
  * @param string $label
  * @return array
  */
+/**
+ * A link to the setting behind a check, or nothing if there is no such page.
+ *
+ * Half this plugin's screens register conditionally: Redis only when the
+ * extension is loaded, WebP only with an image library, Cloudflare only when
+ * its module is present. A check can run and have something to say about a
+ * feature whose page was never registered on this site, and linking there
+ * drops the person on WordPress's "Sorry, you are not allowed to access this
+ * page" — which reads as a permissions problem, which it is not.
+ *
+ * So the slug is checked against the menu that actually got built. If the
+ * menu has not been built yet we are not on an admin screen, and the link is
+ * handed out unchanged rather than silently dropped.
+ *
+ * @param string $page   Slug after `ccm-tools-`, or '' for the main screen.
+ * @param string $anchor Element id to scroll to and mark, if any.
+ * @param string $label  Button text.
+ * @return array {url, label}, or empty if that page does not exist here.
+ */
 function ccm_tools_health_link($page, $anchor = '', $label = '') {
-    $url = admin_url('admin.php?page=ccm-tools-' . $page);
+    $slug = ($page === '') ? 'ccm-tools' : 'ccm-tools-' . $page;
+
+    if (!ccm_tools_health_page_exists($slug)) {
+        return array();
+    }
+
+    $url = admin_url('admin.php?page=' . $slug);
     if ($anchor !== '') {
         $url .= '#ccm-focus-' . $anchor;
     }
     return array('url' => $url, 'label' => $label !== '' ? $label : __('Open', 'ccm-tools'));
+}
+
+/**
+ * Was this admin page actually registered on this site?
+ *
+ * Reads the built menu rather than re-testing each page's own condition,
+ * so it cannot drift out of step with the registrations in ccm.php.
+ */
+function ccm_tools_health_page_exists($slug) {
+    global $submenu;
+
+    if (empty($submenu['ccm-tools']) || !is_array($submenu['ccm-tools'])) {
+        return true; // Menu not built — not an admin screen. Fail open.
+    }
+
+    foreach ($submenu['ccm-tools'] as $item) {
+        if (isset($item[2]) && $item[2] === $slug) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /* ───────────────────────── Caching ───────────────────────── */
@@ -337,7 +384,7 @@ function ccm_tools_health_platform(): array {
         ($debug && $display)
             ? __('PHP notices are being printed into the page where anyone can read them, which leaks paths and sometimes more.', 'ccm-tools')
             : __('Nothing is being printed into the front end.', 'ccm-tools'),
-        ccm_tools_health_link('debug', '', __('Open debug settings', 'ccm-tools')),
+        ccm_tools_health_link('', 'toggle-debug', __('Open debug settings', 'ccm-tools')),
         2
     );
 
