@@ -102,6 +102,20 @@ class Redis {
         return true;
     }
 
+    /**
+     * Real phpredis reports back what setOption() actually took, and the
+     * drop-in's drift sentinel depends on that: it stamps what the connection
+     * applied rather than what wp-config asked for, because those differ
+     * precisely when this bug happens. The stand-in was missing this, which
+     * is a gap in the stand-in, not in phpredis.
+     */
+    public function getOption($option) {
+        if ($option === self::OPT_SERIALIZER) {
+            return self::$serializer;
+        }
+        return 0;
+    }
+
     public function info($section = null) {
         return array('redis_version' => '7.0.0');
     }
