@@ -1,5 +1,28 @@
 # CCM Tools — Changelog
 
+## v8.13.3 — The TTFB tile is a tile like the others
+
+It was writing its explanation into the slot that holds the number, with a
+`<br>` in front of it, so a paragraph of body text appeared above the label in
+large brand type — the one tile on the dashboard that did not read like the
+rest of the row.
+
+- **Label above the note**, so the tile runs figure, label, context, the same
+  as every other tile beside it.
+- **The note is a sub line now**, which gives it the same type as "Above the
+  256M floor" next door instead of inheriting the figure's size and weight.
+- **A green, amber or red dot**, matching the dots already on the tiles around
+  it. One table decides the word, the text colour and the dot together, so the
+  tile cannot say "Fast" beside an amber dot — the threshold and its three
+  consequences are declared once.
+- A failed measurement now says so in the figure and puts the reason on the
+  note line with a red dot, rather than printing the exception where the
+  number goes.
+
+New `.ccm-stat-tile__sub--wrap` for a sub line that runs past one line: the
+base is a centred flex row, which would put the dot halfway down a three-line
+note and let the text push out of the tile rather than wrap inside it.
+
 ## v8.13.2 — The reasoning comes out of the shipped code
 
 No functional change. This plugin installs on client servers, and about a

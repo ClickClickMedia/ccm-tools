@@ -2340,6 +2340,28 @@ html[data-ccm-theme="light"] .ccm-theme-toggle .ccm-icon-moon { display: block; 
     color: var(--ccm-text-muted);
 }
 
+/*
+ * For a sub line that runs to more than one line. The base is a centred flex
+ * row, which is right for "Above the 256M floor" and wrong for a sentence:
+ * centring puts the dot halfway down a three-line note, and a flex item will
+ * not shrink below its content width by default, so the text pushes out of
+ * the tile instead of wrapping inside it.
+ */
+.ccm-stat-tile__sub--wrap {
+    align-items: flex-start;
+}
+
+.ccm-stat-tile__sub--wrap .ccm-dot {
+    flex: none;
+    /* Sits on the first line's optical centre rather than the box's. */
+    margin-top: 0.4em;
+}
+
+.ccm-stat-tile__sub--wrap > span:not(.ccm-dot) {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 /* Status dot, for use anywhere a colour needs a shape as well */
 .ccm-dot {
     display: inline-block;

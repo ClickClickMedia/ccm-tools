@@ -1203,45 +1203,73 @@
     function initTTFBRefresh() {
         const refreshTTFB = $('#refresh-ttfb');
         const ttfbResult = $('#ttfb-result');
-        
+        const ttfbNote = $('#ttfb-note');
+
+        /*
+         * The reading and the sentence about it are two slots, the same two
+         * every other tile on this page uses: the figure in __value, then the
+         * label, then a dot and one line of context in __sub. This used to
+         * append the note into __value with a <br>, which put a paragraph of
+         * body text above the label in large brand type.
+         *
+         * One table decides the word, the colour and the dot together, so the
+         * tile cannot say "Fast" beside an amber dot.
+         */
+        const TTFB_GRADES = [
+            { over: 1800, word: 'Slow',    tone: 'ccm-error',   dot: 'ccm-dot-bad' },
+            { over: 800,  word: 'Average', tone: 'ccm-warning', dot: 'ccm-dot-warn' },
+            { over: -1,   word: 'Fast',    tone: 'ccm-success', dot: 'ccm-dot-ok' },
+        ];
+
+        function ttfbGrade(ms) {
+            return TTFB_GRADES.find(g => ms > g.over) || TTFB_GRADES[TTFB_GRADES.length - 1];
+        }
+
+        /** Put a line under the label, or take it away. */
+        function setTtfbNote(dotClass, text) {
+            if (!ttfbNote) return;
+            if (!text) {
+                ttfbNote.innerHTML = '';
+                ttfbNote.style.display = 'none';
+                return;
+            }
+            ttfbNote.innerHTML = `<span class="ccm-dot ${dotClass}"></span><span>${escapeHtml(text)}</span>`;
+            ttfbNote.style.display = '';
+        }
+
         /* f8a810a94cd2ec53 */
         async function loadTTFB() {
             if (!ttfbResult) return;
-            
+
             if (refreshTTFB) refreshTTFB.disabled = true;
             ttfbResult.innerHTML = `<div class="ccm-spinner ccm-spinner-small"></div> <span class="ccm-text-muted">${ccmToolsData.i18n.measuring || 'Measuring...'}</span>`;
-            
+            setTtfbNote('', '');
+
             try {
                 const response = await ajax('ccm_tools_measure_ttfb');
                 const data = response.data;
-                
+
                 if (data.time) {
-                    let ttfbClass = 'ccm-success';
-                    let ttfbLabel = 'Fast';
-                    
-                    if (data.time > 1800) {
-                        ttfbClass = 'ccm-error';
-                        ttfbLabel = 'Slow';
-                    } else if (data.time > 800) {
-                        ttfbClass = 'ccm-warning';
-                        ttfbLabel = 'Average';
-                    }
-                    
+                    const grade = ttfbGrade(Number(data.time));
+
                     ttfbResult.innerHTML = `
-                        <span class="${ttfbClass}">${data.time} ${data.unit || 'ms'}</span>
-                        <span class="ccm-note">(${ttfbLabel})</span>
+                        <span class="${grade.tone}">${data.time} ${data.unit || 'ms'}</span>
+                        <span class="ccm-note">(${grade.word})</span>
                     `;
-                    
-                    if (data.measurement_note) {
-                        ttfbResult.innerHTML += `<br><small class="ccm-note">${escapeHtml(data.measurement_note)}</small>`;
-                    }
+
+                    // The note explains the reading; without one, the grade is
+                    // still worth saying, so the dot always has something to sit
+                    // beside rather than appearing on an empty line.
+                    setTtfbNote(grade.dot, data.measurement_note || `${grade.word} for a first byte`);
                 } else {
                     ttfbResult.innerHTML = `<span class="ccm-error">${ccmToolsData.i18n.measurementFailed || 'Measurement failed'}</span>`;
+                    setTtfbNote('ccm-dot-bad', ccmToolsData.i18n.measurementFailed || 'Measurement failed');
                 }
             } catch (error) {
-                ttfbResult.innerHTML = `<span class="ccm-error">${ccmToolsData.i18n.measurementFailed || 'Measurement failed'}: ${escapeHtml(error.message)}</span>`;
+                ttfbResult.innerHTML = `<span class="ccm-error">${ccmToolsData.i18n.measurementFailed || 'Measurement failed'}</span>`;
+                setTtfbNote('ccm-dot-bad', error.message);
             }
-            
+
             if (refreshTTFB) refreshTTFB.disabled = false;
         }
         
