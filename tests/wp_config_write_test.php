@@ -81,9 +81,11 @@ function wp_mkdir_p($dir) {
 }
 
 $harness = file_get_contents($root . '/tests/render_test.php');
-$harness = preg_replace('/^function\s+wp_mkdir_p\s*\([^)]*\)\s*\{[^
-]*\}[^
-]*$/m', '', $harness);
+$harness = preg_replace('/^function\s+wp_mkdir_p\s*\([^)]*\)\s*\{[^\r\n]*\}[^\r\n]*\r?$/m', '', $harness, -1, $stripped);
+if ($stripped !== 1) {
+    fwrite(STDERR, "could not strip the render harness's wp_mkdir_p() stub (matched $stripped)\n");
+    exit(2);
+}
 $cut = strpos($harness, '// ── Render every admin page');
 if ($cut !== false) {
     $harness = substr($harness, 0, $cut);

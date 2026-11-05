@@ -98,8 +98,12 @@ foreach ($mine as $fn) {
     $q = preg_quote($fn, '/');
     $harness = preg_replace("/'" . $q . "',\s*/", '', $harness);
     $harness = preg_replace("/,\s*'" . $q . "'/", '', $harness);
-    $harness = preg_replace('/^function\s+' . $q . '\s*\([^)]*\)\s*\{.*?^\}\s*$/ms', '', $harness);
-    $harness = preg_replace('/^function\s+' . $q . '\s*\([^)]*\)\s*\{[^\n]*\}[^\n]*$/m', '', $harness);
+    // One-line stubs first: the multi-line pattern would run on to the next
+    // line starting with "}" and delete every stub in between.
+    $harness = preg_replace('/^function\s+' . $q . '\s*\([^)]*\)\s*\{[^\n]*\}[^\n]*$/m', '', $harness, -1, $one_line);
+    if (!$one_line) {
+        $harness = preg_replace('/^function\s+' . $q . '\s*\([^)]*\)\s*\{.*?^\}\s*$/ms', '', $harness);
+    }
 }
 $cut = strpos($harness, '// ── Render every admin page');
 if ($cut !== false) {
@@ -397,6 +401,78 @@ if (function_exists('ccm_tools_redis_save_settings')) {
     ccm_test_report('redis', $misses, count($want) + 3);
 } else {
     echo "  skip redis (handler missing)\n";
+}
+
+// ── Cloudflare purge options ────────────────────────────────────
+
+/*
+ * The public URL and widget switch share ccm_tools_cf_settings with the
+ * encrypted API token, so a save that rebuilds the array carelessly would
+ * store the token in plaintext or lose it. Check both settings land, the
+ * token still decrypts, and the connected page draws the stored value.
+ */
+if (function_exists('ccm_tools_ajax_cf_purge_options')) {
+    $zone = '0123456789abcdef0123456789abcdef';
+    $GLOBALS['__options']['ccm_tools_cf_settings'] = array(
+        'api_token'  => ccm_tools_cf_encrypt_token('cf-token-roundtrip'),
+        'zone_id'    => $zone,
+        'connected'  => true,
+        'auto_purge' => true,
+    );
+
+    $misses = array();
+    $res = ccm_test_call('ccm_tools_ajax_cf_purge_options', array(
+        'nonce' => 'n', 'public_url' => 'https://public.example.test/', 'purge_widgets' => '1',
+    ));
+    $stored = (array) get_option('ccm_tools_cf_settings');
+    if (!$res['ok']) {
+        $misses['(handler)'] = is_string($res['payload']) ? $res['payload'] : json_encode($res['payload']);
+    }
+    if (($stored['public_url'] ?? null) !== 'https://public.example.test') {
+        $misses['public_url'] = 'posted https://public.example.test/, stored ' . var_export($stored['public_url'] ?? null, true);
+    }
+    if (empty($stored['purge_widgets'])) {
+        $misses['purge_widgets'] = 'posted on, stored ' . var_export($stored['purge_widgets'] ?? null, true);
+    }
+    if (empty($stored['auto_purge']) || ($stored['zone_id'] ?? '') !== $zone || empty($stored['connected'])) {
+        $misses['auto_purge/zone_id/connected'] = 'a key this control does not own changed';
+    }
+    if (strpos((string) ($stored['api_token'] ?? ''), CCM_TOOLS_CF_TOKEN_ENC_PREFIX) !== 0) {
+        $misses['api_token'] = 'no longer stored encrypted after the save';
+    } elseif (ccm_tools_cf_get_settings()['api_token'] !== 'cf-token-roundtrip') {
+        $misses['api_token'] = 'stored token no longer decrypts to the original';
+    }
+
+    ob_start();
+    try {
+        ccm_tools_render_cloudflare_page();
+        $html = ob_get_clean();
+    } catch (Throwable $e) {
+        ob_end_clean();
+        $html = '';
+        $misses['(render)'] = get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine();
+    }
+    if ($html !== '' && !preg_match('/id="cf-public-url"[^>]*value="https:\/\/public\.example\.test"/', $html)) {
+        $misses['public_url (page)'] = 'the connected page does not draw the stored value in #cf-public-url';
+    }
+    if ($html !== '' && !preg_match('/id="cf-purge-widgets-toggle"[^>]*checked/', $html)) {
+        $misses['purge_widgets (page)'] = 'the connected page does not draw the switch as on';
+    }
+
+    $res = ccm_test_call('ccm_tools_ajax_cf_purge_options', array('nonce' => 'n', 'public_url' => 'javascript:alert(1)'));
+    if ($res['ok'] || ((array) get_option('ccm_tools_cf_settings'))['public_url'] !== 'https://public.example.test') {
+        $misses['public_url (bad)'] = 'a non-http URL was accepted or wiped the stored one';
+    }
+    $res = ccm_test_call('ccm_tools_ajax_cf_purge_options', array('nonce' => 'n', 'public_url' => '', 'purge_widgets' => '0'));
+    $stored = (array) get_option('ccm_tools_cf_settings');
+    if (!$res['ok'] || ($stored['public_url'] ?? null) !== '' || !empty($stored['purge_widgets'])) {
+        $misses['clear'] = 'emptying the URL and switching widgets off did not stick';
+    }
+
+    ccm_test_report('cloudflare', $misses, 6);
+} else {
+    $failures[] = 'cloudflare';
+    echo "  FAIL cloudflare      ccm_tools_ajax_cf_purge_options() is missing\n";
 }
 
 // ── Result ──────────────────────────────────────────────────────
