@@ -8,7 +8,7 @@
  * wp_cache_remember(), HTML footnote, KEEPTTL on incr/decr.
  * 
  * @package CCM_Tools
- * @version 8.13.9
+ * @version 8.14.0
  *
  * This file should be placed in wp-content/object-cache.php
  */

@@ -80,8 +80,10 @@ function ccm_tools_cf_get_settings(): array {
     $defaults = array(
         'api_token'  => '',
         'zone_id'    => '',
-        'connected'  => false,
-        'auto_purge' => true,
+        'connected'     => false,
+        'auto_purge'    => true,
+        'public_url'    => '',
+        'purge_widgets' => false,
     );
     $stored   = get_option('ccm_tools_cf_settings', array());
     $settings = wp_parse_args($stored, $defaults);
@@ -669,110 +671,284 @@ function ccm_tools_cf_get_dns_records() {
 
 /* c8afd40170bd588c */
 
-/* aedd6ff9719fb51c */
+/* 0ce0d9096b62a826 */
 function ccm_tools_cf_auto_purge_init(): void {
     $settings = ccm_tools_cf_get_settings();
-    if (empty($settings['connected']) || empty($settings['zone_id']) || empty($settings['auto_purge'])) {
+    if (empty($settings['connected']) || empty($settings['zone_id'])) {
+        return;
+    }
+    if (!apply_filters('ccm_tools_cf_auto_purge_enabled', !empty($settings['auto_purge']))) {
         return;
     }
 
-    // Post/page save
-    add_action('save_post', 'ccm_tools_cf_auto_purge_post', 20, 2);
+    add_action('pre_post_update', 'ccm_tools_cf_auto_purge_snapshot', 10, 1);
+    add_action('wp_after_insert_post', 'ccm_tools_cf_auto_purge_post', 20, 4);
+    add_action('before_delete_post', 'ccm_tools_cf_auto_purge_deleted', 20, 2);
 
-    // Term (category/tag) changes
     add_action('edited_term', 'ccm_tools_cf_auto_purge_term', 20, 3);
-    add_action('delete_term', 'ccm_tools_cf_auto_purge_term', 20, 3);
+    add_action('pre_delete_term', 'ccm_tools_cf_auto_purge_term_deleting', 20, 2);
 
-    // Menu save
     add_action('wp_update_nav_menu', 'ccm_tools_cf_auto_purge_all_action', 20);
-
-    // Widget save
-    add_action('update_option_sidebars_widgets', 'ccm_tools_cf_auto_purge_all_action', 20);
-
-    // Theme switch
     add_action('switch_theme', 'ccm_tools_cf_auto_purge_all_action', 20);
-
-    // Customizer save
     add_action('customize_save_after', 'ccm_tools_cf_auto_purge_all_action', 20);
-
-    // Permalink structure change
     add_action('update_option_permalink_structure', 'ccm_tools_cf_auto_purge_all_action', 20);
+
+    // A block-editor widget save is one request per widget; off unless asked for.
+    if (!empty($settings['purge_widgets'])) {
+        add_action('update_option_sidebars_widgets', 'ccm_tools_cf_auto_purge_all_action', 20);
+    }
 }
 add_action('init', 'ccm_tools_cf_auto_purge_init');
 
-/* bdfe657a1e694803 */
-function ccm_tools_cf_auto_purge_post(int $post_id, $post): void {
-    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
-        return;
-    }
-    if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
-        return;
-    }
-    if (!in_array($post->post_status, array('publish', 'trash'), true)) {
-        return;
-    }
+/** Per-request purge queue and pre-save term snapshots. */
+function &ccm_tools_cf_auto_purge_state(): array {
+    static $state = array('urls' => array(), 'all' => false, 'post_ids' => array(), 'terms' => array(), 'hooked' => false);
+    return $state;
+}
 
-    $urls = array();
-    $urls[] = get_permalink($post_id);
-    $urls[] = home_url('/');
+function ccm_tools_cf_auto_purge_hook_shutdown(): void {
+    $state = &ccm_tools_cf_auto_purge_state();
+    if (!$state['hooked']) {
+        $state['hooked'] = true;
+        add_action('shutdown', 'ccm_tools_cf_flush_purge_queue', 100);
+    }
+}
 
-    // Purge archive pages
-    if ($post->post_type === 'post') {
-        $urls[] = get_post_type_archive_link('post');
-
-        // Category archives
-        $cats = get_the_category($post_id);
-        if ($cats) {
-            foreach ($cats as $cat) {
-                $cat_link = get_category_link($cat->term_id);
-                if (!is_wp_error($cat_link)) {
-                    $urls[] = $cat_link;
-                }
-            }
+function ccm_tools_cf_queue_purge(array $urls, int $post_id = 0): void {
+    $state = &ccm_tools_cf_auto_purge_state();
+    foreach ($urls as $url) {
+        if (is_string($url) && $url !== '') {
+            $state['urls'][$url] = true;
         }
+    }
+    if ($post_id > 0) {
+        $state['post_ids'][$post_id] = true;
+    }
+    ccm_tools_cf_auto_purge_hook_shutdown();
+}
 
-        // Tag archives
-        $tags = get_the_tags($post_id);
-        if ($tags) {
-            foreach ($tags as $tag) {
-                $tag_link = get_tag_link($tag->term_id);
-                if (!is_wp_error($tag_link)) {
-                    $urls[] = $tag_link;
-                }
-            }
-        }
+function ccm_tools_cf_queue_purge_all(): void {
+    $state = &ccm_tools_cf_auto_purge_state();
+    $state['all'] = true;
+    ccm_tools_cf_auto_purge_hook_shutdown();
+}
 
-        // Author archive
-        $urls[] = get_author_posts_url($post->post_author);
+/* 3c4737312947c69c */
+function ccm_tools_cf_flush_purge_queue(): void {
+    $state    = &ccm_tools_cf_auto_purge_state();
+    $all      = $state['all'];
+    $urls     = array_keys($state['urls']);
+    $post_ids = array_map('intval', array_keys($state['post_ids']));
+    $state    = array('urls' => array(), 'all' => false, 'post_ids' => array(), 'terms' => array(), 'hooked' => false);
+
+    if (!$all && !$urls) {
+        return;
     }
 
-    // Feed URLs
-    $urls[] = get_bloginfo_rss('rss2_url');
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } elseif (function_exists('litespeed_finish_request')) {
+        litespeed_finish_request();
+    }
 
-    $urls = array_filter(array_unique($urls));
-    if (!empty($urls)) {
+    if ($all) {
+        ccm_tools_cf_purge_all();
+        return;
+    }
+
+    $urls = apply_filters('ccm_tools_cf_purge_url_list', ccm_tools_cf_public_urls($urls), $post_ids);
+    $urls = array_values(array_unique(array_filter(array_map('strval', is_array($urls) ? $urls : array()))));
+    if ($urls) {
         ccm_tools_cf_purge_urls($urls);
     }
 }
 
+/* 91c40ae3b9b0b6cc */
+function ccm_tools_cf_public_urls(array $urls): array {
+    $settings = ccm_tools_cf_get_settings();
+    $public   = untrailingslashit((string) ($settings['public_url'] ?? ''));
+    $home     = untrailingslashit((string) home_url());
+    if ($public === '' || $home === '' || $public === $home) {
+        return $urls;
+    }
+
+    foreach ($urls as $i => $url) {
+        $url = (string) $url;
+        if ($url === $home || strpos($url, $home . '/') === 0 || strpos($url, $home . '?') === 0) {
+            $urls[$i] = $public . substr($url, strlen($home));
+        }
+    }
+    return array_values(array_unique($urls));
+}
+
+/** '' for empty, null for anything that is not a plain http(s) base URL. */
+function ccm_tools_cf_sanitize_public_url($raw): ?string {
+    $raw = trim((string) $raw);
+    if ($raw === '') {
+        return '';
+    }
+    $parts = wp_parse_url($raw);
+    if (!is_array($parts) || empty($parts['host']) || empty($parts['scheme'])
+        || !in_array(strtolower($parts['scheme']), array('http', 'https'), true)
+        || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user']) || isset($parts['pass'])) {
+        return null;
+    }
+    $clean = esc_url_raw($raw, array('http', 'https'));
+    return $clean === '' ? null : untrailingslashit($clean);
+}
+
+/** Public taxonomy archive links for a post's terms, as they stand right now. */
+function ccm_tools_cf_post_term_links(int $post_id, string $post_type): array {
+    $taxonomies = array();
+    foreach (get_object_taxonomies($post_type, 'names') as $taxonomy) {
+        if (is_taxonomy_viewable($taxonomy)) {
+            $taxonomies[] = $taxonomy;
+        }
+    }
+    if (!$taxonomies) {
+        return array();
+    }
+
+    $terms = wp_get_object_terms($post_id, $taxonomies);
+    if (is_wp_error($terms) || !$terms) {
+        return array();
+    }
+
+    $links = array();
+    foreach ($terms as $term) {
+        $link = get_term_link($term);
+        if (!is_wp_error($link) && $link) {
+            $links[] = $link;
+        }
+    }
+    return $links;
+}
+
+/** Everything that lists a post: home, archive, author, terms, feed. Not the post itself. */
+function ccm_tools_cf_post_listing_urls($post): array {
+    $urls    = array(home_url('/'));
+    $archive = get_post_type_archive_link($post->post_type);
+    if ($archive) {
+        $urls[] = $archive;
+    }
+    if ($post->post_type === 'post') {
+        $urls[] = get_author_posts_url((int) $post->post_author);
+    }
+    $urls   = array_merge($urls, ccm_tools_cf_post_term_links((int) $post->ID, $post->post_type));
+    $urls[] = get_feed_link('rss2');
+    return $urls;
+}
+
+/** pre_post_update: remember the terms a live post had before this save changed them. */
+function ccm_tools_cf_auto_purge_snapshot($post_id): void {
+    $post_id = (int) $post_id;
+    $state   = &ccm_tools_cf_auto_purge_state();
+    if (isset($state['terms'][$post_id])) {
+        return;
+    }
+    $post = get_post($post_id);
+    if (!$post || $post->post_status !== 'publish' || !is_post_type_viewable($post->post_type)) {
+        return;
+    }
+    $state['terms'][$post_id] = ccm_tools_cf_post_term_links($post_id, $post->post_type);
+    ccm_tools_cf_auto_purge_hook_shutdown();
+}
+
+/* 3c10648ba0de5ea4 */
+function ccm_tools_cf_auto_purge_post(int $post_id, $post, $update = false, $post_before = null): void {
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+        return;
+    }
+    if (!is_object($post) || wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
+        return;
+    }
+    if (!is_post_type_viewable($post->post_type)) {
+        return;
+    }
+
+    $was_live = is_object($post_before) && $post_before->post_status === 'publish';
+    $is_live  = $post->post_status === 'publish';
+    if (!$was_live && !$is_live) {
+        return;
+    }
+
+    $urls = ccm_tools_cf_post_listing_urls($post);
+    if ($is_live) {
+        $urls[] = get_permalink($post);
+    }
+    if ($was_live) {
+        $urls[] = get_permalink($post_before);
+    }
+
+    $state = &ccm_tools_cf_auto_purge_state();
+    if (!empty($state['terms'][$post_id])) {
+        $urls = array_merge($urls, $state['terms'][$post_id]);
+    }
+
+    ccm_tools_cf_queue_purge($urls, $post_id);
+}
+
+/** before_delete_post: a live post deleted without going through the bin. */
+function ccm_tools_cf_auto_purge_deleted($post_id, $post = null): void {
+    $post = is_object($post) ? $post : get_post((int) $post_id);
+    if (!$post || $post->post_status !== 'publish' || !is_post_type_viewable($post->post_type)) {
+        return;
+    }
+    $urls   = ccm_tools_cf_post_listing_urls($post);
+    $urls[] = get_permalink($post);
+    ccm_tools_cf_queue_purge($urls, (int) $post->ID);
+}
+
 /* ec95b7272dd159d8 */
-function ccm_tools_cf_auto_purge_term(int $term_id, int $tt_id, string $taxonomy): void {
-    $urls = array();
-    $term_link = get_term_link($term_id, $taxonomy);
-    if (!is_wp_error($term_link)) {
+function ccm_tools_cf_auto_purge_term($term_id, $tt_id = 0, $taxonomy = ''): void {
+    if ($taxonomy === '' || !is_taxonomy_viewable($taxonomy)) {
+        return;
+    }
+    $urls      = array(home_url('/'));
+    $term_link = get_term_link((int) $term_id, $taxonomy);
+    if (!is_wp_error($term_link) && $term_link) {
         $urls[] = $term_link;
     }
-    $urls[] = home_url('/');
+    ccm_tools_cf_queue_purge($urls);
+}
 
-    $urls = array_filter(array_unique($urls));
-    if (!empty($urls)) {
-        ccm_tools_cf_purge_urls($urls);
-    }
+/** pre_delete_term: the link only resolves while the term still exists. */
+function ccm_tools_cf_auto_purge_term_deleting($term_id, $taxonomy = ''): void {
+    ccm_tools_cf_auto_purge_term($term_id, 0, (string) $taxonomy);
 }
 
 /* 9fa4f80136411723 */
 function ccm_tools_cf_auto_purge_all_action(): void {
-    ccm_tools_cf_purge_all();
+    ccm_tools_cf_queue_purge_all();
+}
+
+add_action('wp_ajax_ccm_tools_cf_purge_options', 'ccm_tools_ajax_cf_purge_options');
+function ccm_tools_ajax_cf_purge_options(): void {
+    check_ajax_referer('ccm-tools-nonce', 'nonce');
+    if (!ccm_tools_user_is_admin()) {
+        wp_send_json_error(array('message' => __('Permission denied.', 'ccm-tools')));
+    }
+
+    $settings = ccm_tools_cf_get_settings();
+
+    if (isset($_POST['public_url'])) {
+        $public = ccm_tools_cf_sanitize_public_url(wp_unslash($_POST['public_url']));
+        if ($public === null) {
+            wp_send_json_error(array('message' => __('Public site URL must be a full http or https address with no query string, such as https://example.com.', 'ccm-tools')));
+        }
+        $settings['public_url'] = $public;
+    }
+    if (isset($_POST['purge_widgets'])) {
+        $settings['purge_widgets'] = !empty($_POST['purge_widgets']);
+    }
+
+    ccm_tools_cf_save_settings($settings);
+
+    wp_send_json_success(array(
+        'message'       => __('Purge settings saved.', 'ccm-tools'),
+        'public_url'    => $settings['public_url'],
+        'purge_widgets' => !empty($settings['purge_widgets']),
+    ));
 }
 
 
@@ -942,10 +1118,46 @@ function ccm_tools_cf_render_cache_section(): void {
             <div class="ccm-opt__main">
                 <div class="ccm-opt__text">
                     <span class="ccm-opt__label"><?php _e('Auto-purge on save', 'ccm-tools'); ?></span>
-                    <p class="ccm-opt__desc"><?php _e('Automatically clears the affected page, its archives and the homepage from Cloudflare whenever a post, page, menu, widget or the theme is saved.', 'ccm-tools'); ?></p>
+                    <p class="ccm-opt__desc"><?php _e('When a post or page is published, updated, unpublished, renamed, binned or deleted, clears the address it had and the one it has now, its category and tag pages, the homepage and the feed. Menu, theme and permalink changes clear everything. Sent once, after the save has finished.', 'ccm-tools'); ?></p>
                 </div>
                 <label class="ccm-toggle">
                     <input type="checkbox" id="cf-auto-purge-toggle" <?php checked(!empty($settings['auto_purge'])); ?>>
+                    <span class="ccm-toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="ccm-opt">
+            <div class="ccm-opt__main">
+                <div class="ccm-opt__text">
+                    <span class="ccm-opt__label"><?php _e('Public site URL', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php printf(
+                        /* translators: %s: the WordPress home URL */
+                        __('For headless sites, where visitors see a different address from WordPress. Auto-purge rewrites any address starting with %s to start with this instead. Leave it empty to purge WordPress\'s own addresses.', 'ccm-tools'),
+                        '<code>' . esc_html(untrailingslashit(home_url())) . '</code>'
+                    ); ?></p>
+                </div>
+                <button type="button" id="cf-public-url-save" class="ccm-button ccm-button-secondary ccm-button-small">
+                    <?php _e('Save', 'ccm-tools'); ?>
+                </button>
+            </div>
+            <div class="ccm-opt__fields">
+                <div class="ccm-optfield">
+                    <label for="cf-public-url"><?php _e('Public site URL', 'ccm-tools'); ?></label>
+                    <input type="url" id="cf-public-url" class="ccm-input" value="<?php echo esc_attr($settings['public_url'] ?? ''); ?>"
+                           placeholder="<?php echo esc_attr(untrailingslashit(home_url())); ?>">
+                </div>
+            </div>
+        </div>
+
+        <div class="ccm-opt<?php echo !empty($settings['purge_widgets']) ? ' is-on' : ''; ?>">
+            <div class="ccm-opt__main">
+                <div class="ccm-opt__text">
+                    <span class="ccm-opt__label"><?php _e('Purge everything when widgets change', 'ccm-tools'); ?></span>
+                    <p class="ccm-opt__desc"><?php _e('Clears the whole Cloudflare cache on every widget save. The block widget editor saves each widget separately, so one edit can empty the cache several times and send every visitor to your server at once. Leave off unless widgets show on every page and you cannot wait for the cache to expire.', 'ccm-tools'); ?></p>
+                </div>
+                <label class="ccm-toggle">
+                    <input type="checkbox" id="cf-purge-widgets-toggle" <?php checked(!empty($settings['purge_widgets'])); ?>>
                     <span class="ccm-toggle-slider"></span>
                 </label>
             </div>

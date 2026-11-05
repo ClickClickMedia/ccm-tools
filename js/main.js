@@ -3209,12 +3209,51 @@
                     const res = await ajax('ccm_tools_cf_auto_purge', {
                         enable: enable ? '1' : '0',
                     });
+                    autoPurgeToggle.closest('.ccm-opt')?.classList.toggle('is-on', enable);
                     showNotification(res.data.message, 'success');
                 } catch (err) {
                     showNotification('Failed: ' + err.message, 'error');
                     autoPurgeToggle.checked = !enable;
                 } finally {
                     autoPurgeToggle.disabled = false;
+                }
+            });
+        }
+
+        // Public site URL (headless sites)
+        const publicUrlInput = $('#cf-public-url');
+        const publicUrlSave = $('#cf-public-url-save');
+        if (publicUrlInput && publicUrlSave) {
+            publicUrlSave.addEventListener('click', async () => {
+                publicUrlSave.disabled = true;
+                try {
+                    const res = await ajax('ccm_tools_cf_purge_options', { public_url: publicUrlInput.value.trim() });
+                    publicUrlInput.value = res.data.public_url || '';
+                    publicUrlInput.defaultValue = publicUrlInput.value;
+                    showNotification(res.data.message, 'success');
+                } catch (err) {
+                    showNotification('Failed: ' + err.message, 'error');
+                } finally {
+                    publicUrlSave.disabled = false;
+                }
+            });
+        }
+
+        // Purge everything on widget save
+        const purgeWidgetsToggle = $('#cf-purge-widgets-toggle');
+        if (purgeWidgetsToggle) {
+            purgeWidgetsToggle.addEventListener('change', async () => {
+                const enable = purgeWidgetsToggle.checked;
+                purgeWidgetsToggle.disabled = true;
+                try {
+                    const res = await ajax('ccm_tools_cf_purge_options', { purge_widgets: enable ? '1' : '0' });
+                    purgeWidgetsToggle.closest('.ccm-opt')?.classList.toggle('is-on', enable);
+                    showNotification(res.data.message, 'success');
+                } catch (err) {
+                    showNotification('Failed: ' + err.message, 'error');
+                    purgeWidgetsToggle.checked = !enable;
+                } finally {
+                    purgeWidgetsToggle.disabled = false;
                 }
             });
         }

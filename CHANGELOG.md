@@ -1,5 +1,65 @@
 # CCM Tools — Changelog
 
+## v8.14.0 - Cloudflare auto-purge purges what was actually live
+
+Found by reading the auto-purge code that runs on a client's site, then
+reproduced with a new test that drives the real hooks through a simulation of
+WordPress's own save order. Every case below failed on 8.13.9.
+
+**Unpublishing a post left it on the edge.** Auto-purge only acted when a
+post's new status was `publish` or `trash`, so moving a live post to draft,
+pending or private purged nothing and Cloudflare kept serving it until the
+cache expired. It now purges whenever the post was published before the save
+or is published after it: publish, update, unpublish, bin and restore.
+
+**Binning purged an address that never existed.** WordPress renames a binned
+post's slug to `slug__trashed` before anything else hears about the save, and
+the purge used the post as it was after the save. It now also purges the
+address the post had before the save, which also covers a slug rename: both
+the old and the new address are cleared.
+
+**New posts in the block editor purged the wrong category.** The editor saves
+the post, fires `save_post`, and only then saves the categories and tags it was
+sent, so a first publish purged "Uncategorized" and missed the real category
+page. Changing a post's category had the same fault in both directions. Purging
+now runs from `wp_after_insert_post`, after terms are saved, and the post's
+terms are recorded before the save so a category it leaves is purged too.
+
+**Deleting a live post outright purged nothing.** A post deleted without
+going through the bin is now handled the same way.
+
+**Every widget save emptied the whole Cloudflare cache.** The block widget
+editor saves each widget separately, so one edit could purge the zone several
+times in a row and send every visitor to the origin at once. Widget saves no
+longer purge by default; "Purge everything when widgets change" on the
+Cloudflare page turns it back on.
+
+**Headless sites purged addresses nobody visits.** Purge URLs came from
+WordPress's own home URL, which on a decoupled site is not where the public
+pages live. A new **Public site URL** setting on the Cloudflare page rewrites
+every auto-purge address from the WordPress home to the public one. Empty
+keeps the old behaviour.
+
+**One save, one purge, after the response.** Purges are collected for the
+whole request and sent once on shutdown, instead of once per hook. On PHP-FPM
+and LiteSpeed the response goes back to the editor first, so it no longer
+waits on Cloudflare. Any full purge
+requested in the same request replaces the URL list.
+
+**For developers.** Two filters: `ccm_tools_cf_auto_purge_enabled` (bool,
+defaults to the stored setting) switches auto-purge off, or on, from code, and
+`ccm_tools_cf_purge_url_list` (`$urls`, `$post_ids`) can add to or replace the
+final list. `ccm_tools_cf_purge_urls()` and `ccm_tools_cf_purge_all()` keep
+their names, arguments and return values, and `ccm_tools_cf_purge_urls()` still
+sends exactly the URLs it is given. `ccm_tools_cf_public_urls()` applies the
+public URL mapping if you want it for your own list.
+
+**Two test harness faults fixed along the way.** `settings_roundtrip_test`
+stripped its own one-line stubs with a multi-line pattern that ran on and
+deleted the stubs after them, and `wp_config_write_test` could not strip a
+stub at all on a CRLF checkout, so it fatalled on Windows before testing
+anything.
+
 ## v8.13.9 — Four faults found by reviewing today's work
 
 Four independent reviews of everything released today. Three of these are
