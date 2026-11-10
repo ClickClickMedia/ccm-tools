@@ -1,5 +1,35 @@
 # CCM Tools — Changelog
 
+## v8.14.1 - WebP bulk conversion picks up everything it says is waiting
+
+Reported on evse.com.au: the page said 362 images were waiting and Convert
+only ever ran 2, both of which then timed out with a message blaming CMYK
+files or folder permissions.
+
+**The counter and the queue were asking different questions.** The counter
+counted image files (full sizes and every thumbnail) with no .webp beside them.
+The queue only took media items that had never been marked converted. So a
+thumbnail missing its .webp on an item marked converted long ago, for example
+after a theme added a new image size, was counted as waiting and never queued.
+Both now read one pending index, so the number on the button is the work the
+run does.
+
+**Converting an item only does its missing files.** It used to redo the full
+size and every thumbnail each time. Items never converted, or reset by
+Regenerate, still do everything.
+
+**Very large originals no longer time out the whole item.** Thumbnails go
+first and each file is recorded as it lands, the server works to a 20 second
+budget and the browser comes back for the rest, and a single file gets up to
+two minutes instead of 30 seconds. A file that fails is not retried in the same
+run.
+
+**The log gives the real reason.** Each failed file is reported with its name,
+size and the encoder's message. A timeout says how long it waited and how big
+the original was, and the summary separates "ran out of time" (very large
+originals, run again later or upload a smaller one) from other failures,
+instead of blaming CMYK or permissions for everything.
+
 ## v8.14.0 - Cloudflare auto-purge purges what was actually live
 
 Found by reading the auto-purge code that runs on a client's site, then

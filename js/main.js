@@ -263,19 +263,22 @@
             
             if (!response.ok) {
                 /* cce4d9ef665dd0cb */
+                let httpError;
                 if (response.status === 403) {
-                    throw new Error(
+                    httpError = new Error(
                         'This page has been open too long and its security token has expired. ' +
                         'Reload the page and try again — your changes are still on screen until you do.'
                     );
-                }
-                if (response.status === 0 || response.status >= 500) {
-                    throw new Error(
+                } else if (response.status === 0 || response.status >= 500) {
+                    httpError = new Error(
                         `The server did not complete the request (HTTP ${response.status}). ` +
                         'Nothing was saved. Try again in a moment.'
                     );
+                } else {
+                    httpError = new Error(`The request was refused (HTTP ${response.status}).`);
                 }
-                throw new Error(`The request was refused (HTTP ${response.status}).`);
+                httpError.status = response.status;
+                throw httpError;
             }
             
             const result = await response.json();
@@ -292,7 +295,10 @@
             }
         } catch (error) {
             if (error.name === 'AbortError') {
-                throw new Error('Request timeout');
+                const timeoutError = new Error('Request timeout');
+                timeoutError.timedOut = true;
+                timeoutError.timeoutMs = timeout;
+                throw timeoutError;
             }
             throw error;
         }
@@ -1999,20 +2005,24 @@
         const attemptedIds = new Set();
         const failedIds = new Set();
         const failedLabels = [];
+        const timedOutLabels = [];
 
         try {
             // Get first batch to determine total
             const firstBatch = await ajax('ccm_tools_get_unconverted_images', { offset: 0, limit: batchSize });
             const total = firstBatch.data?.total || 0;
-            
+            const totalFiles = firstBatch.data?.total_files || 0;
+
             if (totalSpan) totalSpan.textContent = total;
-            
+
             if (total === 0) {
                 addLogEntry(logBox, 'No images found to convert.', 'info');
                 return;
             }
-            
-            addLogEntry(logBox, `Starting conversion of ${total} images...`, 'info');
+
+            addLogEntry(logBox, totalFiles && totalFiles !== total
+                ? `Starting conversion of ${totalFiles} image files (full sizes and thumbnails) across ${total} media items...`
+                : `Starting conversion of ${total} images...`, 'info');
             
             let processedCount = 0;
             
@@ -2031,16 +2041,51 @@
                     if (webpConversionStopped) break;
 
                     attemptedIds.add(String(image.id));
+                    const label = image.title || 'Image #' + image.id;
 
-                    try {
-                        const convertResponse = await ajax('ccm_tools_convert_single_image', { attachment_id: image.id });
+                    // The server works to a time budget and says what is left, so keep
+                    // asking for the same image until it is done or stops making progress.
+                    let filesDone = 0;
+                    let failedFiles = [];
+                    let fatal = null;
+                    let left = 0;
+                    for (let round = 0; round < 40 && !webpConversionStopped; round++) {
+                        try {
+                            const res = await ajax('ccm_tools_convert_single_image', {
+                                attachment_id: image.id,
+                                skip: failedFiles.map(f => f.size)
+                            }, { timeout: 120000 });
+                            const d = res.data || {};
+                            filesDone += d.converted_count || 0;
+                            failedFiles = failedFiles.concat(d.failed || []);
+                            left = d.remaining || 0;
+                            if (!left || ((d.converted_count || 0) === 0 && (d.failed || []).length === 0)) {
+                                break;
+                            }
+                        } catch (error) {
+                            fatal = error;
+                            failedFiles = failedFiles.concat(error.data?.failed || []);
+                            break;
+                        }
+                    }
+
+                    if (!fatal && failedFiles.length === 0 && left > 0) {
+                        // Stopped part-way: what was done is kept, the rest stays waiting.
+                        addLogEntry(logBox, `${label}: stopped with ${left} file${left === 1 ? '' : 's'} still to do (${filesDone} converted)`, 'warning');
+                    } else if (!fatal && failedFiles.length === 0) {
                         totalConverted++;
-                        addLogEntry(logBox, `✓ ${image.title || 'Image #' + image.id}: ${convertResponse.data?.message || 'Converted'}`, 'success');
-                    } catch (error) {
+                        addLogEntry(logBox, `✓ ${label}: converted ${filesDone} file${filesDone === 1 ? '' : 's'}`, 'success');
+                    } else {
                         totalErrors++;
                         failedIds.add(String(image.id));
-                        failedLabels.push(image.title || 'Image #' + image.id);
-                        addLogEntry(logBox, `✗ ${image.title || 'Image #' + image.id}: ${error.message}`, 'error');
+                        const reason = fatal ? describeWebPFailure(fatal, image) : failedFiles.map(f => `${f.file}: ${f.message}`).join('; ');
+                        if (fatal && fatal.timedOut || fatal && fatal.status >= 500) {
+                            timedOutLabels.push(label);
+                        } else {
+                            failedLabels.push(label);
+                        }
+                        const doneNote = filesDone ? ` (${filesDone} other file${filesDone === 1 ? '' : 's'} converted)` : '';
+                        addLogEntry(logBox, `✗ ${label}: ${reason}${doneNote}`, 'error');
                     }
 
                     processedCount++;
@@ -2070,10 +2115,12 @@
             addLogEntry(logBox, summaryMsg, summaryType);
 
             /* d2e4838b6664d111 */
-            if (failedIds.size > 0) {
-                const shown = failedLabels.slice(0, 10).join(', ');
-                const rest = failedLabels.length > 10 ? `, and ${failedLabels.length - 10} more` : '';
-                addLogEntry(logBox, `${failedIds.size} image${failedIds.size === 1 ? '' : 's'} could not be converted and were skipped: ${shown}${rest}. They stay unconverted until the cause is fixed — usually a damaged or CMYK source file, or an uploads directory the server cannot write to.`, 'warning');
+            const listLabels = (labels) => labels.slice(0, 10).join(', ') + (labels.length > 10 ? `, and ${labels.length - 10} more` : '');
+            if (timedOutLabels.length > 0) {
+                addLogEntry(logBox, `${timedOutLabels.length} image${timedOutLabels.length === 1 ? '' : 's'} ran out of time on the server: ${listLabels(timedOutLabels)}. These are usually very large originals. The server may still finish them in the background, so run the conversion again in a few minutes. If they keep timing out, upload a smaller version of the original.`, 'warning');
+            }
+            if (failedLabels.length > 0) {
+                addLogEntry(logBox, `${failedLabels.length} image${failedLabels.length === 1 ? '' : 's'} could not be converted and were skipped: ${listLabels(failedLabels)}. The reason for each is in the log above.`, 'warning');
             }
 
         } catch (error) {
@@ -2086,6 +2133,22 @@
             // Refresh stats
             refreshWebPStats();
         }
+    }
+
+    // Say why a bulk conversion request died, in terms of the file that caused it.
+    function describeWebPFailure(error, image) {
+        const size = image && image.bytes ? formatBytes(image.bytes) : '';
+        const big = image && image.bytes >= 10 * 1024 * 1024;
+        if (error.timedOut) {
+            const secs = Math.round((error.timeoutMs || 0) / 1000);
+            return `timed out after ${secs}s` + (size ? ` on a ${size} original` : '') +
+                (big ? ' (too large to convert in time; the server may still finish it)' : '');
+        }
+        if (error.status >= 500) {
+            return `the server stopped mid-conversion (HTTP ${error.status})` + (size ? ` on a ${size} original` : '') +
+                ', usually from running out of time or memory on a large file';
+        }
+        return error.message;
     }
 
     /* f667701d015889e1 */
