@@ -6,11 +6,14 @@ When "Discourage search engines from indexing this site" is ticked in
 Settings > Reading, every wp-admin page now carries a big red banner saying
 so, with a button straight to the setting. Administrators only.
 
-**It can be dismissed, but only with a reason.** Dismiss asks "Why are you
-dismissing this?" with Landing Page, Development or Other. Other needs a
-written reason, and that reason is emailed to CCM along with the site, the
-user and the time (Reply-To is the user). The dismissal stands even if the
-email fails; whether it went is kept with the dismissal.
+**It can be dismissed, but only with a reason, and every dismissal is
+emailed to CCM.** Dismiss asks "Why are you dismissing this?" with Landing
+Page, Development or Other; Other also needs a written reason. The email uses
+the same CCM notification template as ClickTrack (dark header, green rule,
+reason badge, Open Reading settings button) with a plain-text fallback, names
+the site, its full address, the user and the time, and Reply-To is the user.
+The dismissal stands even if the email fails; whether it went is kept with
+the dismissal.
 
 **A dismissal does not follow the site around.** It is tied to the site's
 address, so a staging copy dismissed as Development nags again the moment it

@@ -16,7 +16,7 @@ define('CCM_HELPER_ROOT_URL', 'https://example.test/wp-content/plugins/ccm-tools
 define('CCM_HELPER_VERSION', 'test');
 
 $GLOBALS['t_options'] = array();
-$GLOBALS['t_home']    = 'https://staging.example.test';
+$GLOBALS['t_home']    = 'https://staging.example.test/_websites/acme';
 $GLOBALS['t_admin']   = true;
 $GLOBALS['t_is_admin_screen'] = true;
 $GLOBALS['t_mail']    = array();
@@ -36,6 +36,11 @@ function esc_html($s) { return htmlspecialchars((string) $s, ENT_QUOTES); }
 function esc_attr($s) { return htmlspecialchars((string) $s, ENT_QUOTES); }
 function esc_url($s) { return (string) $s; }
 function add_action($hook, $fn, $p = 10, $a = 1) { $GLOBALS['t_actions'][$hook][] = $fn; }
+function remove_action($hook, $fn, $p = 10) {
+    foreach ($GLOBALS['t_actions'][$hook] ?? array() as $i => $f) {
+        if ($f === $fn) { unset($GLOBALS['t_actions'][$hook][$i]); }
+    }
+}
 function apply_filters($hook, $v) { return $v; }
 function get_option($k, $default = false) { return array_key_exists($k, $GLOBALS['t_options']) ? $GLOBALS['t_options'][$k] : $default; }
 function update_option($k, $v, $autoload = null) { $GLOBALS['t_options'][$k] = $v; return true; }
@@ -53,7 +58,12 @@ function wp_specialchars_decode($s, $q = null) { return html_entity_decode((stri
 function wp_parse_url($u, $c = -1) { return parse_url($u, $c); }
 function wp_date($f, $t = null) { return date($f, $t ?? time()); }
 function wp_mail($to, $subject, $body, $headers = array()) {
-    $GLOBALS['t_mail'][] = compact('to', 'subject', 'body', 'headers');
+    // Run phpmailer_init the way core does, so the plain-text alternative is seen.
+    $mailer = new stdClass();
+    $mailer->AltBody = '';
+    foreach ($GLOBALS['t_actions']['phpmailer_init'] ?? array() as $fn) { $fn($mailer); }
+    $alt = $mailer->AltBody;
+    $GLOBALS['t_mail'][] = compact('to', 'subject', 'body', 'headers', 'alt');
     return $GLOBALS['t_mail_ok'];
 }
 
@@ -77,7 +87,7 @@ function check(string $label, bool $ok): void {
 }
 function reset_state(): void {
     $GLOBALS['t_options'] = array('blog_public' => '0');
-    $GLOBALS['t_home']    = 'https://staging.example.test';
+    $GLOBALS['t_home']    = 'https://staging.example.test/_websites/acme';
     $GLOBALS['t_admin']   = true;
     $GLOBALS['t_is_admin_screen'] = true;
     $GLOBALS['t_mail']    = array();
@@ -129,12 +139,16 @@ check('...and nothing was mailed', count($GLOBALS['t_mail']) === 0);
 
 $r = ccm_tools_seo_nag_dismiss('landing_page', 'ignored', $user);
 check('Landing Page dismisses', is_array($r) && !ccm_tools_seo_nag_should_show());
-check('Landing Page sends no email', count($GLOBALS['t_mail']) === 0);
+check('Landing Page is emailed too', count($GLOBALS['t_mail']) === 1 && $r['mailed'] === true);
 check('Landing Page keeps no detail', $r['detail'] === '');
+$m = $GLOBALS['t_mail'][0];
+check('Landing Page subject names the site path and the reason', $m['subject'] === '[CCM Tools] Search engines kept blocked on staging.example.test/_websites/acme - Landing Page');
+check('Landing Page email has no reason block', strpos($m['body'], 'Their reason') === false);
 
 reset_state();
 $r = ccm_tools_seo_nag_dismiss('development', '', $user);
-check('Development dismisses without email', is_array($r) && !ccm_tools_seo_nag_should_show() && count($GLOBALS['t_mail']) === 0);
+check('Development dismisses and is emailed', is_array($r) && !ccm_tools_seo_nag_should_show() && count($GLOBALS['t_mail']) === 1);
+check('Development subject carries the reason', substr($GLOBALS['t_mail'][0]['subject'], -14) === ' - Development');
 
 reset_state();
 $r = ccm_tools_seo_nag_dismiss('other', 'Client wants it hidden until launch on Friday', $user);
@@ -143,9 +157,27 @@ check('Other sends exactly one email', count($GLOBALS['t_mail']) === 1);
 $m = $GLOBALS['t_mail'][0] ?? array('to' => '', 'subject' => '', 'body' => '', 'headers' => array());
 check('email goes to Rik', $m['to'] === 'rik@clickclickmedia.com.au');
 check('email carries the reason', strpos($m['body'], 'Client wants it hidden until launch on Friday') !== false);
-check('email names the site address', strpos($m['body'], 'https://staging.example.test') !== false);
+check('email names the site address', strpos($m['body'], 'https://staging.example.test/_websites/acme') !== false);
 check('email names the user', strpos($m['body'], 'camille') !== false);
 check('replies go to the user', in_array('Reply-To: camille@client.test', $m['headers'], true));
+check('sent as HTML', in_array('Content-Type: text/html; charset=UTF-8', $m['headers'], true));
+check('uses the CCM notification template (dark header, green rule, blue button)',
+    strpos($m['body'], 'class="x-hdr" bgcolor="#1f1f1f"') !== false
+    && strpos($m['body'], 'background-color:#94c83e;height:3px') !== false
+    && strpos($m['body'], 'class="x-wht x-btn"') !== false
+    && strpos($m['body'], '&nbsp;CCM Tools</span>') !== false);
+check('badge names the reason', strpos($m['body'], '>Other</span>') !== false);
+check('button goes to Reading settings', strpos($m['body'], 'href="https://staging.example.test/_websites/acme/wp-admin/options-reading.php"') !== false);
+check('plain-text alternative attached', strpos($m['alt'], 'Their reason:') !== false && strpos($m['alt'], 'Client wants it hidden') !== false);
+check('plain-text hook does not linger after the send', empty($GLOBALS['t_actions']['phpmailer_init']));
+$all = $m['body'] . $m['subject'] . $m['alt'];
+check('no em or en dashes in the email', strpos($all, "\u{2014}") === false && strpos($all, "\u{2013}") === false);
+
+reset_state();
+ccm_tools_seo_nag_dismiss('other', "<script>alert(1)</script>\nsecond line", $user);
+$m = $GLOBALS['t_mail'][0];
+check('reason is escaped in the HTML', strpos($m['body'], '<script>') === false && strpos($m['body'], '&lt;script&gt;') !== false);
+check('reason line breaks survive', strpos($m['body'], "<br>\nsecond line") !== false);
 check('mail outcome recorded', $r['mailed'] === true);
 
 reset_state();
@@ -159,7 +191,7 @@ reset_state();
 ccm_tools_seo_nag_dismiss('development', '', $user);
 $GLOBALS['t_home'] = 'https://www.example.test';
 check('site moved to a new address: nags again', ccm_tools_seo_nag_should_show());
-$GLOBALS['t_home'] = 'https://staging.example.test/';
+$GLOBALS['t_home'] = 'https://staging.example.test/_websites/acme/';
 check('trailing slash difference is not a move', !ccm_tools_seo_nag_should_show());
 
 reset_state();

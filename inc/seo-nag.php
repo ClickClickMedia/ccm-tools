@@ -4,8 +4,8 @@
  *
  * When "Discourage search engines from indexing this site" is ticked in
  * Settings > Reading, every wp-admin page carries a big red banner saying so.
- * It can be dismissed, but only by answering why. "Other" needs a written
- * reason, and that reason is emailed to CCM.
+ * It can be dismissed, but only by answering why, and every answer is emailed
+ * to CCM. "Other" also needs a written reason.
  *
  * A dismissal belongs to the site at one address. It is void when:
  *   - the site moves (home_url changes), so a staging copy that was dismissed
@@ -120,7 +120,7 @@ function ccm_tools_seo_nag_render(): void {
     <dialog class="ccmsn-dialog" id="ccmsn-dialog" aria-labelledby="ccmsn-dialog-title">
         <form method="dialog" class="ccmsn-dialog__form" id="ccmsn-form" novalidate>
             <h2 class="ccmsn-dialog__title" id="ccmsn-dialog-title"><?php esc_html_e('Why are you dismissing this?', 'ccm-tools'); ?></h2>
-            <p class="ccmsn-dialog__lead"><?php esc_html_e('Search engines will stay blocked. The banner comes back if the site moves to a new address, or if the setting is turned off and on again.', 'ccm-tools'); ?></p>
+            <p class="ccmsn-dialog__lead"><?php esc_html_e('Search engines will stay blocked and your answer is sent to Click Click Media. The banner comes back if the site moves to a new address, or if the setting is turned off and on again.', 'ccm-tools'); ?></p>
 
             <fieldset class="ccmsn-choices">
                 <legend class="screen-reader-text"><?php esc_html_e('Reason', 'ccm-tools'); ?></legend>
@@ -133,7 +133,7 @@ function ccm_tools_seo_nag_render(): void {
             </fieldset>
 
             <div class="ccmsn-other" id="ccmsn-other" hidden>
-                <label for="ccmsn-detail"><?php esc_html_e('Tell us why (required). This is emailed to Click Click Media.', 'ccm-tools'); ?></label>
+                <label for="ccmsn-detail"><?php esc_html_e('Tell us why (required).', 'ccm-tools'); ?></label>
                 <textarea id="ccmsn-detail" rows="4" maxlength="1000"></textarea>
             </div>
 
@@ -167,7 +167,7 @@ function ccm_tools_seo_nag_ajax_dismiss(): void {
 }
 
 /**
- * Record a dismissal and, for "Other", email the reason.
+ * Record a dismissal and email it to CCM.
  *
  * @return array|WP_Error The stored dismissal.
  */
@@ -194,16 +194,36 @@ function ccm_tools_seo_nag_dismiss(string $reason, string $detail, $user) {
     );
 
     /*
-     * The dismissal stands even if mail fails. A site with broken mail would
-     * otherwise be stuck with a banner it has already answered; whether the
-     * email went is kept on the record instead.
+     * Every dismissal is emailed. It stands even if mail fails: a site with
+     * broken mail would otherwise be stuck with a banner it has already
+     * answered, so whether the email went is kept on the record instead.
      */
-    if ($reason === 'other') {
-        $record['mailed'] = ccm_tools_seo_nag_send_email($record, $user);
-    }
+    $record['mailed'] = ccm_tools_seo_nag_send_email($record, $user);
 
     update_option(CCM_TOOLS_SEO_NAG_OPTION, $record, false);
     return $record;
+}
+
+/** The facts an email carries, shared by the HTML and plain-text bodies. */
+function ccm_tools_seo_nag_email_facts(array $record, $user): array {
+    $email = isset($user->user_email) ? (string) $user->user_email : '';
+    $name  = isset($user->display_name) && $user->display_name !== '' ? (string) $user->display_name : $record['user_login'];
+    $who   = $name . ' (' . $record['user_login'] . ($email !== '' ? ', ' . $email : '') . ')';
+
+    return array(
+        'Site'    => wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES),
+        'Address' => home_url(),
+        'User'    => $who,
+        'When'    => wp_date('j M Y g:i a T', $record['time']),
+    );
+}
+
+/** "web.clickclick.media/_websites/riktest_2024": the host alone is shared by every preview site. */
+function ccm_tools_seo_nag_short_address(): string {
+    $home = home_url();
+    $host = (string) wp_parse_url($home, PHP_URL_HOST);
+    $path = untrailingslashit((string) wp_parse_url($home, PHP_URL_PATH));
+    return $host !== '' ? $host . $path : $home;
 }
 
 function ccm_tools_seo_nag_send_email(array $record, $user): bool {
@@ -212,33 +232,150 @@ function ccm_tools_seo_nag_send_email(array $record, $user): bool {
         return false;
     }
 
-    $site  = wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES);
-    $home  = home_url();
-    $email = isset($user->user_email) ? (string) $user->user_email : '';
-    $name  = isset($user->display_name) ? (string) $user->display_name : $record['user_login'];
+    $reasons = ccm_tools_seo_nag_reasons();
+    $label   = $reasons[$record['reason']] ?? $record['reason'];
+    $facts   = ccm_tools_seo_nag_email_facts($record, $user);
+    $reading = admin_url('options-reading.php');
 
-    $subject = sprintf('[CCM Tools] Search engine block kept on %s', wp_parse_url($home, PHP_URL_HOST) ?: $home);
+    $subject = sprintf('[CCM Tools] Search engines kept blocked on %s - %s', ccm_tools_seo_nag_short_address(), $label);
 
-    $lines = array(
-        'Someone dismissed the "search engines are blocked" banner and chose Other.',
+    $html = ccm_tools_seo_nag_email_html($record, $label, $facts, $reading);
+
+    $text = array(
+        sprintf('Someone dismissed the "search engines are blocked" banner and chose %s.', $label),
         '',
-        'Site:    ' . $site,
-        'Address: ' . $home,
-        'User:    ' . $name . ' (' . $record['user_login'] . ($email !== '' ? ', ' . $email : '') . ')',
-        'When:    ' . wp_date('j M Y g:i a T', $record['time']),
-        '',
-        'Their reason:',
-        $record['detail'],
-        '',
-        'Settings > Reading: ' . admin_url('options-reading.php'),
     );
+    foreach ($facts as $k => $v) {
+        $text[] = str_pad($k . ':', 9) . $v;
+    }
+    if ($record['detail'] !== '') {
+        $text[] = '';
+        $text[] = 'Their reason:';
+        $text[] = $record['detail'];
+    }
+    $text[] = '';
+    $text[] = 'Settings > Reading: ' . $reading;
+    $plain = implode("\n", $text);
 
-    $headers = array();
+    $headers = array('Content-Type: text/html; charset=UTF-8');
+    $email   = isset($user->user_email) ? (string) $user->user_email : '';
     if ($email !== '' && is_email($email)) {
         $headers[] = 'Reply-To: ' . $email;
     }
 
-    return (bool) wp_mail($to, $subject, implode("\n", $lines), $headers);
+    // Plain-text alternative for clients that will not render HTML. One shot,
+    // so no other mail this request inherits it.
+    $alt = function ($phpmailer) use ($plain) {
+        $phpmailer->AltBody = $plain;
+    };
+    add_action('phpmailer_init', $alt);
+    $sent = (bool) wp_mail($to, $subject, $html, $headers);
+    remove_action('phpmailer_init', $alt);
+
+    return $sent;
+}
+
+/**
+ * CCM notification email, the same look as ClickTrack's and ServerWatch's:
+ * dark header with the green dot, green accent line, 600px white card, blue
+ * button, grey footer, with Outlook dark-mode guards and MSO fallbacks.
+ */
+function ccm_tools_seo_nag_email_html(array $record, string $label, array $facts, string $reading): string {
+    $blue  = '#1a5ddf';
+    $green = '#94c83e';
+    // Amber for Other, because that is the one with something to read.
+    $badge_color = $record['reason'] === 'other' ? '#d97706' : $blue;
+    $e = function ($s) {
+        return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+    };
+    $p = function ($html) {
+        return '<p class="x-drk" style="margin:0 0 20px;color:#1f1f1f;font-size:15px;line-height:1.65;">' . $html . '</p>';
+    };
+
+    $title   = 'Search engines kept blocked';
+    $preview = $label . ': ' . $facts['Site'] . ' (' . ccm_tools_seo_nag_short_address() . ')';
+
+    $rows = '';
+    foreach ($facts as $k => $v) {
+        $value = $k === 'Address'
+            ? '<a href="' . $e($v) . '" style="color:' . $blue . ';text-decoration:none;">' . $e($v) . '</a>'
+            : $e($v);
+        $rows .= '<tr>'
+            . '<td valign="top" style="padding:8px 12px;border-bottom:1px solid #eeeeee;width:80px;"><span class="x-mut" style="color:#6f6f6f;font-size:13px;">' . $e($k) . '</span></td>'
+            . '<td valign="top" style="padding:8px 12px;border-bottom:1px solid #eeeeee;"><span class="x-drk" style="color:#1f1f1f;font-size:14px;">' . $value . '</span></td>'
+            . '</tr>';
+    }
+    $table = '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid #eeeeee;border-radius:6px;margin:0 0 20px;">' . $rows . '</table>';
+
+    $quote = '';
+    if ($record['detail'] !== '') {
+        $quote = '<p class="x-mut" style="margin:4px 0 8px;color:#6f6f6f;font-size:12px;line-height:1.5;text-transform:uppercase;letter-spacing:0.6px;">Their reason</p>'
+            . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#F6F6F6;border-radius:8px;"><tr>'
+            . '<td class="x-drk" style="padding:20px 24px;border-left:3px solid ' . $badge_color . ';color:#1f1f1f;font-size:15px;line-height:1.7;">'
+            . nl2br($e($record['detail']), false)
+            . '</td></tr></table>';
+    }
+
+    $body = $p('Someone dismissed the <strong>search engines are blocked</strong> banner on <strong>' . $e($facts['Site']) . '</strong> and chose <strong>' . $e($label) . '</strong>. Search engines are still being told not to index the site.')
+        . $table
+        . $quote;
+
+    $button = '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:32px;"><tr><td align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+        . '<!--[if mso]><td><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="' . $e($reading) . '" style="height:46px;v-text-anchor:middle;width:240px;" arcsize="13%" strokecolor="' . $blue . '" fillcolor="' . $blue . '"><w:anchorlock/><center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;">Open Reading settings</center></v:roundrect></td><![endif]-->'
+        . '<!--[if !mso]><!--><td><a class="x-wht x-btn" href="' . $e($reading) . '" style="display:inline-block;background-color:' . $blue . ';color:#ffffff;padding:14px 36px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px;text-align:center;mso-padding-alt:0;">Open Reading settings</a></td><!--<![endif]-->'
+        . '</tr></table></td></tr></table>';
+
+    return '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light only" />
+<meta name="supported-color-schemes" content="light only" />
+<title>' . $e($title) . '</title>
+<style type="text/css">
+:root { color-scheme: light only; supported-color-schemes: light only; }
+[data-ogsb].x-hdr { background-color: #1f1f1f !important; }
+[data-ogsb].x-btn { background-color: ' . $blue . ' !important; }
+[data-ogsc].x-wht { color: #ffffff !important; }
+[data-ogsc].x-drk { color: #1f1f1f !important; }
+[data-ogsc].x-grn { color: ' . $green . ' !important; }
+[data-ogsc].x-mut { color: #9f9f9f !important; }
+@media (prefers-color-scheme: dark) {
+  .x-hdr { background-color: #1f1f1f !important; }
+  .x-btn { background-color: ' . $blue . ' !important; }
+  .x-wht { color: #ffffff !important; }
+  .x-drk { color: #1f1f1f !important; }
+  .x-grn { color: ' . $green . ' !important; }
+}
+</style>
+<!--[if mso]>
+<style type="text/css">
+body, table, td, p, a, span {font-family: Arial, Helvetica, sans-serif !important;}
+table {border-collapse: collapse !important;}
+</style>
+<![endif]-->
+</head>
+<body style="margin:0;padding:0;width:100%;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,\'Helvetica Neue\',Arial,sans-serif;background-color:#F6F6F6;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">' . $e($preview) . '&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;</div>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#F6F6F6;"><tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;">
+<tr><td class="x-hdr" bgcolor="#1f1f1f" style="background-color:#1f1f1f;padding:28px 40px;border-radius:8px 8px 0 0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+<td valign="middle"><span class="x-wht" style="font-size:20px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;"><span class="x-grn" style="color:' . $green . ';">&#9679;</span>&nbsp;CCM Tools</span></td>
+<td align="right" valign="middle"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td bgcolor="' . $badge_color . '" style="background-color:' . $badge_color . ';padding:5px 16px;border-radius:4px;"><span class="x-wht" style="color:#ffffff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;">' . $e($label) . '</span></td></tr></table></td>
+</tr></table></td></tr>
+<tr><td style="background-color:' . $green . ';height:3px;font-size:3px;line-height:3px;">&nbsp;</td></tr>
+<tr><td style="padding:32px 40px 36px;">
+' . $body . '
+' . $button . '
+</td></tr>
+<tr><td style="padding:24px 40px;background-color:#F6F6F6;border-top:1px solid #ebebeb;border-radius:0 0 8px 8px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td align="center">
+<p style="margin:0;color:#9f9f9f;font-size:12px;line-height:1.5;">Sent by <span style="color:' . $green . ';font-weight:700;">CCM Tools</span> &middot; WordPress tools by Click Click Media</p>
+</td></tr></table></td></tr>
+</table></td></tr></table>
+</body></html>';
 }
 
 /*
