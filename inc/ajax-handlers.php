@@ -1517,47 +1517,29 @@ function ccm_tools_ajax_get_unconverted_images(): void {
         wp_send_json_error(array('message' => __('You do not have permission to perform this action.', 'ccm-tools')));
     }
     
-    global $wpdb;
-    
-    $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    $offset = isset($_POST['offset']) ? max(0, intval($_POST['offset'])) : 0;
     $limit = isset($_POST['limit']) ? min(50, max(1, intval($_POST['limit']))) : 10;
-    
-    // Get images that haven't been converted yet
-    $images = $wpdb->get_results($wpdb->prepare(
-        "SELECT p.ID, p.post_title, p.guid 
-         FROM {$wpdb->posts} p
-         LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ccm_webp_converted'
-         WHERE p.post_type = 'attachment' 
-         AND p.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
-         AND pm.meta_id IS NULL
-         ORDER BY p.ID ASC
-         LIMIT %d OFFSET %d",
-        $limit,
-        $offset
-    ));
-    
-    // Get total count
-    $total = (int) $wpdb->get_var(
-        "SELECT COUNT(*) 
-         FROM {$wpdb->posts} p
-         LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ccm_webp_converted'
-         WHERE p.post_type = 'attachment' 
-         AND p.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
-         AND pm.meta_id IS NULL"
-    );
-    
+
+    // Same index the page counts from, so the run picks up what the page says is waiting.
+    $index = ccm_tools_webp_pending_index();
+    $page = array_slice($index['pending'], $offset, $limit, true);
+
     $image_list = array();
-    foreach ($images as $image) {
+    foreach ($page as $id => $missing) {
+        $file_path = get_attached_file($id);
         $image_list[] = array(
-            'id' => $image->ID,
-            'title' => $image->post_title,
-            'url' => wp_get_attachment_url($image->ID)
+            'id' => $id,
+            'title' => get_the_title($id),
+            'url' => wp_get_attachment_url($id),
+            'files' => (int) $missing,
+            'bytes' => ($file_path && file_exists($file_path)) ? (int) @filesize($file_path) : 0,
         );
     }
-    
+
     wp_send_json_success(array(
         'images' => $image_list,
-        'total' => $total,
+        'total' => count($index['pending']),
+        'total_files' => (int) $index['files'],
         'offset' => $offset,
         'limit' => $limit
     ));
@@ -1577,85 +1559,134 @@ function ccm_tools_ajax_convert_single_image(): void {
         wp_send_json_error(array('message' => __('No attachment ID provided.', 'ccm-tools')));
     }
     
-    // Get attachment file path
-    $file_path = get_attached_file($attachment_id);
-    
-    if (!$file_path || !file_exists($file_path)) {
+    $files = ccm_tools_webp_attachment_files($attachment_id);
+
+    if (!$files) {
         wp_send_json_error(array('message' => __('Attachment file not found.', 'ccm-tools')));
     }
-    
+
     // Check if it's an image type we can convert
     $mime_type = get_post_mime_type($attachment_id);
     $allowed_mimes = array('image/jpeg', 'image/png', 'image/gif');
-    
+
     if (!in_array($mime_type, $allowed_mimes)) {
         wp_send_json_error(array('message' => __('Invalid image type for conversion.', 'ccm-tools')));
     }
-    
+
     // Get settings
     $settings = ccm_tools_webp_get_settings();
     $quality = intval($settings['quality']);
     $extension = $settings['preferred_extension'];
-    
+
+    // Never converted (or reset by Regenerate): do every file. Otherwise only the missing ones.
+    $recorded = get_post_meta($attachment_id, '_ccm_webp_converted', true);
+    $recorded = is_array($recorded) ? $recorded : array();
+    $todo = $recorded ? array_filter($files, function ($path) {
+        return !ccm_tools_webp_has_sibling($path);
+    }) : $files;
+
+    // Sizes that already failed earlier in this run: do not burn the time budget on them again.
+    $skip = isset($_POST['skip']) ? array_map('strval', (array) wp_unslash($_POST['skip'])) : array();
+    foreach ($skip as $skip_size) {
+        unset($todo[$skip_size]);
+    }
+
+    // Thumbnails first: they are quick, and a huge original must not take them down with it.
+    if (isset($todo['full'])) {
+        $full = $todo['full'];
+        unset($todo['full']);
+        $todo['full'] = $full;
+    }
+
+    // Finish the file in hand even if the browser gives up, and give big originals room.
+    if (function_exists('ignore_user_abort')) {
+        @ignore_user_abort(true);
+    }
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(300);
+    }
+
+    $started = microtime(true);
+    $budget = 20; // seconds; the browser comes back for whatever is left
     $converted_files = array();
+    $failed = array();
+    $attempted = 0;
     $total_source_size = 0;
     $total_dest_size = 0;
-    
-    // Convert the main file
-    $main_result = ccm_tools_webp_convert_image($file_path, '', $quality, $extension);
-    if ($main_result['success']) {
-        $converted_files['full'] = $main_result;
-        $total_source_size += $main_result['source_size'];
-        $total_dest_size += $main_result['dest_size'];
-    }
-    
-    // Convert all generated sizes
-    $metadata = wp_get_attachment_metadata($attachment_id);
-    if (!empty($metadata['sizes'])) {
-        $file_dir = dirname($file_path);
-        
-        foreach ($metadata['sizes'] as $size_name => $size_data) {
-            $size_file_path = $file_dir . '/' . $size_data['file'];
-            
-            if (file_exists($size_file_path)) {
-                $size_result = ccm_tools_webp_convert_image($size_file_path, '', $quality, $extension);
-                if ($size_result['success']) {
-                    $converted_files[$size_name] = $size_result;
-                    $total_source_size += $size_result['source_size'];
-                    $total_dest_size += $size_result['dest_size'];
-                }
-            }
+    $extension_used = '';
+
+    foreach ($todo as $size_name => $path) {
+        if ($attempted > 0 && (microtime(true) - $started) > $budget) {
+            break;
+        }
+        $attempted++;
+
+        $result = ccm_tools_webp_convert_image($path, '', $quality, $extension);
+        if (!empty($result['success'])) {
+            $converted_files[$size_name] = $result;
+            $total_source_size += $result['source_size'];
+            $total_dest_size += $result['dest_size'];
+            $extension_used = $result['extension_used'] ?? $extension_used;
+            // Record each file as it lands, so a later fatal cannot lose it.
+            $recorded[$size_name] = $result;
+            update_post_meta($attachment_id, '_ccm_webp_converted', $recorded);
+        } else {
+            $failed[] = array(
+                'size' => (string) $size_name,
+                'file' => basename($path),
+                'bytes' => (int) @filesize($path),
+                'message' => $result['message'] ?? __('Conversion failed.', 'ccm-tools'),
+            );
         }
     }
-    
-    // Store conversion info as post meta
-    if (!empty($converted_files)) {
-        update_post_meta($attachment_id, '_ccm_webp_converted', $converted_files);
-        
-        $savings_percent = 0;
-        if ($total_source_size > 0) {
-            $savings_percent = round((($total_source_size - $total_dest_size) / $total_source_size) * 100, 1);
-        }
-        
-        wp_send_json_success(array(
-            'attachment_id' => $attachment_id,
-            'converted_count' => count($converted_files),
-            'source_size' => $total_source_size,
-            'dest_size' => $total_dest_size,
-            'savings_percent' => $savings_percent,
-            'extension_used' => $main_result['extension_used'] ?? 'unknown',
-            'message' => sprintf(
-                __('Converted %d file(s), saved %s (%s%% reduction)', 'ccm-tools'),
-                count($converted_files),
-                size_format($total_source_size - $total_dest_size),
-                $savings_percent
-            )
-        ));
-    } else {
+
+    $remaining = count($todo) - $attempted;
+    if (function_exists('ccm_tools_webp_pending_refresh_one')) {
+        ccm_tools_webp_pending_refresh_one($attachment_id);
+    }
+
+    $failed_text = implode('; ', array_map(function ($f) {
+        return sprintf('%s (%s): %s', $f['file'], size_format($f['bytes']), $f['message']);
+    }, $failed));
+
+    // Nothing converted, nothing left to try: that is a failure, with the real reason.
+    if (!$converted_files && $remaining === 0 && $failed) {
         wp_send_json_error(array(
-            'message' => $main_result['message'] ?? __('Conversion failed.', 'ccm-tools')
+            'message' => $failed_text,
+            'failed' => $failed,
         ));
     }
+
+    $savings_percent = 0;
+    if ($total_source_size > 0) {
+        $savings_percent = round((($total_source_size - $total_dest_size) / $total_source_size) * 100, 1);
+    }
+
+    if ($converted_files) {
+        $message = sprintf(
+            __('Converted %d file(s), saved %s (%s%% reduction)', 'ccm-tools'),
+            count($converted_files),
+            size_format(max(0, $total_source_size - $total_dest_size)),
+            $savings_percent
+        );
+    } else {
+        $message = __('Nothing left to convert.', 'ccm-tools');
+    }
+    if ($failed) {
+        $message .= '. ' . sprintf(__('Failed: %s', 'ccm-tools'), $failed_text);
+    }
+
+    wp_send_json_success(array(
+        'attachment_id' => $attachment_id,
+        'converted_count' => count($converted_files),
+        'remaining' => $remaining,
+        'failed' => $failed,
+        'source_size' => $total_source_size,
+        'dest_size' => $total_dest_size,
+        'savings_percent' => $savings_percent,
+        'extension_used' => $extension_used ?: 'unknown',
+        'message' => $message,
+    ));
 }
 
 // Test WebP conversion with uploaded file
@@ -1791,7 +1822,10 @@ function ccm_tools_ajax_reset_webp_conversions(): void {
         delete_post_meta($attachment_id, '_ccm_webp_converted');
         $reset_count++;
     }
-    
+    if (function_exists('ccm_tools_webp_forget_pending')) {
+        ccm_tools_webp_forget_pending();
+    }
+
     // Also clear the failed conversion cache (legacy meta key)
     $wpdb->query(
         "DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_ccm_webp_conversion_failed'"
@@ -2185,7 +2219,7 @@ function ccm_tools_perf_sanitize_list($input) {
     }
     
     /* 73baf9de16acee4f */
-    $items = preg_split('/[
+    $items = preg_split('/[
 ,]+/', (string) $input);
     $sanitized = array();
 

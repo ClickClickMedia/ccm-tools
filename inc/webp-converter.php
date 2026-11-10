@@ -908,88 +908,187 @@ function ccm_tools_webp_allowed_mimes($mimes) {
     return $mimes;
 }
 
+// The page's counter and the bulk queue both read the pending index, so they cannot disagree.
+defined('CCM_TOOLS_WEBP_PENDING_KEY') || define('CCM_TOOLS_WEBP_PENDING_KEY', 'ccm_tools_webp_pending_index');
+defined('CCM_TOOLS_WEBP_PENDING_TTL') || define('CCM_TOOLS_WEBP_PENDING_TTL', 15 * 60);
+defined('CCM_TOOLS_WEBP_WINDOW') || define('CCM_TOOLS_WEBP_WINDOW', 2000);
+
+/** The .webp that belongs beside an image file. */
+function ccm_tools_webp_sibling_path($path) {
+    return preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $path);
+}
+
+/** True when the image already has a non-empty .webp beside it. */
+function ccm_tools_webp_has_sibling($path) {
+    $webp = ccm_tools_webp_sibling_path($path);
+    if ($webp === $path) {
+        return false;
+    }
+    $size = @filesize($webp);
+    return $size !== false && $size > 0;
+}
+
+/** Every image file of an attachment on disk, keyed by size name, full size first, each file once. */
+function ccm_tools_webp_attachment_files($attachment_id) {
+    $file_path = get_attached_file($attachment_id);
+    if (!$file_path || !file_exists($file_path)) {
+        return array();
+    }
+
+    $files = array('full' => $file_path);
+    $metadata = wp_get_attachment_metadata($attachment_id);
+
+    if (!empty($metadata['sizes']) && is_array($metadata['sizes'])) {
+        $file_dir = dirname($file_path);
+        foreach ($metadata['sizes'] as $size_name => $size_data) {
+            if (empty($size_data['file'])) {
+                continue;
+            }
+            $thumb_path = $file_dir . '/' . $size_data['file'];
+            if (in_array($thumb_path, $files, true) || !file_exists($thumb_path)) {
+                continue;
+            }
+            $files[(string) $size_name] = $thumb_path;
+        }
+    }
+
+    return $files;
+}
+
+/** The files of an attachment that have no .webp yet. */
+function ccm_tools_webp_missing_files($attachment_id) {
+    return array_filter(ccm_tools_webp_attachment_files($attachment_id), function ($path) {
+        return !ccm_tools_webp_has_sibling($path);
+    });
+}
+
+/** Attachment IDs the statistics and the queue look at: the newest 2000. */
+function ccm_tools_webp_window_ids() {
+    global $wpdb;
+    $ids = $wpdb->get_col(
+        "SELECT ID FROM {$wpdb->posts}
+         WHERE post_type = 'attachment'
+         AND post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
+         ORDER BY ID DESC
+         LIMIT " . (int) CCM_TOOLS_WEBP_WINDOW
+    );
+    return array_map('intval', is_array($ids) ? $ids : array());
+}
+
+/** Load the post meta for a batch of attachments in one query per 500. */
+function ccm_tools_webp_prime_meta(array $ids) {
+    if (!$ids || !function_exists('update_meta_cache')) {
+        return;
+    }
+    foreach (array_chunk($ids, 500) as $chunk) {
+        update_meta_cache('post', $chunk);
+    }
+}
+
+/** Attachment id => files still missing a .webp, oldest first: the stats window plus older never-converted ones. */
+function ccm_tools_webp_pending_index($fresh = false) {
+    global $wpdb;
+
+    if (!$fresh) {
+        $cached = get_transient(CCM_TOOLS_WEBP_PENDING_KEY);
+        if (is_array($cached) && isset($cached['pending'], $cached['files']) && is_array($cached['pending'])) {
+            return $cached;
+        }
+    }
+
+    $ids = ccm_tools_webp_window_ids();
+
+    if ($ids) {
+        $older = $wpdb->get_col($wpdb->prepare(
+            "SELECT p.ID FROM {$wpdb->posts} p
+             LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_ccm_webp_converted'
+             WHERE p.post_type = 'attachment'
+             AND p.post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
+             AND pm.meta_id IS NULL
+             AND p.ID < %d",
+            min($ids)
+        ));
+        if (is_array($older) && $older) {
+            $ids = array_merge($ids, array_map('intval', $older));
+        }
+    }
+
+    ccm_tools_webp_prime_meta($ids);
+
+    $pending = array();
+    foreach ($ids as $id) {
+        $missing = count(ccm_tools_webp_missing_files($id));
+        if ($missing > 0) {
+            $pending[$id] = $missing;
+        }
+    }
+    ksort($pending);
+
+    $index = array('pending' => $pending, 'files' => array_sum($pending));
+    set_transient(CCM_TOOLS_WEBP_PENDING_KEY, $index, CCM_TOOLS_WEBP_PENDING_TTL);
+
+    return $index;
+}
+
+/** Re-check one attachment in the cached index after converting it. */
+function ccm_tools_webp_pending_refresh_one($attachment_id) {
+    $index = get_transient(CCM_TOOLS_WEBP_PENDING_KEY);
+    if (!is_array($index) || !isset($index['pending']) || !is_array($index['pending'])) {
+        return;
+    }
+    $attachment_id = (int) $attachment_id;
+    $missing = count(ccm_tools_webp_missing_files($attachment_id));
+    if ($missing > 0) {
+        $index['pending'][$attachment_id] = $missing;
+        ksort($index['pending']);
+    } else {
+        unset($index['pending'][$attachment_id]);
+    }
+    $index['files'] = array_sum($index['pending']);
+    set_transient(CCM_TOOLS_WEBP_PENDING_KEY, $index, CCM_TOOLS_WEBP_PENDING_TTL);
+}
+
+/** Drop the cached index, after anything that changes it wholesale. */
+function ccm_tools_webp_forget_pending() {
+    delete_transient(CCM_TOOLS_WEBP_PENDING_KEY);
+}
+
 /* 64a88910305d2d12 */
 function ccm_tools_webp_get_statistics() {
-    global $wpdb;
-    
     $stats = array(
         'total_images' => 0,
         'converted_images' => 0,
         'total_original_size' => 0,
         'total_webp_size' => 0,
         'total_savings' => 0,
-        'pending_conversion' => 0
+        'pending_conversion' => 0,
+        'pending_attachments' => 0,
     );
-    
-    // Get all images from media library (limit for performance)
-    $attachments = $wpdb->get_results(
-        "SELECT ID FROM {$wpdb->posts} 
-         WHERE post_type = 'attachment' 
-         AND post_mime_type IN ('image/jpeg', 'image/png', 'image/gif')
-         ORDER BY ID DESC
-         LIMIT 2000"
-    );
-    
-    // Track all image files (full size + all thumbnails)
-    $all_images = array();
-    $converted_count = 0;
-    
-    foreach ($attachments as $attachment) {
-        $file_path = get_attached_file($attachment->ID);
-        
-        if (!$file_path || !file_exists($file_path)) {
-            continue;
-        }
-        
-        $file_dir = dirname($file_path);
-        
-        // Add full-size image
-        $all_images[] = array(
-            'path' => $file_path,
-            'webp_path' => preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $file_path)
-        );
-        
-        // Get attachment metadata for thumbnails
-        $metadata = wp_get_attachment_metadata($attachment->ID);
-        
-        if (!empty($metadata['sizes'])) {
-            foreach ($metadata['sizes'] as $size_name => $size_data) {
-                if (!empty($size_data['file'])) {
-                    $thumb_path = $file_dir . '/' . $size_data['file'];
-                    if (file_exists($thumb_path)) {
-                        $all_images[] = array(
-                            'path' => $thumb_path,
-                            'webp_path' => preg_replace('/\.(jpe?g|png|gif)$/i', '.webp', $thumb_path)
-                        );
-                    }
-                }
+
+    $ids = ccm_tools_webp_window_ids();
+    ccm_tools_webp_prime_meta($ids);
+
+    foreach ($ids as $id) {
+        foreach (ccm_tools_webp_attachment_files($id) as $path) {
+            $stats['total_images']++;
+            if (!ccm_tools_webp_has_sibling($path)) {
+                continue;
             }
-        }
-    }
-    
-    $stats['total_images'] = count($all_images);
-    
-    // Check each image for WebP version
-    foreach ($all_images as $image) {
-        if (file_exists($image['webp_path'])) {
-            $converted_count++;
-            
-            // Calculate sizes for savings
-            $original_size = @filesize($image['path']);
-            $webp_size = @filesize($image['webp_path']);
-            
+            $stats['converted_images']++;
+            $original_size = @filesize($path);
+            $webp_size = @filesize(ccm_tools_webp_sibling_path($path));
             if ($original_size && $webp_size) {
                 $stats['total_original_size'] += $original_size;
                 $stats['total_webp_size'] += $webp_size;
             }
         }
     }
-    
-    $stats['converted_images'] = $converted_count;
-    
-    // Calculate pending
-    $stats['pending_conversion'] = max(0, $stats['total_images'] - $stats['converted_images']);
-    
+
+    // Files the bulk run will actually pick up, from the same index it reads.
+    $index = ccm_tools_webp_pending_index();
+    $stats['pending_conversion'] = (int) $index['files'];
+    $stats['pending_attachments'] = count($index['pending']);
+
     // Calculate total savings percentage
     if ($stats['total_original_size'] > 0) {
         $stats['total_savings'] = round(
@@ -1007,7 +1106,11 @@ function ccm_tools_webp_init() {
     
     // Always allow WebP uploads
     add_filter('upload_mimes', 'ccm_tools_webp_allowed_mimes');
-    
+
+    // A new or deleted attachment changes what is waiting.
+    add_action('add_attachment', 'ccm_tools_webp_forget_pending');
+    add_action('delete_attachment', 'ccm_tools_webp_forget_pending');
+
     if (empty($settings['enabled'])) {
         return;
     }
