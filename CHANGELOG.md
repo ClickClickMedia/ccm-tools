@@ -1,5 +1,30 @@
 # CCM Tools — Changelog
 
+## v8.15.0 - Big red banner when search engines are blocked
+
+When "Discourage search engines from indexing this site" is ticked in
+Settings > Reading, every wp-admin page now carries a big red banner saying
+so, with a button straight to the setting. Administrators only.
+
+**It can be dismissed, but only with a reason, and every dismissal is
+emailed to CCM.** Dismiss asks "Why are you dismissing this?" with Landing
+Page, Development or Other; Other also needs a written reason. The email uses
+the same CCM notification template as ClickTrack (dark header, green rule,
+reason badge, Open Reading settings button) with a plain-text fallback, names
+the site, its full address, the user and the time, and Reply-To is the user.
+The dismissal stands even if the email fails; whether it went is kept with
+the dismissal.
+
+**A dismissal does not follow the site around.** It is tied to the site's
+address, so a staging copy dismissed as Development nags again the moment it
+is migrated to the live domain with the box still ticked. Unticking the box
+also clears it, so ticking it again later starts a fresh nag.
+
+The banner hooks `in_admin_header` rather than `admin_notices`, because CCM
+Tools' own pages (and plenty of other plugins) strip admin notices. Recipient
+can be changed with `CCM_TOOLS_SEO_NAG_EMAIL` in wp-config.php or the
+`ccm_tools_seo_nag_email` filter.
+
 ## v8.14.1 - WebP bulk conversion picks up everything it says is waiting
 
 Reported on evse.com.au: the page said 362 images were waiting and Convert
