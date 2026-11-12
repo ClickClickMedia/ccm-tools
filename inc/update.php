@@ -819,10 +819,11 @@ function ccm_initialize_updater() {
         return;
     }
 
-    $doing_cron = function_exists('wp_doing_cron') && wp_doing_cron();
+    // WP-CLI counts as cron: whoever runs `wp plugin update` already owns the box.
+    $doing_cron = (function_exists('wp_doing_cron') && wp_doing_cron()) || (defined('WP_CLI') && WP_CLI);
     $doing_ajax = function_exists('wp_doing_ajax') && wp_doing_ajax();
 
-    // Only load updater in admin (for capable users) or during Cron for background checks
+    // Only load updater in admin (for capable users) or during Cron/WP-CLI for background checks
     if (!$doing_cron && !is_admin()) {
         return;
     }
@@ -849,8 +850,12 @@ function ccm_initialize_updater() {
     new CCM_Tools_Updater($plugin_file);
 }
 
-// Initialize on multiple hooks to ensure we catch updates
-add_action('plugins_loaded', 'ccm_initialize_updater');
+// This file is require'd from inside plugins_loaded (priority 10), so a
+// plugins_loaded hook added here never fires: up to 8.15.1 the updater only
+// ever started on admin_init, and cron and WP-CLI never saw an update. init
+// runs after plugins_loaded in every context; admin_init stays as a retry for
+// admin requests where the user was not yet known.
+add_action('init', 'ccm_initialize_updater');
 add_action('admin_init', 'ccm_initialize_updater');
 
 /* 7051bb0725d3668e */
