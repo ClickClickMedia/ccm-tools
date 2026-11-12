@@ -699,7 +699,7 @@ function ccm_tools_webp_rewrite_media_tag($tag) {
 
 /* 13c674ece0038bad */
 function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
-    if (stripos($html, '<img') === false && stripos($html, '<source') === false) {
+    if (stripos($html, '<img') === false && stripos($html, '<source') === false && stripos($html, '<video') === false) {
         return $html;
     }
 
@@ -715,6 +715,19 @@ function ccm_tools_webp_process_img_tags($html, $upload_dir = null) {
     }, $html);
     if (null !== $out) { $html = $out; }
 
+    // <video poster="..."> — the poster only; the video's own src is not an image.
+    $out = preg_replace_callback('/<video\b[^>]*>/i', function($matches) {
+        $tag = $matches[0];
+        if (preg_match('/(\sposter=)(["\'])([^"\']*)\2/i', $tag, $m)) {
+            $webp = ccm_tools_webp_maybe_webp_url($m[3]);
+            if ($webp !== $m[3]) {
+                $tag = str_replace($m[0], $m[1] . $m[2] . $webp . $m[2], $tag);
+            }
+        }
+        return $tag;
+    }, $html);
+    if (null !== $out) { $html = $out; }
+
     return $html;
 }
 
@@ -725,7 +738,8 @@ function ccm_tools_webp_convert_bg_images_in_html($html) {
     }
 
     /* 82be1dc45ec5e8d3 */
-    $url_pattern = '/url\s*\(\s*(["\']?)([^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
+    // The quote may be HTML-encoded: esc_attr() turns url('x') into url(&#039;x&#039;).
+    $url_pattern = '/url\s*\(\s*((?:["\']|&quot;|&#0?39;|&apos;)?)([^"\')\s]+\.(?:jpg|jpeg|png|gif))\1\s*\)/i';
 
     /* 936a987cc90f1705 */
     $rewrite_css_urls = function($css) use ($url_pattern) {
@@ -756,8 +770,9 @@ function ccm_tools_webp_convert_bg_images_in_html($html) {
     }, $html);
     if (null !== $out) { $html = $out; }
 
-    // style="..." attributes on any tag
-    $out = preg_replace_callback('/(\sstyle=)(["\'])([^"\']*)\2/i', function($matches) use ($rewrite_css_urls) {
+    // style="..." attributes on any tag. The value runs to the quote that
+    // opened it: style="--bg: url('x.png')" has the other quote inside it.
+    $out = preg_replace_callback('/(\sstyle=)(["\'])(.*?)\2/is', function($matches) use ($rewrite_css_urls) {
         return $matches[1] . $matches[2] . $rewrite_css_urls($matches[3]) . $matches[2];
     }, $html);
     if (null !== $out) { $html = $out; }
