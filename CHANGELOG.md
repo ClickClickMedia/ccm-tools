@@ -1,5 +1,24 @@
 # CCM Tools — Changelog
 
+## v8.15.1 - WebP reaches theme backgrounds and video posters
+
+Reported on chantalleaesthetics.com.au: WebP was on and every image had its
+.webp beside it, yet the header and footer backgrounds (924 KB and 4.28 MB
+PNG, on every page) and the home page video's poster (3.09 MB JPG) were
+still served as the originals.
+
+- **Background images in a style attribute that quotes its url() are now
+  converted.** `style="background-image: url('photo.png')"`, with one kind of
+  quote inside the other, is how most hand-written themes do it, and it was
+  never matched. CSS custom properties (`--header-bg: url('...')`) are
+  covered the same way.
+- **HTML-encoded quotes too.** `url(&quot;...&quot;)` and `url(&#039;...&#039;)`,
+  which is what `esc_attr()` makes of a quoted url(), were never matched either.
+- **Video posters are converted.** `<video poster="...">` now gets the WebP,
+  including on pages with no other image.
+
+Still only images in this site's uploads folder, as before.
+
 ## v8.15.0 - Big red banner when search engines are blocked
 
 When "Discourage search engines from indexing this site" is ticked in
