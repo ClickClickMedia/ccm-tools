@@ -1,5 +1,18 @@
 # CCM Tools — Changelog
 
+## v8.15.2 - Updates arrive without anyone opening wp-admin
+
+The updater only ever started when an administrator loaded a wp-admin page.
+It was registered too late in WordPress's start-up for anything else to see
+it, so the background update check, WordPress auto-updates and
+`wp plugin update` never knew a new CCM Tools existed. Sites took an update
+only when someone happened to log in.
+
+It now starts in cron and WP-CLI as well. Sites see new versions on
+WordPress's normal twice-daily check, and auto-updates work for any site
+where they are switched on for CCM Tools. Nothing changes on the front end,
+and it still never starts for users who cannot update plugins.
+
 ## v8.15.1 - WebP reaches theme backgrounds and video posters
 
 Reported on chantalleaesthetics.com.au: WebP was on and every image had its
