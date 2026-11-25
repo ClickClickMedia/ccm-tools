@@ -34,7 +34,7 @@ define('ABSPATH', $root . '/');
 define('HOUR_IN_SECONDS', 3600);
 define('MINUTE_IN_SECONDS', 60);
 define('DAY_IN_SECONDS', 86400);
-define('CCM_HELPER_VERSION', '8.15.2');
+define('CCM_HELPER_VERSION', '8.15.3');
 
 $GLOBALS['__options']    = array();
 $GLOBALS['__transients'] = array();
