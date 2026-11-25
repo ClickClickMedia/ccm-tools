@@ -754,9 +754,12 @@ function ccm_tools_ajax_update_memory_limit(): void {
     // Pattern 2: Commented out define (// or #)
     $commented_memory_limit_pattern = '/^[\t ]*(?:\/\/|#)[\t ]*define\s*\(\s*[\'"]WP_MEMORY_LIMIT[\'"]\s*,\s*[\'"][^\'\"]*[\'"]\s*\)\s*;?[\t ]*\r?\n?/im';
     
-    // Check what exists
+    // Check what exists. A PCRE failure must not read as "not there", or we insert a duplicate.
     $active_found = preg_match($active_memory_limit_pattern, $config_content);
     $commented_found = preg_match($commented_memory_limit_pattern, $config_content);
+    if ($active_found === false || $commented_found === false) {
+        wp_send_json_error(__('Could not read the existing WP_MEMORY_LIMIT setting from wp-config.php. Nothing was changed.', 'ccm-tools'));
+    }
     $existing_memory_limit_found = $active_found || $commented_found;
     
     // Check if the memory limit is being set to default
@@ -782,30 +785,26 @@ function ccm_tools_ajax_update_memory_limit(): void {
         $new_define_line = "define('WP_MEMORY_LIMIT', '{$memory_limit}');";
         
         if ($existing_memory_limit_found) {
-            // Replace existing WP_MEMORY_LIMIT line (handles both commented and uncommented)
-            $replaced = false;
-            
-            // First try to replace active (uncommented) line
+            // Rewrite the first live define and drop any further copies (heals files an
+            // earlier version duplicated). Unchanged text is a no-op, never a reason to insert.
             if ($active_found) {
-                $new_content = preg_replace($active_memory_limit_pattern, $new_define_line . "\n", $config_content);
-                if ($new_content !== $config_content) {
-                    $config_content = $new_content;
-                    $replaced = true;
-                }
+                $kept = false;
+                $new_content = preg_replace_callback($active_memory_limit_pattern, function () use (&$kept, $new_define_line) {
+                    if ($kept) {
+                        return '';
+                    }
+                    $kept = true;
+                    return $new_define_line . "\n";
+                }, $config_content);
+            } else {
+                // No live define: uncomment the first commented one only.
+                $new_content = preg_replace($commented_memory_limit_pattern, $new_define_line . "\n", $config_content, 1);
             }
-            
-            // If no active line, replace commented line (uncomment it)
-            if (!$replaced && $commented_found) {
-                $new_content = preg_replace($commented_memory_limit_pattern, $new_define_line . "\n", $config_content);
-                if ($new_content !== $config_content) {
-                    $config_content = $new_content;
-                    $replaced = true;
-                }
+
+            if (!is_string($new_content)) {
+                wp_send_json_error(__('Could not update the WP_MEMORY_LIMIT setting in wp-config.php. Nothing was changed.', 'ccm-tools'));
             }
-            
-            if (!$replaced) {
-                $existing_memory_limit_found = false; // Fall through to add logic
-            }
+            $config_content = $new_content;
         }
         
         if (!$existing_memory_limit_found) {

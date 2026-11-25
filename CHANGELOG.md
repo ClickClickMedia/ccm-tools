@@ -1,5 +1,20 @@
 # CCM Tools — Changelog
 
+## v8.15.3 - WP Memory Limit no longer writes itself twice
+
+Reported on pro_court_2026: clicking Update on WP Memory Limit without
+changing the dropdown (it opens on the current value) added a second
+`define('WP_MEMORY_LIMIT', ...)` to wp-config.php. PHP then warned
+"Constant WP_MEMORY_LIMIT already defined" on every request, and wp-admin
+broke with "headers already sent". Every later save updated both copies, so
+the duplicate never went away on its own.
+
+- **Saving the value the file already holds is now a no-op**, not an insert.
+- **A wp-config.php that already has duplicates is healed** on the next
+  save: the first define is kept and the extra copies are removed.
+- If wp-config.php cannot be read reliably, the update stops and changes
+  nothing, rather than guessing and adding another define.
+
 ## v8.15.2 - Updates arrive without anyone opening wp-admin
 
 The updater only ever started when an administrator loaded a wp-admin page.
